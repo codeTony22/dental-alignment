@@ -1,0 +1,89 @@
+/**
+ * The case shell's promises (slice 2): the payload renders as header + rail + a stage
+ * body that names its building slice; "next case" returns to the worklist (AM-7);
+ * the container shows its honest pre-flight state; a down BFF is a stated banner.
+ * (The redirect DECISION itself is pure and pinned in domain/flow.test.ts —
+ * resolveStagePath — per the repo convention of testing logic outside the DOM.)
+ */
+import { describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
+import { Route, Routes, StaticRouter } from "react-router-dom";
+import { caseSessionDetail, siteView } from "../testing/fixtures";
+import { ErrorBanner } from "../components/ErrorBanner";
+import { CaseShell, CaseShellView } from "./CaseShell";
+
+describe("the case shell view", () => {
+  const detail = caseSessionDetail();
+
+  it("names the case, its doctor and jaw", () => {
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/intake">
+        <CaseShellView detail={detail} stage="intake" />
+      </StaticRouter>,
+    );
+    expect(html).toContain("Case case-a — Dr. Rivera");
+    expect(html).toContain("lower");
+  });
+
+  it("renders the rail and a stage body naming its building slice", () => {
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/declare">
+        <CaseShellView detail={detail} stage="declare" />
+      </StaticRouter>,
+    );
+    expect(html).toContain('data-role="stage-rail"');
+    expect(html).toContain("Declare — slice 5a builds this");
+  });
+
+  it("offers the next-case affordance back to the worklist (AM-7)", () => {
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/intake">
+        <CaseShellView detail={detail} stage="intake" />
+      </StaticRouter>,
+    );
+    expect(html).toContain('data-role="next-case"');
+    expect(html).toContain('href="/"');
+  });
+
+  it("the rail reflects the payload's facts, not click history", () => {
+    const resolved = caseSessionDetail({
+      sites: [siteView({ status: "ready" }), siteView({ tooth: 19, status: "flagged" })],
+      session: {
+        tenant_id: "local",
+        adjust_visited: false,
+        run_state: "done",
+        confirmed: false,
+        payment_authorized: false,
+      },
+    });
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/deliver">
+        <CaseShellView detail={resolved} stage="deliver" />
+      </StaticRouter>,
+    );
+    expect(html).toContain('href="/case/case-a/adjust"'); // a run exists
+    expect(html).toContain('href="/case/case-a/deliver"'); // flagged-with-run delivers
+  });
+});
+
+describe("the case shell container", () => {
+  it("shows its pre-flight loading state (effects do not run statically)", () => {
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/intake">
+        <Routes>
+          <Route path="/case/:id/:stage" element={<CaseShell />} />
+        </Routes>
+      </StaticRouter>,
+    );
+    expect(html).toContain("Loading case case-a");
+  });
+});
+
+describe("the error banner", () => {
+  it("states the failure and the operator's next move — never a blank screen", () => {
+    const html = renderToStaticMarkup(<ErrorBanner detail="HTTP 502 — bad gateway" />);
+    expect(html).toContain("The case service is unreachable.");
+    expect(html).toContain("HTTP 502 — bad gateway");
+    expect(html).toContain("Start the BFF on :8001");
+  });
+});
