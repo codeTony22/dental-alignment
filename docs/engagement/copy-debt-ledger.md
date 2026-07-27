@@ -61,9 +61,28 @@ handler):
   input is non-finite — FastAPI's default handler 500s echoing NaN. The demo never hits
   this because its NaN checks sit behind fields FastAPI can echo; recorded so nobody
   hunts server.py for its origin.
-- Still to record as they are copied (slices 5a-8): explicit-selection 422, unique
+- Slice 5a additions (2026-07-27): implant-system membership (the demo's
+  `_library_for` first check, server.py:287-334's directory-name rule) and variant
+  membership by catalog entry id — both reached through `application.catalog`'s
+  `require_library_model`/`require_variant` (new functions in the already-recorded
+  row-2 lift, same refusal sentences as `_library_for`); the BFF's system/declaration
+  routes serve those sentences verbatim. NEW, not a copy: `extra="forbid"` on every
+  BFF request model (the demo's FastAPI models silently drop unknown fields; the
+  product refuses them — see test_case_sessions' introspection test).
+- Still to record as they are copied (slices 5b-8): explicit-selection 422, unique
   teeth, point caps, ±45°, 15mm, ≤8 pairs + lever arm, diameter bounds, length-3 +
   finiteness on client coordinates.
+
+NOTE row (slice 5a, 2026-07-27) — a semantic port, NOT a code copy (recorded so the
+conformance check knows the resemblance is deliberate): the BFF's
+`PUT /api/case-sessions/{id}/system` reimplements the demo's system-switch semantics
+SERVER-side — switching the model drops every site's chosen variant and (in the
+product's ladder) regresses its status to `detected`; a same-model PUT changes
+nothing. Reference rule: apps/web/src/domain/librarySelection.ts:96-103
+(`clearAllReviews` + `withModel`, including its equality guard). No TypeScript was
+copied: the state lives in the case session now and the client only displays what the
+BFF returns (plan AM-4/AM-8); the transition itself runs through `bff/status.py`.
+Retires with the demo, alongside row 3.
 
 Row 6 record (slice 4, 2026-07-27) — divergences, per the rules above:
 - The demo's THREE cache layers are deliberately NOT copied (per-process cfg dict,

@@ -114,6 +114,9 @@ class TestCaseSessionDetail:
             "dess/neodent-gm-scanbody.stl"]
         # nothing declared -> no ceilings to read
         assert body["relief_ceilings"] == []
+        # the effective system: the suggestion, and the payload SAYS so (AM-8)
+        assert body["system"] == {"effective_model": "neodent-gm",
+                                  "source": "suggested"}
         # detection has not run; choices not yet made — both honestly empty, never guessed
         assert body["detection"] is None
         assert body["choices"] == {
@@ -384,6 +387,197 @@ class TestChoices:
             "atlantis/zimmer-4.5-scanbody.stl"
 
 
+class TestSystem:
+    """PUT /{id}/system (plan §4 Declare / AM-8): the case-scoped implant system,
+    declared ONCE per case. Switching is the explicit case-level act that visibly
+    resets every site — the demo's librarySelection.withModel semantics REIMPLEMENTED
+    server-side (the state lives in the session now; ledger NOTE row). Validation is
+    catalog membership in the catalog's own words; the detail always says WHICH system
+    is effective and whether it is the session's act or the case's suggestion."""
+
+    @staticmethod
+    def _second_model(settings, model="astra-ev"):
+        caps = settings.data_root / "library/caps" / model
+        caps.mkdir(parents=True)
+        (caps / f"{model}-3010.stl").touch()
+
+    def test_an_unknown_case_is_a_404(self, client):
+        assert client.put("/api/case-sessions/no-such-case/system",
+                          json={"model": "neodent-gm"}).status_code == 404
+
+    def test_an_unknown_system_is_refused_in_catalog_words(self, client):
+        res = client.put("/api/case-sessions/neodent-gm/system",
+                         json={"model": "no-such-system"})
+        assert res.status_code == 422
+        assert "unknown implant system" in res.json()["detail"]
+
+    def test_a_legacy_shelf_is_not_a_declarable_system(self, tmp_path, product_root):
+        # legacy *-library directories are honestly LISTED by the catalog but carry
+        # no current parts — a case-level system must be a real caps model
+        from conftest import make_data_tree
+        from bff.config import Settings
+        data = make_data_tree(tmp_path / "data2")
+        legacy = data / "old-parts-library"
+        legacy.mkdir()
+        (legacy / "old-parts-library-4040.stl").touch()
+        client = TestClient(create_app(Settings(data_root=data,
+                                                product_root=product_root)))
+        res = client.put("/api/case-sessions/neodent-gm/system",
+                         json={"model": "old-parts-library"})
+        assert res.status_code == 422
+        assert "unknown implant system" in res.json()["detail"]
+
+    def test_before_any_declaration_the_detail_says_suggested(self, client):
+        body = client.get("/api/case-sessions/neodent-gm").json()
+        assert body["system"] == {"effective_model": "neodent-gm",
+                                  "source": "suggested"}
+
+    def test_declaring_a_system_is_an_act_the_detail_attributes(self, settings):
+        client = TestClient(create_app(settings))
+        body = client.put("/api/case-sessions/neodent-gm/system",
+                          json={"model": "neodent-gm"}).json()
+        assert body["system"] == {"effective_model": "neodent-gm",
+                                  "source": "declared"}
+        # persisted: a fresh app serves the act, not the suggestion
+        again = TestClient(create_app(settings)).get(
+            "/api/case-sessions/neodent-gm").json()
+        assert again["system"]["source"] == "declared"
+
+    def test_switching_the_system_resets_every_site_server_side(self, settings):
+        # the withModel rule (librarySelection.ts:96-103), now a server derivation:
+        # a variant id belongs to one system's catalog, so switching drops every
+        # declared variant AND regresses every site to detected
+        self._second_model(settings)
+        store = SessionStore(settings.product_root)
+        s = store.load("neodent-gm")
+        s.sites["4"] = SiteSession(status=SiteStatus.DECLARED,
+                                   declared_variant="5020")
+        s.sites["13"] = SiteSession(status=SiteStatus.READY,
+                                    declared_variant="5020")
+        store.save(s)
+        client = TestClient(create_app(settings))
+        body = client.put("/api/case-sessions/neodent-gm/system",
+                          json={"model": "astra-ev"}).json()
+        sites = {v["tooth"]: v for v in body["sites"]}
+        assert all(sites[t]["status"] == "detected" for t in (4, 13))
+        assert all(sites[t]["declared_variant"] is None for t in (4, 13))
+        assert body["system"] == {"effective_model": "astra-ev",
+                                  "source": "declared"}
+        # and the store agrees
+        persisted = SessionStore(settings.product_root).load("neodent-gm")
+        assert persisted.sites["4"].status is SiteStatus.DETECTED
+        assert persisted.sites["4"].declared_variant is None
+
+    def test_re_declaring_the_effective_system_resets_nothing(self, settings):
+        # withModel's own guard (state.model === model → no change): PUTting the
+        # system already in effect — including pinning the suggestion — is not a
+        # switch, so no site loses its declaration to an idempotent click
+        store = SessionStore(settings.product_root)
+        s = store.load("neodent-gm")
+        s.sites["4"] = SiteSession(status=SiteStatus.DECLARED,
+                                   declared_variant="5020")
+        store.save(s)
+        client = TestClient(create_app(settings))
+        body = client.put("/api/case-sessions/neodent-gm/system",
+                          json={"model": "neodent-gm"}).json()
+        sites = {v["tooth"]: v for v in body["sites"]}
+        assert sites[4]["status"] == "declared"
+        assert sites[4]["declared_variant"] == "5020"
+
+
+class TestDeclaration:
+    """PUT /{id}/sites/{tooth}/declaration (plan §4 Declare / AM-8): the per-site
+    variant declaration. The variant must be a part of the EFFECTIVE system's library
+    (422 in the catalog's words); the tooth must be a site the case actually has
+    (404 — the path names a subresource that does not exist). The status transition
+    is the machine's (detected → declared), never a handler's string."""
+
+    def test_an_unknown_case_is_a_404(self, client):
+        assert client.put("/api/case-sessions/no-such-case/sites/4/declaration",
+                          json={"variant": "5020"}).status_code == 404
+
+    def test_a_tooth_the_case_does_not_have_is_a_404(self, client):
+        res = client.put("/api/case-sessions/neodent-gm/sites/31/declaration",
+                         json={"variant": "5020"})
+        assert res.status_code == 404
+        assert "not a site" in res.json()["detail"]
+
+    def test_an_unknown_variant_is_refused_in_catalog_words(self, client):
+        res = client.put("/api/case-sessions/neodent-gm/sites/4/declaration",
+                         json={"variant": "9999"})
+        assert res.status_code == 422
+        assert "not a part of the 'neodent-gm' library" in res.json()["detail"]
+
+    def test_a_case_with_no_effective_system_asks_for_one_first(
+            self, settings):
+        # a case whose folder matched no model has no suggestion; until the operator
+        # declares a system there is no catalog to validate variants against
+        scans = settings.data_root / "scans/doctor-nobody"
+        scans.mkdir(parents=True)
+        (scans / "upper_jaw.stl").touch()
+        import json as _json
+        (scans / "sites.json").write_text(_json.dumps({"suggested_sites": [
+            {"tooth": 8, "center": [0.0, 0.0, 0.0], "declared_variant": None}]}))
+        client = TestClient(create_app(settings))
+        res = client.put("/api/case-sessions/nobody/sites/8/declaration",
+                         json={"variant": "5020"})
+        assert res.status_code == 422
+        assert "declare the implant system" in res.json()["detail"]
+
+    def test_declaring_moves_the_site_detected_to_declared(self, settings):
+        client = TestClient(create_app(settings))
+        body = client.put("/api/case-sessions/neodent-gm/sites/4/declaration",
+                          json={"variant": "5020"}).json()
+        sites = {v["tooth"]: v for v in body["sites"]}
+        assert sites[4]["status"] == "declared"
+        assert sites[4]["declared_variant"] == "5020"
+        assert sites[13]["status"] == "detected"   # only the named site moved
+        # persisted, and the worklist rollup counts the act
+        row, = TestClient(create_app(settings)).get("/api/case-sessions").json()
+        assert row["sites"]["declared"] == 1
+
+    def test_re_declaring_a_different_variant_keeps_declared(self, settings):
+        (settings.data_root / "library/caps/neodent-gm/neodent-gm-6030.stl").touch()
+        client = TestClient(create_app(settings))
+        client.put("/api/case-sessions/neodent-gm/sites/4/declaration",
+                   json={"variant": "5020"})
+        body = client.put("/api/case-sessions/neodent-gm/sites/4/declaration",
+                          json={"variant": "6030"}).json()
+        sites = {v["tooth"]: v for v in body["sites"]}
+        assert sites[4]["status"] == "declared"
+        assert sites[4]["declared_variant"] == "6030"
+
+    def test_a_superseded_part_is_declarable_by_its_explicit_catalog_id(
+            self, settings):
+        # the shelf is honest, never hidden (library_catalog): an archived part
+        # enters only because a human NAMED it — by the catalog's own id
+        archive = settings.data_root / "library/caps/neodent-gm/superseded-2025-01-01"
+        archive.mkdir()
+        (archive / "neodent-gm-4010.stl").touch()
+        client = TestClient(create_app(settings))
+        body = client.put("/api/case-sessions/neodent-gm/sites/4/declaration",
+                          json={"variant": "superseded-2025-01-01--4010"}).json()
+        sites = {v["tooth"]: v for v in body["sites"]}
+        assert sites[4]["declared_variant"] == "superseded-2025-01-01--4010"
+
+    def test_the_variant_is_validated_against_the_effective_system(self, settings):
+        # after a system switch the OLD system's variants are strangers: the
+        # validation corpus follows the session's declared system, not the suggestion
+        caps = settings.data_root / "library/caps/astra-ev"
+        caps.mkdir(parents=True)
+        (caps / "astra-ev-3010.stl").touch()
+        client = TestClient(create_app(settings))
+        client.put("/api/case-sessions/neodent-gm/system",
+                   json={"model": "astra-ev"})
+        res = client.put("/api/case-sessions/neodent-gm/sites/4/declaration",
+                         json={"variant": "5020"})   # a neodent-gm part
+        assert res.status_code == 422
+        assert "not a part of the 'astra-ev' library" in res.json()["detail"]
+        ok = client.put("/api/case-sessions/neodent-gm/sites/4/declaration",
+                        json={"variant": "3010"})
+        assert ok.status_code == 200
+
+
 class TestWriteConflicts:
     """The store's CAS surfaced at the endpoints (slice 5a): every mutating route
     fresh-loads, mutates, saves — and on a conflict retries ONCE on a fresh document
@@ -475,6 +669,10 @@ class TestStatusesAreNeverClientWritable:
     ACTION_ALLOWLIST = {
         ("POST", "/api/case-sessions/{case_id}/detect"),   # compute trigger, no body
         ("PUT", "/api/case-sessions/{case_id}/choices"),   # operator acts (plan §4)
+        ("PUT", "/api/case-sessions/{case_id}/system"),    # case-scoped system (AM-8)
+        # the per-site variant declaration (AM-8) — the status move it causes is the
+        # machine's (bff/status.py), never a field in this body
+        ("PUT", "/api/case-sessions/{case_id}/sites/{tooth}/declaration"),
     }
     STATUS_SHAPED = {"status", "state", "verdict", "gate", "flagged", "ready",
                      "confirmed"}

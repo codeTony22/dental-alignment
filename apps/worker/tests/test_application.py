@@ -27,7 +27,8 @@ import pytest
 from case_prep.application.cases import CaseRecord, discover_cases
 from case_prep.application.catalog import (UnknownSelection, construction_parts,
                                            library_groups, relief_ceiling,
-                                           require_construction)
+                                           require_construction,
+                                           require_library_model, require_variant)
 
 REAL = Path(__file__).resolve().parents[1] / "data" / "real"
 real_only = pytest.mark.skipif(not (REAL / "library").is_dir(),
@@ -150,6 +151,67 @@ class TestRequireConstruction:
         root = _tree(tmp_path)
         with pytest.raises(UnknownSelection):
             require_construction(root, "../caps/neodent-gm/neodent-gm-5020.stl")
+
+
+class TestRequireLibraryModel:
+    """Slice 5a's system declaration reads through this door: an implant SYSTEM is a
+    top-level directory NAME under library/caps — the demo's ``_library_for`` membership
+    rule, without loading a single mesh (the check must stay cheap; declaring a system
+    happens before any physics is wanted)."""
+
+    def test_a_real_caps_model_passes(self, tmp_path):
+        require_library_model(_tree(tmp_path), "neodent-gm")   # no raise, no return
+
+    def test_an_unknown_system_is_refused_in_one_sentence(self, tmp_path):
+        with pytest.raises(UnknownSelection, match="unknown implant system"):
+            require_library_model(_tree(tmp_path), "no-such-system")
+
+    def test_a_legacy_shelf_directory_is_not_a_system(self, tmp_path):
+        # *-library legacy dirs are honestly LISTED by the catalog but are not
+        # caps models — a run could never load them as a system
+        root = _tree(tmp_path)
+        legacy = root / "old-parts-library"
+        legacy.mkdir()
+        (legacy / "old-parts-library-4040.stl").touch()
+        with pytest.raises(UnknownSelection, match="unknown implant system"):
+            require_library_model(root, "old-parts-library")
+
+    def test_a_traversal_string_is_just_another_unknown(self, tmp_path):
+        with pytest.raises(UnknownSelection):
+            require_library_model(_tree(tmp_path), "../construction")
+
+
+class TestRequireVariant:
+    """Slice 5a's per-site declaration validates the variant against the EFFECTIVE
+    system's catalog — by the catalog's own entry id, so archived parts stay
+    declarable exactly one explicit name at a time (never by widening a glob)."""
+
+    def test_a_current_part_passes_by_its_plain_variant_id(self, tmp_path):
+        root = _tree(tmp_path)
+        (root / "library/caps/neodent-gm/neodent-gm-5020.stl").touch()
+        require_variant(root, "neodent-gm", "5020")   # no raise
+
+    def test_a_superseded_part_passes_by_its_explicit_catalog_id(self, tmp_path):
+        root = _tree(tmp_path)
+        archive = root / "library/caps/neodent-gm/superseded-2025-01-01"
+        archive.mkdir()
+        (archive / "neodent-gm-4010.stl").touch()
+        require_variant(root, "neodent-gm", "superseded-2025-01-01--4010")
+
+    def test_an_unknown_variant_is_refused_in_the_catalog_sentence(self, tmp_path):
+        root = _tree(tmp_path)
+        (root / "library/caps/neodent-gm/neodent-gm-5020.stl").touch()
+        with pytest.raises(UnknownSelection,
+                           match="not a part of the 'neodent-gm' library"):
+            require_variant(root, "neodent-gm", "9999")
+
+    def test_the_check_is_scoped_to_the_named_model(self, tmp_path):
+        # another system's variant is a stranger here — ids belong to ONE catalog
+        root = _tree(tmp_path)
+        (root / "library/caps/neodent-gm/neodent-gm-5020.stl").touch()
+        (root / "library/caps/neodent/neodent-3510.stl").touch()
+        with pytest.raises(UnknownSelection):
+            require_variant(root, "neodent-gm", "3510")
 
 
 @real_only

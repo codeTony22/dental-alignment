@@ -131,6 +131,11 @@ class CaseSession(BaseModel):
     version: int = 0
     # phase-2 carries a tenant on every case from day one (grill AM-3)
     tenant_id: str = "local"
+    # the case-scoped implant SYSTEM (plan §4 Declare / AM-8): the operator's explicit
+    # case-level act, None until declared (the detail falls back to the case's
+    # suggestion and SAYS which one it served). Switching it resets every site —
+    # enforced by the system route through bff/status.py, never assumed here.
+    system: Optional[str] = None
     # keyed by tooth number as a string (JSON object keys are strings; kept honest here)
     sites: Dict[str, SiteSession] = Field(default_factory=dict)
     # worker facts, persisted by the detect route; None = detection has not run yet

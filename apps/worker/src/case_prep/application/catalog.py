@@ -70,6 +70,35 @@ def require_construction(data_root: Path, construction_path: str) -> Path:
     return resolved
 
 
+def require_library_model(data_root: Path, model: str) -> None:
+    """Refuse any implant SYSTEM that is not a top-level directory NAME under
+    ``library/caps`` — the demo's ``_library_for`` membership rule (its first check,
+    same sentence), split out so slice 5a's system declaration can ask WITHOUT loading
+    a single mesh: declaring a system happens before any physics is wanted, and a
+    directory-name check keeps the traversal refusal (a name carries no separator)
+    while costing one ``iterdir``. Legacy ``*-library`` shelves are honestly LISTED by
+    the catalog but are not caps models — a run could never load one as a system."""
+    caps_root = Path(data_root) / "library/caps"
+    known = ({d.name for d in caps_root.iterdir() if d.is_dir()}
+             if caps_root.is_dir() else set())
+    if model not in known:
+        raise UnknownSelection(f"unknown implant system {model!r} — pick one of the "
+                               f"systems the library catalog lists")
+
+
+def require_variant(data_root: Path, model: str, variant: str) -> None:
+    """Refuse any variant that is not an entry of the named system's catalog — by the
+    catalog's own entry id (adapters/library_catalog), so archived parts stay
+    declarable exactly one explicit name at a time and nothing resolves by glob or
+    path join. Judges the MODEL first (same door as ``require_library_model``): a
+    legacy shelf's entries must not slip in under a model name no run could load."""
+    data = Path(data_root)
+    require_library_model(data, model)
+    if library_catalog.catalog_mesh_path(data, model, variant) is None:
+        raise UnknownSelection(f"{variant!r} is not a part of the {model!r} library "
+                               f"— pick a variant the library catalog lists")
+
+
 @lru_cache(maxsize=16)
 def _construction_mesh(path_str: str) -> trimesh.Trimesh:
     """The vendor part's mesh, parsed once per process (multi-MB CAD files)."""

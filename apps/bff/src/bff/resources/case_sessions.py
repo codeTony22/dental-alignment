@@ -34,12 +34,14 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from case_prep.application.cases import CaseRecord, discover_cases
 from case_prep.application.catalog import (UnknownSelection, construction_parts,
                                            DEFAULT_GINGIVAL_OFFSET_MM, library_groups,
-                                           relief_ceiling, require_construction)
+                                           relief_ceiling, require_construction,
+                                           require_library_model, require_variant)
 from case_prep.application.detection import DetectionResult, ScanUnreadable, detect
 
+from .. import status
 from ..config import Settings
 from ..session import (CaseChoices, CaseSession, DetectedProposal, DetectionRecord,
-                       SessionConflict, SessionStore, SiteStatus)
+                       SessionConflict, SessionStore, SiteSession, SiteStatus)
 
 router = APIRouter(prefix="/api/case-sessions", tags=["case-sessions"])
 
@@ -146,6 +148,16 @@ class ReliefCeilingView(BaseModel):
     error: Optional[str] = None
 
 
+class SystemView(BaseModel):
+    """WHICH implant system the case is working against (plan §4 Declare / AM-8): the
+    session's case-scoped declaration when one exists, else the case's non-binding
+    suggestion — and ``source`` says which, so the UI can render its "suggested" tag
+    from a server fact instead of comparing fields itself."""
+
+    effective_model: Optional[str]
+    source: str   # "declared" | "suggested" | "none"
+
+
 class SessionView(BaseModel):
     tenant_id: str
     adjust_visited: bool
@@ -157,6 +169,7 @@ class SessionView(BaseModel):
 class CaseSessionDetail(BaseModel):
     case: CaseView
     sites: List[SiteView]
+    system: SystemView
     catalog: CatalogView
     relief_ceilings: List[ReliefCeilingView]
     detection: Optional[DetectionView]
@@ -216,6 +229,29 @@ class ChoicesIn(BaseModel):
         return float(v)
 
 
+class SystemIn(BaseModel):
+    """The case-scoped implant SYSTEM (plan §4 Declare / AM-8) — one required name.
+    Membership is judged in the handler through ``application.catalog.
+    require_library_model`` (it needs the data tree; the refusal sentence has one
+    home there). The reset a switch causes is a handler DERIVATION through
+    bff/status.py — deliberately not expressible in this body."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model: str
+
+
+class DeclarationIn(BaseModel):
+    """The per-site variant declaration (plan §4 Declare / AM-8) — one required
+    catalog entry id. Membership against the EFFECTIVE system's library is judged in
+    the handler (``require_variant``); the detected→declared move it causes is the
+    status machine's, never a field here."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    variant: str
+
+
 # --- derivations ------------------------------------------------------------------------
 
 def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
@@ -259,16 +295,32 @@ def _run_state(session: CaseSession) -> str:
     return session.run.state if session.run is not None else "none"
 
 
+def _effective_model(case: CaseRecord, session: CaseSession) -> Optional[str]:
+    """The system the case works against: the operator's case-scoped declaration
+    first, the case's non-binding suggestion else (plan §4 Declare / AM-8)."""
+    return session.system or case.suggested_model
+
+
+def _system_view(case: CaseRecord, session: CaseSession) -> SystemView:
+    if session.system is not None:
+        return SystemView(effective_model=session.system, source="declared")
+    if case.suggested_model is not None:
+        return SystemView(effective_model=case.suggested_model, source="suggested")
+    return SystemView(effective_model=None, source="none")
+
+
 def _ceilings(case: CaseRecord, session: CaseSession, sites: List[SiteView],
               settings: Settings) -> List[ReliefCeilingView]:
     """One ceiling per DECLARED variant (session first, curated suggestion else), read
     against the CHOSEN construction part the moment one is chosen (plan §4: the relief
     input lives beside its ceiling at Intake, so the ceiling must follow the operator's
-    pick, not the name-matched suggestion). The SYSTEM stays the case's suggestion until
-    Declare's system bar exists (slice 5a). Without a system+construction there is
-    nothing meaningful to measure — the list is honestly empty, never guessed."""
+    pick, not the name-matched suggestion) and the EFFECTIVE system (the case-scoped
+    declaration since slice 5a, the suggestion else). Without a system+construction
+    there is nothing meaningful to measure — the list is honestly empty, never
+    guessed."""
     construction = session.choices.construction_path or case.suggested_construction
-    if case.suggested_model is None or construction is None:
+    model = _effective_model(case, session)
+    if model is None or construction is None:
         return []
     variants = sorted({v for v in
                        (s.declared_variant or s.suggested_variant for s in sites)
@@ -277,8 +329,7 @@ def _ceilings(case: CaseRecord, session: CaseSession, sites: List[SiteView],
     for variant in variants:
         try:
             out.append(ReliefCeilingView(**relief_ceiling(
-                settings.data_root, construction,
-                case.suggested_model, variant)))
+                settings.data_root, construction, model, variant)))
         except UnknownSelection as exc:
             out.append(ReliefCeilingView(variant=variant, error=str(exc)))
     return out
@@ -326,6 +377,7 @@ def _detail(case: CaseRecord, session: CaseSession,
             suggested_construction=case.suggested_construction,
         ),
         sites=sites,
+        system=_system_view(case, session),
         catalog=CatalogView(
             groups=library_groups(settings.data_root),
             constructions=construction_parts(settings.data_root),
@@ -496,6 +548,87 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
             jaw=body.jaw,
             gingival_offset_mm=body.gingival_offset_mm,
         )
+
+    session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
+@router.put("/{case_id}/system", response_model=CaseSessionDetail)
+def put_system(case_id: str, body: SystemIn, request: Request) -> CaseSessionDetail:
+    """Declare the case-scoped implant SYSTEM (plan §4 Declare / AM-8).
+
+    Switching the model is the explicit case-level act that resets every site: a
+    variant id belongs to ONE system's catalog, so every declared variant drops and
+    every site regresses to detected — the demo's ``librarySelection.withModel``
+    semantics (librarySelection.ts:96-103) REIMPLEMENTED server-side, because the
+    state lives in the session now and the client only displays what came back
+    (ledger NOTE row: a semantic port, not a code copy). Same-model PUTs — including
+    pinning the suggestion as an explicit act — reset nothing, which is withModel's
+    own equality guard. Retry-or-409 posture: the mutation re-derives the reset from
+    each fresh load, so a retry is exact; a second conflict is the 409.
+    """
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+    try:
+        require_library_model(settings.data_root, body.model)
+    except UnknownSelection as exc:
+        raise HTTPException(422, str(exc))
+
+    def apply(session: CaseSession) -> None:
+        if body.model != _effective_model(case, session):
+            for site in session.sites.values():
+                site.status = status.regress_to_detected(site.status)
+                site.declared_variant = None
+        session.system = body.model
+
+    session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
+@router.put("/{case_id}/sites/{tooth}/declaration", response_model=CaseSessionDetail)
+def put_declaration(case_id: str, tooth: int, body: DeclarationIn,
+                    request: Request) -> CaseSessionDetail:
+    """Declare a site's cap variant (plan §4 Declare / AM-8) — the act that moves the
+    site detected→declared, THROUGH the status machine (bff/status.py).
+
+    Validation corpus (plan §6/AM-9): the tooth must be a site the case actually has
+    (404 — the path names a missing subresource); the variant must be an entry of the
+    EFFECTIVE system's catalog, by the catalog's own id (422 in the catalog's words —
+    archived parts enter one explicit name at a time, the demo's ``_library_for``
+    rule, reached through ``application.catalog.require_variant``).
+
+    A re-declaration of a different variant KEEPS declared and clears every
+    later-ladder fact about the old part — trivially true today (no such facts exist
+    until 5b's previews and review ticks), but the rule lives here NOW so later
+    slices clear their facts at this stated boundary instead of rediscovering it.
+    A re-declaration of the SAME variant changes nothing at all. Retry-or-409: the
+    transition re-derives from each fresh load; a second conflict is the 409.
+    """
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+    session = store.load(case_id)
+    known_teeth = ({int(s["tooth"]) for s in case.suggested_sites}
+                   | {int(k) for k in session.sites})
+    if tooth not in known_teeth:
+        raise HTTPException(404, f"tooth {tooth} is not a site on case {case_id!r}")
+    model = _effective_model(case, session)
+    if model is None:
+        raise HTTPException(422, f"case {case_id!r} has no implant system yet — "
+                                 f"declare the implant system before declaring "
+                                 f"variants")
+    try:
+        require_variant(settings.data_root, model, body.variant)
+    except UnknownSelection as exc:
+        raise HTTPException(422, str(exc))
+
+    def apply(session: CaseSession) -> None:
+        site = session.sites.get(str(tooth), SiteSession())
+        if site.declared_variant != body.variant:
+            site.status = status.declare(site.status)
+            site.declared_variant = body.variant
+            # later-ladder facts (5b previews, review ticks; 5c run caches) clear
+            # HERE when they exist — the declaration is the reset boundary.
+        session.sites[str(tooth)] = site
 
     session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)
