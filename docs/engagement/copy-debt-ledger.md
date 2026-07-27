@@ -12,9 +12,10 @@ row moves to Retired.
 | 2 | Catalog reads (library groups, constructions, relief ceiling) as refusal-raising functions | server.py endpoint bodies | case_prep/application/catalog.py | 200 | slice 1 (`5c7c4b8`) | demo retirement |
 | 3 | Viewer stack (verifyScene, VerifyViewer, sceneController, partFrame, meshCrop, deviationColormap, siteRouting, anatomyOrientation, palette, scanPositions, Viewer3D) + their 5 test files, plus a 13-line domain/types Vec3 subset | apps/web/src/viewer + domain/types.ts | packages/viewer/src | measured 4,698 / 16 files (as landed 4,771 — divergences below) | slice 3 (`3487c16`) | demo retirement |
 | 4 | Server-side validation corpus (catalog membership, explicit-selection 422, relief bounds, point caps, ±45°, 15mm, ≤8 pairs, lever arm, diameter bounds) — copied VERBATIM then EXTENDED with coordinate finiteness | server.py request models | bff request models | 300 | recording STARTED slice 4 (see row 4 record); remainder slices 5a-8 (AM-9) | demo retirement |
-| 5 | Remaining application lift (explicit-selection gate, adjust-tool judging) | server.py:893-916, 1259-2324 | case_prep/application/* | 600 | slices 5c-6 (planned) | demo retirement |
+| 5 | Remaining application lift (adjust-tool judging) | server.py:1259-2324 | case_prep/application/* | 450 | slice 6 (planned) | demo retirement |
 | 6 | Detection + capture assembly (propose orchestration; crowns-frame capture context; centre+radius precedence; per-proposal + curated-site capture blocks) | server.py:733-853 (`_capture_context`, `_capture_block`, `_site_capture_inputs`, `_with_capture`, `_run_sites_capture`, `POST /propose`; 856+ is `_append_run_history`, NOT lifted) | case_prep/application/detection.py | 120 | slice 4 | demo retirement |
 | 7 | Pre-run preview: the deviation payload builder + the one-site preview seat | server.py:1038 (`_DEVIATION_ROUND`), 1068-1156 (`_deviation_payload`), 1176-1257 (`_PREVIEW_DIRNAME` + `preview_site_alignment`) | case_prep/application/preview.py | 170 | slice 5b | demo retirement |
+| 8 | The full run: explicit-selection gate + run orchestration (everything on: product, QC, confidence, package emission) | server.py:893-916 (`_required_selection`), 933-1011 (`POST /run`) | case_prep/application/run.py | 150 | slice 5c | demo retirement |
 
 Rules:
 - A new copy lands ONLY with a row here, in the same commit.
@@ -146,7 +147,32 @@ Row 6 record (slice 4, 2026-07-27) — divergences, per the rules above:
 - Row 5's range shrank accordingly (capture assembly 741-830 + propose 832-853 moved
   here); the explicit-selection gate stays row 5 at its true lines (893-916).
 
+Row 8 record (slice 5c, 2026-07-27) — divergences, per the rules above:
+- `_required_selection` (893-916) → `run._require_selection`: sentence, field naming
+  and suggestion hint VERBATIM (the product client renders these words); the demo's
+  `HTTPException(422, ...)` becomes `RunRefused` raised — job-shaped callers cannot
+  422, so every refusal travels as words on the port's REFUSED state. Row 5 narrowed
+  accordingly (the gate leaves it; adjust-tool judging 1259-2324 remains).
+- Run orchestration (933-1011) → `run.run_case`: same `run_auto_case` call with
+  everything ON (generate_product/render_qc/compute_confidence/emit_package — plan
+  §1.2: the worker emits at run time; disclosure gates later). Deliberately NOT
+  copied: the serve-time cache + `run.json` reuse (`_run_cache_key`, `_cache` —
+  product runs land in immutable run dirs, a re-run is a NEW run_id per AM-1), the
+  run-history append, the `selection`/`files_base`/`duration_s` response shaping
+  (the BFF owns transport), and the per-response capture blocks (Intake's detect
+  owns capture in the product). `proposals=None` for now: the human-vs-machine
+  `auto_delta_mm` compare returns with a later slice (the row key stays, reads None).
+- `out_dir` is THE CALLER'S run directory — a parameter; application code names no
+  reports path (AM-1 immutability is enforced one layer up, in
+  `bff/ports/worker.InProcessWorker`, which refuses an existing run dir before any
+  physics runs and leaves `refusal.json` as a refused run's whole content).
+- Fidelity pinned READ-ONLY: worker test_run.py compares the summary/row/verdict
+  key-sets and the package file list against the demo's EXISTING warmed
+  `reports/live-demo/neodent-gm/run.json` for the same selection — never by
+  re-running the demo endpoint (which would emit into the frozen data plane).
+
 Carried-forward minors (grill of slices 0b/1, 2026-07-26):
 - Tie `bff/session.py` RunSession.state to `ports/worker.py` JobState (one test or derive the
-  Literal) — due slice 5c.
+  Literal) — due slice 5c. DONE (slice 5c, 2026-07-27): test_worker_port.TestStateTie
+  asserts the Literal's args equal the enum's values, both directions.
 - This ledger existing satisfies the second minor.
