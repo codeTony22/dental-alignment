@@ -36,7 +36,8 @@ from case_prep.domain.acceptance import evaluate_acceptance
 from ..config import Settings
 from ..evidence import canonical_bundle, qc_image_hashes, write_bundle
 from ..session import (CaseSession, ConfirmationRecord, PaymentRecord,
-                       ReleaseRecord, RunSession, SessionStore)
+                       ReleaseRecord, RunSession, SessionConflict, SessionStore,
+                       release_matches_confirmation, released_teeth_of)
 from .case_sessions import (CaseSessionDetail, _case_or_404, _context, _detail,
                             _mutate_session)
 
@@ -141,14 +142,17 @@ def _qc_image_names(run: RunSession) -> List[str]:
     return [name for name in run.package_files if name.endswith(_QC_SUFFIX)]
 
 
-def _site_qc_images(run: RunSession, tooth: int) -> List[str]:
+def _site_qc_images(run: RunSession, case_id: str, tooth: int) -> List[str]:
     """This site's QC images by the pipeline's own naming (``<case>-<tooth>-*.png``,
-    qc_render.py) — the ``-<tooth>-`` segment match cannot confuse tooth 4 with 41."""
-    marker = f"-{tooth}-"
-    return sorted(n for n in _qc_image_names(run) if marker in n)
+    qc_render.py) — attributed by the same ANCHORED rule as the artifact gate
+    (``_tooth_of_file``): a bare ``-<tooth>-`` substring scan mis-filed another
+    site's evidence whenever the case id itself ends in a tooth number."""
+    return sorted(n for n in _qc_image_names(run)
+                  if _tooth_of_file(n, case_id, [tooth]) == tooth)
 
 
-def _assurance_site(row: dict, session: CaseSession, run: RunSession) -> AssuranceSite:
+def _assurance_site(row: dict, session: CaseSession, run: RunSession,
+                    case_id: str) -> AssuranceSite:
     tooth = int(row.get("tooth", -1))
     site = session.sites.get(str(tooth))
     clocking = row.get("clocking") if isinstance(row.get("clocking"), dict) else {}
@@ -184,7 +188,7 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession) -> Assuran
             clamped=bool(production.get("clamped")),
             reason=production.get("clamp_reason"),
         ),
-        qc_images=_site_qc_images(run, tooth),
+        qc_images=_site_qc_images(run, case_id, tooth),
         references={key: metrics[key] for key in _REFERENCE_KEYS if key in metrics},
     )
 
@@ -206,7 +210,7 @@ def derive_assurance(case: CaseRecord, session: CaseSession) -> AssuranceView:
     seal covers can never diverge). Pure over the session given."""
     run = _require_done_run(session, case.id)
     summary = run.summary or {}
-    sites = [_assurance_site(row, session, run)
+    sites = [_assurance_site(row, session, run, case.id)
              for row in (summary.get("sites") or [])]
     return AssuranceView(
         case_id=case.id,
@@ -332,6 +336,33 @@ def _run_dir(settings: Settings, case_id: str, run: RunSession) -> Path:
     return settings.product_root / case_id / "runs" / (run.run_id or run.job_id)
 
 
+def _mutate_signing(store: SessionStore, case_id: str, mutate, act: str,
+                    record_of):
+    """The SIGNING acts' write path — confirm and release — deliberately NOT
+    ``_mutate_session``: that helper retries a CAS loss on a fresh document, which
+    is right for commutative acts (a choices write beside a slow detect loses
+    neither) and WRONG for a signature — re-applying it over a rival's write
+    erases the rival's record while both operators hold a 200: two winners with
+    contradictory receipts. Here a CAS loss refuses outright (one winner), and
+    when the rival write WAS the same kind of signing record, the 409 names whose
+    act landed first so the loser re-reads deliberately instead of guessing.
+    ``record_of`` picks the record this act signs (session→record), compared
+    before/after the loss to tell a rival signature from an unrelated write."""
+    session = store.load(case_id)
+    before = record_of(session)
+    mutate(session)
+    try:
+        store.save(session)
+        return session
+    except SessionConflict as exc:
+        rival = record_of(store.load(case_id))
+        landed = (f" — {rival.operator}'s {act} landed first"
+                  if rival is not None and rival != before else "")
+        raise HTTPException(409, f"{exc}{landed}; nothing was recorded for this "
+                                 f"{act} — re-read the case and repeat the act "
+                                 f"over what is actually there now")
+
+
 def _derive_evidence_sha(case: CaseRecord, session: CaseSession,
                          settings: Settings, run: RunSession) -> str:
     """The re-derivation both release and the artifact gate stand on (plan §4:
@@ -353,12 +384,20 @@ def _summary_teeth(run: RunSession) -> List[int]:
     return [int(r.get("tooth")) for r in (summary.get("sites") or [])]
 
 
-def _tooth_of_file(name: str, teeth: List[int]) -> Optional[int]:
-    """The summary's tooth-file naming: per-tooth files carry ``-<tooth>-`` (the
-    pipeline's own construction, e.g. ``neodent-gm-4-healingcap-aligned.stl``);
-    files without a tooth marker are case-level."""
+def _tooth_of_file(name: str, case_id: str, teeth: List[int]) -> Optional[int]:
+    """File→site attribution, ANCHORED to the pipeline's own construction: every
+    per-tooth file the worker emits is ``f"{case_id}-{tooth}-…"`` (adapters/
+    output_package.py — caps, scan bodies, sidecars, QC renders alike), so a file
+    belongs to tooth ``t`` exactly when it starts with ``f"{case_id}-{t}-"``. At
+    most one tooth can match (tooth numbers carry no dash), so the answer cannot
+    depend on the order ``teeth`` arrives in. The previous anywhere-substring scan
+    attributed by ascending-tooth luck: an operator-typed case id ending in
+    ``-4`` claimed every other tooth's file for tooth 4 — a disclosure hazard at
+    the artifact gate (AM-1), not a cosmetic one. Anything unanchored is
+    case-wide, and case-wide files ship only when NO site is withheld
+    (``_split_released_files``)."""
     for tooth in teeth:
-        if f"-{tooth}-" in name:
+        if name.startswith(f"{case_id}-{tooth}-"):
             return tooth
     return None
 
@@ -443,7 +482,8 @@ def confirm_case(case_id: str, body: ConfirmIn, request: Request,
             acknowledged_flags=list(body.acknowledged_flags),
         )
 
-    session = _mutate_session(store, case_id, apply)
+    session = _mutate_signing(store, case_id, apply, "confirmation",
+                              lambda s: s.confirmation)
     return _detail(case, session, settings)
 
 
@@ -510,12 +550,13 @@ def release_case(case_id: str, request: Request,
             operator=operator, at=_now(),
             run_id=run.run_id or run.job_id,
             evidence_sha256=confirmation.evidence_sha256,
-            released_teeth=sorted(int(t) for t, act
-                                  in confirmation.dispositions.items()
-                                  if act == "release"),
+            # the ONE shared derivation (session.released_teeth_of): the gate and
+            # the display half must read the identical set off the same map
+            released_teeth=released_teeth_of(confirmation.dispositions),
         )
 
-    session = _mutate_session(store, case_id, apply)
+    session = _mutate_signing(store, case_id, apply, "release",
+                              lambda s: s.release)
     return _detail(case, session, settings)
 
 
@@ -528,6 +569,9 @@ class ArtifactsView(BaseModel):
     # excluded (they stay open, not shipped)
     files: List[str]
     withheld_teeth: List[int]
+    # the case-wide files held back BECAUSE sites are withheld (empty on a full
+    # release) — the list tells the whole truth about what did not ship and why
+    withheld_case_files: List[str] = Field(default_factory=list)
 
 
 def _require_valid_release(case: CaseRecord, session: CaseSession,
@@ -535,8 +579,12 @@ def _require_valid_release(case: CaseRecord, session: CaseSession,
     """The artifact gate (AM-1's second class), enforced AT THE ENDPOINT — screen
     order in a presentational app is not a control. Refuses 409 stating exactly
     what is missing; validity means: done current run, a release record naming
-    THAT run, and evidence that still re-derives to the sha the release sealed
-    (post-release drift closes the door again until re-confirm + re-release)."""
+    THAT run, a release that still covers the CURRENT confirmation
+    (``release_matches_confirmation`` — dispositions live outside the evidence
+    hash, so a re-confirmed withhold moves no sha and must be caught on the
+    records themselves), and evidence that still re-derives to the sha the
+    release sealed (post-release drift closes the door again until re-confirm +
+    re-release)."""
     run = _require_done_run_for_act(session, case.id, "disclose artifacts for")
     release = session.release
     if release is None or release.run_id != (run.run_id or run.job_id):
@@ -545,6 +593,14 @@ def _require_valid_release(case: CaseRecord, session: CaseSession,
                                  f"current run: confirm over the assurance "
                                  f"evidence, authorize payment (stub), then "
                                  f"release")
+    if not release_matches_confirmation(session):
+        # the operator's newest signed act wins: a withhold confirmed AFTER the
+        # release retires it, and disclosure waits for an explicit re-release
+        raise HTTPException(409, "the confirmation changed after release — the "
+                                 "release no longer covers the operator's "
+                                 "current dispositions; disclosure is closed "
+                                 "until an explicit re-release over the current "
+                                 "confirmation")
     current_sha = _derive_evidence_sha(case, session, settings, run)
     if current_sha != release.evidence_sha256:
         raise HTTPException(409, "the evidence changed after release — disclosure "
@@ -553,12 +609,32 @@ def _require_valid_release(case: CaseRecord, session: CaseSession,
     return run, release
 
 
-def _released_files(run: RunSession, release: ReleaseRecord) -> List[str]:
+def _split_released_files(run: RunSession, release: ReleaseRecord,
+                          case_id: str) -> Tuple[List[str], List[str]]:
+    """The released set and the case-wide files held back, package order kept.
+
+    A file attributed to a tooth ships iff that tooth is released. A file
+    attributed to NO tooth is case-wide, and case-wide files ship only when no
+    site is withheld — fail-closed by construction: the worker's own notes say
+    the overlay merges ALL aligned components and the manifest carries every
+    site's row and file hashes (adapters/output_package.py), and any case-wide
+    file this gate has never heard of gets the same benefit of NO doubt. A
+    partial release ships exactly the released sites' own files (AM-1: release
+    = disclosure, and a withheld site's geometry must not ride out inside an
+    aggregate)."""
     teeth = _summary_teeth(run)
     withheld = set(teeth) - set(release.released_teeth)
-    return [name for name in run.package_files
-            if not name.endswith(_QC_SUFFIX)
-            and _tooth_of_file(name, teeth) not in withheld]
+    files: List[str] = []
+    held_case_files: List[str] = []
+    for name in run.package_files:
+        if name.endswith(_QC_SUFFIX):
+            continue   # EVIDENCE class — never an artifact
+        tooth = _tooth_of_file(name, case_id, teeth)
+        if tooth is None and withheld:
+            held_case_files.append(name)
+        elif tooth not in withheld:
+            files.append(name)
+    return files, held_case_files
 
 
 _ARTIFACT_MEDIA = {".stl": "model/stl", ".json": "application/json",
@@ -577,9 +653,11 @@ def list_artifacts(case_id: str, request: Request,
     session = store.load(case_id)
     run, release = _require_valid_release(case, session, settings)
     withheld = sorted(set(_summary_teeth(run)) - set(release.released_teeth))
+    files, held_case_files = _split_released_files(run, release, case.id)
     return ArtifactsView(run_id=run.run_id or run.job_id,
-                         files=_released_files(run, release),
-                         withheld_teeth=withheld)
+                         files=files,
+                         withheld_teeth=withheld,
+                         withheld_case_files=held_case_files)
 
 
 @router.get("/{case_id}/runs/current/artifacts/{filename}")
@@ -603,11 +681,23 @@ def fetch_artifact(case_id: str, filename: str, request: Request,
         raise HTTPException(403, f"{filename!r} is a QC image — evidence, not a "
                                  f"deliverable; it serves ungated from the qc "
                                  f"endpoint")
-    tooth = _tooth_of_file(filename, _summary_teeth(run))
-    if tooth is not None and tooth not in release.released_teeth:
+    teeth = _summary_teeth(run)
+    withheld = sorted(set(teeth) - set(release.released_teeth))
+    tooth = _tooth_of_file(filename, case_id, teeth)
+    if tooth is not None and tooth in withheld:
         raise HTTPException(403, f"tooth {tooth} is withheld — its site stays "
                                  f"open and its files are not part of the "
                                  f"released set")
+    if tooth is None and withheld:
+        # fail-closed (AM-1): a case-wide file may aggregate every site — the
+        # overlay merges all aligned components, the manifest carries every
+        # site's row (the worker's own notes) — so none ships while any site is
+        # withheld; the refusal names the open sites keeping it back
+        raise HTTPException(403, f"{filename!r} is a case-wide file and sites "
+                                 f"are withheld ("
+                                 + ", ".join(f"tooth {t}" for t in withheld)
+                                 + ") — case-wide files aggregate every site, "
+                                   "so they release only when every site does")
     path = _run_dir(settings, case_id, run) / filename
     if not path.is_file():
         raise HTTPException(404, f"artifact {filename!r} is missing from the run "

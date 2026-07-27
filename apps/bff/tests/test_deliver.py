@@ -113,7 +113,8 @@ class TestOperatorIdentity:
         ("POST", "/api/case-sessions/neodent-gm/payment"),
         ("POST", "/api/case-sessions/neodent-gm/release"),
         ("GET", "/api/case-sessions/neodent-gm/runs/current/artifacts"),
-        ("GET", "/api/case-sessions/neodent-gm/runs/current/artifacts/view.html"),
+        ("GET", "/api/case-sessions/neodent-gm/runs/current/artifacts/"
+                "neodent-gm-4-healingcap-aligned.stl"),
     ])
     def test_every_gating_endpoint_requires_the_operator(
             self, settings, product_root, method, path):
@@ -400,7 +401,8 @@ class TestConfirmThenChangeThenRelease:
 class TestArtifactsAreGated:
     @pytest.mark.parametrize("path", [
         "/api/case-sessions/neodent-gm/runs/current/artifacts",
-        "/api/case-sessions/neodent-gm/runs/current/artifacts/cap-4-aligned.stl",
+        "/api/case-sessions/neodent-gm/runs/current/artifacts/"
+        "neodent-gm-4-healingcap-aligned.stl",
     ])
     def test_no_release_no_disclosure_with_the_missing_pieces_named(
             self, settings, product_root, path):
@@ -454,32 +456,67 @@ class TestArtifactsDisclose:
         body = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts",
                           headers=OPERATOR).json()
         assert body["run_id"]
-        assert body["files"] == ["cap-4-aligned.stl", "cap-13-aligned.stl",
+        assert body["files"] == ["neodent-gm-4-healingcap-aligned.stl",
+                                 "neodent-gm-13-healingcap-aligned.stl",
+                                 "neodent-gm-upper-overlay.stl",
+                                 "neodent-gm-manifest.json",
+                                 "neodent-gm-upper.stl",
                                  "view.html"]
         assert body["withheld_teeth"] == []
+        # a full release ships the case-wide files: nothing withheld, nothing held
+        assert body["withheld_case_files"] == []
 
-    def test_withheld_sites_files_are_excluded_from_the_list(
+    def test_withholding_a_site_withholds_every_case_wide_file_too(
             self, settings, product_root):
+        """The overlay merges ALL aligned components (the worker's own note,
+        output_package.py) and the manifest carries every site's row and hashes —
+        so under a partial release NOTHING case-wide ships: only files attributed
+        to a released tooth leave, and the list names what is held and why."""
         client = self._released(settings, product_root,
                                 {"4": "release", "13": "withhold"})
         body = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts",
                           headers=OPERATOR).json()
-        assert body["files"] == ["cap-4-aligned.stl", "view.html"]
+        assert body["files"] == ["neodent-gm-4-healingcap-aligned.stl"]
         assert body["withheld_teeth"] == [13]
+        assert body["withheld_case_files"] == ["neodent-gm-upper-overlay.stl",
+                                               "neodent-gm-manifest.json",
+                                               "neodent-gm-upper.stl",
+                                               "view.html"]
+
+    def test_a_case_wide_file_refuses_its_bytes_while_any_site_is_withheld(
+            self, settings, product_root):
+        client = self._released(settings, product_root,
+                                {"4": "release", "13": "withhold"})
+        for name in ("neodent-gm-upper-overlay.stl", "neodent-gm-manifest.json",
+                     "view.html"):
+            res = client.get("/api/case-sessions/neodent-gm/runs/current/"
+                             f"artifacts/{name}", headers=OPERATOR)
+            assert res.status_code == 403, name
+            detail = res.json()["detail"]
+            assert "case-wide" in detail
+            assert "tooth 13" in detail   # the withheld site is NAMED
+
+    def test_a_full_release_serves_the_case_wide_bytes(
+            self, settings, product_root):
+        client = self._released(settings, product_root)
+        res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts/"
+                         "neodent-gm-upper-overlay.stl", headers=OPERATOR)
+        assert res.status_code == 200
+        assert res.content == b"STL:neodent-gm-upper-overlay.stl"
 
     def test_a_released_file_serves_its_bytes(self, settings, product_root):
         client = self._released(settings, product_root)
         res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts/"
-                         "cap-4-aligned.stl", headers=OPERATOR)
+                         "neodent-gm-4-healingcap-aligned.stl", headers=OPERATOR)
         assert res.status_code == 200
-        assert res.content == b"STL:cap-4-aligned.stl"
+        assert res.content == b"STL:neodent-gm-4-healingcap-aligned.stl"
 
     def test_a_withheld_sites_file_refuses_with_its_status(
             self, settings, product_root):
         client = self._released(settings, product_root,
                                 {"4": "release", "13": "withhold"})
         res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts/"
-                         "cap-13-aligned.stl", headers=OPERATOR)
+                         "neodent-gm-13-healingcap-aligned.stl", headers=OPERATOR)
         assert res.status_code == 403
         assert "withheld" in res.json()["detail"]
 
@@ -498,6 +535,187 @@ class TestArtifactsDisclose:
             res = client.get("/api/case-sessions/neodent-gm/runs/current/"
                              f"artifacts/{name}", headers=OPERATOR)
             assert res.status_code == 404, name
+
+
+# --- file→site attribution is anchored, never a substring scan -------------------------
+
+class TestToothAttribution:
+    """The gate's attribution stands on the worker's OWN construction
+    (output_package.py: every per-tooth file is ``f"{case_id}-{tooth}-…"``), so it
+    anchors on ``{case_id}-{tooth}-`` — at most one tooth can match, whatever order
+    the teeth arrive in. An anywhere-substring scan attributed by ascending-tooth
+    luck: a case id ending in ``-4`` claimed every other tooth's file."""
+
+    def test_anchoring_beats_the_ascending_order_substring_scan(self):
+        from bff.resources.deliver import _tooth_of_file
+        name = "smith-4-13-healingcap-aligned.stl"
+        assert _tooth_of_file(name, "smith-4", [4, 13]) == 13
+        assert _tooth_of_file(name, "smith-4", [13, 4]) == 13   # order-independent
+
+    def test_a_case_id_ending_in_a_tooth_number_claims_no_case_wide_file(self):
+        from bff.resources.deliver import _tooth_of_file
+        assert _tooth_of_file("smith-4-upper.stl", "smith-4", [4, 13]) is None
+        assert _tooth_of_file("smith-4-upper-overlay.stl", "smith-4",
+                              [4, 13]) is None
+        assert _tooth_of_file("smith-4-manifest.json", "smith-4", [4, 13]) is None
+
+    def test_worker_shaped_names_attribute_exactly(self):
+        from bff.resources.deliver import _tooth_of_file
+        assert _tooth_of_file("neodent-gm-4-healingcap-aligned.stl",
+                              "neodent-gm", [4, 13]) == 4
+        assert _tooth_of_file("neodent-gm-13-clockview.png",
+                              "neodent-gm", [4, 13]) == 13
+        assert _tooth_of_file("neodent-gm-upper.stl",
+                              "neodent-gm", [4, 13]) is None
+
+
+# --- a re-confirm retires the release --------------------------------------------------
+
+class TestAReconfirmRetiresTheRelease:
+    """The release record is valid only while it still covers the CURRENT
+    confirmation (plan §4: validity is re-derivation, never trust in a record).
+    Dispositions are deliberately NOT in the evidence bundle — so a re-confirm
+    that changes one moves no hash, and the gate must compare the records
+    themselves: the operator's newest signed act wins, disclosure stops until an
+    explicit re-release."""
+
+    def test_a_re_confirm_that_withholds_a_site_closes_disclosure(
+            self, settings, product_root):
+        client = confirmed_paid_client(settings, product_root)
+        assert release(client).status_code == 200
+        res = confirm(client, confirm_body({"4": "release", "13": "withhold"}))
+        assert res.status_code == 200
+        # the display half flips with the record: the rail tick is rail truth
+        assert res.json()["session"]["released"] is False
+        listing = client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts",
+            headers=OPERATOR)
+        assert listing.status_code == 409
+        assert "confirmation changed after release" in listing.json()["detail"]
+        assert "re-release" in listing.json()["detail"]
+        fetched = client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts/"
+            "neodent-gm-13-healingcap-aligned.stl", headers=OPERATOR)
+        assert fetched.status_code == 409   # the gate closes before per-file logic
+
+    def test_an_explicit_re_release_re_opens_over_the_new_dispositions(
+            self, settings, product_root):
+        client = confirmed_paid_client(settings, product_root)
+        assert release(client).status_code == 200
+        confirm(client, confirm_body({"4": "release", "13": "withhold"}))
+        assert release(client).status_code == 200
+        body = client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts",
+            headers=OPERATOR).json()
+        assert body["withheld_teeth"] == [13]
+        assert "neodent-gm-13-healingcap-aligned.stl" not in body["files"]
+
+    def test_an_identical_re_confirm_keeps_the_release_current(
+            self, settings, product_root):
+        # nothing material changed — same run, same evidence, same released set:
+        # closing the door here would punish a re-read, not protect anyone
+        client = confirmed_paid_client(settings, product_root)
+        assert release(client).status_code == 200
+        res = confirm(client)
+        assert res.status_code == 200
+        assert res.json()["session"]["released"] is True
+        assert client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts",
+            headers=OPERATOR).status_code == 200
+
+    def test_the_worklist_released_chip_unticks_with_the_retired_release(
+            self, settings, product_root):
+        client = confirmed_paid_client(settings, product_root)
+        release(client)
+        confirm(client, confirm_body({"4": "release", "13": "withhold"}))
+        (row_,) = client.get("/api/case-sessions").json()
+        assert row_["released"] is False
+
+
+# --- signing acts are one-winner -------------------------------------------------------
+
+class TestSigningActsAreOneWinner:
+    """A CAS loss on a SIGNING act never silently retries: re-applying a
+    signature over a rival's write would erase the rival's record while both
+    operators hold a 200 — two winners with contradictory receipts. The loser
+    gets a 409 that names whose act landed first; disk holds exactly the
+    winner's record."""
+
+    @staticmethod
+    def _racing_save(monkeypatch, product_root, rival_write):
+        """Arrange a rival write to land between the route's load and its save:
+        the first save through the store performs ``rival_write`` first, so the
+        route's own save loses the CAS — deterministically, no threads."""
+        orig = SessionStore.save
+        fired = {"done": False}
+
+        def save(self, session):
+            if not fired["done"]:
+                fired["done"] = True
+                rival_write(SessionStore(product_root), orig)
+            return orig(self, session)
+
+        monkeypatch.setattr(SessionStore, "save", save)
+
+    def test_a_rival_confirmation_wins_and_the_loser_is_told_who(
+            self, settings, product_root, monkeypatch):
+        from bff.session import ConfirmationRecord
+        client = deliverable_client(settings, product_root)
+        run_id = client.get("/api/case-sessions/neodent-gm/run").json()["run_id"]
+
+        def rival_write(store, orig_save):
+            rival = store.load("neodent-gm")
+            rival.confirmation = ConfirmationRecord(
+                operator="Boris Ivanov", at="2026-07-27T00:00:00+00:00",
+                run_id=run_id, evidence_sha256="0" * 64,
+                dispositions={"4": "withhold", "13": "withhold"})
+            orig_save(store, rival)
+
+        self._racing_save(monkeypatch, product_root, rival_write)
+        res = confirm(client)   # Ana's release-everything confirmation
+        assert res.status_code == 409
+        detail = res.json()["detail"]
+        assert "Boris Ivanov" in detail and "landed first" in detail
+        # ONE winner on disk: Boris's withhold-everything record stands untouched
+        record = SessionStore(product_root).load("neodent-gm").confirmation
+        assert record.operator == "Boris Ivanov"
+        assert record.dispositions == {"4": "withhold", "13": "withhold"}
+
+    def test_a_rival_release_wins_and_the_loser_is_told_who(
+            self, settings, product_root, monkeypatch):
+        from bff.session import ReleaseRecord
+        client = confirmed_paid_client(settings, product_root)
+        session = SessionStore(product_root).load("neodent-gm")
+        sha = session.confirmation.evidence_sha256
+
+        def rival_write(store, orig_save):
+            rival = store.load("neodent-gm")
+            rival.release = ReleaseRecord(
+                operator="Boris Ivanov", at="2026-07-27T00:00:00+00:00",
+                run_id=session.run.run_id, evidence_sha256=sha,
+                released_teeth=[4, 13])
+            orig_save(store, rival)
+
+        self._racing_save(monkeypatch, product_root, rival_write)
+        res = release(client)
+        assert res.status_code == 409
+        assert "Boris Ivanov" in res.json()["detail"]
+        assert SessionStore(product_root).load(
+            "neodent-gm").release.operator == "Boris Ivanov"
+
+    def test_a_non_signing_rival_still_costs_the_act_one_honest_409(
+            self, settings, product_root, monkeypatch):
+        # ANY interleaved write means the signer did not sign over what is there
+        # now — no rival to name, but the act still refuses instead of retrying
+        def rival_write(store, orig_save):
+            orig_save(store, store.load("neodent-gm"))   # a bare version bump
+
+        client = deliverable_client(settings, product_root)
+        self._racing_save(monkeypatch, product_root, rival_write)
+        res = confirm(client)
+        assert res.status_code == 409
+        assert "repeat the act" in res.json()["detail"]
+        assert SessionStore(product_root).load("neodent-gm").confirmation is None
 
 
 # --- the read models tell the chain's truth --------------------------------------------

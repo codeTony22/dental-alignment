@@ -685,11 +685,15 @@ export async function postRelease(
   );
 }
 
-/** The released deliverables: names minus QC images minus withheld sites' files. */
+/** The released deliverables: names minus QC images minus withheld sites' files.
+ * `withheld_case_files` are the case-wide files (overlay, manifest, jaw scan —
+ * anything not attributable to a single released tooth) the BFF held back
+ * BECAUSE sites are withheld; empty on a full release. */
 export interface ArtifactsView {
   run_id: string;
   files: string[];
   withheld_teeth: number[];
+  withheld_case_files: string[];
 }
 
 export async function fetchArtifacts(

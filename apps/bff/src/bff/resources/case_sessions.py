@@ -53,7 +53,7 @@ from ..config import Settings
 from ..ports.worker import JobState, WorkerPort
 from ..session import (CaseChoices, CaseSession, DetectedProposal, DetectionRecord,
                        RunSession, SessionConflict, SessionStore, SiteSession,
-                       SiteStatus)
+                       SiteStatus, release_matches_confirmation)
 
 router = APIRouter(prefix="/api/case-sessions", tags=["case-sessions"])
 
@@ -372,14 +372,17 @@ def _run_state(session: CaseSession) -> str:
 
 
 def _released(session: CaseSession) -> bool:
-    """Released is a CURRENT-run fact: the record must name the run that is still
-    current and done. The reset boundaries clear the run pointer on any change, so
-    a stale release can never report a releasable case (the artifact endpoints
-    additionally re-verify the evidence hash — this is the cheap display half)."""
+    """Released is a CURRENT-run, CURRENT-confirmation fact: the record must name
+    the run that is still current and done AND still cover the current confirmation
+    (``release_matches_confirmation`` — a re-confirm that changes a disposition
+    retires the release, because dispositions are acts outside the evidence hash).
+    The artifact endpoints additionally re-verify the evidence bytes — this is the
+    cheap display half, and the rail's deliver tick reads it."""
     return (session.release is not None
             and session.run is not None
             and session.run.state == "done"
-            and session.release.run_id == (session.run.run_id or session.run.job_id))
+            and session.release.run_id == (session.run.run_id or session.run.job_id)
+            and release_matches_confirmation(session))
 
 
 def _session_view(session: CaseSession) -> SessionView:

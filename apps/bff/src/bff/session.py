@@ -235,6 +235,32 @@ class CaseSession(BaseModel):
         return self.payment is not None and self.payment.payment_authorized
 
 
+def released_teeth_of(dispositions: Dict[str, str]) -> List[int]:
+    """The released set a disposition map implies — sorted ints (the map's keys are
+    tooth-as-string JSON keys). ONE derivation, shared by the release route (sealing
+    the record), the artifact gate and the display half: the same map must never
+    imply two different sets in two places."""
+    return sorted(int(t) for t, act in dispositions.items() if act == "release")
+
+
+def release_matches_confirmation(session: "CaseSession") -> bool:
+    """The record-consistency half of release validity (plan §4: validity is
+    re-derivation, never trust in a record). Dispositions are deliberately NOT part
+    of the evidence bundle — they are the operator's acts, not the run's facts — so
+    a re-confirm that changes one moves no evidence hash, and the artifact gate
+    must compare the records themselves: the release is valid only while it still
+    covers the CURRENT confirmation (same run, same sealed evidence, and a released
+    set equal to what the confirmation's dispositions imply NOW). A withhold signed
+    after release therefore RETIRES the release — the operator's newest signed act
+    wins, and disclosure stops until an explicit re-release."""
+    release, confirmation = session.release, session.confirmation
+    return (release is not None and confirmation is not None
+            and release.run_id == confirmation.run_id
+            and release.evidence_sha256 == confirmation.evidence_sha256
+            and release.released_teeth
+            == released_teeth_of(confirmation.dispositions))
+
+
 class SessionStore:
     """File-backed, deliberately boring: no in-memory authority that a restart could
     lose. ``load`` is a pure read (asking creates nothing); ``save`` creates the case

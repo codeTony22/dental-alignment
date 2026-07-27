@@ -290,7 +290,12 @@ describe("the Deliver calls (slice 8) — every gating request names its actor (
   });
 
   it("the artifact list GETs with the operator — even listing is disclosure", async () => {
-    const calls = capturingFetch(200, { run_id: "r", files: [], withheld_teeth: [] });
+    const calls = capturingFetch(200, {
+      run_id: "r",
+      files: [],
+      withheld_teeth: [],
+      withheld_case_files: [],
+    });
     await fetchArtifacts("case-a", "Ana Petrova");
     expect(calls[0]!.url).toBe(
       "/api/case-sessions/case-a/runs/current/artifacts",

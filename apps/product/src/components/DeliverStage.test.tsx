@@ -208,19 +208,54 @@ describe("release — the disclosure act", () => {
         kind: "ok",
         data: {
           run_id: "20260727-120000-abc123",
-          files: ["case-a-19-healingcap-aligned.stl", "view.html"],
+          files: ["case-a-19-healingcap-aligned.stl"],
           withheld_teeth: [30],
+          withheld_case_files: ["case-a-upper-overlay.stl", "case-a-manifest.json"],
         },
       },
     });
     expect(html).toContain('data-role="released"');
     expect(html).toContain('data-role="artifact-download" data-file="case-a-19-healingcap-aligned.stl"');
-    expect(html).toContain('data-role="artifact-download" data-file="view.html"');
     // the withheld site is SHOWN as withheld, with its open status beside it
     expect(html).toContain('data-role="withheld-site"');
     expect(html).toContain("Tooth 30");
     expect(html).toContain("withheld");
     expect(html).toContain("flagged"); // its open status, from the detail's sites
+    // the case-wide files the BFF held back are SHOWN held back, by name — the
+    // surface never pretends a partial release shipped the whole package
+    expect(html).toContain('data-role="withheld-case-files"');
+    expect(html).toContain("case-a-upper-overlay.stl");
+    expect(html).toContain("case-a-manifest.json");
+    // and nothing offers to download what was not released
+    expect(html).not.toContain('data-file="case-a-upper-overlay.stl"');
+  });
+
+  it("a full release lists no held-back case files and says nothing about them", () => {
+    const html = view({
+      detail: deliverableDetail({
+        ...CONFIRMED,
+        ...PAID,
+        released: true,
+        release: {
+          operator: "Ana Petrova",
+          at: "2026-07-27T12:02:00+00:00",
+          run_id: "20260727-120000-abc123",
+          evidence_sha256: "c0ffee".padEnd(64, "0"),
+          released_teeth: [19, 30],
+        },
+      }),
+      artifacts: {
+        kind: "ok",
+        data: {
+          run_id: "20260727-120000-abc123",
+          files: ["case-a-19-healingcap-aligned.stl", "case-a-upper-overlay.stl"],
+          withheld_teeth: [],
+          withheld_case_files: [],
+        },
+      },
+    });
+    expect(html).toContain('data-file="case-a-upper-overlay.stl"');
+    expect(html).not.toContain('data-role="withheld-case-files"');
   });
 });
 

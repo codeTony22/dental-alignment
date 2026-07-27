@@ -28,7 +28,19 @@ from test_run_resource import FakeWorker, client_with, row, seed_ready, summary_
 
 QC_FILES = ("neodent-gm-4-clockview.png", "neodent-gm-4-deviation.png",
             "neodent-gm-13-clockview.png", "neodent-gm-13-deviation.png")
-PACKAGE_FILES = QC_FILES + ("cap-4-aligned.stl", "cap-13-aligned.stl", "view.html")
+# WORKER-REAL names (adapters/output_package.py): every per-tooth file is built as
+# f"{case_id}-{tooth}-…", and the overlay / manifest / jaw scan are case-wide.
+# The fixture speaks the pipeline's own naming because the artifact gate's
+# file→site attribution anchors on exactly that construction — fixture names the
+# worker would never emit ("cap-4-aligned.stl") once let a leak pass unseen.
+PACKAGE_FILES = QC_FILES + (
+    "neodent-gm-4-healingcap-aligned.stl",
+    "neodent-gm-13-healingcap-aligned.stl",
+    "neodent-gm-upper-overlay.stl",
+    "neodent-gm-manifest.json",
+    "neodent-gm-upper.stl",
+    "view.html",
+)
 
 
 @pytest.fixture
@@ -224,7 +236,7 @@ class TestQcImages:
         endpoint or not at all, and the refusal says so."""
         client = landed_client(settings, product_root, [row(4), row(13)])
         res = client.get("/api/case-sessions/neodent-gm/runs/current/qc/"
-                         "cap-4-aligned.stl")
+                         "neodent-gm-4-healingcap-aligned.stl")
         assert res.status_code == 403
         detail = res.json()["detail"]
         assert "not a QC image" in detail

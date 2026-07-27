@@ -406,6 +406,15 @@ export function DeliverStageView({
                   and the site stays open ({statusOf(tooth)}).
                 </p>
               ))}
+              {/* the BFF holds case-wide files back while any site is withheld
+                  (they aggregate every site); the surface names each one so a
+                  partial release never masquerades as the whole package */}
+              {artifacts.data.withheld_case_files.length > 0 && (
+                <p data-role="withheld-case-files">
+                  Held back with the withheld sites — case-wide files release only
+                  when every site does: {artifacts.data.withheld_case_files.join(", ")}
+                </p>
+              )}
             </>
           )}
         </section>
