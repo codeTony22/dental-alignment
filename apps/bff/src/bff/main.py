@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 
 from .config import Settings, default_settings
 from .ports.worker import InProcessWorker
-from .resources import case_sessions, library
+from .resources import case_sessions, deliver, library
 from .session import SessionStore
 
 
@@ -45,6 +45,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     # port; swapping this adapter for the SQS one changes nothing above it
     app.state.worker = InProcessWorker(settings.data_root, settings.product_root)
     app.include_router(case_sessions.router)
+    # the disclosure edge (plan §4 Deliver / AM-1): evidence ungated, artifacts
+    # gated — mounted after case_sessions so its multi-segment paths never shadow
+    # the single-segment detail route
+    app.include_router(deliver.router)
     app.include_router(library.router)
 
     @app.exception_handler(RequestValidationError)
