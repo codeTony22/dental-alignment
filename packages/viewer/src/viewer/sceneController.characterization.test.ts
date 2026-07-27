@@ -83,6 +83,23 @@ describe("anatomyViewOrientation — the four presets' camera math", () => {
     expect(left[2]).toBeCloseTo(right[2]!, 10); // same 18° elevation
   });
 
+  it("handedness: canonical-frame LEFT sits on +x — mirror symmetry alone cannot see a swap", () => {
+    // WHY this exists (slice 3 adversarial review): flipping the lateral axis's sign in
+    // anatomyViewOrientation SWAPS the left and right presets, yet every other assertion in
+    // this file survived that mutation — the mirror test above is itself swap-invariant.
+    // This pins the absolute sign the frozen demo shipped with: lat = (-anterior)×occlusal,
+    // so "left" looks from +x in the canonical frame. An operator clicking "left" and being
+    // routed to the patient's other side is exactly the silent drift AM-5 forbids.
+    const left = anatomyViewOrientation(CANONICAL_FRAME, "left").direction;
+    expect(left[0]).toBeCloseTo(Math.cos(ELEVATION_RAD), 10);
+    expect(left[1]).toBeCloseTo(0, 10);
+    expect(left[2]).toBeCloseTo(Math.sin(ELEVATION_RAD), 10);
+    expect(anatomyViewOrientation(CANONICAL_FRAME, "right").direction[0]).toBeCloseTo(
+      -Math.cos(ELEVATION_RAD),
+      10,
+    );
+  });
+
   it("every direction is unit length (the caller scales by the framing distance)", () => {
     for (const view of ["front", "left", "right", "occlusal"] as const) {
       expect(length(anatomyViewOrientation(CANONICAL_FRAME, view).direction)).toBeCloseTo(1, 10);
