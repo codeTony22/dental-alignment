@@ -127,11 +127,26 @@ class DetectionRecord(BaseModel):
 
 class RunSession(BaseModel):
     """The job-shaped run receipt (grill AM-3) — mirrors ``bff.ports.worker.JobState``
-    so the SQS adapter later changes an adapter, not this record."""
+    (tied by test_worker_port.TestStateTie) so the SQS adapter later changes an
+    adapter, not this record.
+
+    Since 5c it also carries THE RUN FACTS the landing persisted: the worker's
+    summary VERBATIM (per-site verdict rows, the relief outcome — scalars, no
+    meshes) and the package file list as names RELATIVE to the immutable run
+    directory ``runs/<run_id>/`` (AM-1). The mesh-heavy payloads stay on disk in
+    that directory; session.json stays small (pinned by test_run_resource's size
+    test) because the store re-reads it per request. This receipt is the CURRENT-run
+    pointer only: the reset boundaries clear it (a stale run never masquerades as
+    current) while the run directory survives as immutable history."""
 
     job_id: str
     state: Literal["queued", "running", "done", "refused"]
     refusal: Optional[str] = None
+    # the immutable run directory's name; equals job_id under the in-process adapter,
+    # kept separate because phase-2's queue mints job ids the dir name must outlive
+    run_id: Optional[str] = None
+    summary: Optional[dict] = None
+    package_files: List[str] = Field(default_factory=list)
 
 
 class ConfirmationRecord(BaseModel):

@@ -155,6 +155,7 @@ class TestCaseSessionDetail:
             "tenant_id": "local",
             "adjust_visited": False,
             "run_state": "none",
+            "run_refusal": None,   # 5c: a refused run's words ride here, verbatim
             "confirmed": False,
             "payment_authorized": False,
         }
@@ -1129,6 +1130,10 @@ class TestStatusesAreNeverClientWritable:
         # machine's review_ready, the untick its withdraw_review
         ("POST", "/api/case-sessions/{case_id}/sites/{tooth}/review"),
         ("DELETE", "/api/case-sessions/{case_id}/sites/{tooth}/review"),
+        # the authorized run (5c): a compute trigger like detect/preview — NO body;
+        # the selection it runs is the session's own acts, the gate is server-minted
+        # (AM-8), and the verdict landing goes through the status machine
+        ("POST", "/api/case-sessions/{case_id}/run"),
     }
     STATUS_SHAPED = {"status", "state", "verdict", "gate", "flagged", "ready",
                      "confirmed"}

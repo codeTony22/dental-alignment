@@ -16,6 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from .config import Settings, default_settings
+from .ports.worker import InProcessWorker
 from .resources import case_sessions, library
 from .session import SessionStore
 
@@ -40,6 +41,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.state.settings = settings
     app.state.sessions = SessionStore(settings.product_root)
     app.state.sessions.rehydrate()
+    # the ONE doorway to the physics (plan §3/AM-3): resources speak the job-shaped
+    # port; swapping this adapter for the SQS one changes nothing above it
+    app.state.worker = InProcessWorker(settings.data_root, settings.product_root)
     app.include_router(case_sessions.router)
     app.include_router(library.router)
 

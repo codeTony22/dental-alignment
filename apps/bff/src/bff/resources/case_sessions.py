@@ -30,12 +30,14 @@ route sits on an explicit allowlist, and no request model carries a status-shape
 """
 from __future__ import annotations
 
+import datetime
 import math
+import uuid
 from typing import Callable, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from case_prep.application.cases import CaseRecord, discover_cases
 from case_prep.application.catalog import (UnknownSelection, construction_parts,
@@ -48,8 +50,10 @@ from case_prep.application.preview import (PreviewRefused, PreviewSelection,
 
 from .. import status
 from ..config import Settings
+from ..ports.worker import JobState, WorkerPort
 from ..session import (CaseChoices, CaseSession, DetectedProposal, DetectionRecord,
-                       SessionConflict, SessionStore, SiteSession, SiteStatus)
+                       RunSession, SessionConflict, SessionStore, SiteSession,
+                       SiteStatus)
 
 router = APIRouter(prefix="/api/case-sessions", tags=["case-sessions"])
 
@@ -170,8 +174,31 @@ class SessionView(BaseModel):
     tenant_id: str
     adjust_visited: bool
     run_state: str
+    # the refused run's words, VERBATIM (5c) — the one fact the Declare footer needs
+    # beside the state; None unless run_state is "refused"
+    run_refusal: Optional[str] = None
     confirmed: bool
     payment_authorized: bool
+
+
+class RunView(BaseModel):
+    """GET /{id}/run — the CURRENT run's persisted facts (plan §7 slice 5c): the
+    job-shaped receipt plus what the landing kept — per-site verdict rows and the
+    package file list, names relative to the immutable run directory. Worker-shaped
+    rows stay untyped like the catalog's (the worker's summary is the schema; the
+    key-set is pinned worker-side by test_run.py). Adjust's and Deliver's read
+    surface."""
+
+    run_id: str
+    job_id: str
+    state: str
+    refusal: Optional[str] = None
+    # the worker's summary verbatim (None while queued/running or refused)
+    summary: Optional[dict] = None
+    # the per-site rows out of that summary — served flat because they are what
+    # Adjust's queue and Deliver's assurance table actually iterate
+    sites: List[dict] = Field(default_factory=list)
+    package_files: List[str] = Field(default_factory=list)
 
 
 class CaseSessionDetail(BaseModel):
@@ -397,6 +424,7 @@ def _detail(case: CaseRecord, session: CaseSession,
             tenant_id=session.tenant_id,
             adjust_visited=session.adjust_visited,
             run_state=_run_state(session),
+            run_refusal=(session.run.refusal if session.run is not None else None),
             confirmed=session.confirmation is not None,
             payment_authorized=session.payment_authorized,
         ),
@@ -587,6 +615,10 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
             for site in session.sites.values():
                 site.status = status.invalidate_preview(site.status)
                 site.clear_preview_facts()
+            # the run boundary (5c): changed choices describe a different shipped
+            # part, so the current-run pointer clears — the run directory survives
+            # as immutable history, but a stale run never masquerades as current
+            session.run = None
         session.choices = replacement
 
     session = _mutate_session(store, case_id, apply)
@@ -620,6 +652,7 @@ def put_system(case_id: str, body: SystemIn, request: Request) -> CaseSessionDet
                 site.status = status.regress_to_detected(site.status)
                 site.declared_variant = None
                 site.clear_preview_facts()   # a preview of a dropped variant (5b)
+            session.run = None   # the run boundary (5c): a run of the old system
         session.system = body.model
 
     session = _mutate_session(store, case_id, apply)
@@ -675,6 +708,9 @@ def put_declaration(case_id: str, tooth: int, body: DeclarationIn,
             # the declaration is the reset boundary (5a's stated rule, real since
             # 5b): the old part's preview facts fall with its rung
             site.clear_preview_facts()
+            # the run boundary (5c): the current run aligned a part this site no
+            # longer declares — the pointer clears (the run dir stays, as history)
+            session.run = None
         session.sites[str(tooth)] = site
 
     session = _mutate_session(store, case_id, apply)
@@ -809,3 +845,149 @@ def delete_review(case_id: str, tooth: int, request: Request) -> CaseSessionDeta
     except status.IllegalTransition as exc:
         raise HTTPException(422, str(exc))
     return _detail(case, session, settings)
+
+
+# --- the run (plan §7 slice 5c; §1.2/AM-1, §3/AM-3, §4 Declare/AM-8) --------------------
+
+def _mint_run_id() -> str:
+    """The immutable run directory's name (AM-1): sortable wall-clock prefix + a
+    random suffix so two same-second runs (two uvicorn threads, two operators) can
+    never collide onto one directory."""
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return f"{stamp}-{uuid.uuid4().hex[:6]}"
+
+
+def _authorized_selection(case: CaseRecord, case_id: str,
+                          session: CaseSession) -> dict:
+    """THE AUTHORIZED GATE, server-minted (AM-8): the full run fires only when the
+    case-level choices are complete AND every site is READY — the operator's review
+    tick over the live panes, not a checkbox. Refuses 422 naming EACH missing piece
+    (the operator fixes what is named, never guesses). Returns the job-shaped
+    selection — every field an operator act read from this one session document,
+    which is why this is judged INSIDE the mutation that persists the receipt
+    (25604e7's rule: a rival change mid-anything is a 409, not a stale verdict)."""
+    sites = _site_views(case, session)
+    missing: List[str] = []
+    model = _effective_model(case, session)
+    if model is None:
+        missing.append("the implant system")
+    if session.choices.construction_path is None:
+        missing.append("the construction part")
+    if session.choices.jaw is None:
+        missing.append("the jaw")
+    if session.choices.gingival_offset_mm is None:
+        missing.append("the gingival relief")
+    if not sites:
+        missing.append("at least one site")
+    for view in sites:
+        if view.status != SiteStatus.READY.value:
+            missing.append(f"tooth {view.tooth} reviewed over the panes "
+                           f"(now {view.status!r})")
+    if missing:
+        raise HTTPException(422, f"the run is not authorized yet — case {case_id!r} "
+                                 f"still needs: " + "; ".join(missing))
+    return {
+        "model": model,
+        "construction_path": session.choices.construction_path,
+        "jaw": session.choices.jaw,
+        "gingival_offset_mm": session.choices.gingival_offset_mm,
+        # READY implies a declaration (the ladder's construction), so this lookup
+        # cannot miss; keyed by tooth-as-string — the wire is JSON either way
+        "variants": {str(view.tooth): session.sites[str(view.tooth)].declared_variant
+                     for view in sites},
+    }
+
+
+@router.post("/{case_id}/run", response_model=CaseSessionDetail)
+def run_case_action(case_id: str, request: Request) -> CaseSessionDetail:
+    """Fire the full authorized run (plan §7 slice 5c) — body-less, like detect and
+    preview: the selection it runs is the SESSION's own acts, so there is nothing a
+    client could claim with. Everything is on worker-side (product, QC, confidence,
+    package — plan §1.2: the worker emits at run time; what gates later is
+    DISCLOSURE), landing in the immutable ``runs/<run_id>/`` directory.
+
+    Three mutations' worth of honesty in two: the receipt (state ``queued``)
+    persists INSIDE a CAS mutation that re-judges the gate on every attempt; the
+    port then runs the physics (the in-process adapter is synchronous — phase 2
+    swaps the adapter, not this route); the LANDING persists inside a second CAS
+    mutation that refuses (409) when the current-run pointer moved underneath the
+    multi-second run — the reset boundaries clear that pointer on any rival
+    system/declaration/choices change, so stale physics can never land. Verdicts
+    map onto the ladder here: guidance ``ready`` holds the rung; anything else is
+    the flag event — its first legitimate writer. A pipeline refusal lands as
+    state ``refused`` with the words verbatim (a first-class outcome, not an
+    error): the response is still the whole detail, and the words ride on
+    ``session.run_refusal``."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+    worker: WorkerPort = request.app.state.worker
+    run_id = _mint_run_id()
+    submitted: Dict[str, dict] = {}
+
+    def claim(session: CaseSession) -> None:
+        if session.run is not None and session.run.state in ("queued", "running"):
+            raise HTTPException(409, f"a run is already in flight for case "
+                                     f"{case_id!r} — wait for it to finish; its "
+                                     f"receipt is on the session")
+        submitted["selection"] = _authorized_selection(case, case_id, session)
+        session.run = RunSession(job_id=run_id, run_id=run_id, state="queued")
+
+    _mutate_session(store, case_id, claim)
+    job_id = worker.submit(case_id,
+                           {"run_id": run_id, "selection": submitted["selection"]})
+    outcome = worker.status(job_id)
+
+    def land(session: CaseSession) -> None:
+        # the pointer is the guard: every reset boundary clears it, and the
+        # selection cannot change without a boundary firing — so an intact pointer
+        # means these facts still describe the case as declared
+        if session.run is None or session.run.job_id != job_id:
+            raise HTTPException(409, f"case {case_id!r} changed while the run was "
+                                     f"computing — the run's artifacts remain under "
+                                     f"its run directory as history, but they no "
+                                     f"longer describe the current declarations; "
+                                     f"re-read the case")
+        if outcome.state is JobState.REFUSED:
+            session.run = RunSession(job_id=job_id, run_id=run_id, state="refused",
+                                     refusal=outcome.refusal)
+            return
+        summary = worker.result(job_id)
+        session.run = RunSession(
+            job_id=job_id, run_id=run_id, state="done", summary=summary,
+            package_files=[str(n) for n in (summary.get("package_files") or [])])
+        for row in summary.get("sites") or []:
+            site = session.sites.get(str(row.get("tooth")))
+            if site is None:
+                continue   # a row for a site the session no longer tracks
+            level = (row.get("guidance") or {}).get("level")
+            if level != "ready":
+                # "attention"/"action-needed": the run's evidence flags the site —
+                # the ladder's fork (plan §2), through the machine like every move
+                site.status = status.flag(site.status)
+
+    try:
+        session = _mutate_session(store, case_id, land)
+    except status.IllegalTransition as exc:
+        raise HTTPException(422, str(exc))
+    return _detail(case, session, settings)
+
+
+@router.get("/{case_id}/run", response_model=RunView)
+def case_run(case_id: str, request: Request) -> RunView:
+    """The CURRENT run's persisted facts (Adjust's and Deliver's read surface). 404
+    while no current run exists — including after a reset boundary cleared the
+    pointer: the old run's directory is history on disk, not a servable present."""
+    settings, store = _context(request)
+    _case_or_404(settings, case_id)
+    session = store.load(case_id)
+    run = session.run
+    if run is None:
+        raise HTTPException(404, f"case {case_id!r} has no current run — Declare "
+                                 f"authorizes one when every site is reviewed")
+    summary = run.summary or {}
+    return RunView(
+        run_id=run.run_id or run.job_id, job_id=run.job_id, state=run.state,
+        refusal=run.refusal, summary=run.summary,
+        sites=list(summary.get("sites") or []),
+        package_files=list(run.package_files),
+    )
