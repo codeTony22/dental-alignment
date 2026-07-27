@@ -12,8 +12,9 @@ row moves to Retired.
 | 2 | Catalog reads (library groups, constructions, relief ceiling) as refusal-raising functions | server.py endpoint bodies | case_prep/application/catalog.py | 200 | slice 1 (`5c7c4b8`) | demo retirement |
 | 3 | Viewer stack (verifyScene, VerifyViewer, sceneController, partFrame, meshCrop, deviationColormap, siteRouting, anatomyOrientation, palette, scanPositions, Viewer3D) + their 5 test files, plus a 13-line domain/types Vec3 subset | apps/web/src/viewer + domain/types.ts | packages/viewer/src | measured 4,698 / 16 files (as landed 4,771 — divergences below) | slice 3 (`3487c16`) | demo retirement |
 | 4 | Server-side validation corpus (catalog membership, explicit-selection 422, relief bounds, point caps, ±45°, 15mm, ≤8 pairs, lever arm, diameter bounds) — copied VERBATIM then EXTENDED with coordinate finiteness | server.py request models | bff request models | 300 | recording STARTED slice 4 (see row 4 record); remainder slices 5a-8 (AM-9) | demo retirement |
-| 5 | Remaining application lift (explicit-selection gate, adjust-tool judging) | server.py:893-916, 1179-2324 | case_prep/application/* | 700 | slices 5c-6 (planned) | demo retirement |
+| 5 | Remaining application lift (explicit-selection gate, adjust-tool judging) | server.py:893-916, 1259-2324 | case_prep/application/* | 600 | slices 5c-6 (planned) | demo retirement |
 | 6 | Detection + capture assembly (propose orchestration; crowns-frame capture context; centre+radius precedence; per-proposal + curated-site capture blocks) | server.py:733-853 (`_capture_context`, `_capture_block`, `_site_capture_inputs`, `_with_capture`, `_run_sites_capture`, `POST /propose`; 856+ is `_append_run_history`, NOT lifted) | case_prep/application/detection.py | 120 | slice 4 | demo retirement |
+| 7 | Pre-run preview: the deviation payload builder + the one-site preview seat | server.py:1038 (`_DEVIATION_ROUND`), 1068-1156 (`_deviation_payload`), 1176-1257 (`_PREVIEW_DIRNAME` + `preview_site_alignment`) | case_prep/application/preview.py | 170 | slice 5b | demo retirement |
 
 Rules:
 - A new copy lands ONLY with a row here, in the same commit.
@@ -84,15 +85,38 @@ the ported semantics). No TypeScript was copied: the state lives in the case ses
 now and the client only displays what the BFF returns (plan AM-4/AM-8); the
 transition itself runs through `bff/status.py`. Retires with the demo, alongside
 row 3.
-Extension (5a fix, 2026-07-27): the demo's COMPANION rule — a construction, jaw or
-relief change clears EVERY site's review, because "they all describe the same shipped
-part" (librarySelection.ts:10-16; `withConstruction`/`withJaw`/`withOffsetInput`,
-111-138) — is deliberately NOT yet ported: no server-side review exists until 5b's
-`review_ready`. Its server home is NAMED at the boundary (`put_choices`' docstring in
-`bff/resources/case_sessions.py`): 5b clears later-ladder facts there, the third
-reset trigger beside the declaration (per-site) and the system switch (case-wide);
-the half decidable today — declared variants SURVIVE a choices change — is pinned by
-test. Ports (and moves into this row's record) when 5b lands it.
+Extension (5a fix, 2026-07-27; PORTED slice 5b, 2026-07-27): the demo's COMPANION
+rule — a construction, jaw or relief change clears EVERY site's review, because
+"they all describe the same shipped part" (librarySelection.ts:10-16;
+`withConstruction`/`withJaw`/`withOffsetInput`, 111-138) — now lives server-side at
+the named boundary: `put_choices` runs every site through `bff/status.py`'s
+`invalidate_preview` (later rungs drop to declared, preview facts clear) exactly
+when the replacement differs — the demo's own equality guards, so an identical
+re-PUT resets nothing. Declared variants survive, as in the demo. The review tick
+itself is the machine's `review_ready`/`withdraw_review` behind body-less
+POST/DELETE routes (AM-8's reviewed-over-panels doctrine, two-way like the demo's
+checkbox). A semantic port like the rest of this row — no TypeScript copied.
+
+Row 7 record (slice 5b, 2026-07-27) — divergences, per the rules above:
+- `_deviation_payload` → `preview.deviation_payload`: field-for-field VERBATIM (the
+  copied deviationColormap/pane code renders exactly this dict; pinned by worker
+  test_preview.py's key-set assertion). `_DEVIATION_ROUND` rides along at 4.
+- NO serve-time cache and NO persistent `preview/` directory: the demo cached per
+  (case, tooth, selection, marks) and worked under `OUT/<case>/preview`; the product's
+  preview is a pure derivation in a scratch dir that dies inside the call — the BFF
+  persists the seat FACTS (previewed rung, seat_method, rim_agreement_mm) into the
+  case session and the payload mesh is response-only. Same no-cache posture as row 6's
+  detection lift; phase 2 jobs the multi-second derivation (plan §3/AM-3).
+- The selection arrives as an explicit `PreviewSelection` derived by the BFF from the
+  SESSION (operator acts), not the demo's `RunIn` request body; the demo's
+  marked-sites 422s ("not among the marked sites sent" / "no declared cap variant")
+  become the BFF preview route's own 422 naming what the session still needs. Marks
+  come from the case's curated sites.json AS GIVEN (no marking UI yet).
+- `_required_selection` (the explicit-selection gate, 893-916) is deliberately NOT
+  copied here — it stays row 5's, lifted when 5c's run needs its exact sentence.
+- Row 5's range shrank accordingly (1179-1257 moved here; `_DEVIATION_ROUND` and
+  `_deviation_payload` sat outside row 5's stated range and enter the ledger with
+  this row).
 
 Row 6 record (slice 4, 2026-07-27) — divergences, per the rules above:
 - The demo's THREE cache layers are deliberately NOT copied (per-process cfg dict,

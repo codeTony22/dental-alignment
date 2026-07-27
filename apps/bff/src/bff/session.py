@@ -70,6 +70,20 @@ class SiteStatus(str, enum.Enum):
 class SiteSession(BaseModel):
     status: SiteStatus = SiteStatus.DETECTED
     declared_variant: Optional[str] = None
+    # THE PREVIEW'S SEAT FACTS (plan §7 slice 5b): the two numbers the operator judges
+    # a seat by, persisted by the preview route from what the application derived —
+    # worker facts, never a client's. The payload's mesh is response-only and never
+    # stored; these clear at every reset boundary (see ``clear_preview_facts``).
+    seat_method: Optional[str] = None
+    rim_agreement_mm: Optional[float] = None
+
+    def clear_preview_facts(self) -> None:
+        """The reset boundaries' ONE home for forgetting a preview's facts — called
+        beside every status event that invalidates a preview (a re-declaration, the
+        system switch, a choices change), so a fact and the rung that justified it
+        can never drift apart."""
+        self.seat_method = None
+        self.rim_agreement_mm = None
 
 
 class CaseChoices(BaseModel):

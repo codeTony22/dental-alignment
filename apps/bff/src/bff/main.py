@@ -16,7 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from .config import Settings, default_settings
-from .resources import case_sessions
+from .resources import case_sessions, library
 from .session import SessionStore
 
 
@@ -41,6 +41,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.state.sessions = SessionStore(settings.product_root)
     app.state.sessions.rehydrate()
     app.include_router(case_sessions.router)
+    app.include_router(library.router)
 
     @app.exception_handler(RequestValidationError)
     async def validation_refusal(request: Request, exc: RequestValidationError):

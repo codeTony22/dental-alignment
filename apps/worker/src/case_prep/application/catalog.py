@@ -86,17 +86,22 @@ def require_library_model(data_root: Path, model: str) -> None:
                                f"systems the library catalog lists")
 
 
-def require_variant(data_root: Path, model: str, variant: str) -> None:
+def require_variant(data_root: Path, model: str, variant: str) -> Path:
     """Refuse any variant that is not an entry of the named system's catalog — by the
     catalog's own entry id (adapters/library_catalog), so archived parts stay
     declarable exactly one explicit name at a time and nothing resolves by glob or
     path join. Judges the MODEL first (same door as ``require_library_model``): a
-    legacy shelf's entries must not slip in under a model name no run could load."""
+    legacy shelf's entries must not slip in under a model name no run could load.
+    Returns the entry's mesh file (same contract as ``require_construction``) so the
+    BFF's part-mesh endpoint (slice 5b, pane 1) serves exactly the catalog's file —
+    never a path assembled from caller input."""
     data = Path(data_root)
     require_library_model(data, model)
-    if library_catalog.catalog_mesh_path(data, model, variant) is None:
+    path = library_catalog.catalog_mesh_path(data, model, variant)
+    if path is None:
         raise UnknownSelection(f"{variant!r} is not a part of the {model!r} library "
                                f"— pick a variant the library catalog lists")
+    return path
 
 
 @lru_cache(maxsize=16)

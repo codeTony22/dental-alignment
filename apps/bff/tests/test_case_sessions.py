@@ -60,8 +60,10 @@ class SystemSwitchingStore(SessionStore):
             rival.system = self.model   # what PUT /system persists (no sites declared yet)
             SessionStore(self.root).save(rival)
         return session
+from case_prep.application.catalog import UnknownSelection
 from case_prep.application.detection import (DetectedSite, DetectionResult,
                                              ScanUnreadable, SuggestedSiteCapture)
+from case_prep.application.preview import PreviewRefused
 
 CAP_PASS = {"verdict": "pass", "rim_z_mm": 1.2, "checks": []}
 CAP_RESCAN = {"verdict": "rescan", "rim_z_mm": None,
@@ -345,21 +347,50 @@ class TestChoices:
         assert body["choices"]["construction_path"] is None
         assert body["choices"]["complete"] is False
 
-    def test_a_choices_change_keeps_declarations_standing(self, settings):
-        # the demo's review-reset rule (librarySelection.ts:10-16): construction, jaw
-        # and relief describe the same shipped part, so changing any clears every
-        # site's REVIEW — but never its declared variant (withConstruction/withJaw/
-        # withOffsetInput touch `reviewed` only). No server-side review exists until
-        # 5b's review_ready; the half decidable TODAY is pinned here, beside the
-        # boundary where put_choices names 5b's obligation to clear the other half.
+    def test_a_choices_change_clears_previews_and_reviews_but_keeps_declarations(
+            self, settings):
+        # the demo's review-reset rule, LANDED (librarySelection.ts:10-16, 5a's stated
+        # boundary made real in 5b): construction, jaw and relief describe the same
+        # shipped part, so changing any clears every site's later-ladder facts — a
+        # previewed site's seat AND a ready site's review — but never its declared
+        # variant (withConstruction/withJaw/withOffsetInput touch `reviewed` only).
+        store = SessionStore(settings.product_root)
+        s = store.load("neodent-gm")
+        s.sites["4"] = SiteSession(status=SiteStatus.PREVIEWED,
+                                   declared_variant="5020",
+                                   seat_method="rim-seat", rim_agreement_mm=0.07)
+        s.sites["13"] = SiteSession(status=SiteStatus.READY,
+                                    declared_variant="5020",
+                                    seat_method="best-fit", rim_agreement_mm=0.11)
+        store.save(s)
         client = TestClient(create_app(settings))
-        client.put("/api/case-sessions/neodent-gm/sites/4/declaration",
-                   json={"variant": "5020"})
         body = client.put("/api/case-sessions/neodent-gm/choices",
                           json={"jaw": "lower"}).json()
         sites = {v["tooth"]: v for v in body["sites"]}
         assert sites[4]["status"] == "declared"
+        assert sites[13]["status"] == "declared"
         assert sites[4]["declared_variant"] == "5020"
+        assert sites[13]["declared_variant"] == "5020"
+        persisted = SessionStore(settings.product_root).load("neodent-gm")
+        for tooth in ("4", "13"):
+            assert persisted.sites[tooth].seat_method is None
+            assert persisted.sites[tooth].rim_agreement_mm is None
+
+    def test_an_identical_choices_re_put_resets_nothing(self, settings):
+        # the demo's equality guards (withConstruction/withJaw/withOffsetInput each
+        # return the state unchanged on an equal value): re-submitting the same panel
+        # is not a change, so no preview or review is destroyed by an idempotent PUT
+        client = TestClient(create_app(settings))
+        complete_choices(client)
+        store = SessionStore(settings.product_root)
+        s = store.load("neodent-gm")
+        s.sites["4"] = SiteSession(status=SiteStatus.READY, declared_variant="5020",
+                                   seat_method="rim-seat", rim_agreement_mm=0.07)
+        store.save(s)
+        complete_choices(client)   # the identical document, again
+        persisted = SessionStore(settings.product_root).load("neodent-gm")
+        assert persisted.sites["4"].status is SiteStatus.READY
+        assert persisted.sites["4"].seat_method == "rim-seat"
 
     def test_an_unknown_construction_part_is_refused_by_catalog_membership(self, client):
         res = client.put("/api/case-sessions/neodent-gm/choices",
@@ -492,7 +523,8 @@ class TestSystem:
         s.sites["4"] = SiteSession(status=SiteStatus.DECLARED,
                                    declared_variant="5020")
         s.sites["13"] = SiteSession(status=SiteStatus.READY,
-                                    declared_variant="5020")
+                                    declared_variant="5020",
+                                    seat_method="rim-seat", rim_agreement_mm=0.07)
         store.save(s)
         client = TestClient(create_app(settings))
         body = client.put("/api/case-sessions/neodent-gm/system",
@@ -502,10 +534,12 @@ class TestSystem:
         assert all(sites[t]["declared_variant"] is None for t in (4, 13))
         assert body["system"] == {"effective_model": "astra-ev",
                                   "source": "declared"}
-        # and the store agrees
+        # and the store agrees — the 5b preview facts fell with the declarations
         persisted = SessionStore(settings.product_root).load("neodent-gm")
         assert persisted.sites["4"].status is SiteStatus.DETECTED
         assert persisted.sites["4"].declared_variant is None
+        assert persisted.sites["13"].seat_method is None
+        assert persisted.sites["13"].rim_agreement_mm is None
 
     def test_re_declaring_the_effective_system_resets_nothing(self, settings):
         # withModel's own guard (state.model === model → no change): PUTting the
@@ -586,6 +620,43 @@ class TestDeclaration:
         assert sites[4]["status"] == "declared"
         assert sites[4]["declared_variant"] == "6030"
 
+    def test_re_declaring_a_different_variant_clears_the_preview_facts(
+            self, settings):
+        # the declaration is the reset boundary (5a's stated rule, real since 5b): a
+        # previewed/reviewed site re-described drops its seat facts WITH its rung —
+        # the old preview coloured a part no longer declared
+        (settings.data_root / "library/caps/neodent-gm/neodent-gm-6030.stl").touch()
+        store = SessionStore(settings.product_root)
+        s = store.load("neodent-gm")
+        s.sites["4"] = SiteSession(status=SiteStatus.READY, declared_variant="5020",
+                                   seat_method="rim-seat", rim_agreement_mm=0.07)
+        store.save(s)
+        client = TestClient(create_app(settings))
+        body = client.put("/api/case-sessions/neodent-gm/sites/4/declaration",
+                          json={"variant": "6030"}).json()
+        sites = {v["tooth"]: v for v in body["sites"]}
+        assert sites[4]["status"] == "declared"
+        persisted = SessionStore(settings.product_root).load("neodent-gm")
+        assert persisted.sites["4"].seat_method is None
+        assert persisted.sites["4"].rim_agreement_mm is None
+
+    def test_re_declaring_the_same_variant_changes_nothing_at_all(self, settings):
+        # the same idempotence the system route has: re-clicking the declared card
+        # must not throw away a preview of exactly that part
+        store = SessionStore(settings.product_root)
+        s = store.load("neodent-gm")
+        s.sites["4"] = SiteSession(status=SiteStatus.PREVIEWED,
+                                   declared_variant="5020",
+                                   seat_method="rim-seat", rim_agreement_mm=0.07)
+        store.save(s)
+        client = TestClient(create_app(settings))
+        body = client.put("/api/case-sessions/neodent-gm/sites/4/declaration",
+                          json={"variant": "5020"}).json()
+        sites = {v["tooth"]: v for v in body["sites"]}
+        assert sites[4]["status"] == "previewed"
+        persisted = SessionStore(settings.product_root).load("neodent-gm")
+        assert persisted.sites["4"].seat_method == "rim-seat"
+
     def test_a_superseded_part_is_declarable_by_its_explicit_catalog_id(
             self, settings):
         # the shelf is honest, never hidden (library_catalog): an archived part
@@ -615,6 +686,282 @@ class TestDeclaration:
         ok = client.put("/api/case-sessions/neodent-gm/sites/4/declaration",
                         json={"variant": "3010"})
         assert ok.status_code == 200
+
+
+def stub_preview_payload(tooth: int = 4, variant: str = "5020") -> dict:
+    """A payload shaped like application.preview's (the demo's wire shape — pinned for
+    real in worker test_preview.py; here only the fields the resource TOUCHES matter:
+    the seat block it persists and the mesh it must pass through untouched)."""
+    return {
+        "case_id": "neodent-gm", "tooth": tooth, "implant_model": "neodent-gm",
+        "variant": variant, "frame": "jaw-scan world frame", "units": "mm",
+        "pose": {"axis": [0.0, 0.0, 1.0], "x_axis": [1.0, 0.0, 0.0],
+                 "origin": [0.0, 0.0, 0.0]},
+        "n_points": 1, "points": [[0.0, 0.0, 0.0]], "faces": [[0, 0, 0]],
+        "deviation_mm": [0.1],
+        "scale": {"clamp_mm": 0.5}, "stats": {"rms_mm": 0.43, "p90_mm": 0.7},
+        "vertex_footprint_points": 1, "reporting_only": True, "preview": True,
+        "seat": {"seat_method": "rim-seat", "rim_agreement_mm": 0.07, "fit": "ok"},
+    }
+
+
+def complete_choices(client: TestClient, case_id: str = "neodent-gm"):
+    res = client.put(f"/api/case-sessions/{case_id}/choices", json={
+        "construction_path": "dess/neodent-gm-scanbody.stl",
+        "jaw": "upper",
+        "gingival_offset_mm": 0.2,
+    })
+    assert res.status_code == 200, res.text
+
+
+def declare_site(client: TestClient, tooth: int = 4, variant: str = "5020",
+                 case_id: str = "neodent-gm"):
+    res = client.put(f"/api/case-sessions/{case_id}/sites/{tooth}/declaration",
+                     json={"variant": variant})
+    assert res.status_code == 200, res.text
+
+
+class TestPreview:
+    """POST /{id}/sites/{tooth}/preview (plan §4 Declare / §7 slice 5b): seat the
+    declared cap and return its deviation colouring. A compute TRIGGER like detect —
+    no body at all; everything derives from the session (the declaration, the
+    choices) plus the case. The physics is the worker's (test_preview.py pins it on
+    the real tree); what belongs here is orchestration — refuse incomplete sessions,
+    persist the seat FACTS through the status machine, keep the mesh response-only —
+    so the application function is stubbed at the resource seam."""
+
+    def _client_with_stub(self, settings, monkeypatch, result=None):
+        calls = []
+
+        def stub(case, selection, tooth):
+            calls.append((case.id, selection, tooth))
+            if isinstance(result, Exception):
+                raise result
+            return result or stub_preview_payload(tooth=tooth)
+
+        monkeypatch.setattr(case_sessions, "preview_site", stub)
+        return TestClient(create_app(settings)), calls
+
+    def test_an_unknown_case_is_a_404(self, client):
+        assert client.post(
+            "/api/case-sessions/no-such-case/sites/4/preview").status_code == 404
+
+    def test_a_tooth_the_case_does_not_have_is_a_404(self, settings, monkeypatch):
+        client, _ = self._client_with_stub(settings, monkeypatch)
+        res = client.post("/api/case-sessions/neodent-gm/sites/31/preview")
+        assert res.status_code == 404
+        assert "not a site" in res.json()["detail"]
+
+    def test_an_undeclared_site_is_a_422_naming_the_gap(self, settings, monkeypatch):
+        client, calls = self._client_with_stub(settings, monkeypatch)
+        complete_choices(client)
+        res = client.post("/api/case-sessions/neodent-gm/sites/4/preview")
+        assert res.status_code == 422
+        assert "declared cap variant" in res.json()["detail"]
+        assert calls == []   # the refusal costs no physics
+
+    def test_incomplete_choices_are_a_422_naming_each_missing_choice(
+            self, settings, monkeypatch):
+        client, calls = self._client_with_stub(settings, monkeypatch)
+        declare_site(client)
+        client.put("/api/case-sessions/neodent-gm/choices", json={"jaw": "upper"})
+        res = client.post("/api/case-sessions/neodent-gm/sites/4/preview")
+        assert res.status_code == 422
+        detail = res.json()["detail"]
+        assert "construction part" in detail
+        assert "gingival relief" in detail
+        assert "jaw" not in detail   # chosen — only what is actually missing is named
+        assert calls == []
+
+    def test_preview_runs_persists_the_seat_facts_and_returns_the_payload(
+            self, settings, monkeypatch):
+        client, calls = self._client_with_stub(settings, monkeypatch)
+        complete_choices(client)
+        declare_site(client)
+        res = client.post("/api/case-sessions/neodent-gm/sites/4/preview")
+        assert res.status_code == 200
+        # the response IS the payload — the panes render it directly
+        assert res.json() == stub_preview_payload(tooth=4)
+        # the application was asked with the SESSION's own acts, never a suggestion
+        (case_id, selection, tooth), = calls
+        assert (case_id, tooth) == ("neodent-gm", 4)
+        assert selection.model == "neodent-gm"
+        assert selection.construction_path == "dess/neodent-gm-scanbody.stl"
+        assert selection.variant == "5020"
+        assert selection.jaw == "upper"
+        assert selection.gingival_offset_mm == 0.2
+        # the FACTS persisted; the mesh did not (the session stays session-sized)
+        persisted = SessionStore(settings.product_root).load("neodent-gm")
+        site = persisted.sites["4"]
+        assert site.status is SiteStatus.PREVIEWED
+        assert site.seat_method == "rim-seat"
+        assert site.rim_agreement_mm == 0.07
+        assert "points" not in site.model_dump()
+        # …and the detail the UI re-reads says previewed
+        detail = client.get("/api/case-sessions/neodent-gm").json()
+        sites = {v["tooth"]: v for v in detail["sites"]}
+        assert sites[4]["status"] == "previewed"
+
+    def test_a_re_preview_re_derives_and_stays_previewed(self, settings, monkeypatch):
+        # no server-side cache (ledger row 7): the payload is response-only, so the
+        # UI's reload re-ask runs the derivation again — and the rung holds
+        client, calls = self._client_with_stub(settings, monkeypatch)
+        complete_choices(client)
+        declare_site(client)
+        client.post("/api/case-sessions/neodent-gm/sites/4/preview")
+        res = client.post("/api/case-sessions/neodent-gm/sites/4/preview")
+        assert res.status_code == 200
+        assert len(calls) == 2
+        persisted = SessionStore(settings.product_root).load("neodent-gm")
+        assert persisted.sites["4"].status is SiteStatus.PREVIEWED
+
+    def test_a_re_preview_over_a_reviewed_site_keeps_the_review(
+            self, settings, monkeypatch):
+        # a page reload re-renders a READY site's panes; the attestation must stand —
+        # the derivation is deterministic over the unchanged declaration+choices
+        client, _ = self._client_with_stub(settings, monkeypatch)
+        complete_choices(client)
+        store = SessionStore(settings.product_root)
+        s = store.load("neodent-gm")
+        s.sites["4"] = SiteSession(status=SiteStatus.READY, declared_variant="5020",
+                                   seat_method="rim-seat", rim_agreement_mm=0.07)
+        store.save(s)
+        res = client.post("/api/case-sessions/neodent-gm/sites/4/preview")
+        assert res.status_code == 200
+        assert SessionStore(settings.product_root).load(
+            "neodent-gm").sites["4"].status is SiteStatus.READY
+
+    def test_the_pipelines_refusal_is_a_409_in_its_own_words(
+            self, settings, monkeypatch):
+        client, _ = self._client_with_stub(
+            settings, monkeypatch,
+            result=PreviewRefused("no confirmed site could be aligned"))
+        complete_choices(client)
+        declare_site(client)
+        res = client.post("/api/case-sessions/neodent-gm/sites/4/preview")
+        assert res.status_code == 409
+        assert "no confirmed site could be aligned" in res.json()["detail"]
+        # a refusal persists nothing — the site still awaits its first preview
+        site = SessionStore(settings.product_root).load("neodent-gm").sites["4"]
+        assert site.status is SiteStatus.DECLARED
+        assert site.seat_method is None
+
+    def test_an_unreadable_scan_is_a_422_in_the_workers_words(
+            self, settings, monkeypatch):
+        client, _ = self._client_with_stub(
+            settings, monkeypatch,
+            result=ScanUnreadable("the scan upper_jaw.stl could not be read as a mesh"))
+        complete_choices(client)
+        declare_site(client)
+        res = client.post("/api/case-sessions/neodent-gm/sites/4/preview")
+        assert res.status_code == 422
+        assert "could not be read" in res.json()["detail"]
+
+    def test_a_catalog_refusal_is_a_422_in_catalog_words(self, settings, monkeypatch):
+        client, _ = self._client_with_stub(
+            settings, monkeypatch,
+            result=UnknownSelection("'5020' is not a part of the 'x' library"))
+        complete_choices(client)
+        declare_site(client)
+        res = client.post("/api/case-sessions/neodent-gm/sites/4/preview")
+        assert res.status_code == 422
+        assert "not a part of" in res.json()["detail"]
+
+    def test_a_rival_change_mid_derivation_is_a_409_not_stale_facts(
+            self, settings, monkeypatch):
+        """The preview derivation runs for SECONDS; a rival re-declaration landing
+        mid-derivation makes the derived facts describe a part no longer declared.
+        The mutation re-judges against the fresh document (commit 25604e7's rule) and
+        refuses — stale seat facts must never land on the switched declaration."""
+        (settings.data_root / "library/caps/neodent-gm/neodent-gm-6030.stl").touch()
+
+        def preview_with_concurrent_redeclare(case, selection, tooth):
+            rival = TestClient(create_app(settings))
+            res = rival.put(f"/api/case-sessions/{case.id}/sites/4/declaration",
+                            json={"variant": "6030"})
+            assert res.status_code == 200
+            return stub_preview_payload(tooth=tooth)
+
+        monkeypatch.setattr(case_sessions, "preview_site",
+                            preview_with_concurrent_redeclare)
+        client = TestClient(create_app(settings))
+        complete_choices(client)
+        declare_site(client)   # 5020 — the rival will switch it to 6030 mid-flight
+        res = client.post("/api/case-sessions/neodent-gm/sites/4/preview")
+        assert res.status_code == 409
+        assert "changed while the preview" in res.json()["detail"]
+        # the rival's act survived; no stale facts landed on it
+        site = SessionStore(settings.product_root).load("neodent-gm").sites["4"]
+        assert site.declared_variant == "6030"
+        assert site.status is SiteStatus.DECLARED
+        assert site.seat_method is None
+
+
+class TestReview:
+    """POST/DELETE /{id}/sites/{tooth}/review (plan §4 Declare / AM-8): the operator's
+    ATTESTATION over the live panes — an ACT, like choices (AM-4 allows acts, forbids
+    claimed verdicts). No body at all, both ways: the act is the request itself, so
+    there is no field a claimed outcome could ride in on. The previewed->ready move is
+    the machine's ``review_ready``; a tick over nothing stays impossible because the
+    machine refuses it, not because the UI hides a checkbox."""
+
+    def _previewed(self, settings, tooth="4"):
+        store = SessionStore(settings.product_root)
+        s = store.load("neodent-gm")
+        s.sites[tooth] = SiteSession(status=SiteStatus.PREVIEWED,
+                                     declared_variant="5020",
+                                     seat_method="rim-seat", rim_agreement_mm=0.07)
+        store.save(s)
+
+    def test_an_unknown_case_is_a_404(self, client):
+        assert client.post(
+            "/api/case-sessions/no-such-case/sites/4/review").status_code == 404
+
+    def test_a_tooth_the_case_does_not_have_is_a_404(self, client):
+        res = client.post("/api/case-sessions/neodent-gm/sites/31/review")
+        assert res.status_code == 404
+        assert "not a site" in res.json()["detail"]
+
+    def test_a_tick_over_nothing_is_refused_in_the_ladders_words(self, settings):
+        # detected AND declared sites refuse alike: no preview, nothing to attest to
+        client = TestClient(create_app(settings))
+        res = client.post("/api/case-sessions/neodent-gm/sites/4/review")
+        assert res.status_code == 422
+        assert "cannot review_ready" in res.json()["detail"]
+        declare_site(client)
+        res = client.post("/api/case-sessions/neodent-gm/sites/4/review")
+        assert res.status_code == 422
+        assert "'declared'" in res.json()["detail"]
+        persisted = SessionStore(settings.product_root).load("neodent-gm")
+        assert persisted.sites["4"].status is SiteStatus.DECLARED
+
+    def test_the_tick_moves_previewed_to_ready_and_the_detail_says_so(self, settings):
+        self._previewed(settings)
+        client = TestClient(create_app(settings))
+        body = client.post("/api/case-sessions/neodent-gm/sites/4/review").json()
+        sites = {v["tooth"]: v for v in body["sites"]}
+        assert sites[4]["status"] == "ready"
+        # persisted, and the worklist rollup counts it — the queue chip's fact
+        row, = TestClient(create_app(settings)).get("/api/case-sessions").json()
+        assert row["sites"]["ready"] == 1
+
+    def test_the_untick_withdraws_the_review(self, settings):
+        self._previewed(settings)
+        client = TestClient(create_app(settings))
+        client.post("/api/case-sessions/neodent-gm/sites/4/review")
+        body = client.delete("/api/case-sessions/neodent-gm/sites/4/review").json()
+        sites = {v["tooth"]: v for v in body["sites"]}
+        assert sites[4]["status"] == "previewed"
+        # the preview's facts survive the untick — only the attestation is gone
+        site = SessionStore(settings.product_root).load("neodent-gm").sites["4"]
+        assert site.seat_method == "rim-seat"
+
+    def test_withdrawing_a_review_that_was_never_given_is_refused(self, settings):
+        self._previewed(settings)
+        client = TestClient(create_app(settings))
+        res = client.delete("/api/case-sessions/neodent-gm/sites/4/review")
+        assert res.status_code == 422
+        assert "cannot withdraw_review" in res.json()["detail"]
 
 
 class TestWriteConflicts:
@@ -773,6 +1120,15 @@ class TestStatusesAreNeverClientWritable:
         # the per-site variant declaration (AM-8) — the status move it causes is the
         # machine's (bff/status.py), never a field in this body
         ("PUT", "/api/case-sessions/{case_id}/sites/{tooth}/declaration"),
+        # the pre-run preview (5b): a compute trigger like detect — NO body; the
+        # declaration and choices it seats with come from the session, so there is
+        # nothing a client could claim with
+        ("POST", "/api/case-sessions/{case_id}/sites/{tooth}/preview"),
+        # the review tick (5b, AM-8): the operator's ATTESTATION — an act whose whole
+        # content is the request itself, both ways; the previewed->ready move is the
+        # machine's review_ready, the untick its withdraw_review
+        ("POST", "/api/case-sessions/{case_id}/sites/{tooth}/review"),
+        ("DELETE", "/api/case-sessions/{case_id}/sites/{tooth}/review"),
     }
     STATUS_SHAPED = {"status", "state", "verdict", "gate", "flagged", "ready",
                      "confirmed"}

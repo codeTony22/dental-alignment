@@ -186,17 +186,21 @@ class TestRequireVariant:
     system's catalog — by the catalog's own entry id, so archived parts stay
     declarable exactly one explicit name at a time (never by widening a glob)."""
 
-    def test_a_current_part_passes_by_its_plain_variant_id(self, tmp_path):
+    def test_a_current_part_passes_and_returns_the_catalogs_own_file(self, tmp_path):
+        # the returned path (5b: the BFF's part-mesh stream serves it) is the
+        # CATALOG's resolution, never a join on the caller's strings
         root = _tree(tmp_path)
-        (root / "library/caps/neodent-gm/neodent-gm-5020.stl").touch()
-        require_variant(root, "neodent-gm", "5020")   # no raise
+        stl = root / "library/caps/neodent-gm/neodent-gm-5020.stl"
+        stl.touch()
+        assert require_variant(root, "neodent-gm", "5020") == stl
 
     def test_a_superseded_part_passes_by_its_explicit_catalog_id(self, tmp_path):
         root = _tree(tmp_path)
         archive = root / "library/caps/neodent-gm/superseded-2025-01-01"
         archive.mkdir()
         (archive / "neodent-gm-4010.stl").touch()
-        require_variant(root, "neodent-gm", "superseded-2025-01-01--4010")
+        assert require_variant(root, "neodent-gm", "superseded-2025-01-01--4010") \
+            == archive / "neodent-gm-4010.stl"
 
     def test_an_unknown_variant_is_refused_in_the_catalog_sentence(self, tmp_path):
         root = _tree(tmp_path)

@@ -10,19 +10,21 @@ declaration, a preview render, a review tick, a run verdict, an adjust tool), ta
 the site's current status, and returns the next — or raises ``IllegalTransition``
 with a sentence an endpoint can serve.
 
-Two events are legal from EVERY rung, deliberately:
+Three events are legal from EVERY rung, deliberately:
 
   - ``declare``: a declaration is the reset boundary. Re-declaring a different part
     invalidates every later-ladder fact about the old one, so the site drops back to
-    DECLARED from wherever it stood (the caller clears the facts themselves — none
-    exist yet; previews and review ticks arrive in 5b, and they clear HERE, at this
-    stated rule, instead of being rediscovered).
+    DECLARED from wherever it stood (the caller clears the facts alongside — since 5b
+    they exist: ``SiteSession.clear_preview_facts``).
   - ``regress_to_detected``: the case-level system switch (AM-8) resets every site;
     idempotent over sites still fresh.
+  - ``invalidate_preview`` (5b): a case-level choices CHANGE — construction, jaw or
+    relief; the demo's rule #1, they all describe the same shipped part — drops every
+    rung past DECLARED back to DECLARED, leaving earlier rungs standing.
 
-Later slices call the rest: ``preview`` (5b's live panes), ``review_ready`` (5b's
-tick, 6's re-verify), ``flag`` (5c's run verdicts), ``adjust`` (6's tools). Written
-now so the WHOLE ladder has one home before anyone needs a second.
+5b reaches ``preview`` (the live panes) and ``review_ready``/``withdraw_review`` (the
+two-way tick); 5c/6 call ``flag`` and ``adjust``. Written together so the WHOLE ladder
+has one home.
 """
 from __future__ import annotations
 
@@ -44,10 +46,18 @@ class IllegalTransition(RuntimeError):
 _EDGES: Dict[str, Tuple[frozenset, SiteStatus]] = {
     "declare": (_ANY, _S.DECLARED),
     "regress_to_detected": (_ANY, _S.DETECTED),
-    "preview": (frozenset({_S.DECLARED}), _S.PREVIEWED),
     "review_ready": (frozenset({_S.PREVIEWED, _S.ADJUSTED}), _S.READY),
+    "withdraw_review": (frozenset({_S.READY}), _S.PREVIEWED),
     "flag": (frozenset({_S.PREVIEWED, _S.READY}), _S.FLAGGED),
     "adjust": (frozenset({_S.FLAGGED}), _S.ADJUSTED),
+}
+
+# ``preview`` needs per-rung landings a single-target edge cannot draw (see the
+# function's doc): first render moves DECLARED->PREVIEWED, a re-render holds the rung.
+_PREVIEW_LANDINGS: Dict[SiteStatus, SiteStatus] = {
+    _S.DECLARED: _S.PREVIEWED,
+    _S.PREVIEWED: _S.PREVIEWED,
+    _S.READY: _S.READY,
 }
 
 
@@ -73,8 +83,22 @@ def regress_to_detected(current: SiteStatus) -> SiteStatus:
 
 
 def preview(current: SiteStatus) -> SiteStatus:
-    """A preview rendered for the declared part (5b's live panes)."""
-    return _step("preview", current)
+    """A preview rendered for the declared part (5b's live panes).
+
+    Legal from DECLARED (the first render), PREVIEWED (a re-render — the payload is
+    response-only, so the UI's auto-fire re-asks after a page reload) and READY (the
+    SAME re-render over a reviewed site). READY holds its rung deliberately: the
+    derivation is deterministic over an unchanged declaration+choices — and the reset
+    boundaries guarantee they are unchanged wherever READY still stands — so a reload's
+    re-render must never silently untick an operator's review (the re-click
+    pair-integrity lesson: a re-render never destroys an operator act)."""
+    target = _PREVIEW_LANDINGS.get(current)
+    if target is None:
+        allowed = ", ".join(sorted(s.value for s in _PREVIEW_LANDINGS))
+        raise IllegalTransition(
+            f"cannot preview a site that is {current.value!r} — the ladder allows "
+            f"preview only from: {allowed}")
+    return target
 
 
 def review_ready(current: SiteStatus) -> SiteStatus:
@@ -82,6 +106,27 @@ def review_ready(current: SiteStatus) -> SiteStatus:
     (6) — the only acts that ever set READY (AM-8: reviewed over panels, never a
     checkbox)."""
     return _step("review_ready", current)
+
+
+def withdraw_review(current: SiteStatus) -> SiteStatus:
+    """The tick un-ticked (5b): the demo's review checkbox was two-way, and an
+    attestation the operator can take back is more honest than one that only latches.
+    Lands on PREVIEWED — the panes are still rendered; only the attestation is gone.
+    (A slice-6 adjusted-then-reviewed site also lands PREVIEWED: the ladder records
+    where a site STANDS, not how it got there — revisit with 6 if adjust needs more.)"""
+    return _step("withdraw_review", current)
+
+
+def invalidate_preview(current: SiteStatus) -> SiteStatus:
+    """A case-level choice changed — construction, jaw or relief (put_choices' stated
+    boundary; the demo's rule #1, librarySelection.ts:10-16: they all describe the
+    same shipped part). Every fact past DECLARED describes a part no longer being
+    made, so later rungs drop back to DECLARED while declarations stand. Never
+    refuses: the choices change sweeps every site, so fresh rungs pass through
+    untouched (idempotent, like ``regress_to_detected``)."""
+    if current in (_S.DETECTED, _S.DECLARED):
+        return current
+    return _S.DECLARED
 
 
 def flag(current: SiteStatus) -> SiteStatus:

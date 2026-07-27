@@ -9,13 +9,19 @@ The read model (slice 1):
     the relief ceiling per declared variant, the detection record, the operator's
     case-level choices, and the session's own state.
 
-The first ACTIONS (slice 4) — writes that carry no claimed outcomes:
+The ACTIONS (slices 4-5b) — writes that carry no claimed outcomes:
 
   - ``POST /api/case-sessions/{id}/detect`` — runs ``application.detection`` and persists
     the result (worker FACTS). No request body at all; ``?fresh=1`` re-derives.
   - ``PUT /api/case-sessions/{id}/choices`` — the case-level OPERATOR CHOICES only
     (construction part, jaw, relief). The request model is the start of the validation
     corpus (plan §6/AM-9, copy-debt ledger row 4).
+  - ``PUT .../system`` and ``PUT .../sites/{tooth}/declaration`` (5a) — the case-scoped
+    system and the per-site variant, both reset boundaries.
+  - ``POST .../sites/{tooth}/preview`` (5b) — a compute trigger like detect (no body);
+    persists the seat FACTS, returns the pane payload response-only.
+  - ``POST/DELETE .../sites/{tooth}/review`` (5b) — the operator's two-way ATTESTATION
+    over the panes; no body either way, the act is the request itself.
 
 Every status is still DERIVED: cases and suggestions from ``case_prep.application``,
 statuses from the session store. The doctrine is structural and tested: every non-GET
@@ -37,6 +43,8 @@ from case_prep.application.catalog import (UnknownSelection, construction_parts,
                                            relief_ceiling, require_construction,
                                            require_library_model, require_variant)
 from case_prep.application.detection import DetectionResult, ScanUnreadable, detect
+from case_prep.application.preview import (PreviewRefused, PreviewSelection,
+                                           preview_site)
 
 from .. import status
 from ..config import Settings
@@ -410,6 +418,17 @@ def _case_or_404(settings: Settings, case_id: str) -> CaseRecord:
     return case
 
 
+def _require_known_tooth(case: CaseRecord, session: CaseSession, tooth: int) -> None:
+    """The path names a per-site subresource: the tooth must be a site the case
+    actually has (a curated suggestion or a session site) — 404 otherwise, the same
+    sentence for every per-site action. Judged against the SESSION given, so a caller
+    judging inside a mutation judges the fresh document."""
+    known = ({int(s["tooth"]) for s in case.suggested_sites}
+             | {int(k) for k in session.sites})
+    if tooth not in known:
+        raise HTTPException(404, f"tooth {tooth} is not a site on case {case.id!r}")
+
+
 def _mutate_session(store: SessionStore, case_id: str,
                     mutate: Callable[[CaseSession], None]) -> CaseSession:
     """Every mutating route's one write path: fresh-load → mutate → CAS save, retrying
@@ -536,17 +555,15 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
     against the catalog (never a path join); jaw and relief were already refused by the
     request model in the demo's own words.
 
-    THE REVIEW-RESET RULE, named now for 5b (the demo's rule #1, librarySelection.ts:
-    10-16: a review is about a SPECIFIC part, and construction, jaw and relief "all
-    describe the same shipped part" — so ``withConstruction``/``withJaw``/
-    ``withOffsetInput`` each clear EVERY site's review): when 5b introduces previews
-    and review ticks, a CHANGE to any of these three choices must clear every site's
-    later-ladder facts HERE — the third reset trigger, beside the declaration
+    THE REVIEW-RESET RULE, LANDED (5b; the demo's rule #1, librarySelection.ts:10-16):
+    a review is about a SPECIFIC part, and construction, jaw and relief "all describe
+    the same shipped part" — so a CHANGE to any of them clears every site's
+    later-ladder facts (the preview's seat facts, the review's READY) through the
+    machine's ``invalidate_preview`` — the third reset trigger, beside the declaration
     (per-site) and the system switch (case-wide). Declared VARIANTS survive a choices
-    change, exactly as in the demo (those transitions touch ``reviewed`` only) —
-    pinned by test. Nothing to clear exists today (no HTTP path reaches past
-    declared), but the rule lives at this boundary NOW so 5b extends it instead of
-    re-opening the acknowledgment bypass the demo closed on 2026-07-25.
+    change, exactly as in the demo (its transitions touch ``reviewed`` only), and an
+    IDENTICAL re-PUT resets nothing (the demo's own equality guards,
+    ``withConstruction``/``withJaw``/``withOffsetInput``) — both pinned by test.
     """
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
@@ -557,14 +574,20 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
             raise HTTPException(422, str(exc))
 
     # Retry-or-409 posture: replacing the choices document is idempotent over a fresh
-    # load (the operator's whole panel is the payload), so one retry is safe and loses
-    # no rival's fact; a second conflict surfaces as the 409.
+    # load (the operator's whole panel is the payload), and the reset re-derives from
+    # each fresh document, so one retry is safe and loses no rival's fact; a second
+    # conflict surfaces as the 409.
     def apply(session: CaseSession) -> None:
-        session.choices = CaseChoices(
+        replacement = CaseChoices(
             construction_path=body.construction_path,
             jaw=body.jaw,
             gingival_offset_mm=body.gingival_offset_mm,
         )
+        if replacement != session.choices:
+            for site in session.sites.values():
+                site.status = status.invalidate_preview(site.status)
+                site.clear_preview_facts()
+        session.choices = replacement
 
     session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)
@@ -596,6 +619,7 @@ def put_system(case_id: str, body: SystemIn, request: Request) -> CaseSessionDet
             for site in session.sites.values():
                 site.status = status.regress_to_detected(site.status)
                 site.declared_variant = None
+                site.clear_preview_facts()   # a preview of a dropped variant (5b)
         session.system = body.model
 
     session = _mutate_session(store, case_id, apply)
@@ -634,10 +658,7 @@ def put_declaration(case_id: str, tooth: int, body: DeclarationIn,
         # the retry must re-JUDGE against what is actually there, not re-apply a
         # verdict reached against what used to be. A refusal raised here propagates
         # before any save — asking still creates nothing.
-        known_teeth = ({int(s["tooth"]) for s in case.suggested_sites}
-                       | {int(k) for k in session.sites})
-        if tooth not in known_teeth:
-            raise HTTPException(404, f"tooth {tooth} is not a site on case {case_id!r}")
+        _require_known_tooth(case, session, tooth)
         model = _effective_model(case, session)
         if model is None:
             raise HTTPException(422, f"case {case_id!r} has no implant system yet — "
@@ -651,9 +672,140 @@ def put_declaration(case_id: str, tooth: int, body: DeclarationIn,
         if site.declared_variant != body.variant:
             site.status = status.declare(site.status)
             site.declared_variant = body.variant
-            # later-ladder facts (5b previews, review ticks; 5c run caches) clear
-            # HERE when they exist — the declaration is the reset boundary.
+            # the declaration is the reset boundary (5a's stated rule, real since
+            # 5b): the old part's preview facts fall with its rung
+            site.clear_preview_facts()
         session.sites[str(tooth)] = site
 
     session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
+@router.post("/{case_id}/sites/{tooth}/preview")
+def preview_site_action(case_id: str, tooth: int, request: Request) -> dict:
+    """Seat the site's DECLARED cap and return its deviation colouring — the three
+    panes' union read, before any run (plan §4 Declare / §7 slice 5b).
+
+    A compute TRIGGER like detect: NO body at all — the declaration and the case-level
+    choices it seats with come from the session, so there is nothing a client could
+    claim with. The response is ``application.preview``'s payload VERBATIM (the demo's
+    wire shape — the copied deviationColormap/pane code renders it); the mesh is
+    response-only. What persists are the seat FACTS — the previewed rung through the
+    status machine, ``seat_method``, ``rim_agreement_mm`` — and they persist INSIDE
+    the mutation, re-judged against the fresh document (commit 25604e7's rule): a
+    rival re-declaration landing during the multi-second derivation makes the derived
+    facts describe a part no longer declared, and they must refuse (409), never land.
+
+    MULTI-SECOND (the demo measured ~3.5s per site): phase 2 moves this behind the
+    job-shaped worker port (plan §3/AM-3) exactly like the full run; until then the
+    handler computes in-process and the UI treats it per-site non-blocking — stepping
+    sites while one previews is legal, and the busy pane names the work.
+    """
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+
+    def judge(session: CaseSession) -> PreviewSelection:
+        """What the preview seats WITH, read off one session document — refusing
+        (404/422, naming exactly what is missing) when the session cannot answer.
+        Called on the pre-derivation load (an impossible ask must not cost seconds of
+        physics) and AGAIN on the fresh document inside the mutation."""
+        _require_known_tooth(case, session, tooth)
+        site = session.sites.get(str(tooth))
+        choices = session.choices
+        model = _effective_model(case, session)
+        missing = []
+        if site is None or site.declared_variant is None:
+            missing.append("a declared cap variant for this site")
+        if model is None:
+            missing.append("the implant system")
+        if choices.construction_path is None:
+            missing.append("the construction part")
+        if choices.jaw is None:
+            missing.append("the jaw")
+        if choices.gingival_offset_mm is None:
+            missing.append("the gingival relief")
+        if missing:
+            raise HTTPException(422, f"nothing to preview yet — tooth {tooth} on "
+                                     f"case {case_id!r} still needs: "
+                                     + ", ".join(missing))
+        return PreviewSelection(
+            model=model, construction_path=choices.construction_path,
+            variant=site.declared_variant, jaw=choices.jaw,
+            gingival_offset_mm=choices.gingival_offset_mm)
+
+    selection = judge(store.load(case_id))
+    try:
+        payload = preview_site(case, selection, tooth)
+    except PreviewRefused as exc:
+        # the pipeline's own refusal, in the words the gate wrote (the demo's 409)
+        raise HTTPException(409, str(exc))
+    except (ScanUnreadable, UnknownSelection) as exc:
+        raise HTTPException(422, str(exc))
+    seat = payload.get("seat") or {}
+
+    def apply(session: CaseSession) -> None:
+        if judge(session) != selection:
+            raise HTTPException(409, f"case {case_id!r} changed while the preview "
+                                     f"was computing — re-read the case; the panes "
+                                     f"re-ask against what is actually there now")
+        site = session.sites[str(tooth)]
+        # declared -> previewed; a re-preview holds previewed; READY holds ready (a
+        # reload's re-render must never untick a review) — all the machine's ruling
+        site.status = status.preview(site.status)
+        site.seat_method = seat.get("seat_method")
+        site.rim_agreement_mm = seat.get("rim_agreement_mm")
+
+    try:
+        _mutate_session(store, case_id, apply)
+    except status.IllegalTransition as exc:
+        raise HTTPException(422, str(exc))
+    return payload
+
+
+@router.post("/{case_id}/sites/{tooth}/review", response_model=CaseSessionDetail)
+def post_review(case_id: str, tooth: int, request: Request) -> CaseSessionDetail:
+    """The operator's review tick over the live panes (plan §4 Declare / AM-8): the
+    ATTESTATION that this site's panes were read — an ACT, like choices (AM-4 allows
+    acts, forbids claimed verdicts). No body at all, deliberately: the act's whole
+    content is the request itself, so no field exists for a claimed outcome to ride
+    in on. The previewed→ready move is the machine's ``review_ready``, which refuses
+    (422, in the ladder's words) any site not standing on a preview — a tick over
+    nothing stays impossible server-side, not merely unrendered. Judged INSIDE the
+    mutation: the rung is session state (25604e7's rule)."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+
+    def apply(session: CaseSession) -> None:
+        _require_known_tooth(case, session, tooth)
+        site = session.sites.get(str(tooth), SiteSession())
+        site.status = status.review_ready(site.status)
+        session.sites[str(tooth)] = site
+
+    try:
+        session = _mutate_session(store, case_id, apply)
+    except status.IllegalTransition as exc:
+        raise HTTPException(422, str(exc))
+    return _detail(case, session, settings)
+
+
+@router.delete("/{case_id}/sites/{tooth}/review", response_model=CaseSessionDetail)
+def delete_review(case_id: str, tooth: int, request: Request) -> CaseSessionDetail:
+    """The tick un-ticked — the demo's review checkbox was two-way, and an attestation
+    the operator can withdraw is more honest than one that only latches. ready→
+    previewed through the machine's ``withdraw_review`` (the panes are still rendered;
+    only the attestation is gone — the preview facts deliberately survive), refusing
+    (422) a withdrawal of a review that was never given."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+
+    def apply(session: CaseSession) -> None:
+        _require_known_tooth(case, session, tooth)
+        site = session.sites.get(str(tooth), SiteSession())
+        site.status = status.withdraw_review(site.status)
+        session.sites[str(tooth)] = site
+
+    try:
+        session = _mutate_session(store, case_id, apply)
+    except status.IllegalTransition as exc:
+        raise HTTPException(422, str(exc))
     return _detail(case, session, settings)

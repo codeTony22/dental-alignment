@@ -6,14 +6,17 @@ Tested EXHAUSTIVELY — every (event × current status) pair — because the mod
 tiny and the whole point of extracting it is that no resource ever pokes a status
 string again: whatever a handler can express, this table has already judged.
 
-The two always-legal events are deliberate, not lax:
+The three always-legal events are deliberate, not lax:
 
   - ``declare`` from ANY rung: a declaration is the reset boundary — the operator
     re-describing the part invalidates every later-ladder fact about the old one
-    (the resource clears those facts; today there are none, the rule exists so
-    5b/5c inherit it instead of rediscovering it).
+    (the resource clears those facts alongside — since 5b they exist: the preview's
+    seat facts).
   - ``regress_to_detected`` from ANY rung: the case-level system switch resets every
     site (AM-8's visible-reset semantics, server-side).
+  - ``invalidate_preview`` from ANY rung (5b): a case-level choices CHANGE — the
+    demo's rule #1, construction/jaw/relief all describe the same shipped part — drops
+    every rung past DECLARED back to DECLARED and leaves earlier rungs standing.
 """
 from __future__ import annotations
 
@@ -44,11 +47,29 @@ LADDER = {
         S.ADJUSTED: S.DETECTED,
     },
     status.preview: {
-        S.DECLARED: S.PREVIEWED,  # the ladder's one preview edge; 5b widens it only
-    },                            # if re-preview becomes a real act
+        S.DECLARED: S.PREVIEWED,  # the first render for a declaration
+        S.PREVIEWED: S.PREVIEWED, # a re-render — 5b's auto-fire re-asks after a reload
+        S.READY: S.READY,         # the same re-render over a REVIEWED site: the
+                                  # derivation is deterministic over an unchanged
+                                  # declaration+choices (the reset boundaries guarantee
+                                  # they are unchanged), so a page reload must never
+                                  # silently untick an operator's review
+    },
     status.review_ready: {
         S.PREVIEWED: S.READY,     # the operator's tick over the live panes (5b)
         S.ADJUSTED: S.READY,      # re-verify after an adjust tool (slice 6)
+    },
+    status.withdraw_review: {
+        S.READY: S.PREVIEWED,     # the tick is two-way (the demo's checkbox): an
+                                  # operator may take their attestation back
+    },
+    status.invalidate_preview: {
+        S.DETECTED: S.DETECTED,   # never refuses — a choices change sweeps EVERY site,
+        S.DECLARED: S.DECLARED,   # so fresh rungs pass through untouched
+        S.PREVIEWED: S.DECLARED,  # the preview described choices no longer chosen
+        S.READY: S.DECLARED,      # …and so did the review over it
+        S.FLAGGED: S.DECLARED,    # a flag is run evidence about the OLD choices (5c)
+        S.ADJUSTED: S.DECLARED,
     },
     status.flag: {
         S.PREVIEWED: S.FLAGGED,   # plan §2's fork: previewed → ready | flagged
