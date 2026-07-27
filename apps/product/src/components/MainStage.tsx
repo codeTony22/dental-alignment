@@ -26,6 +26,7 @@ import {
   Viewer3D,
   resolveRouteTarget,
   routeSignature,
+  type MarkerSpec,
   type StageSubject,
   type Vec3,
   type Viewer3DHandle,
@@ -145,10 +146,13 @@ export interface MainStageProps {
   readonly caseId: string;
   readonly scanFilename: string;
   readonly sites: readonly SiteView[];
+  /** Detected-site rings (slice 4 Intake) — the copied viewer's marker surface.
+   * Omitted = no markers, which keeps Declare's mount unchanged. */
+  readonly markers?: readonly MarkerSpec[];
 }
 
 /** The container: streams the scan, opens FRONT, routes to the active site. */
-export function MainStage({ caseId, scanFilename, sites }: MainStageProps) {
+export function MainStage({ caseId, scanFilename, sites, markers }: MainStageProps) {
   const viewerRef = useRef<Viewer3DHandle | null>(null);
   const [scanState, setScanState] = useState<ScanLoadState>({ kind: "loading" });
   const [subject, setSubject] = useState<StageSubject>("site");
@@ -191,6 +195,14 @@ export function MainStage({ caseId, scanFilename, sites }: MainStageProps) {
       cancelled = true;
     };
   }, [caseId]);
+
+  // Markers follow the payload, not click history: whatever the BFF's detection
+  // record says, after every load and on every change (an empty list CLEARS — a
+  // re-detected case must not keep stale rings).
+  useEffect(() => {
+    if (scanState.kind !== "ready") return;
+    viewerRef.current?.setMarkers(markers ?? []);
+  }, [markers, scanState.kind]);
 
   const routeTarget = useMemo(
     () =>

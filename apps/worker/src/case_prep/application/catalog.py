@@ -57,6 +57,19 @@ def construction_parts(data_root: Path) -> List[dict]:
     return construction_catalog.construction_entries(Path(data_root))
 
 
+def require_construction(data_root: Path, construction_path: str) -> Path:
+    """The construction part's file, by catalog MEMBERSHIP — never a path join on caller
+    input (the traversal refusal lives in adapters/construction_catalog; joining caller
+    input is the measured 2026-07-25 escape). Raises ``UnknownSelection`` in the one
+    sentence the BFF serves verbatim — the same refusal ``relief_ceiling`` gives, now
+    with a single home so Intake's choices validation cannot drift from it."""
+    resolved = construction_catalog.resolve_construction(Path(data_root), construction_path)
+    if resolved is None:
+        raise UnknownSelection(f"unknown construction part {construction_path!r} — pick "
+                               f"one of the catalog's parts")
+    return resolved
+
+
 @lru_cache(maxsize=16)
 def _construction_mesh(path_str: str) -> trimesh.Trimesh:
     """The vendor part's mesh, parsed once per process (multi-MB CAD files)."""
@@ -115,10 +128,7 @@ def relief_ceiling(data_root: Path, construction_path: str, model: str,
     Pure measurement: nothing is emitted, nothing is written. The dict is JSON-ready so
     the BFF can shape it per response without re-touching physics."""
     data = Path(data_root)
-    construction_file = construction_catalog.resolve_construction(data, construction_path)
-    if construction_file is None:
-        raise UnknownSelection(f"unknown construction part {construction_path!r} — pick "
-                               f"one of the catalog's parts")
+    construction_file = require_construction(data, construction_path)
     library = _library_for(data, model, [variant])
     spec = next((s for s in library.specs if s.variant == variant), None)
     if spec is None:

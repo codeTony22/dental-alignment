@@ -5,11 +5,12 @@ statuses, adjust-visited, the run receipt, the confirmation record, ``payment_au
 Rehydrated on BFF start and re-read per request: a restart mid-morning loses nothing,
 least of all at the money-adjacent step.
 
-STATUSES ARE NEVER ACCEPTED FROM CLIENTS — structurally. No endpoint takes a session
-field from a request body (the case-session resources are GET-only, and their test
-asserts that on the route table); every mutation enters through THIS module, called by
-server-side flow logic in later slices. A presentational app PATCHing a flagged site to
-``ready`` is impossible, not merely unstyled.
+STATUSES ARE NEVER ACCEPTED FROM CLIENTS — structurally. Since slice 4 the resource is
+no longer GET-only (choices and compute triggers are legitimate writes), but no request
+body may carry a status/verdict/gate-shaped field — asserted on the route table AND the
+request models by test_case_sessions' allowlist test; every status mutation still enters
+through THIS module, called by server-side flow logic. A presentational app PATCHing a
+flagged site to ``ready`` is impossible, not merely unstyled.
 
 Failure posture: a corrupt session file REFUSES loudly (naming the file) instead of
 silently starting fresh — a quiet reset would forget a confirmation or a payment
@@ -22,7 +23,7 @@ from __future__ import annotations
 import enum
 import os
 from pathlib import Path
-from typing import Dict, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -42,6 +43,45 @@ class SiteStatus(str, enum.Enum):
 class SiteSession(BaseModel):
     status: SiteStatus = SiteStatus.DETECTED
     declared_variant: Optional[str] = None
+
+
+class CaseChoices(BaseModel):
+    """The CASE-LEVEL operator choices (plan §4 Intake): the construction part, the jaw,
+    the gingival relief ask. OPERATOR ACTS, never derived — the one kind of write the
+    doctrine allows in (see test_case_sessions' allowlist test) — and each is honestly
+    None until the operator has actually made it: no field here is ever pre-filled
+    server-side from a suggestion (the lab chooses, the software never guesses)."""
+
+    construction_path: Optional[str] = None
+    jaw: Optional[str] = None
+    gingival_offset_mm: Optional[float] = None
+
+    @property
+    def complete(self) -> bool:
+        """All three choices explicitly made — the fact Intake's completion tick reads."""
+        return (self.construction_path is not None and self.jaw is not None
+                and self.gingival_offset_mm is not None)
+
+
+class DetectedProposal(BaseModel):
+    """One persisted detector proposal (application.detection.DetectedSite, serialized):
+    a world-space centre, the detector's evidence numbers, the NON-BINDING tooth guess,
+    and the site's capture assessment — worker facts, written only by the detect route."""
+
+    center: List[float]
+    void_ratio: float
+    rim_below_cusps_mm: float
+    tooth_guess: Optional[int] = None
+    capture: dict
+
+
+class DetectionRecord(BaseModel):
+    """The persisted product of automatic detection (plan §4: detection fires on Intake,
+    verdicts surface BEFORE work is invested). ``site_capture`` keys the CURATED sites'
+    capture verdicts by tooth (string keys — JSON objects; same honesty as ``sites``)."""
+
+    proposals: List[DetectedProposal] = Field(default_factory=list)
+    site_capture: Dict[str, dict] = Field(default_factory=dict)
 
 
 class RunSession(BaseModel):
@@ -68,6 +108,10 @@ class CaseSession(BaseModel):
     tenant_id: str = "local"
     # keyed by tooth number as a string (JSON object keys are strings; kept honest here)
     sites: Dict[str, SiteSession] = Field(default_factory=dict)
+    # worker facts, persisted by the detect route; None = detection has not run yet
+    detection: Optional[DetectionRecord] = None
+    # operator acts, persisted by the choices route
+    choices: CaseChoices = Field(default_factory=CaseChoices)
     adjust_visited: bool = False
     run: Optional[RunSession] = None
     confirmation: Optional[ConfirmationRecord] = None

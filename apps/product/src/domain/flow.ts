@@ -60,6 +60,11 @@ export interface FlowFacts {
   readonly siteFlagged: number;
   readonly runState: string;
   readonly confirmed: boolean;
+  /** Detection ran and its record is persisted (slice 4) — a BFF fact, never inferred
+   * from sites being present (curated suggestions exist before detection ever runs). */
+  readonly detectionDone: boolean;
+  /** All three case-level choices explicitly made — the BFF's derivation, verbatim. */
+  readonly choicesComplete: boolean;
 }
 
 /** Structural mirror of a `WorklistRow` (GET /api/case-sessions). */
@@ -71,6 +76,8 @@ export interface WorklistRowLike {
   };
   readonly run_state: string;
   readonly confirmed: boolean;
+  readonly detected: boolean;
+  readonly choices_complete: boolean;
 }
 
 export function factsFromWorklistRow(row: WorklistRowLike): FlowFacts {
@@ -80,12 +87,16 @@ export function factsFromWorklistRow(row: WorklistRowLike): FlowFacts {
     siteFlagged: row.sites.flagged,
     runState: row.run_state,
     confirmed: row.confirmed,
+    detectionDone: row.detected,
+    choicesComplete: row.choices_complete,
   };
 }
 
 /** Structural mirror of a `CaseSessionDetail` (GET /api/case-sessions/{id}). */
 export interface CaseSessionLike {
   readonly sites: ReadonlyArray<{ readonly status: string }>;
+  readonly detection: object | null;
+  readonly choices: { readonly complete: boolean };
   readonly session: {
     readonly run_state: string;
     readonly confirmed: boolean;
@@ -99,6 +110,8 @@ export function factsFromCaseSession(payload: CaseSessionLike): FlowFacts {
     siteFlagged: payload.sites.filter((s) => s.status === "flagged").length,
     runState: payload.session.run_state,
     confirmed: payload.session.confirmed,
+    detectionDone: payload.detection !== null,
+    choicesComplete: payload.choices.complete,
   };
 }
 
@@ -155,7 +168,9 @@ export function blockedReason(stage: StageId, facts: FlowFacts): string | null {
 
 /**
  * Completion, per stage — a display verdict for the rail's tick, never a gate:
- *  - intake: detection has yielded sites (Intake's product exists).
+ *  - intake: detection RAN and the case-level choices are all made (plan §4 slice 4 —
+ *    sites merely existing is not Intake done: curated suggestions predate detection,
+ *    and the choices are Intake's other half). Both facts are the BFF's derivations.
  *  - declare: every site reviewed through to ready or flagged.
  *  - adjust: a run exists and nothing is flagged — the plan's "nothing to adjust".
  *  - deliver: the confirmation is sealed.
@@ -163,7 +178,7 @@ export function blockedReason(stage: StageId, facts: FlowFacts): string | null {
 export function isComplete(stage: StageId, facts: FlowFacts): boolean {
   switch (stage) {
     case "intake":
-      return facts.siteTotal > 0;
+      return facts.detectionDone && facts.choicesComplete;
     case "declare":
       return allSitesResolved(facts);
     case "adjust":

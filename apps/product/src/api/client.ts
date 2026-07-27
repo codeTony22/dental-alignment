@@ -1,6 +1,7 @@
 /**
- * THE BFF CLIENT — the product's only network surface (plan §1.3, §3): two GET
- * resources, reached through the vite proxy so no backend host is hard-coded here.
+ * THE BFF CLIENT — the product's only network surface (plan §1.3, §3): the case-session
+ * reads plus slice 4's two actions (detect — a compute trigger; choices — operator
+ * acts), reached through the vite proxy so no backend host is hard-coded here.
  *
  * Types below mirror the BFF's response models BY HAND (bff/resources/case_sessions.py
  * — WorklistRow, CaseSessionDetail and their parts); they are small, so codegen would
@@ -39,6 +40,26 @@ export interface WorklistRow {
   sites: SiteRollup;
   run_state: RunState;
   confirmed: boolean;
+  detected: boolean;
+  choices_complete: boolean;
+}
+
+/** One capture check, as the worker's CaptureCheck.to_dict spells it. */
+export interface CaptureCheckView {
+  name: string;
+  value: number | null;
+  bound_pass: number;
+  bound_rescan: number;
+  verdict: string;
+  message: string;
+}
+
+/** A site's capture assessment (worker CaptureAssessment.to_dict): the overall verdict
+ * is the WORST check — "rescan" is the chair-side moment Intake must surface first. */
+export interface CaptureAssessmentView {
+  verdict: "pass" | "marginal" | "rescan" | string;
+  rim_z_mm: number | null;
+  checks: CaptureCheckView[];
 }
 
 export interface SiteView {
@@ -47,6 +68,30 @@ export interface SiteView {
   declared_variant: string | null;
   suggested_variant: string | null;
   center: number[] | null;
+  capture: CaptureAssessmentView | null;
+}
+
+/** A detector proposal: centre + evidence + the NON-BINDING tooth guess + capture. */
+export interface DetectedProposalView {
+  center: number[];
+  void_ratio: number;
+  rim_below_cusps_mm: number;
+  tooth_guess: number | null;
+  capture: CaptureAssessmentView;
+}
+
+export interface DetectionView {
+  proposals: DetectedProposalView[];
+}
+
+/** The operator's case-level choices as persisted; `complete` is the BFF's derivation
+ * (this app never computes completion itself — trust direction, AM-4). */
+export interface ChoicesView {
+  construction_path: string | null;
+  jaw: string | null;
+  gingival_offset_mm: number | null;
+  gingival_offset_default_mm: number;
+  complete: boolean;
 }
 
 export interface CaseView {
@@ -95,6 +140,8 @@ export interface CaseSessionDetail {
   sites: SiteView[];
   catalog: CatalogView;
   relief_ceilings: ReliefCeilingView[];
+  detection: DetectionView | null;
+  choices: ChoicesView;
   session: SessionView;
 }
 
@@ -111,10 +158,34 @@ export type ApiResult<T> =
 /** What a fetching component holds: the result, or the honest in-between. */
 export type FetchState<T> = { kind: "loading" } | ApiResult<T>;
 
-async function fetchJson<T>(path: string): Promise<ApiResult<T>> {
+/**
+ * A pydantic-shaped 422 carries a LIST of error rows; each row's `msg` holds the
+ * backend's own sentence behind a "Value error, " prefix pydantic adds. The prefix is
+ * machinery, the sentence is the refusal — surface the sentences, joined.
+ */
+export function refusalDetail(detail: unknown): string | null {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((row: unknown) =>
+        typeof row === "object" && row !== null &&
+        typeof (row as Record<string, unknown>)["msg"] === "string"
+          ? ((row as Record<string, unknown>)["msg"] as string).replace(
+              /^Value error, /,
+              "",
+            )
+          : null,
+      )
+      .filter((msg): msg is string => msg !== null);
+    if (messages.length > 0) return messages.join("; ");
+  }
+  return null;
+}
+
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
   let response: Response;
   try {
-    response = await fetch(path);
+    response = await fetch(path, init);
   } catch (err: unknown) {
     return {
       kind: "error",
@@ -122,11 +193,12 @@ async function fetchJson<T>(path: string): Promise<ApiResult<T>> {
     };
   }
   if (!response.ok) {
-    // FastAPI refusals carry {"detail": ...}; surface it when present.
+    // FastAPI refusals carry {"detail": ...} — a sentence, or pydantic's error rows.
     let detail = `HTTP ${response.status}`;
     try {
       const body = (await response.json()) as { detail?: unknown };
-      if (typeof body.detail === "string") detail = `HTTP ${response.status} — ${body.detail}`;
+      const stated = refusalDetail(body.detail);
+      if (stated !== null) detail = `HTTP ${response.status} — ${stated}`;
     } catch {
       // a non-JSON error body still yields the status line above
     }
@@ -172,4 +244,43 @@ export async function fetchCaseSession(
  */
 export function scanUrlFor(caseId: string): string {
   return `/api/case-sessions/${encodeURIComponent(caseId)}/scan`;
+}
+
+/**
+ * Fire detection (POST /{id}/detect — plan §4: automatic on Intake). A compute
+ * TRIGGER: no body — the response is the whole updated detail, which the caller
+ * renders verbatim (trust direction: the BFF derived it, this app displays it).
+ * `fresh` is the explicit re-ask for a rescanned case.
+ */
+export async function postDetect(
+  caseId: string,
+  fresh = false,
+): Promise<ApiResult<CaseSessionDetail>> {
+  const query = fresh ? "?fresh=1" : "";
+  return fetchJson<CaseSessionDetail>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/detect${query}`,
+    { method: "POST" },
+  );
+}
+
+/** The full case-level choice document — PUT semantics: what is sent is what is
+ * chosen, so the panel always submits its whole current state. */
+export interface ChoicesUpdate {
+  construction_path: string | null;
+  jaw: string | null;
+  gingival_offset_mm: number | null;
+}
+
+export async function putChoices(
+  caseId: string,
+  choices: ChoicesUpdate,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/choices`,
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(choices),
+    },
+  );
 }

@@ -8,8 +8,10 @@
  * stage the case has not earned. Browser Back/Forward are the back affordance —
  * no in-app back button (plan §4 Intake).
  *
- * Stage bodies are placeholders naming their building slice; the rail, the guard and
- * the payload plumbing are this slice's product.
+ * Intake's body is BUILT (slice 4 — components/IntakeStage, which owns auto-detect and
+ * the choices PUT; its responses replace the shell's payload via onDetail, so the whole
+ * rail re-derives from what the BFF returned). The remaining bodies are placeholders
+ * naming their building slice.
  */
 import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
@@ -25,23 +27,20 @@ import {
   type StageId,
 } from "../domain/flow";
 import { ErrorBanner } from "../components/ErrorBanner";
+import { IntakeStage } from "../components/IntakeStage";
 import { MainStage } from "../components/MainStage";
 import { StageRail } from "../components/StageRail";
 
 /**
- * Each body names the slice that builds (the rest of) it, so the shell never pretends.
- * Intake and Declare now carry the MAIN STAGE (slice 3) above their placeholder line —
- * the 3D is the product; the rest of each body stays a placeholder for slices 4/5a.
+ * Each unbuilt body names the slice that builds it, so the shell never pretends.
+ * Intake is BUILT (slice 4 — components/IntakeStage); Declare carries the main stage
+ * (slice 3) above its placeholder line; Adjust and Deliver stay placeholders.
  */
-const STAGE_BODY: Readonly<Record<StageId, string>> = {
-  intake: "Slice 4 builds the rest of Intake: auto-detect on load, capture verdicts, case-level choices.",
+const STAGE_BODY: Readonly<Record<Exclude<StageId, "intake">, string>> = {
   declare: "Slice 5a builds the rest of Declare: site queue, system bar, variant cards, review ticks.",
   adjust: "Adjust — slice 6 builds this (flagged queue, the four tools; skippable by design).",
   deliver: "Deliver — slice 8 builds this (assurance table, sealed confirmation, gated release).",
 };
-
-/** The stages whose bodies mount the main stage today (plan §7 slice 3). */
-const STAGES_WITH_MAIN_STAGE: readonly StageId[] = ["intake", "declare"];
 
 interface CaseLoadErrorProps {
   readonly id: string;
@@ -69,10 +68,14 @@ export function CaseLoadError({ id, error }: CaseLoadErrorProps) {
 interface CaseShellViewProps {
   readonly detail: CaseSessionDetail;
   readonly stage: StageId;
+  /** How Intake's actions replace the payload; the static tests pass nothing. */
+  readonly onDetail?: (next: CaseSessionDetail) => void;
 }
 
+const IGNORE_DETAIL = () => undefined;
+
 /** The presentational shell — pure payload → markup, testable without a fetch. */
-export function CaseShellView({ detail, stage }: CaseShellViewProps) {
+export function CaseShellView({ detail, stage, onDetail }: CaseShellViewProps) {
   const states = stageStates(factsFromCaseSession(detail));
   return (
     <section data-role="case-shell">
@@ -91,14 +94,20 @@ export function CaseShellView({ detail, stage }: CaseShellViewProps) {
       <div style={{ display: "flex", gap: "2rem", marginTop: "1rem" }}>
         <StageRail states={states} current={stage} caseId={detail.case.id} />
         <section data-role="stage-body" style={{ flex: 1 }}>
-          {STAGES_WITH_MAIN_STAGE.includes(stage) && (
-            <MainStage
-              caseId={detail.case.id}
-              scanFilename={detail.case.scan_filename}
-              sites={detail.sites}
-            />
+          {stage === "intake" ? (
+            <IntakeStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
+          ) : (
+            <>
+              {stage === "declare" && (
+                <MainStage
+                  caseId={detail.case.id}
+                  scanFilename={detail.case.scan_filename}
+                  sites={detail.sites}
+                />
+              )}
+              <p>{STAGE_BODY[stage]}</p>
+            </>
           )}
-          <p>{STAGE_BODY[stage]}</p>
         </section>
       </div>
     </section>
@@ -138,5 +147,12 @@ export function CaseShell() {
   if (resolution.kind === "redirect") {
     return <Navigate to={`/case/${id}/${resolution.to}`} replace />;
   }
-  return <CaseShellView detail={state.data} stage={resolution.stage} />;
+  return (
+    <CaseShellView
+      detail={state.data}
+      stage={resolution.stage}
+      // an action's response IS the new payload — rendered verbatim (AM-4)
+      onDetail={(next) => setState({ kind: "ok", data: next })}
+    />
+  );
 }

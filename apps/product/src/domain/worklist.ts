@@ -84,7 +84,9 @@ const isWorklistRow = (value: unknown): value is WorklistRow => {
     typeof v["jaw"] === "string" &&
     isRollup(v["sites"]) &&
     typeof v["run_state"] === "string" &&
-    typeof v["confirmed"] === "boolean"
+    typeof v["confirmed"] === "boolean" &&
+    typeof v["detected"] === "boolean" &&
+    typeof v["choices_complete"] === "boolean"
   );
 };
 

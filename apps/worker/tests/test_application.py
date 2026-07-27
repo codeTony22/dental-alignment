@@ -26,7 +26,8 @@ import pytest
 
 from case_prep.application.cases import CaseRecord, discover_cases
 from case_prep.application.catalog import (UnknownSelection, construction_parts,
-                                           library_groups, relief_ceiling)
+                                           library_groups, relief_ceiling,
+                                           require_construction)
 
 REAL = Path(__file__).resolve().parents[1] / "data" / "real"
 real_only = pytest.mark.skipif(not (REAL / "library").is_dir(),
@@ -129,6 +130,27 @@ class TestDiscoverCasesOnTheRealTree:
 
 
 # --- catalog reads ----------------------------------------------------------------------
+
+class TestRequireConstruction:
+    """Slice 4's choices validation reads through this one door (plan §6/AM-9: catalog
+    membership, never a path join on caller input) — synthetic tree, no meshes parsed."""
+
+    def test_a_listed_part_resolves_to_its_file(self, tmp_path):
+        root = _tree(tmp_path)
+        path = require_construction(root, "dess/neodent-gm-scanbody.stl")
+        assert path == root / "library/construction/dess/neodent-gm-scanbody.stl"
+
+    def test_an_unlisted_part_is_refused_in_one_sentence(self, tmp_path):
+        root = _tree(tmp_path)
+        with pytest.raises(UnknownSelection, match="unknown construction part"):
+            require_construction(root, "dess/no-such-part.stl")
+
+    def test_a_traversal_string_is_just_another_unknown(self, tmp_path):
+        # membership refuses the escape the measured 2026-07-25 path join allowed
+        root = _tree(tmp_path)
+        with pytest.raises(UnknownSelection):
+            require_construction(root, "../caps/neodent-gm/neodent-gm-5020.stl")
+
 
 @real_only
 class TestCatalogReads:

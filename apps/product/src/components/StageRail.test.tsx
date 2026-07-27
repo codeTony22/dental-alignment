@@ -24,6 +24,9 @@ const freshFacts: FlowFacts = {
   siteFlagged: 0,
   runState: "none",
   confirmed: false,
+  // intake done per slice 4's rule: detection ran AND the case-level choices made
+  detectionDone: true,
+  choicesComplete: true,
 };
 
 describe("the stage rail", () => {
@@ -32,7 +35,7 @@ describe("the stage rail", () => {
     for (const title of ["Intake", "Declare", "Adjust", "Deliver"]) {
       expect(html).toContain(title);
     }
-    // intake already ticks (detection yielded sites); the rest still number
+    // intake already ticks (detection ran, choices made); the rest still number
     expect(html).toContain(">✓<");
     expect(html).toContain(">2<");
     expect(html).toContain(">4<");
@@ -64,6 +67,8 @@ describe("the stage rail", () => {
       siteFlagged: 0,
       runState: "done",
       confirmed: false,
+      detectionDone: true,
+      choicesComplete: true,
     };
     const html = railHtml(resolved, "deliver");
     // intake, declare and adjust are complete on a clean, run case
@@ -77,6 +82,8 @@ describe("the stage rail", () => {
       siteFlagged: 1,
       runState: "done",
       confirmed: false,
+      detectionDone: true,
+      choicesComplete: true,
     };
     const html = railHtml(flagged, "declare");
     expect(html).toContain('href="/case/c1/deliver"');

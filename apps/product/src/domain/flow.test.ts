@@ -25,6 +25,8 @@ function facts(overrides: Partial<FlowFacts> = {}): FlowFacts {
     siteFlagged: 0,
     runState: "none",
     confirmed: false,
+    detectionDone: false,
+    choicesComplete: false,
     ...overrides,
   };
 }
@@ -118,9 +120,15 @@ describe("blocked stages explain WHY in one sentence", () => {
 });
 
 describe("completion ticks", () => {
-  it("intake completes when detection has yielded sites", () => {
+  it("intake completes when detection RAN and the choices are all made (slice 4)", () => {
     expect(isComplete("intake", facts())).toBe(false);
-    expect(isComplete("intake", facts({ siteTotal: 1 }))).toBe(true);
+    // sites merely existing is NOT intake done: curated suggestions predate detection
+    expect(isComplete("intake", facts({ siteTotal: 2 }))).toBe(false);
+    expect(isComplete("intake", facts({ detectionDone: true }))).toBe(false);
+    expect(isComplete("intake", facts({ choicesComplete: true }))).toBe(false);
+    expect(
+      isComplete("intake", facts({ detectionDone: true, choicesComplete: true })),
+    ).toBe(true);
   });
 
   it("declare completes when every site is reviewed to ready or flagged", () => {
@@ -223,12 +231,28 @@ describe("the two payload projections agree", () => {
       sites: { total: 3, ready: 2, flagged: 1 },
       run_state: "done",
       confirmed: false,
+      detected: true,
+      choices_complete: true,
     });
     const fromDetail = factsFromCaseSession({
       sites: [{ status: "ready" }, { status: "ready" }, { status: "flagged" }],
+      detection: { proposals: [] },
+      choices: { complete: true },
       session: { run_state: "done", confirmed: false },
     });
     expect(fromRow).toEqual(fromDetail);
+  });
+
+  it("detection facts project from the payload, not from sites existing", () => {
+    const undetected = factsFromCaseSession({
+      sites: [{ status: "detected" }],
+      detection: null,
+      choices: { complete: false },
+      session: { run_state: "none", confirmed: false },
+    });
+    expect(undetected.detectionDone).toBe(false);
+    expect(undetected.choicesComplete).toBe(false);
+    expect(undetected.siteTotal).toBe(1); // curated suggestions predate detection
   });
 
   it("in-flight statuses (declared/previewed/adjusted) count as neither ready nor flagged", () => {
@@ -240,6 +264,8 @@ describe("the two payload projections agree", () => {
         { status: "adjusted" },
         { status: "ready" },
       ],
+      detection: null,
+      choices: { complete: false },
       session: { run_state: "done", confirmed: false },
     });
     expect(projected.siteTotal).toBe(5);
