@@ -24,3 +24,10 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    # same two env-noise filters as apps/worker/pyproject.toml, same reasons: LibreSSL
+    # import notice, and numpy + macOS Accelerate raising spurious FP flags on valid
+    # matmuls (results verified correct by the worker's own tests)
+    "ignore::urllib3.exceptions.NotOpenSSLWarning",
+    "ignore:.*encountered in matmul:RuntimeWarning",
+]
