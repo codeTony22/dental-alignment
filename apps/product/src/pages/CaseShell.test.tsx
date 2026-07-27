@@ -25,14 +25,44 @@ describe("the case shell view", () => {
     expect(html).toContain("lower");
   });
 
-  it("renders the rail and a stage body naming its building slice", () => {
+  it("renders the rail and a stage body naming the slice that builds the rest", () => {
     const html = renderToStaticMarkup(
       <StaticRouter location="/case/case-a/declare">
         <CaseShellView detail={detail} stage="declare" />
       </StaticRouter>,
     );
     expect(html).toContain('data-role="stage-rail"');
-    expect(html).toContain("Declare — slice 5a builds this");
+    expect(html).toContain("Slice 5a builds the rest of Declare");
+  });
+
+  it("Intake and Declare mount the main stage (slice 3); Adjust and Deliver stay placeholders", () => {
+    for (const stage of ["intake", "declare"] as const) {
+      const html = renderToStaticMarkup(
+        <StaticRouter location={`/case/case-a/${stage}`}>
+          <CaseShellView detail={detail} stage={stage} />
+        </StaticRouter>,
+      );
+      expect(html).toContain('data-role="main-stage"');
+      expect(html).toContain("Loading scan.stl"); // effects do not run statically — honest pre-flight
+    }
+    const adjust = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/adjust">
+        <CaseShellView
+          detail={caseSessionDetail({
+            session: {
+              tenant_id: "local",
+              adjust_visited: false,
+              run_state: "done",
+              confirmed: false,
+              payment_authorized: false,
+            },
+          })}
+          stage="adjust"
+        />
+      </StaticRouter>,
+    );
+    expect(adjust).not.toContain('data-role="main-stage"');
+    expect(adjust).toContain("slice 6 builds this");
   });
 
   it("offers the next-case affordance back to the worklist (AM-7)", () => {

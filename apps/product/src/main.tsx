@@ -6,6 +6,7 @@
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import "./styles.css";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
 import { CaseShell } from "./pages/CaseShell";
 import { Shell } from "./pages/Shell";

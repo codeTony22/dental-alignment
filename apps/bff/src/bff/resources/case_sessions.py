@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from case_prep.application.cases import CaseRecord, discover_cases
@@ -190,6 +191,23 @@ def worklist(request: Request) -> List[WorklistRow]:
             confirmed=session.confirmation is not None,
         ))
     return rows
+
+
+@router.get("/{case_id}/scan")
+def case_scan(case_id: str, request: Request) -> FileResponse:
+    """The case's scan STL, streamed for the product's main stage (plan §7 slice 3).
+
+    The file path comes from the application layer's CaseRecord — discovery picked it,
+    so no client-supplied path ever reaches the filesystem. GET-only like everything
+    on this resource; the same 404 refusal shape as the detail resource above.
+    """
+    settings, _store = _context(request)
+    case = next((c for c in discover_cases(settings.data_root) if c.id == case_id), None)
+    if case is None:
+        raise HTTPException(404, f"unknown case {case_id!r}")
+    # "model/stl" is the emerging IANA-style label; FileResponse would otherwise guess
+    # application/octet-stream, which tells the viewer nothing.
+    return FileResponse(case.scan, media_type="model/stl", filename=case.scan.name)
 
 
 @router.get("/{case_id}", response_model=CaseSessionDetail)

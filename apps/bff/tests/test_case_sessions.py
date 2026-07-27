@@ -97,6 +97,43 @@ class TestCaseSessionDetail:
         assert "9999" in ceiling["error"]
 
 
+class TestCaseScan:
+    """GET /{id}/scan (plan §7 slice 3): the product's main stage streams the doctor's
+    scan through the BFF — the application layer's CaseRecord.scan path, never a
+    client-supplied one (no path parameter reaches the filesystem)."""
+
+    @staticmethod
+    def _tiny_stl() -> bytes:
+        # A REAL (if minimal) binary STL: 80-byte header, uint32 triangle count = 1,
+        # one 50-byte triangle record — enough for a parser to accept, small enough
+        # to compare byte-for-byte.
+        import struct
+        header = b"tiny fixture stl".ljust(80, b"\0")
+        triangle = struct.pack(
+            "<12fH",
+            0.0, 0.0, 1.0,        # normal
+            0.0, 0.0, 0.0,        # v0
+            1.0, 0.0, 0.0,        # v1
+            0.0, 1.0, 0.0,        # v2
+            0,                    # attribute byte count
+        )
+        return header + struct.pack("<I", 1) + triangle
+
+    def test_streams_the_case_scan_bytes(self, settings):
+        stl = self._tiny_stl()
+        (settings.data_root / "scans/doctor-neodent-gm/upper_jaw.stl").write_bytes(stl)
+        client = TestClient(create_app(settings))
+        res = client.get("/api/case-sessions/neodent-gm/scan")
+        assert res.status_code == 200
+        assert res.content == stl
+        assert res.headers["content-type"] == "model/stl"
+
+    def test_an_unknown_case_scan_is_the_same_404_refusal(self, client):
+        res = client.get("/api/case-sessions/no-such-case/scan")
+        assert res.status_code == 404
+        assert "unknown case" in res.json()["detail"]
+
+
 class TestStatusesAreNeverClientWritable:
     def test_every_case_session_route_is_read_only(self, client):
         """STRUCTURAL (AM-4): a presentational app PATCHing a flagged site to ready must

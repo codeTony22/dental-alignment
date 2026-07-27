@@ -164,3 +164,12 @@ export async function fetchCaseSession(
     `/api/case-sessions/${encodeURIComponent(caseId)}`,
   );
 }
+
+/**
+ * The scan-stream URL for a case (GET /api/case-sessions/{id}/scan — plan §7 slice 3).
+ * A URL rather than a fetch: the main stage hands it straight to the viewer package's
+ * STL loader, so the scan's megabytes never pass through this JSON client at all.
+ */
+export function scanUrlFor(caseId: string): string {
+  return `/api/case-sessions/${encodeURIComponent(caseId)}/scan`;
+}

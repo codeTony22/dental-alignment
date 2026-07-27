@@ -5,7 +5,7 @@
  * (see pages/CaseShell.tsx). These tests pin that the status survives the seam.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchCaseSession } from "./client";
+import { fetchCaseSession, scanUrlFor } from "./client";
 
 function stubFetch(impl: () => Promise<Response>) {
   vi.stubGlobal("fetch", vi.fn(impl));
@@ -37,5 +37,15 @@ describe("the BFF client's error results", () => {
     stubFetch(() => Promise.reject(new Error("ECONNREFUSED")));
     const result = await fetchCaseSession("case-a");
     expect(result).toEqual({ kind: "error", detail: "ECONNREFUSED" });
+  });
+});
+
+describe("the scan-stream URL (slice 3)", () => {
+  it("addresses the case's scan under its session resource", () => {
+    expect(scanUrlFor("neodent-gm")).toBe("/api/case-sessions/neodent-gm/scan");
+  });
+
+  it("URL-encodes the case id — an id is data, never path syntax", () => {
+    expect(scanUrlFor("a/b c")).toBe("/api/case-sessions/a%2Fb%20c/scan");
   });
 });

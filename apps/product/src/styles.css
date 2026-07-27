@@ -1,0 +1,19 @@
+/**
+ * The product's stylesheet — started by slice 3, because the copied viewer package's
+ * Viewer3D renders a `.viewer3d` container and CSS is the CONSUMER's job (the package
+ * carries behavior, the app carries chrome). Sizing mirrors the demo stage's intent:
+ * the 3D is the product, so the canvas gets real height, never an auto-collapsed 0.
+ */
+
+.viewer3d {
+  width: 100%;
+  height: 480px;
+  border-radius: 8px;
+  overflow: hidden;
+  /* the same light-blue backdrop the scene clears to, so the frame never flashes white */
+  background: #d8e8f2;
+}
+
+.viewer3d canvas {
+  display: block;
+}

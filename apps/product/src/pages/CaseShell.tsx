@@ -25,15 +25,23 @@ import {
   type StageId,
 } from "../domain/flow";
 import { ErrorBanner } from "../components/ErrorBanner";
+import { MainStage } from "../components/MainStage";
 import { StageRail } from "../components/StageRail";
 
-/** Each body names the slice that builds it (plan §7), so the shell never pretends. */
+/**
+ * Each body names the slice that builds (the rest of) it, so the shell never pretends.
+ * Intake and Declare now carry the MAIN STAGE (slice 3) above their placeholder line —
+ * the 3D is the product; the rest of each body stays a placeholder for slices 4/5a.
+ */
 const STAGE_BODY: Readonly<Record<StageId, string>> = {
-  intake: "Intake — slice 4 builds this (auto-detect on load, capture verdicts, case-level choices).",
-  declare: "Declare — slice 5a builds this (site queue, system bar, variant cards, review ticks).",
+  intake: "Slice 4 builds the rest of Intake: auto-detect on load, capture verdicts, case-level choices.",
+  declare: "Slice 5a builds the rest of Declare: site queue, system bar, variant cards, review ticks.",
   adjust: "Adjust — slice 6 builds this (flagged queue, the four tools; skippable by design).",
   deliver: "Deliver — slice 8 builds this (assurance table, sealed confirmation, gated release).",
 };
+
+/** The stages whose bodies mount the main stage today (plan §7 slice 3). */
+const STAGES_WITH_MAIN_STAGE: readonly StageId[] = ["intake", "declare"];
 
 interface CaseLoadErrorProps {
   readonly id: string;
@@ -82,7 +90,14 @@ export function CaseShellView({ detail, stage }: CaseShellViewProps) {
       </header>
       <div style={{ display: "flex", gap: "2rem", marginTop: "1rem" }}>
         <StageRail states={states} current={stage} caseId={detail.case.id} />
-        <section data-role="stage-body">
+        <section data-role="stage-body" style={{ flex: 1 }}>
+          {STAGES_WITH_MAIN_STAGE.includes(stage) && (
+            <MainStage
+              caseId={detail.case.id}
+              scanFilename={detail.case.scan_filename}
+              sites={detail.sites}
+            />
+          )}
           <p>{STAGE_BODY[stage]}</p>
         </section>
       </div>
