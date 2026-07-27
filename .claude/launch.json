@@ -47,6 +47,15 @@
         "src"
       ],
       "port": 8001
+    },
+    {
+      "name": "product-web",
+      "cwd": "apps/product",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "dev"
+      ],
+      "port": 5174
     }
   ]
 }

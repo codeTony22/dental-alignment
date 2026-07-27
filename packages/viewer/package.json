@@ -1,0 +1,15 @@
+{
+  "name": "viewer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Landing zone (plan §3/AM-5) for the slice-3 viewer copies: the demo's 3D stack (~11,700 lines / ~35 files — palette, domain/types, librarySelection, meshCache, Viewer3D, sceneController + its characterization test) lands here, consumed ONLY by apps/product. Empty until slice 3, on purpose.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}
