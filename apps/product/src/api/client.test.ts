@@ -8,9 +8,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   deleteReview,
   fetchCaseSession,
+  fetchRun,
   postDetect,
   postPreview,
   postReview,
+  postRun,
   putChoices,
   putDeclaration,
   putSystem,
@@ -138,6 +140,21 @@ describe("the action requests (slice 4) — detect and choices", () => {
     expect(calls[0]!.url).toBe("/api/case-sessions/case-a/sites/19/review");
     expect(calls[0]!.init?.method).toBe("DELETE");
     expect(calls[0]!.init?.body).toBeUndefined();
+  });
+
+  it("the run POSTs with no body — the gate is server-minted (AM-8), nothing to claim with", async () => {
+    const calls = capturingFetch();
+    await postRun("case-a");
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/run");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(calls[0]!.init?.body).toBeUndefined();
+  });
+
+  it("the run facts read GETs the run subresource", async () => {
+    const calls = capturingFetch();
+    await fetchRun("case-a");
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/run");
+    expect(calls[0]!.init?.method ?? "GET").toBe("GET");
   });
 
   it("a pydantic-shaped 422 surfaces the backend's sentences, not machinery", async () => {

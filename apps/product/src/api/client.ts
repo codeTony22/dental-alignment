@@ -163,6 +163,8 @@ export interface SessionView {
   tenant_id: string;
   adjust_visited: boolean;
   run_state: RunState;
+  /** A refused run's words, VERBATIM (5c) — null unless run_state is "refused". */
+  run_refusal: string | null;
   confirmed: boolean;
   payment_authorized: boolean;
 }
@@ -470,4 +472,45 @@ export async function deleteReview(
   return fetchJson<CaseSessionDetail>(siteActionPath(caseId, tooth, "review"), {
     method: "DELETE",
   });
+}
+
+/**
+ * Fire the authorized full run (POST /{id}/run — plan §7 slice 5c). A compute
+ * TRIGGER like detect and preview: NO body — the selection it runs is the session's
+ * own persisted acts, and the authorization gate is server-minted (AM-8), so there
+ * is nothing a client could claim with. The in-process worker completes
+ * synchronously (~30–60 s on a real case): the response is the whole updated
+ * detail — verdicts landed on the ladder, run_state done|refused, a refusal's
+ * words on session.run_refusal, verbatim.
+ */
+export async function postRun(
+  caseId: string,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/run`,
+    { method: "POST" },
+  );
+}
+
+/**
+ * The current run's persisted facts (GET /{id}/run — 5c): the job-shaped receipt,
+ * the per-site verdict rows and the package file list (names relative to the
+ * immutable run directory). Adjust's and Deliver's read surface; 404 while no
+ * current run exists — including after a reset boundary cleared the pointer.
+ * Rows stay wire-untyped like the catalog's: the worker's summary is the schema.
+ */
+export interface RunFactsView {
+  run_id: string;
+  job_id: string;
+  state: RunState;
+  refusal: string | null;
+  summary: Record<string, unknown> | null;
+  sites: Array<Record<string, unknown>>;
+  package_files: string[];
+}
+
+export async function fetchRun(caseId: string): Promise<ApiResult<RunFactsView>> {
+  return fetchJson<RunFactsView>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/run`,
+  );
 }

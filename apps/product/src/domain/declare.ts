@@ -13,7 +13,12 @@
  * rows without a usable id are dropped rather than rendered as undeclarable lies —
  * the same defensive posture as domain/intake's construction options.
  */
-import type { CaseSessionDetail, SiteView } from "../api/client";
+import type {
+  ApiResult,
+  CaseSessionDetail,
+  SitePreviewPayload,
+  SiteView,
+} from "../api/client";
 
 export interface SystemCard {
   readonly model: string;
@@ -203,6 +208,140 @@ export function shouldAutoPreview(args: {
   readonly slotKey: string | null;
 }): boolean {
   return args.key !== null && args.key !== args.slotKey;
+}
+
+// --- the preview firer: the panes' async guards, framework-free (5b review M1) -------
+
+/** One site's preview slot: which key it answers for, and how far it got. The payload
+ * lives in CLIENT memory only — the BFF stores facts, not meshes — so a reload
+ * honestly re-asks (the auto-fire) rather than pretending to remember. */
+export interface PreviewSlot {
+  readonly key: string;
+  readonly state: "computing" | "ready" | "error";
+  readonly payload?: SitePreviewPayload;
+  readonly error?: string;
+}
+
+export type PreviewSlots = Readonly<Record<number, PreviewSlot>>;
+
+/** Claiming is SYNCHRONOUS: the slot takes the key before any response can exist,
+ * so ownership is decided at fire time, never at settle time. */
+export function claimSlot(
+  prev: PreviewSlots,
+  tooth: number,
+  key: string,
+): PreviewSlots {
+  return { ...prev, [tooth]: { key, state: "computing" } };
+}
+
+/**
+ * THE STALE-RESPONSE GUARD: a settling response writes its slot ONLY while the slot
+ * still holds ITS key — a newer ask (a re-declaration, a choices change) re-claimed
+ * the slot, and the older physics answering late must not overwrite the newer truth
+ * (the demo's previewKey lesson, made a pure rule so it is testable off-React).
+ */
+export function settleSlot(
+  prev: PreviewSlots,
+  tooth: number,
+  key: string,
+  result: ApiResult<SitePreviewPayload>,
+): PreviewSlots {
+  const current = prev[tooth];
+  if (current === undefined || current.key !== key) return prev; // a newer ask owns it
+  if (result.kind === "ok") {
+    return { ...prev, [tooth]: { key, state: "ready", payload: result.data } };
+  }
+  return { ...prev, [tooth]: { key, state: "error", error: result.detail } };
+}
+
+export type PostPreviewFn = (
+  caseId: string,
+  tooth: number,
+) => Promise<ApiResult<SitePreviewPayload>>;
+
+export interface PreviewFirer {
+  /** The auto-fire path: POST unless this (tooth, key) already fired — THE
+   * DOUBLE-POST GUARD, synchronous, because the slot state a React effect reads
+   * lags a render behind (Intake's shouldAutoDetect lesson: a doubled effect run
+   * must find the claim already recorded). Returns whether a POST was issued. */
+  maybeFire(tooth: number, key: string): boolean;
+  /** The operator's explicit retry: always fires, re-claiming the slot. */
+  fire(tooth: number, key: string): void;
+}
+
+/**
+ * The panes' preview wiring with its ASYNC GUARDS, framework-free so both are
+ * testable without a renderer (5b review M1): `post` is injectable (the component
+ * passes the real client fn; tests pass a controlled fake), `update` is
+ * setState-shaped, `isLive` is the container's mounted ref, and `onSettled` fires
+ * on success so the container can re-read the detail (the site moved
+ * declared→previewed SERVER-side — trust direction, AM-4).
+ */
+export function createPreviewFirer(args: {
+  readonly caseId: string;
+  readonly post: PostPreviewFn;
+  readonly update: (fn: (prev: PreviewSlots) => PreviewSlots) => void;
+  readonly isLive?: () => boolean;
+  readonly onSettled?: (result: ApiResult<SitePreviewPayload>) => void;
+}): PreviewFirer {
+  const fired: Record<number, string> = {};
+
+  function fire(tooth: number, key: string): void {
+    fired[tooth] = key;
+    args.update((prev) => claimSlot(prev, tooth, key));
+    void args.post(args.caseId, tooth).then((result) => {
+      if (args.isLive !== undefined && !args.isLive()) return;
+      args.update((prev) => settleSlot(prev, tooth, key, result));
+      args.onSettled?.(result);
+    });
+  }
+
+  return {
+    fire,
+    maybeFire(tooth: number, key: string): boolean {
+      if (fired[tooth] === key) return false; // already in flight for THIS key
+      fire(tooth, key);
+      return true;
+    },
+  };
+}
+
+// --- the run's auto-fire (plan §7 slice 5c; §1.2 compute-early) ----------------------
+
+/**
+ * THE RUN'S IDENTITY — one string naming exactly what an authorized run would be
+ * computed FROM (case, system, every site's declared variant, the three case-level
+ * choices). null = the session cannot run yet OR a current run already exists:
+ * choices incomplete, any site short of READY, or run_state past "none" all switch
+ * the auto-fire off (a refused run deliberately does NOT re-fire — the retry is the
+ * operator's explicit act, exactly like an errored preview slot). Keyed on server
+ * FACTS only, like previewKeyFor: after a reset boundary clears the run pointer,
+ * the changed declaration/choices yield a NEW key and the auto-fire re-arms.
+ */
+export function runKeyFor(detail: CaseSessionDetail): string | null {
+  if (detail.session.run_state !== "none") return null;
+  if (!detail.choices.complete) return null;
+  if (detail.system.effective_model === null) return null;
+  if (detail.sites.length === 0) return null;
+  if (detail.sites.some((s) => s.status !== "ready")) return null;
+  return [
+    detail.case.id,
+    detail.system.effective_model,
+    ...detail.sites.map((s) => `${s.tooth}:${s.declared_variant}`),
+    detail.choices.construction_path,
+    detail.choices.jaw,
+    detail.choices.gingival_offset_mm,
+  ].join("|");
+}
+
+/** The run's auto-fire decision — the same shape as shouldAutoPreview: fire exactly
+ * when a run is possible and this key has not fired (the fired key is the
+ * container's ref, so a doubled effect run cannot double-POST a 30–60 s job). */
+export function shouldAutoRun(args: {
+  readonly key: string | null;
+  readonly firedKey: string | null;
+}): boolean {
+  return args.key !== null && args.key !== args.firedKey;
 }
 
 /** The payload's number[][] wire mesh, flattened for the viewer package's typed-array

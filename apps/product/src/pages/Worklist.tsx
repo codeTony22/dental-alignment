@@ -49,7 +49,9 @@ function WorklistEntryItem({ entry }: { readonly entry: WorklistEntry }) {
         <strong>{row.doctor}</strong>
         <span data-role="row-jaw">{row.jaw}</span>
         <span data-role="row-rollup">{rollupLabel(row.sites)}</span>
-        <span data-role="row-run" style={chipStyle}>
+        {/* data-state carries AM-3's live job states (queued|running|done|refused)
+            so the chip can style in-flight work without re-deriving anything */}
+        <span data-role="row-run" data-state={row.run_state} style={chipStyle}>
           {runChip(row.run_state)}
         </span>
         <span data-role="row-confirmed" style={chipStyle}>

@@ -123,6 +123,10 @@ export function factsFromCaseSession(payload: CaseSessionLike): FlowFacts {
 
 const runExists = (facts: FlowFacts): boolean => facts.runState !== "none";
 
+/** A COMPLETED current run — the only run state whose evidence Deliver may read
+ * (5c's tighten; a queued/running/refused run has nothing signed-off to show). */
+const runDone = (facts: FlowFacts): boolean => facts.runState === "done";
+
 /** Every site carries a verdict: ready, or flagged (statuses like detected/declared/
  * previewed/adjusted are still on their way there and block Deliver). */
 const allSitesResolved = (facts: FlowFacts): boolean =>
@@ -134,9 +138,11 @@ const allSitesResolved = (facts: FlowFacts): boolean =>
  *  - declare: needs detected sites; with nothing detected there is nothing to declare.
  *  - adjust: needs a run — the fits it re-works are the run's output. It is SKIPPABLE:
  *    its completion appears in no other stage's rule, so it can never block Deliver.
- *  - deliver: every site ready, or flagged with a run behind it (the flag IS run
- *    evidence; a flag without a run has nothing to acknowledge). Slice 8's assurance
- *    table may tighten this with run-completion facts; the site rule is the plan's.
+ *  - deliver: every site resolved AND a COMPLETED current run (the 5c tighten this
+ *    module carried as a note since 5a): the assurance table IS the run's evidence,
+ *    so a case whose current run is missing, still computing, or refused has nothing
+ *    to confirm — and the reset boundaries clear the run pointer on any post-run
+ *    change, so a stale run can never open Deliver either.
  */
 export function isReachable(stage: StageId, facts: FlowFacts): boolean {
   switch (stage) {
@@ -147,7 +153,7 @@ export function isReachable(stage: StageId, facts: FlowFacts): boolean {
     case "adjust":
       return runExists(facts);
     case "deliver":
-      return allSitesResolved(facts) && (facts.siteFlagged === 0 || runExists(facts));
+      return allSitesResolved(facts) && runDone(facts);
   }
 }
 
@@ -168,7 +174,10 @@ export function blockedReason(stage: StageId, facts: FlowFacts): string | null {
       if (!allSitesResolved(facts)) {
         return "Sites are still awaiting review — every site must be ready, or flagged, before Deliver.";
       }
-      return "Flagged sites need their run's evidence before Deliver — no run exists yet.";
+      if (facts.runState === "none") {
+        return "Deliver reads the run's evidence — no run exists yet; it fires when Declare completes.";
+      }
+      return `Deliver reads the run's evidence — the current run is ${facts.runState}, not completed.`;
   }
 }
 

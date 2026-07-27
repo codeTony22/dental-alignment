@@ -138,11 +138,33 @@ export function caseSessionDetail(
       tenant_id: "local",
       adjust_visited: false,
       run_state: "none",
+      run_refusal: null,
       confirmed: false,
       payment_authorized: false,
     },
     ...overrides,
   };
+}
+
+/** A Declare-complete detail (5c): every site READY over a declared variant, the
+ * choices complete, no current run — exactly the facts the run auto-fire reads. */
+export function runnableDetail(
+  overrides: Partial<CaseSessionDetail> = {},
+): CaseSessionDetail {
+  return caseSessionDetail({
+    sites: [
+      siteView({ tooth: 19, status: "ready", declared_variant: "5020" }),
+      siteView({ tooth: 30, status: "ready", declared_variant: "6020" }),
+    ],
+    choices: {
+      construction_path: "dess/conical-scanbody.stl",
+      jaw: "lower",
+      gingival_offset_mm: 0.2,
+      gingival_offset_default_mm: 0.2,
+      complete: true,
+    },
+    ...overrides,
+  });
 }
 
 /** The preview payload as the worker serves it (application/preview.py — the demo's

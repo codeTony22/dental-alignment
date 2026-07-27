@@ -40,6 +40,19 @@ describe("a worklist row", () => {
     const html = screenHtml({ kind: "ok", data: [row] });
     expect(html).toContain('href="/case/case-flagged/deliver"');
   });
+
+  it("the run chip carries AM-3's live state (5c) — queued|running|done|refused", () => {
+    for (const run_state of ["queued", "running", "done", "refused"] as const) {
+      const html = screenHtml({
+        kind: "ok",
+        data: [worklistRow({ run_state })],
+      });
+      expect(html).toMatch(
+        new RegExp(`data-role="row-run"[^>]*data-state="${run_state}"`),
+      );
+      expect(html).toContain(`>${run_state}<`); // the chip's words are the state's
+    }
+  });
 });
 
 describe("the blocked-first order reaches the markup", () => {

@@ -5,15 +5,20 @@
  * superseded, the dims line, the visible-reset confirmation WORDS with the count in
  * them, and the active-site defaulting the queue and stage share.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { ApiResult, SitePreviewPayload } from "../api/client";
 import {
   caseSessionDetail,
   catalogEntry,
   catalogGroup,
+  runnableDetail,
+  sitePreviewPayload,
   siteView,
 } from "../testing/fixtures";
 import {
   activeSiteFrom,
+  claimSlot,
+  createPreviewFirer,
   declaredLabel,
   dimsLabel,
   indicesFrom,
@@ -22,11 +27,16 @@ import {
   previewKeyFor,
   resetCount,
   reviewTick,
+  runKeyFor,
+  settleSlot,
   shouldAutoPreview,
+  shouldAutoRun,
   switchWords,
   systemCards,
   variantMeshUrl,
   variantShelves,
+  type PostPreviewFn,
+  type PreviewSlots,
 } from "./declare";
 
 const twoSystems = caseSessionDetail({
@@ -357,5 +367,231 @@ describe("reviewTick — enabled only over a preview (AM-8)", () => {
       expect(tick.reason).toContain("preview this site first");
     }
     expect(reviewTick(null).enabled).toBe(false);
+  });
+});
+
+// --- the preview firer's async guards (5b review M1, landed 5c) ----------------------
+
+/** A slots holder shaped like setState, so the firer runs exactly as wired. */
+function slotHarness() {
+  let slots: PreviewSlots = {};
+  return {
+    get: () => slots,
+    update: (fn: (prev: PreviewSlots) => PreviewSlots) => {
+      slots = fn(slots);
+    },
+  };
+}
+
+/** An injectable postPreview whose settlement the TEST controls — the seam the 5b
+ * review asked for: the guards get exercised against real async ordering. */
+function deferredPost() {
+  const pending: Array<{
+    tooth: number;
+    resolve: (result: ApiResult<SitePreviewPayload>) => void;
+  }> = [];
+  const post: PostPreviewFn = (_caseId, tooth) =>
+    new Promise((resolve) => {
+      pending.push({ tooth, resolve });
+    });
+  return { post, pending };
+}
+
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe("the preview firer — the DOUBLE-POST guard", () => {
+  it("a doubled effect run for the same (tooth, key) POSTs exactly once", () => {
+    const { post, pending } = deferredPost();
+    const slots = slotHarness();
+    const firer = createPreviewFirer({ caseId: "case-a", post, update: slots.update });
+    expect(firer.maybeFire(19, "k1")).toBe(true);
+    // React strict/re-render double-invocation: the slot state lags a render
+    // behind, so the guard must be synchronous — the second ask finds the claim
+    expect(firer.maybeFire(19, "k1")).toBe(false);
+    expect(pending.length).toBe(1);
+    // a NEW key (re-declaration, choices change) is a new ask
+    expect(firer.maybeFire(19, "k2")).toBe(true);
+    expect(pending.length).toBe(2);
+    // an errored slot does not auto-refire either — the retry is fire(), explicit
+    expect(firer.maybeFire(19, "k2")).toBe(false);
+  });
+
+  it("sites fire independently — per-site non-blocking", () => {
+    const { post, pending } = deferredPost();
+    const slots = slotHarness();
+    const firer = createPreviewFirer({ caseId: "case-a", post, update: slots.update });
+    expect(firer.maybeFire(19, "k19")).toBe(true);
+    expect(firer.maybeFire(30, "k30")).toBe(true);
+    expect(pending.map((p) => p.tooth)).toEqual([19, 30]);
+    expect(slots.get()[19]?.state).toBe("computing");
+    expect(slots.get()[30]?.state).toBe("computing");
+  });
+});
+
+describe("the preview firer — STALE-RESPONSE rejection", () => {
+  it("an older ask settling late never overwrites the newer claim", async () => {
+    const { post, pending } = deferredPost();
+    const slots = slotHarness();
+    const firer = createPreviewFirer({ caseId: "case-a", post, update: slots.update });
+    firer.fire(19, "old-key");
+    firer.fire(19, "new-key"); // a re-declaration re-claims the slot synchronously
+    expect(slots.get()[19]).toEqual({ key: "new-key", state: "computing" });
+    // the OLD physics answers late — its payload must be discarded
+    pending[0]!.resolve({ kind: "ok", data: sitePreviewPayload() });
+    await flush();
+    expect(slots.get()[19]).toEqual({ key: "new-key", state: "computing" });
+    // the CURRENT ask settles normally
+    const payload = sitePreviewPayload({ tooth: 19 });
+    pending[1]!.resolve({ kind: "ok", data: payload });
+    await flush();
+    expect(slots.get()[19]).toEqual({ key: "new-key", state: "ready", payload });
+  });
+
+  it("an error settles with the backend's words; a stale error is discarded too", async () => {
+    const { post, pending } = deferredPost();
+    const slots = slotHarness();
+    const firer = createPreviewFirer({ caseId: "case-a", post, update: slots.update });
+    firer.fire(19, "k1");
+    pending[0]!.resolve({ kind: "error", detail: "HTTP 409 — no seat" });
+    await flush();
+    expect(slots.get()[19]).toEqual({
+      key: "k1",
+      state: "error",
+      error: "HTTP 409 — no seat",
+    });
+    firer.fire(19, "k2");
+    firer.fire(19, "k3");
+    pending[1]!.resolve({ kind: "error", detail: "stale trouble" });
+    await flush();
+    expect(slots.get()[19]).toEqual({ key: "k3", state: "computing" });
+  });
+
+  it("an unmounted container writes nothing and settles nobody", async () => {
+    const { post, pending } = deferredPost();
+    const slots = slotHarness();
+    const onSettled = vi.fn();
+    let live = true;
+    const firer = createPreviewFirer({
+      caseId: "case-a",
+      post,
+      update: slots.update,
+      isLive: () => live,
+      onSettled,
+    });
+    firer.fire(19, "k1");
+    live = false; // the container unmounted mid-flight
+    pending[0]!.resolve({ kind: "ok", data: sitePreviewPayload() });
+    await flush();
+    expect(slots.get()[19]).toEqual({ key: "k1", state: "computing" });
+    expect(onSettled).not.toHaveBeenCalled();
+  });
+
+  it("onSettled fires with the result — the container's detail re-read hook", async () => {
+    const { post, pending } = deferredPost();
+    const slots = slotHarness();
+    const onSettled = vi.fn();
+    const firer = createPreviewFirer({
+      caseId: "case-a",
+      post,
+      update: slots.update,
+      onSettled,
+    });
+    firer.fire(19, "k1");
+    const payload = sitePreviewPayload();
+    pending[0]!.resolve({ kind: "ok", data: payload });
+    await flush();
+    expect(onSettled).toHaveBeenCalledWith({ kind: "ok", data: payload });
+  });
+
+  it("the pure rules underneath: settleSlot returns prev untouched for a stale key", () => {
+    const claimed = claimSlot({}, 19, "new-key");
+    const settled = settleSlot(claimed, 19, "old-key", {
+      kind: "ok",
+      data: sitePreviewPayload(),
+    });
+    expect(settled).toBe(claimed); // the SAME reference — provably no write
+  });
+});
+
+// --- the run's auto-fire (5c) --------------------------------------------------------
+
+describe("runKeyFor — the run's identity, from server facts only", () => {
+  it("names the authorized content: case, system, variants, choices", () => {
+    const key = runKeyFor(runnableDetail());
+    expect(key).toContain("case-a");
+    expect(key).toContain("conical-4x4");
+    expect(key).toContain("19:5020");
+    expect(key).toContain("30:6020");
+    expect(key).toContain("dess/conical-scanbody.stl");
+  });
+
+  it("is null until every site is READY — the gate's own precondition", () => {
+    const detail = runnableDetail({
+      sites: [
+        siteView({ tooth: 19, status: "ready", declared_variant: "5020" }),
+        siteView({ tooth: 30, status: "previewed", declared_variant: "6020" }),
+      ],
+    });
+    expect(runKeyFor(detail)).toBeNull();
+  });
+
+  it("is null while choices are incomplete, with no sites, or no system", () => {
+    expect(
+      runKeyFor(
+        runnableDetail({
+          choices: {
+            construction_path: null,
+            jaw: null,
+            gingival_offset_mm: null,
+            gingival_offset_default_mm: 0.2,
+            complete: false,
+          },
+        }),
+      ),
+    ).toBeNull();
+    expect(runKeyFor(runnableDetail({ sites: [] }))).toBeNull();
+    expect(
+      runKeyFor(
+        runnableDetail({ system: { effective_model: null, source: "none" } }),
+      ),
+    ).toBeNull();
+  });
+
+  it("is null whenever a current run exists — refused does NOT auto-refire", () => {
+    for (const run_state of ["queued", "running", "done", "refused"] as const) {
+      const detail = runnableDetail();
+      expect(
+        runKeyFor({
+          ...detail,
+          session: { ...detail.session, run_state },
+        }),
+      ).toBeNull();
+    }
+  });
+
+  it("re-arms with a NEW key after a reset boundary changes the content", () => {
+    const before = runKeyFor(runnableDetail());
+    const after = runKeyFor(
+      runnableDetail({
+        sites: [
+          siteView({ tooth: 19, status: "ready", declared_variant: "5030" }),
+          siteView({ tooth: 30, status: "ready", declared_variant: "6020" }),
+        ],
+      }),
+    );
+    expect(after).not.toBeNull();
+    expect(after).not.toEqual(before);
+  });
+});
+
+describe("shouldAutoRun — fire once per authorized content", () => {
+  it("fires when runnable and this key has not fired", () => {
+    expect(shouldAutoRun({ key: "k1", firedKey: null })).toBe(true);
+    expect(shouldAutoRun({ key: "k2", firedKey: "k1" })).toBe(true);
+  });
+
+  it("never fires without a key, nor twice for the same key", () => {
+    expect(shouldAutoRun({ key: null, firedKey: null })).toBe(false);
+    expect(shouldAutoRun({ key: "k1", firedKey: "k1" })).toBe(false);
   });
 });

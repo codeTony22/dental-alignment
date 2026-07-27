@@ -174,33 +174,99 @@ describe("in-flight and refused states — optimism OFF", () => {
   });
 });
 
-describe("continue — per flow.ts, honestly blocked in 5a", () => {
+describe("continue — per flow.ts, lit by the run (5c)", () => {
   it("with no run, the continue affordance is inert and says why", () => {
     const html = view();
     expect(html).toMatch(/data-role="continue-on"[^>]*aria-disabled="true"/);
     expect(html).toContain("No run exists yet");
   });
 
-  it("with a run, continue links to Adjust", () => {
-    const html = view({
-      detail: {
-        ...detail,
-        session: { ...detail.session, run_state: "done" },
-      },
+  it("a done run over a flagged site links to Adjust — its queue has work", () => {
+    const flagged = caseSessionDetail({
+      ...detail,
+      sites: [
+        siteView({ tooth: 19, status: "flagged", declared_variant: "5020" }),
+        siteView({ tooth: 30, status: "ready", declared_variant: "5020" }),
+      ],
+      session: { ...detail.session, run_state: "done" },
     });
+    const html = view({ detail: flagged });
     expect(html).toMatch(/data-role="continue-on"[^>]*href="\/case\/case-a\/adjust"/);
   });
 
-  it("a clean resolved case without adjust links to Deliver (skippable Adjust)", () => {
+  it("a clean done run links straight to Deliver — skippable Adjust (plan §4)", () => {
+    // DELIBERATE change from 5a's interim behavior (Adjust won as next-in-order):
+    // with a completed run and nothing flagged, Adjust has nothing to offer and
+    // the client's directive is Deliver directly reachable when clean.
     const resolved = caseSessionDetail({
       ...detail,
       sites: [siteView({ tooth: 19, status: "ready", declared_variant: "5020" })],
       session: { ...detail.session, run_state: "done" },
     });
-    // adjust reachable too (run exists) — Adjust wins as the next stage in order;
-    // deliver keeps its place on the rail. The link goes to adjust here.
     const html = view({ detail: resolved });
-    expect(html).toMatch(/data-role="continue-on"[^>]*href="\/case\/case-a\/adjust"/);
+    expect(html).toMatch(/data-role="continue-on"[^>]*href="\/case\/case-a\/deliver"/);
+    expect(html).toContain("nothing to adjust");
+  });
+});
+
+describe("the run footer (5c) — progress in honest words", () => {
+  const readyDetail = caseSessionDetail({
+    ...detail,
+    sites: [
+      siteView({ tooth: 19, status: "ready", declared_variant: "5020" }),
+      siteView({ tooth: 30, status: "ready", declared_variant: "5020" }),
+    ],
+  });
+
+  it("a firing run names the work and its honest duration", () => {
+    const html = view({ detail: readyDetail, runPhase: "firing" });
+    expect(html).toContain('data-role="run-progress"');
+    expect(html).toContain("Aligning 2 sites");
+    expect(html).toContain("30–60");
+  });
+
+  it("a persisted queued|running state shows the same progress — another reader fired it", () => {
+    for (const run_state of ["queued", "running"] as const) {
+      const html = view({
+        detail: {
+          ...readyDetail,
+          session: { ...readyDetail.session, run_state },
+        },
+      });
+      expect(html).toContain('data-role="run-progress"');
+    }
+  });
+
+  it("a refused run renders the pipeline's words VERBATIM with the explicit retry", () => {
+    const words =
+      "package NOT emitted: the relief ate the screw channel — re-run with a smaller gingival offset";
+    const html = view({
+      detail: {
+        ...readyDetail,
+        session: {
+          ...readyDetail.session,
+          run_state: "refused",
+          run_refusal: words,
+        },
+      },
+    });
+    expect(html).toContain('data-role="run-refused"');
+    expect(html).toContain("re-run with a smaller gingival offset");
+    expect(html).toContain('data-role="run-retry"');
+  });
+
+  it("a transport failure is stated with its own retry — never a silent freeze", () => {
+    const html = view({ detail: readyDetail, runError: "ECONNREFUSED" });
+    expect(html).toContain('data-role="run-error"');
+    expect(html).toContain("ECONNREFUSED");
+    expect(html).toContain('data-role="run-retry"');
+  });
+
+  it("idle with no run shows no footer noise", () => {
+    const html = view();
+    expect(html).not.toContain('data-role="run-progress"');
+    expect(html).not.toContain('data-role="run-refused"');
+    expect(html).not.toContain('data-role="run-error"');
   });
 });
 

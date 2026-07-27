@@ -21,15 +21,23 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
+  postRun,
   putDeclaration,
   putSystem,
   type CaseSessionDetail,
 } from "../api/client";
-import { blockedReason, factsFromCaseSession, isReachable } from "../domain/flow";
+import {
+  blockedReason,
+  factsFromCaseSession,
+  isComplete,
+  isReachable,
+} from "../domain/flow";
 import {
   activeSiteFrom,
   declaredLabel,
   resetCount,
+  runKeyFor,
+  shouldAutoRun,
   switchWords,
   systemCards,
   variantShelves,
@@ -41,6 +49,11 @@ import { MainStage } from "./MainStage";
 
 /** What is in flight, named — the surface states it instead of freezing silently. */
 export type DeclareSaving = "idle" | "system" | "declaration";
+
+/** The run POST's client-side lifecycle (5c): the in-process worker completes the
+ * whole run inside the request, so "firing" IS the progress state — the persisted
+ * queued|running states only surface to OTHER readers (the worklist) meanwhile. */
+export type RunPhase = "idle" | "firing";
 
 interface SystemBarProps {
   readonly detail: CaseSessionDetail;
@@ -160,6 +173,11 @@ export interface DeclareStageViewProps {
   readonly pendingSwitch: string | null;
   readonly saving: DeclareSaving;
   readonly error: string | null;
+  /** The auto-fired run's client lifecycle (5c); defaults idle for static tests. */
+  readonly runPhase?: RunPhase;
+  /** A run POST that never reached an outcome (transport/409) — stated with retry. */
+  readonly runError?: string | null;
+  readonly onRetryRun?: () => void;
   readonly onSelectSite: (tooth: number) => void;
   readonly onAskSwitch: (model: string) => void;
   readonly onConfirmSwitch: () => void;
@@ -177,6 +195,9 @@ export function DeclareStageView({
   pendingSwitch,
   saving,
   error,
+  runPhase = "idle",
+  runError = null,
+  onRetryRun,
   onSelectSite,
   onAskSwitch,
   onConfirmSwitch,
@@ -189,6 +210,17 @@ export function DeclareStageView({
   const shelves = variantShelves(detail);
   const adjustOpen = isReachable("adjust", facts);
   const deliverOpen = isReachable("deliver", facts);
+  // THE RUN'S PROGRESS SURFACE (5c): in flight client-side, or persisted as
+  // queued|running (another tab/operator fired it — AM-3's states render either way)
+  const runInFlight =
+    runPhase === "firing" ||
+    facts.runState === "queued" ||
+    facts.runState === "running";
+  const runRefusal =
+    facts.runState === "refused"
+      ? (detail.session.run_refusal ??
+        "The run was refused — the worker recorded no words.")
+      : null;
   return (
     <div data-role="declare-stage">
       <SystemBar detail={detail} onAskSwitch={onAskSwitch} />
@@ -255,16 +287,39 @@ export function DeclareStageView({
               {error}
             </div>
           )}
-          {/* Continue per flow.ts: Adjust when a run exists (stage order), Deliver
-              when Adjust has nothing to offer, else the honest blocked sentence —
-              in 5a no runs exist, so this stays inert until 5c wires the run. */}
-          {adjustOpen ? (
+          {/* THE RUN FOOTER (5c, plan §1.2 compute-early): the auto-fired run's
+              progress in honest words — a refusal renders VERBATIM with the
+              explicit retry (like an errored preview slot, it never auto-refires). */}
+          {runInFlight ? (
+            <p data-role="run-progress">
+              Aligning {facts.siteTotal} site{facts.siteTotal === 1 ? "" : "s"} —
+              30–60 s; the case stays open and the panes stay live.
+            </p>
+          ) : runRefusal !== null ? (
+            <div data-role="run-refused" role="alert">
+              <p>{runRefusal}</p>
+              <button type="button" data-role="run-retry" onClick={onRetryRun}>
+                Run again
+              </button>
+            </div>
+          ) : runError !== null ? (
+            <div data-role="run-error" role="alert">
+              <p>{runError}</p>
+              <button type="button" data-role="run-retry" onClick={onRetryRun}>
+                Try the run again
+              </button>
+            </div>
+          ) : null}
+          {/* Continue per flow.ts: Deliver directly when Adjust has nothing to
+              offer (plan §4 — skippable Adjust), else Adjust over its flagged
+              queue, else the honest blocked sentence. A done run lights these. */}
+          {deliverOpen && isComplete("adjust", facts) ? (
+            <Link data-role="continue-on" to={`/case/${detail.case.id}/deliver`}>
+              Continue to Deliver — nothing to adjust
+            </Link>
+          ) : adjustOpen ? (
             <Link data-role="continue-on" to={`/case/${detail.case.id}/adjust`}>
               Continue to Adjust
-            </Link>
-          ) : deliverOpen ? (
-            <Link data-role="continue-on" to={`/case/${detail.case.id}/deliver`}>
-              Continue to Deliver
             </Link>
           ) : (
             <span data-role="continue-on" aria-disabled="true">
@@ -283,7 +338,8 @@ export interface DeclareStageProps {
   readonly onDetail: (next: CaseSessionDetail) => void;
 }
 
-/** The container: active-site state, the worded switch ceremony, the two PUTs. */
+/** The container: active-site state, the worded switch ceremony, the two PUTs,
+ * and the run's auto-fire (5c). */
 export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
   const caseId = detail.case.id;
   const mountedRef = useRef(true);
@@ -291,6 +347,8 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
   const [pendingSwitch, setPendingSwitch] = useState<string | null>(null);
   const [saving, setSaving] = useState<DeclareSaving>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [runPhase, setRunPhase] = useState<RunPhase>("idle");
+  const [runError, setRunError] = useState<string | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -298,6 +356,46 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
       mountedRef.current = false;
     };
   }, []);
+
+  // THE AUTO-FIRE (plan §1.2 compute-early; the automation directive): when the
+  // detail shows choices complete + every site ready + no current run, POST once.
+  // Facts-keyed like detect and the previews (runKeyFor/shouldAutoRun): the fired
+  // ref is marked BEFORE the async settles so a doubled effect run cannot POST a
+  // 30–60 s job twice, and a refused run does NOT re-fire — retry is the
+  // operator's explicit act in the footer.
+  const runKey = runKeyFor(detail);
+  const runFiredRef = useRef<string | null>(null);
+  const fireRun = useCallback(
+    (firedKey: string) => {
+      runFiredRef.current = firedKey;
+      setRunPhase("firing");
+      void postRun(caseId).then((result) => {
+        if (!mountedRef.current) return;
+        setRunPhase("idle");
+        if (result.kind === "ok") {
+          setRunError(null);
+          // verdicts landed SERVER-side; the response is the whole new truth
+          onDetail(result.data);
+        } else {
+          // transport/409/422 — the run never reached a persisted outcome; the
+          // words render with the explicit retry
+          setRunError(result.detail);
+        }
+      });
+    },
+    [caseId, onDetail],
+  );
+  useEffect(() => {
+    if (runKey !== null && shouldAutoRun({ key: runKey, firedKey: runFiredRef.current })) {
+      fireRun(runKey);
+    }
+  }, [runKey, fireRun]);
+
+  const handleRetryRun = useCallback(() => {
+    // a refused run has no key (run_state past "none"): mint a one-off fired key
+    // so the explicit act always fires exactly once
+    fireRun(runKey ?? `retry-${Date.now()}`);
+  }, [runKey, fireRun]);
 
   const fireSystem = useCallback(
     (model: string) => {
@@ -364,6 +462,9 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
       pendingSwitch={pendingSwitch}
       saving={saving}
       error={error}
+      runPhase={runPhase}
+      runError={runError}
+      onRetryRun={handleRetryRun}
       onSelectSite={setActiveTooth}
       onAskSwitch={handleAskSwitch}
       onConfirmSwitch={handleConfirmSwitch}

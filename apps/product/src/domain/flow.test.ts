@@ -63,18 +63,32 @@ describe("reachability", () => {
     }
   });
 
-  it("deliver needs every site ready, or flagged with a run", () => {
+  it("deliver needs every site resolved AND a completed run (the 5c tighten)", () => {
     // still under review: one site has no verdict yet
     expect(
       isReachable("deliver", facts({ siteTotal: 3, siteReady: 2, runState: "done" })),
     ).toBe(false);
-    // all resolved, flags carry run evidence
+    // all resolved over a completed run — flagged or clean, Deliver opens
     expect(
       isReachable(
         "deliver",
         facts({ siteTotal: 3, siteReady: 2, siteFlagged: 1, runState: "done" }),
       ),
     ).toBe(true);
+    expect(
+      isReachable("deliver", facts({ siteTotal: 2, siteReady: 2, runState: "done" })),
+    ).toBe(true);
+    // DELIBERATE change (5c, carried as flow.ts's note since 5a): every site ready
+    // no longer opens Deliver on its own — the assurance table IS the run's
+    // evidence, so no run, a run still computing, or a refused run all block
+    expect(
+      isReachable("deliver", facts({ siteTotal: 2, siteReady: 2 })),
+    ).toBe(false);
+    for (const runState of ["queued", "running", "refused"]) {
+      expect(
+        isReachable("deliver", facts({ siteTotal: 2, siteReady: 2, runState })),
+      ).toBe(false);
+    }
     // a flag without a run has nothing to acknowledge
     expect(
       isReachable("deliver", facts({ siteTotal: 2, siteReady: 1, siteFlagged: 1 })),
@@ -117,6 +131,16 @@ describe("blocked stages explain WHY in one sentence", () => {
       facts({ siteTotal: 2, siteReady: 1, siteFlagged: 1 }),
     ).find((s) => s.id === "deliver");
     expect(flaggedNoRun?.blockedReason).toContain("run");
+
+    // the 5c tighten's own words: an incomplete run is named WITH its state
+    const runRefused = stageStates(
+      facts({ siteTotal: 2, siteReady: 2, runState: "refused" }),
+    ).find((s) => s.id === "deliver");
+    expect(runRefused?.blockedReason).toContain("refused");
+    const noRun = stageStates(
+      facts({ siteTotal: 2, siteReady: 2 }),
+    ).find((s) => s.id === "deliver");
+    expect(noRun?.blockedReason).toContain("no run exists yet");
   });
 });
 

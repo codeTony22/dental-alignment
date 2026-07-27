@@ -55,6 +55,7 @@ import {
   type SiteView,
 } from "../api/client";
 import {
+  createPreviewFirer,
   indicesFrom,
   paneNotices,
   positionsFrom,
@@ -63,21 +64,17 @@ import {
   shouldAutoPreview,
   variantMeshUrl,
   type PaneNotices,
+  type PostPreviewFn,
   type PreviewPhase,
+  type PreviewSlots,
   type ReviewTickState,
 } from "../domain/declare";
 
-/** One site's preview slot: which key it answers for, and how far it got. The payload
- * lives HERE (client memory) only — the BFF stores facts, not meshes — so a reload
- * honestly re-asks (the auto-fire) rather than pretending to remember. */
-export interface PreviewSlot {
-  readonly key: string;
-  readonly state: "computing" | "ready" | "error";
-  readonly payload?: SitePreviewPayload;
-  readonly error?: string;
-}
-
-export type PreviewSlots = Readonly<Record<number, PreviewSlot>>;
+// The slot types and their async guards live in domain/declare.ts since 5c (the 5b
+// review's M1: the double-POST guard and the stale-response rejection are pure rules,
+// tested there with an injectable postPreview); re-exported so the shape stays
+// addressable beside the component that renders it.
+export type { PreviewSlot, PreviewSlots } from "../domain/declare";
 
 /** What the review wiring is doing, named — the surface states it (optimism OFF). */
 export type ReviewSaving = "idle" | "ticking" | "unticking";
@@ -256,11 +253,19 @@ export interface DeclarePanesProps {
   readonly site: SiteView | null;
   /** The shell owns the payload; the review responses replace it whole (AM-4). */
   readonly onDetail: (next: CaseSessionDetail) => void;
+  /** Injectable transport (5b review M1): defaults to the real client fn; the async
+   * guards it feeds are pure and tested in domain/declare.test.ts with a fake. */
+  readonly postPreview?: PostPreviewFn;
 }
 
 /** The container: scan + part meshes, the auto-fired preview slots, the tick's two
  * requests, and the three VerifyViewers with their frames. */
-export function DeclarePanes({ detail, site, onDetail }: DeclarePanesProps) {
+export function DeclarePanes({
+  detail,
+  site,
+  onDetail,
+  postPreview: postPreviewFn = postPreview,
+}: DeclarePanesProps) {
   const caseId = detail.case.id;
   const tooth = site?.tooth ?? null;
   const mountedRef = useRef(true);
@@ -341,47 +346,36 @@ export function DeclarePanes({ detail, site, onDetail }: DeclarePanesProps) {
   }, [partMeshUrl]);
 
   // THE AUTO-FIRED PREVIEW (per-site, non-blocking): fire exactly when the pure
-  // helper says so; the slot is claimed synchronously so a re-render cannot double-
-  // fire, and a settling response only writes a slot that still holds ITS key.
+  // helper says so. The async guards live in the firer (domain/declare.ts, tested
+  // there with an injectable post): claiming is synchronous so a doubled effect run
+  // cannot double-POST, and a settling response only writes a slot that still holds
+  // ITS key — a stale answer never overwrites a newer ask.
   const key = previewKeyFor(detail, tooth);
   const slot = tooth !== null ? previews[tooth] : undefined;
-  // marked BEFORE the async settles (Intake's shouldAutoDetect lesson): the slot
-  // state lags a render behind, so without this a doubled effect run could POST twice
-  const firedRef = useRef<Record<number, string>>({});
-  const firePreview = useCallback(
-    (forTooth: number, forKey: string) => {
-      firedRef.current[forTooth] = forKey;
-      setPreviews((prev) => ({
-        ...prev,
-        [forTooth]: { key: forKey, state: "computing" },
-      }));
-      void postPreview(caseId, forTooth).then((result) => {
-        if (!mountedRef.current) return;
-        setPreviews((prev) => {
-          const current = prev[forTooth];
-          if (current === undefined || current.key !== forKey) return prev; // a newer ask owns the slot
+  const firer = useMemo(
+    () =>
+      createPreviewFirer({
+        caseId,
+        post: postPreviewFn,
+        update: setPreviews,
+        isLive: () => mountedRef.current,
+        onSettled: (result) => {
           if (result.kind === "ok") {
-            return { ...prev, [forTooth]: { key: forKey, state: "ready", payload: result.data } };
+            // the site moved declared→previewed SERVER-side; re-read the whole
+            // truth rather than patching a status locally (trust direction, AM-4)
+            void fetchCaseSession(caseId).then((fresh) => {
+              if (mountedRef.current && fresh.kind === "ok") onDetail(fresh.data);
+            });
           }
-          return { ...prev, [forTooth]: { key: forKey, state: "error", error: result.detail } };
-        });
-        if (result.kind === "ok") {
-          // the site moved declared→previewed SERVER-side; re-read the whole truth
-          // rather than patching a status locally (trust direction, AM-4)
-          void fetchCaseSession(caseId).then((fresh) => {
-            if (mountedRef.current && fresh.kind === "ok") onDetail(fresh.data);
-          });
-        }
-      });
-    },
-    [caseId, onDetail],
+        },
+      }),
+    [caseId, postPreviewFn, onDetail],
   );
   useEffect(() => {
     if (tooth === null || key === null) return;
     if (!shouldAutoPreview({ key, slotKey: slot?.key ?? null })) return;
-    if (firedRef.current[tooth] === key) return; // already in flight for THIS key
-    firePreview(tooth, key);
-  }, [tooth, key, slot?.key, firePreview]);
+    firer.maybeFire(tooth, key);
+  }, [tooth, key, slot?.key, firer]);
 
   const payload =
     slot !== undefined && slot.key === key && slot.state === "ready"
@@ -416,8 +410,8 @@ export function DeclarePanes({ detail, site, onDetail }: DeclarePanesProps) {
   );
 
   const handleRetryPreview = useCallback(() => {
-    if (tooth !== null && key !== null) firePreview(tooth, key);
-  }, [tooth, key, firePreview]);
+    if (tooth !== null && key !== null) firer.fire(tooth, key);
+  }, [tooth, key, firer]);
 
   // --- geometry + frames (the demo's memo discipline: derive once per input so an
   // --- unrelated re-render never re-uploads a mesh to the GPU) -----------------------
