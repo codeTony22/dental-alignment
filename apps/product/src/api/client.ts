@@ -48,6 +48,9 @@ export interface WorklistRow {
   sites: SiteRollup;
   run_state: RunState;
   confirmed: boolean;
+  /** Released is a CURRENT-run verdict (slice 8): the BFF's derivation — true only
+   * while the release record still names the current done run. */
+  released: boolean;
   detected: boolean;
   choices_complete: boolean;
   error: null;
@@ -62,6 +65,7 @@ export interface WorklistRowError {
   sites: null;
   run_state: null;
   confirmed: null;
+  released: null;
   detected: null;
   choices_complete: null;
   error: string;
@@ -159,6 +163,32 @@ export interface ReliefCeilingView {
   error: string | null;
 }
 
+/** The sealed confirmation's facts (slice 8, AM-10/AM-11): the record verbatim. */
+export interface ConfirmationView {
+  operator: string;
+  at: string;
+  run_id: string;
+  evidence_sha256: string;
+  /** tooth-as-string → "release" | "withhold" (JSON object keys are strings). */
+  dispositions: Record<string, string>;
+  acknowledged_flags: number[];
+}
+
+/** The payment stub's record (AM-11): provider "stub" keeps it honest forever. */
+export interface PaymentView {
+  provider: string;
+  operator: string;
+  at: string;
+}
+
+export interface ReleaseView {
+  operator: string;
+  at: string;
+  run_id: string;
+  evidence_sha256: string;
+  released_teeth: number[];
+}
+
 export interface SessionView {
   tenant_id: string;
   adjust_visited: boolean;
@@ -167,6 +197,13 @@ export interface SessionView {
   run_refusal: string | null;
   confirmed: boolean;
   payment_authorized: boolean;
+  /** The disclosure chain's records (slice 8), verbatim where they exist. */
+  confirmation: ConfirmationView | null;
+  payment: PaymentView | null;
+  release: ReleaseView | null;
+  /** True only while the release record names the CURRENT done run — the rail's
+   * deliver tick reads this, never the release record's bare existence. */
+  released: boolean;
 }
 
 export interface CaseSessionDetail {
@@ -513,4 +550,188 @@ export async function fetchRun(caseId: string): Promise<ApiResult<RunFactsView>>
   return fetchJson<RunFactsView>(
     `/api/case-sessions/${encodeURIComponent(caseId)}/run`,
   );
+}
+
+// --- Deliver (slice 8): the evidence surface and the disclosure chain -----------------
+
+/** The rotation facts as the run measured them (deg + instrument + unverified). */
+export interface AssuranceRotation {
+  deg: number | null;
+  evidence: string | null;
+  unverified: boolean;
+}
+
+export interface AssuranceClamp {
+  requested_mm: number | null;
+  applied_mm: number | null;
+  clamped: boolean;
+  reason: string | null;
+}
+
+/** The run's guidance verdict verbatim — level + the exact action words. */
+export interface AssuranceGate {
+  level: string;
+  actions: string[];
+}
+
+/** One acceptance-catalog pairing (case_prep.domain.acceptance, verbatim): the
+ * measured value beside the industry reference the doctor already knows. */
+export interface AssuranceReference {
+  key: string;
+  label: string;
+  unit: string;
+  value: unknown;
+  display: string | null;
+  band: string;
+  industry_ref: { value: string; source: string };
+  note: string | null;
+}
+
+export interface AssuranceSite {
+  tooth: number;
+  status: string | null;
+  declared_variant: string | null;
+  identified_variant: string | null;
+  /** The backend's own word: "match" | "mismatch" | "undeclared" | null. */
+  variant_agreement: string | null;
+  seat_method: string | null;
+  rim_agreement_mm: number | null;
+  rotation: AssuranceRotation;
+  deviation_rms_mm: number | null;
+  deviation_p90_mm: number | null;
+  gate: AssuranceGate;
+  clamp: AssuranceClamp;
+  qc_images: string[];
+  references: Record<string, AssuranceReference>;
+}
+
+/** The per-site verdict table's data (AM-12) — served worst-first by the BFF
+ * (flagged pinned, then the worse gate); this app renders the order VERBATIM. */
+export interface AssuranceView {
+  case_id: string;
+  run_id: string;
+  relief: Record<string, unknown> | null;
+  sites: AssuranceSite[];
+}
+
+/** EVIDENCE class (AM-1): ungated — visible before any confirmation exists. */
+export async function fetchAssurance(
+  caseId: string,
+): Promise<ApiResult<AssuranceView>> {
+  return fetchJson<AssuranceView>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/assurance`,
+  );
+}
+
+/** A QC image's URL (EVIDENCE class, ungated) — handed to a lazy <img>, so the
+ * bytes never pass through this JSON client. */
+export function qcImageUrl(caseId: string, filename: string): string {
+  return `/api/case-sessions/${encodeURIComponent(caseId)}/runs/current/qc/${encodeURIComponent(filename)}`;
+}
+
+/** The operator header (AM-11): every gating call names its actor — the BFF 422s
+ * without it, so the header is attached here, in one place. */
+function operatorHeaders(operator: string): Record<string, string> {
+  return { "X-Operator": operator };
+}
+
+/** The confirmation's wire body: dispositions keyed tooth-as-string. */
+export interface ConfirmBody {
+  dispositions: Record<string, "release" | "withhold">;
+  acknowledged_flags: number[];
+}
+
+export async function postConfirm(
+  caseId: string,
+  operator: string,
+  body: ConfirmBody,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/confirm`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", ...operatorHeaders(operator) },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/** The payment STUB (AM-11): {authorize: true} or nothing — the UI labels the
+ * button as a stub, and the BFF records provider "stub" so it stays tellable. */
+export async function postPayment(
+  caseId: string,
+  operator: string,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/payment`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", ...operatorHeaders(operator) },
+      body: JSON.stringify({ authorize: true }),
+    },
+  );
+}
+
+/** Release = disclosure (AM-1). Body-less: everything it consumes is already the
+ * session's. A 409 carries the BFF's words — including "the case changed since it
+ * was confirmed", which the UI answers with the re-confirm flow. */
+export async function postRelease(
+  caseId: string,
+  operator: string,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/release`,
+    { method: "POST", headers: operatorHeaders(operator) },
+  );
+}
+
+/** The released deliverables: names minus QC images minus withheld sites' files. */
+export interface ArtifactsView {
+  run_id: string;
+  files: string[];
+  withheld_teeth: number[];
+}
+
+export async function fetchArtifacts(
+  caseId: string,
+  operator: string,
+): Promise<ApiResult<ArtifactsView>> {
+  return fetchJson<ArtifactsView>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/runs/current/artifacts`,
+    { headers: operatorHeaders(operator) },
+  );
+}
+
+/**
+ * One deliverable's bytes (the gated endpoint needs the operator header, so a bare
+ * <a href> cannot fetch it): resolves to a Blob the component turns into an object
+ * URL and clicks — or to the BFF's stated refusal.
+ */
+export async function fetchArtifactBlob(
+  caseId: string,
+  filename: string,
+  operator: string,
+): Promise<ApiResult<Blob>> {
+  const path = `/api/case-sessions/${encodeURIComponent(caseId)}/runs/current/artifacts/${encodeURIComponent(filename)}`;
+  let response: Response;
+  try {
+    response = await fetch(path, { headers: operatorHeaders(operator) });
+  } catch (err: unknown) {
+    return {
+      kind: "error",
+      detail: err instanceof Error ? err.message : String(err),
+    };
+  }
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const body = (await response.json()) as { detail?: unknown };
+      const stated = refusalDetail(body.detail);
+      if (stated !== null) detail = `HTTP ${response.status} — ${stated}`;
+    } catch {
+      // a non-JSON error body still yields the status line above
+    }
+    return { kind: "error", detail, status: response.status };
+  }
+  return { kind: "ok", data: await response.blob() };
 }

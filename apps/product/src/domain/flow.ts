@@ -63,6 +63,10 @@ export interface FlowFacts {
   readonly siteFlagged: number;
   readonly runState: string;
   readonly confirmed: boolean;
+  /** The BFF's CURRENT-run release verdict (slice 8): true only while the release
+   * record still names the current done run — the deliver tick's one fact (a rail
+   * tick must be the rail truth: released artifacts, not merely a confirmation). */
+  readonly released: boolean;
   /** Detection ran and its record is persisted (slice 4) — a BFF fact, never inferred
    * from sites being present (curated suggestions exist before detection ever runs). */
   readonly detectionDone: boolean;
@@ -80,6 +84,7 @@ export interface WorklistRowLike {
   };
   readonly run_state: string;
   readonly confirmed: boolean;
+  readonly released: boolean;
   readonly detected: boolean;
   readonly choices_complete: boolean;
 }
@@ -92,6 +97,7 @@ export function factsFromWorklistRow(row: WorklistRowLike): FlowFacts {
     siteFlagged: row.sites.flagged,
     runState: row.run_state,
     confirmed: row.confirmed,
+    released: row.released,
     detectionDone: row.detected,
     choicesComplete: row.choices_complete,
   };
@@ -105,6 +111,7 @@ export interface CaseSessionLike {
   readonly session: {
     readonly run_state: string;
     readonly confirmed: boolean;
+    readonly released: boolean;
   };
 }
 
@@ -116,6 +123,7 @@ export function factsFromCaseSession(payload: CaseSessionLike): FlowFacts {
     siteFlagged: payload.sites.filter((s) => s.status === "flagged").length,
     runState: payload.session.run_state,
     confirmed: payload.session.confirmed,
+    released: payload.session.released,
     detectionDone: payload.detection !== null,
     choicesComplete: payload.choices.complete,
   };
@@ -192,7 +200,10 @@ export function blockedReason(stage: StageId, facts: FlowFacts): string | null {
  *    evidence, not a review — Declare is done when the operator has attested every
  *    site, and the run gate (5c's AuthorizedRunSelection) reads the same fact.
  *  - adjust: a run exists and nothing is flagged — the plan's "nothing to adjust".
- *  - deliver: the confirmation is sealed.
+ *  - deliver: RELEASED (slice 8 — the rail truth): the artifacts are disclosed for
+ *    the current run. A confirmation alone is a step along the way, not delivery —
+ *    the BFF derives `released` as a current-run verdict, so a post-release change
+ *    honestly unticks the stage.
  */
 export function isComplete(stage: StageId, facts: FlowFacts): boolean {
   switch (stage) {
@@ -203,7 +214,7 @@ export function isComplete(stage: StageId, facts: FlowFacts): boolean {
     case "adjust":
       return runExists(facts) && facts.siteFlagged === 0;
     case "deliver":
-      return facts.confirmed;
+      return facts.released;
   }
 }
 

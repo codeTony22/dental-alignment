@@ -29,18 +29,20 @@ import {
   type StageId,
 } from "../domain/flow";
 import { DeclareStage } from "../components/DeclareStage";
+import { DeliverStage } from "../components/DeliverStage";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { IntakeStage } from "../components/IntakeStage";
 import { StageRail } from "../components/StageRail";
 
 /**
  * Each unbuilt body names the slice that builds it, so the shell never pretends.
- * Intake (slice 4) and Declare (slice 5a) are BUILT; Adjust and Deliver stay
- * placeholders.
+ * Intake (slice 4), Declare (slice 5a) and Deliver (slice 8) are BUILT; Adjust
+ * stays a placeholder.
  */
-const STAGE_BODY: Readonly<Record<Exclude<StageId, "intake" | "declare">, string>> = {
+const STAGE_BODY: Readonly<
+  Record<Exclude<StageId, "intake" | "declare" | "deliver">, string>
+> = {
   adjust: "Adjust — slice 6 builds this (flagged queue, the four tools; skippable by design).",
-  deliver: "Deliver — slice 8 builds this (assurance table, sealed confirmation, gated release).",
 };
 
 interface CaseLoadErrorProps {
@@ -99,6 +101,8 @@ export function CaseShellView({ detail, stage, onDetail }: CaseShellViewProps) {
             <IntakeStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
           ) : stage === "declare" ? (
             <DeclareStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
+          ) : stage === "deliver" ? (
+            <DeliverStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
           ) : (
             <p>{STAGE_BODY[stage]}</p>
           )}

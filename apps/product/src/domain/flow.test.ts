@@ -26,6 +26,7 @@ function facts(overrides: Partial<FlowFacts> = {}): FlowFacts {
     siteFlagged: 0,
     runState: "none",
     confirmed: false,
+    released: false,
     detectionDone: false,
     choicesComplete: false,
     ...overrides,
@@ -190,10 +191,14 @@ describe("completion ticks", () => {
     ).toBe(false);
   });
 
-  it("deliver completes only on confirmation", () => {
+  it("deliver completes only on RELEASE — the rail truth (slice 8)", () => {
     const done = facts({ siteTotal: 1, siteReady: 1, runState: "done" });
     expect(isComplete("deliver", done)).toBe(false);
-    expect(isComplete("deliver", { ...done, confirmed: true })).toBe(true);
+    // a confirmation alone is a step along the way, not delivery
+    expect(isComplete("deliver", { ...done, confirmed: true })).toBe(false);
+    expect(
+      isComplete("deliver", { ...done, confirmed: true, released: true }),
+    ).toBe(true);
   });
 });
 
@@ -270,6 +275,7 @@ describe("the two payload projections agree", () => {
       sites: { total: 3, declared: 3, ready: 2, flagged: 1 },
       run_state: "done",
       confirmed: false,
+      released: false,
       detected: true,
       choices_complete: true,
     });
@@ -277,7 +283,7 @@ describe("the two payload projections agree", () => {
       sites: [{ status: "ready" }, { status: "ready" }, { status: "flagged" }],
       detection: { proposals: [] },
       choices: { complete: true },
-      session: { run_state: "done", confirmed: false },
+      session: { run_state: "done", confirmed: false, released: false },
     });
     expect(fromRow).toEqual(fromDetail);
   });
@@ -287,7 +293,7 @@ describe("the two payload projections agree", () => {
       sites: [{ status: "detected" }],
       detection: null,
       choices: { complete: false },
-      session: { run_state: "none", confirmed: false },
+      session: { run_state: "none", confirmed: false, released: false },
     });
     expect(undetected.detectionDone).toBe(false);
     expect(undetected.choicesComplete).toBe(false);
@@ -305,7 +311,7 @@ describe("the two payload projections agree", () => {
       ],
       detection: null,
       choices: { complete: false },
-      session: { run_state: "done", confirmed: false },
+      session: { run_state: "done", confirmed: false, released: false },
     });
     expect(projected.siteTotal).toBe(5);
     expect(projected.siteDeclared).toBe(4); // everything past "detected" is an act

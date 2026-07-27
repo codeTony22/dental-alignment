@@ -7,15 +7,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   deleteReview,
+  fetchArtifactBlob,
+  fetchArtifacts,
+  fetchAssurance,
   fetchCaseSession,
   fetchRun,
+  postConfirm,
   postDetect,
+  postPayment,
   postPreview,
+  postRelease,
   postReview,
   postRun,
   putChoices,
   putDeclaration,
   putSystem,
+  qcImageUrl,
   refusalDetail,
   scanUrlFor,
 } from "./client";
@@ -208,5 +215,123 @@ describe("the scan-stream URL (slice 3)", () => {
 
   it("URL-encodes the case id — an id is data, never path syntax", () => {
     expect(scanUrlFor("a/b c")).toBe("/api/case-sessions/a%2Fb%20c/scan");
+  });
+});
+
+describe("the Deliver calls (slice 8) — every gating request names its actor (AM-11)", () => {
+  function capturingFetch(status = 200, body: unknown = {}) {
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+    stubFetch(((url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }) as never);
+    return calls;
+  }
+
+  it("assurance GETs ungated — the EVIDENCE class needs no operator (AM-1)", async () => {
+    const calls = capturingFetch();
+    await fetchAssurance("case-a");
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/assurance");
+    expect(calls[0]!.init?.headers).toBeUndefined();
+  });
+
+  it("the QC image URL addresses the ungated evidence endpoint, encoded", () => {
+    expect(qcImageUrl("case-a", "case-a-19-clockview.png")).toBe(
+      "/api/case-sessions/case-a/runs/current/qc/case-a-19-clockview.png",
+    );
+    expect(qcImageUrl("a/b", "x y.png")).toBe(
+      "/api/case-sessions/a%2Fb/runs/current/qc/x%20y.png",
+    );
+  });
+
+  it("confirm POSTs the acts with the X-Operator header", async () => {
+    const calls = capturingFetch();
+    await postConfirm("case-a", "Ana Petrova", {
+      dispositions: { "30": "release", "19": "withhold" },
+      acknowledged_flags: [30],
+    });
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/confirm");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(
+      (calls[0]!.init?.headers as Record<string, string>)["X-Operator"],
+    ).toBe("Ana Petrova");
+    expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({
+      dispositions: { "30": "release", "19": "withhold" },
+      acknowledged_flags: [30],
+    });
+  });
+
+  it("payment POSTs exactly {authorize: true} — the stub's one honest act", async () => {
+    const calls = capturingFetch();
+    await postPayment("case-a", "Ana Petrova");
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/payment");
+    expect(
+      (calls[0]!.init?.headers as Record<string, string>)["X-Operator"],
+    ).toBe("Ana Petrova");
+    expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({
+      authorize: true,
+    });
+  });
+
+  it("release POSTs body-less with the operator — everything else is the session's", async () => {
+    const calls = capturingFetch();
+    await postRelease("case-a", "Ana Petrova");
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/release");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(calls[0]!.init?.body).toBeUndefined();
+    expect(
+      (calls[0]!.init?.headers as Record<string, string>)["X-Operator"],
+    ).toBe("Ana Petrova");
+  });
+
+  it("the artifact list GETs with the operator — even listing is disclosure", async () => {
+    const calls = capturingFetch(200, { run_id: "r", files: [], withheld_teeth: [] });
+    await fetchArtifacts("case-a", "Ana Petrova");
+    expect(calls[0]!.url).toBe(
+      "/api/case-sessions/case-a/runs/current/artifacts",
+    );
+    expect(
+      (calls[0]!.init?.headers as Record<string, string>)["X-Operator"],
+    ).toBe("Ana Petrova");
+  });
+
+  it("an artifact download fetches with the header and yields the bytes — a bare <a href> could not carry the actor", async () => {
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+    stubFetch(((url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return Promise.resolve(
+        new Response(new Blob([new Uint8Array([83, 84, 76])]), { status: 200 }),
+      );
+    }) as never);
+    const result = await fetchArtifactBlob("case-a", "cap-19.stl", "Ana Petrova");
+    expect(calls[0]!.url).toBe(
+      "/api/case-sessions/case-a/runs/current/artifacts/cap-19.stl",
+    );
+    expect(
+      (calls[0]!.init?.headers as Record<string, string>)["X-Operator"],
+    ).toBe("Ana Petrova");
+    expect(result.kind).toBe("ok");
+  });
+
+  it("an artifact refusal carries the BFF's stated words and status", async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ detail: "artifacts are not disclosed for case 'case-a'" }),
+          { status: 409, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+    const result = await fetchArtifactBlob("case-a", "cap-19.stl", "Ana");
+    expect(result).toEqual({
+      kind: "error",
+      status: 409,
+      detail: "HTTP 409 — artifacts are not disclosed for case 'case-a'",
+    });
   });
 });

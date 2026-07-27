@@ -3,6 +3,8 @@
  * the hand-written mirror), so component tests exercise the real seam shapes.
  */
 import type {
+  AssuranceSite,
+  AssuranceView,
   CaptureAssessmentView,
   CaseSessionDetail,
   DetectedProposalView,
@@ -141,6 +143,10 @@ export function caseSessionDetail(
       run_refusal: null,
       confirmed: false,
       payment_authorized: false,
+      confirmation: null,
+      payment: null,
+      release: null,
+      released: false,
     },
     ...overrides,
   };
@@ -222,6 +228,7 @@ export function worklistRow(overrides: Partial<WorklistRow> = {}): WorklistRow {
     sites: { total: 2, declared: 0, ready: 0, flagged: 0 },
     run_state: "none",
     confirmed: false,
+    released: false,
     detected: false,
     choices_complete: false,
     error: null,
@@ -242,9 +249,80 @@ export function worklistErrorRow(
     sites: null,
     run_state: null,
     confirmed: null,
+    released: null,
     detected: null,
     choices_complete: null,
     error: "corrupt session file session.json — refusing to silently reset flow state",
+    ...overrides,
+  };
+}
+
+/** One assurance table row as the BFF projects it (bff/resources/deliver.py —
+ * the run summary's facts beside the acceptance catalog's references). */
+export function assuranceSite(overrides: Partial<AssuranceSite> = {}): AssuranceSite {
+  return {
+    tooth: 19,
+    status: "ready",
+    declared_variant: "5020",
+    identified_variant: "5020",
+    variant_agreement: "match",
+    seat_method: "rim-seat",
+    rim_agreement_mm: 0.07,
+    rotation: { deg: 0.7, evidence: "codes", unverified: false },
+    deviation_rms_mm: 0.43,
+    deviation_p90_mm: 0.71,
+    gate: { level: "ready", actions: [] },
+    clamp: { requested_mm: 0.2, applied_mm: 0.2, clamped: false, reason: null },
+    qc_images: ["case-a-19-clockview.png", "case-a-19-deviation.png"],
+    references: {
+      rim_agreement_mm: {
+        key: "rim_agreement_mm",
+        label: "Rim seating agreement (p90)",
+        unit: "mm",
+        value: 0.07,
+        display: "0.07 mm",
+        band: "pass",
+        industry_ref: {
+          value: "no direct commercial number; scan-body agreement literature 38–425 µm",
+          source: "alignment-algorithm-survey addendum",
+        },
+        note: null,
+      },
+    },
+    ...overrides,
+  };
+}
+
+/** A flagged row: the run's evidence flags the site; its gate carries the words. */
+export function flaggedAssuranceSite(
+  overrides: Partial<AssuranceSite> = {},
+): AssuranceSite {
+  return assuranceSite({
+    tooth: 30,
+    status: "flagged",
+    gate: {
+      level: "attention",
+      actions: [
+        "The cap's ROTATION could not be verified — visually check the coded features.",
+      ],
+    },
+    rotation: { deg: null, evidence: "none", unverified: true },
+    qc_images: ["case-a-30-clockview.png", "case-a-30-deviation.png"],
+    ...overrides,
+  });
+}
+
+/** The table as the BFF serves it: worst-first, flags pinned on top (AM-12). */
+export function assuranceView(overrides: Partial<AssuranceView> = {}): AssuranceView {
+  return {
+    case_id: "case-a",
+    run_id: "20260727-120000-abc123",
+    relief: {
+      gingival_offset_requested_mm: 0.2,
+      gingival_offset_applied_mm: 0.2,
+      clamped: false,
+    },
+    sites: [flaggedAssuranceSite(), assuranceSite()],
     ...overrides,
   };
 }

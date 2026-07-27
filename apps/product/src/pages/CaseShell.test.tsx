@@ -27,12 +27,22 @@ describe("the case shell view", () => {
 
   it("renders the rail and, on an unbuilt stage, a body naming its building slice", () => {
     const html = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/adjust">
+        <CaseShellView detail={detail} stage="adjust" />
+      </StaticRouter>,
+    );
+    expect(html).toContain('data-role="stage-rail"');
+    expect(html).toContain("slice 6 builds this");
+  });
+
+  it("Deliver mounts its built stage (slice 8) — no placeholder line remains", () => {
+    const html = renderToStaticMarkup(
       <StaticRouter location="/case/case-a/deliver">
         <CaseShellView detail={detail} stage="deliver" />
       </StaticRouter>,
     );
-    expect(html).toContain('data-role="stage-rail"');
-    expect(html).toContain("slice 8 builds this");
+    expect(html).toContain('data-role="deliver-stage"');
+    expect(html).not.toContain("slice 8 builds this");
   });
 
   it("Declare mounts its built stage (slice 5a) — no placeholder line remains", () => {
@@ -45,7 +55,7 @@ describe("the case shell view", () => {
     expect(html).not.toContain("Slice 5a builds");
   });
 
-  it("Intake and Declare mount the main stage (slice 3); Adjust and Deliver stay placeholders", () => {
+  it("Intake and Declare mount the main stage (slice 3); Adjust stays a placeholder", () => {
     for (const stage of ["intake", "declare"] as const) {
       const html = renderToStaticMarkup(
         <StaticRouter location={`/case/case-a/${stage}`}>
@@ -66,6 +76,10 @@ describe("the case shell view", () => {
               run_refusal: null,
               confirmed: false,
               payment_authorized: false,
+              confirmation: null,
+              payment: null,
+              release: null,
+              released: false,
             },
           })}
           stage="adjust"
@@ -96,6 +110,10 @@ describe("the case shell view", () => {
         run_refusal: null,
         confirmed: false,
         payment_authorized: false,
+        confirmation: null,
+        payment: null,
+        release: null,
+        released: false,
       },
     });
     const html = renderToStaticMarkup(

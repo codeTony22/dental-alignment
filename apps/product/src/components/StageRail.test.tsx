@@ -25,6 +25,7 @@ const freshFacts: FlowFacts = {
   siteFlagged: 0,
   runState: "none",
   confirmed: false,
+  released: false,
   // intake done per slice 4's rule: detection ran AND the case-level choices made
   detectionDone: true,
   choicesComplete: true,
@@ -69,6 +70,7 @@ describe("the stage rail", () => {
       siteFlagged: 0,
       runState: "done",
       confirmed: false,
+      released: false,
       detectionDone: true,
       choicesComplete: true,
     };
@@ -85,6 +87,7 @@ describe("the stage rail", () => {
       siteFlagged: 1,
       runState: "done",
       confirmed: false,
+      released: false,
       detectionDone: true,
       choicesComplete: true,
     };
