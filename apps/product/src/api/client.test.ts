@@ -9,6 +9,8 @@ import {
   fetchCaseSession,
   postDetect,
   putChoices,
+  putDeclaration,
+  putSystem,
   refusalDetail,
   scanUrlFor,
 } from "./client";
@@ -88,6 +90,26 @@ describe("the action requests (slice 4) — detect and choices", () => {
       construction_path: "dess/a.stl",
       jaw: "upper",
       gingival_offset_mm: 0.15,
+    });
+  });
+
+  it("system PUTs exactly {model} — the reset it causes is the BFF's, not a field", async () => {
+    const calls = capturingFetch();
+    await putSystem("case-a", "astra-ev");
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/system");
+    expect(calls[0]!.init?.method).toBe("PUT");
+    expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({
+      model: "astra-ev",
+    });
+  });
+
+  it("declaration PUTs exactly {variant} to the tooth's own path", async () => {
+    const calls = capturingFetch();
+    await putDeclaration("case-a", 19, "5020");
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/sites/19/declaration");
+    expect(calls[0]!.init?.method).toBe("PUT");
+    expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({
+      variant: "5020",
     });
   });
 

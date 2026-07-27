@@ -56,6 +56,9 @@ export const STAGE_INFO: Readonly<Record<StageId, StageInfo>> = {
  */
 export interface FlowFacts {
   readonly siteTotal: number;
+  /** Sites past "detected" — an operator act has touched them (the BFF rollup's own
+   * definition of `declared`; from the detail, every status except "detected"). */
+  readonly siteDeclared: number;
   readonly siteReady: number;
   readonly siteFlagged: number;
   readonly runState: string;
@@ -71,6 +74,7 @@ export interface FlowFacts {
 export interface WorklistRowLike {
   readonly sites: {
     readonly total: number;
+    readonly declared: number;
     readonly ready: number;
     readonly flagged: number;
   };
@@ -83,6 +87,7 @@ export interface WorklistRowLike {
 export function factsFromWorklistRow(row: WorklistRowLike): FlowFacts {
   return {
     siteTotal: row.sites.total,
+    siteDeclared: row.sites.declared,
     siteReady: row.sites.ready,
     siteFlagged: row.sites.flagged,
     runState: row.run_state,
@@ -106,6 +111,7 @@ export interface CaseSessionLike {
 export function factsFromCaseSession(payload: CaseSessionLike): FlowFacts {
   return {
     siteTotal: payload.sites.length,
+    siteDeclared: payload.sites.filter((s) => s.status !== "detected").length,
     siteReady: payload.sites.filter((s) => s.status === "ready").length,
     siteFlagged: payload.sites.filter((s) => s.status === "flagged").length,
     runState: payload.session.run_state,
@@ -171,7 +177,12 @@ export function blockedReason(stage: StageId, facts: FlowFacts): string | null {
  *  - intake: detection RAN and the case-level choices are all made (plan §4 slice 4 —
  *    sites merely existing is not Intake done: curated suggestions predate detection,
  *    and the choices are Intake's other half). Both facts are the BFF's derivations.
- *  - declare: every site reviewed through to ready or flagged.
+ *  - declare: every site DECLARED (slice 5a). ONE deliberate deviation from the
+ *    plan's slice table, honoured rather than hacked: the tick that sets a site
+ *    `ready` is "the operator's review tick over the three live Declare panes"
+ *    (AM-8), and the panes arrive in 5b — so the REVIEW tick arrives in 5b with
+ *    them. A tick rendered now would be a checkbox over nothing, exactly what AM-8
+ *    forbids. 5b extends this completion to every-site-reviewed (ready | flagged).
  *  - adjust: a run exists and nothing is flagged — the plan's "nothing to adjust".
  *  - deliver: the confirmation is sealed.
  */
@@ -180,7 +191,7 @@ export function isComplete(stage: StageId, facts: FlowFacts): boolean {
     case "intake":
       return facts.detectionDone && facts.choicesComplete;
     case "declare":
-      return allSitesResolved(facts);
+      return facts.siteTotal > 0 && facts.siteDeclared === facts.siteTotal;
     case "adjust":
       return runExists(facts) && facts.siteFlagged === 0;
     case "deliver":

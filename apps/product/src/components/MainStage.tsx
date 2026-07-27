@@ -149,10 +149,19 @@ export interface MainStageProps {
   /** Detected-site rings (slice 4 Intake) — the copied viewer's marker surface.
    * Omitted = no markers, which keeps Declare's mount unchanged. */
   readonly markers?: readonly MarkerSpec[];
+  /** The operator's active site (slice 5a — Declare's queue drives the routing).
+   * Omitted/null = the stage's own default, the first site with a usable centre. */
+  readonly activeTooth?: number | null;
 }
 
 /** The container: streams the scan, opens FRONT, routes to the active site. */
-export function MainStage({ caseId, scanFilename, sites, markers }: MainStageProps) {
+export function MainStage({
+  caseId,
+  scanFilename,
+  sites,
+  markers,
+  activeTooth,
+}: MainStageProps) {
   const viewerRef = useRef<Viewer3DHandle | null>(null);
   const [scanState, setScanState] = useState<ScanLoadState>({ kind: "loading" });
   const [subject, setSubject] = useState<StageSubject>("site");
@@ -160,12 +169,18 @@ export function MainStage({ caseId, scanFilename, sites, markers }: MainStagePro
   const [contentGeneration, setContentGeneration] = useState(0);
   const routedKeyRef = useRef<string | null>(null);
 
-  // The active site: the first with a usable centre. Slices 4/5a add real selection;
-  // until then the stage still opens ON a site, which is the demo's default subject.
-  const activeSite = useMemo(
-    () => sites.find((s) => s.center !== null && s.center.length === 3) ?? null,
-    [sites],
-  );
+  // The active site: the operator's chosen tooth when one is named (Declare's queue,
+  // slice 5a) — honestly NOT reframed onto some other site when that tooth has no
+  // usable centre (the toggle disables instead of the stage framing a lie) — else
+  // the stage's own default: the first site with a usable centre (the demo's rule).
+  const activeSite = useMemo(() => {
+    const usable = (s: SiteView) =>
+      s.center !== null && s.center.length === 3;
+    if (activeTooth !== null && activeTooth !== undefined) {
+      return sites.find((s) => s.tooth === activeTooth) ?? null;
+    }
+    return sites.find(usable) ?? null;
+  }, [sites, activeTooth]);
   const siteCenter: Vec3 | null = useMemo(() => {
     const c = activeSite?.center;
     return c && c.length === 3 ? [c[0]!, c[1]!, c[2]!] : null;

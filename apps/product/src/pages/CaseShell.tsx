@@ -9,9 +9,11 @@
  * no in-app back button (plan §4 Intake).
  *
  * Intake's body is BUILT (slice 4 — components/IntakeStage, which owns auto-detect and
- * the choices PUT; its responses replace the shell's payload via onDetail, so the whole
- * rail re-derives from what the BFF returned). The remaining bodies are placeholders
- * naming their building slice.
+ * the choices PUT) and so is Declare's (slice 5a — components/DeclareStage: site queue,
+ * system bar, variant cards; 5b adds the live panes and the review tick). Both stages'
+ * action responses replace the shell's payload via onDetail, so the whole rail
+ * re-derives from what the BFF returned. The remaining bodies are placeholders naming
+ * their building slice.
  */
 import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
@@ -26,18 +28,17 @@ import {
   stageStates,
   type StageId,
 } from "../domain/flow";
+import { DeclareStage } from "../components/DeclareStage";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { IntakeStage } from "../components/IntakeStage";
-import { MainStage } from "../components/MainStage";
 import { StageRail } from "../components/StageRail";
 
 /**
  * Each unbuilt body names the slice that builds it, so the shell never pretends.
- * Intake is BUILT (slice 4 — components/IntakeStage); Declare carries the main stage
- * (slice 3) above its placeholder line; Adjust and Deliver stay placeholders.
+ * Intake (slice 4) and Declare (slice 5a) are BUILT; Adjust and Deliver stay
+ * placeholders.
  */
-const STAGE_BODY: Readonly<Record<Exclude<StageId, "intake">, string>> = {
-  declare: "Slice 5a builds the rest of Declare: site queue, system bar, variant cards, review ticks.",
+const STAGE_BODY: Readonly<Record<Exclude<StageId, "intake" | "declare">, string>> = {
   adjust: "Adjust — slice 6 builds this (flagged queue, the four tools; skippable by design).",
   deliver: "Deliver — slice 8 builds this (assurance table, sealed confirmation, gated release).",
 };
@@ -96,17 +97,10 @@ export function CaseShellView({ detail, stage, onDetail }: CaseShellViewProps) {
         <section data-role="stage-body" style={{ flex: 1 }}>
           {stage === "intake" ? (
             <IntakeStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
+          ) : stage === "declare" ? (
+            <DeclareStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
           ) : (
-            <>
-              {stage === "declare" && (
-                <MainStage
-                  caseId={detail.case.id}
-                  scanFilename={detail.case.scan_filename}
-                  sites={detail.sites}
-                />
-              )}
-              <p>{STAGE_BODY[stage]}</p>
-            </>
+            <p>{STAGE_BODY[stage]}</p>
           )}
         </section>
       </div>

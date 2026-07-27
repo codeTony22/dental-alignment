@@ -21,6 +21,7 @@ import {
 function facts(overrides: Partial<FlowFacts> = {}): FlowFacts {
   return {
     siteTotal: 0,
+    siteDeclared: 0,
     siteReady: 0,
     siteFlagged: 0,
     runState: "none",
@@ -131,11 +132,13 @@ describe("completion ticks", () => {
     ).toBe(true);
   });
 
-  it("declare completes when every site is reviewed to ready or flagged", () => {
-    expect(isComplete("declare", facts({ siteTotal: 2, siteReady: 1 }))).toBe(false);
-    expect(
-      isComplete("declare", facts({ siteTotal: 2, siteReady: 1, siteFlagged: 1 })),
-    ).toBe(true);
+  it("declare completes when every site is DECLARED (5a; 5b extends this to reviewed)", () => {
+    // Updated DELIBERATELY for slice 5a: the review tick arrives in 5b with the
+    // live panes it ticks over (AM-8 forbids a checkbox over nothing), so 5a's
+    // completion is the strongest true fact — every site declared.
+    expect(isComplete("declare", facts())).toBe(false); // nothing to declare ≠ done
+    expect(isComplete("declare", facts({ siteTotal: 2, siteDeclared: 1 }))).toBe(false);
+    expect(isComplete("declare", facts({ siteTotal: 2, siteDeclared: 2 }))).toBe(true);
   });
 
   it("adjust completes as 'nothing to adjust': a run and zero flags", () => {
@@ -228,7 +231,7 @@ describe("resolveStagePath — the route guard's decision", () => {
 describe("the two payload projections agree", () => {
   it("a worklist row and its detail payload yield identical facts", () => {
     const fromRow = factsFromWorklistRow({
-      sites: { total: 3, ready: 2, flagged: 1 },
+      sites: { total: 3, declared: 3, ready: 2, flagged: 1 },
       run_state: "done",
       confirmed: false,
       detected: true,
@@ -269,6 +272,7 @@ describe("the two payload projections agree", () => {
       session: { run_state: "done", confirmed: false },
     });
     expect(projected.siteTotal).toBe(5);
+    expect(projected.siteDeclared).toBe(4); // everything past "detected" is an act
     expect(projected.siteReady).toBe(1);
     expect(projected.siteFlagged).toBe(0);
     expect(isReachable("deliver", projected)).toBe(false);

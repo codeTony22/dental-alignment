@@ -20,6 +20,7 @@ function railHtml(facts: FlowFacts, current: Parameters<typeof StageRail>[0]["cu
 
 const freshFacts: FlowFacts = {
   siteTotal: 2,
+  siteDeclared: 0,
   siteReady: 0,
   siteFlagged: 0,
   runState: "none",
@@ -63,6 +64,7 @@ describe("the stage rail", () => {
   it("ticks completed stages instead of numbering them", () => {
     const resolved: FlowFacts = {
       siteTotal: 2,
+      siteDeclared: 2,
       siteReady: 2,
       siteFlagged: 0,
       runState: "done",
@@ -78,6 +80,7 @@ describe("the stage rail", () => {
   it("a skipped adjust never blocks the deliver link (plan §4)", () => {
     const flagged: FlowFacts = {
       siteTotal: 3,
+      siteDeclared: 3,
       siteReady: 2,
       siteFlagged: 1,
       runState: "done",

@@ -80,6 +80,35 @@ export function detectionView(
   return { proposals };
 }
 
+/** A catalog entry row, shaped like adapters/library_catalog's serialized entries
+ * (the BFF passes them through verbatim). */
+export function catalogEntry(
+  overrides: Partial<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  return {
+    id: "5020",
+    variant: "5020",
+    label: "5.0 × 2.0",
+    rim_diameter_mm: 5.0,
+    height_mm: 2.0,
+    filename: "conical-4x4-5020.stl",
+    sha256: "0".repeat(64),
+    flags: [],
+    duplicate_of: [],
+    mesh_url: "/api/library/conical-4x4/5020/mesh",
+    ...overrides,
+  };
+}
+
+/** A catalog group as the worker serves it: model + legacy flag + variant entries. */
+export function catalogGroup(
+  model = "conical-4x4",
+  variants: Array<Record<string, unknown>> = [catalogEntry()],
+  legacy = false,
+): Record<string, unknown> {
+  return { model, legacy, variants };
+}
+
 export function caseSessionDetail(
   overrides: Partial<CaseSessionDetail> = {},
 ): CaseSessionDetail {
@@ -93,6 +122,7 @@ export function caseSessionDetail(
       suggested_construction: null,
     },
     sites: [siteView({ tooth: 19 }), siteView({ tooth: 30 })],
+    system: { effective_model: "conical-4x4", source: "suggested" },
     catalog: { groups: [], constructions: [] },
     relief_ceilings: [],
     detection: null,

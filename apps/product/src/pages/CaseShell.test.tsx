@@ -25,14 +25,24 @@ describe("the case shell view", () => {
     expect(html).toContain("lower");
   });
 
-  it("renders the rail and a stage body naming the slice that builds the rest", () => {
+  it("renders the rail and, on an unbuilt stage, a body naming its building slice", () => {
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/deliver">
+        <CaseShellView detail={detail} stage="deliver" />
+      </StaticRouter>,
+    );
+    expect(html).toContain('data-role="stage-rail"');
+    expect(html).toContain("slice 8 builds this");
+  });
+
+  it("Declare mounts its built stage (slice 5a) — no placeholder line remains", () => {
     const html = renderToStaticMarkup(
       <StaticRouter location="/case/case-a/declare">
         <CaseShellView detail={detail} stage="declare" />
       </StaticRouter>,
     );
-    expect(html).toContain('data-role="stage-rail"');
-    expect(html).toContain("Slice 5a builds the rest of Declare");
+    expect(html).toContain('data-role="declare-stage"');
+    expect(html).not.toContain("Slice 5a builds");
   });
 
   it("Intake and Declare mount the main stage (slice 3); Adjust and Deliver stay placeholders", () => {

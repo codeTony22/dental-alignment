@@ -125,11 +125,20 @@ export interface CaseView {
   suggested_construction: string | null;
 }
 
-/** Worker-shaped catalog rows pass through untyped — Declare (slice 5a) gives them
- * their real shapes when it actually renders them. */
+/** Worker-shaped catalog rows stay untyped on the wire; domain/declare.ts extracts
+ * the shapes Declare renders (a row missing its id is dropped, never guessed at) —
+ * the same defensive posture as domain/intake's construction options. */
 export interface CatalogView {
   groups: Array<Record<string, unknown>>;
   constructions: Array<Record<string, unknown>>;
+}
+
+/** WHICH implant system the case works against (AM-8): the BFF says whether the
+ * effective model is the session's declared act or the case's suggestion — this app
+ * renders the tag from `source`, never by comparing fields itself. */
+export interface SystemView {
+  effective_model: string | null;
+  source: "declared" | "suggested" | "none";
 }
 
 export interface ReliefCeilingView {
@@ -160,6 +169,7 @@ export interface SessionView {
 export interface CaseSessionDetail {
   case: CaseView;
   sites: SiteView[];
+  system: SystemView;
   catalog: CatalogView;
   relief_ceilings: ReliefCeilingView[];
   detection: DetectionView | null;
@@ -303,6 +313,48 @@ export async function putChoices(
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(choices),
+    },
+  );
+}
+
+/**
+ * Declare the case-scoped implant system (PUT /{id}/system — plan §4 Declare/AM-8).
+ * Switching resets every site SERVER-side; this app asks the operator in words
+ * first (components/DeclareStage) and then renders whatever came back — the reset
+ * is the BFF's derivation, never performed locally.
+ */
+export async function putSystem(
+  caseId: string,
+  model: string,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/system`,
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model }),
+    },
+  );
+}
+
+/**
+ * Declare the active site's variant (PUT /{id}/sites/{tooth}/declaration — AM-8).
+ * The detected→declared move happens in the BFF's status machine; the returned
+ * detail is the whole new truth and replaces the payload verbatim (optimism OFF).
+ */
+export async function putDeclaration(
+  caseId: string,
+  tooth: number,
+  variant: string,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/sites/${encodeURIComponent(
+      String(tooth),
+    )}/declaration`,
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ variant }),
     },
   );
 }
