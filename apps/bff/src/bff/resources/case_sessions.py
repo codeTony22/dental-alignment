@@ -157,7 +157,7 @@ class CaseSessionDetail(BaseModel):
 
 # --- request models: THE VALIDATION CORPUS BEGINS HERE (plan §6/AM-9, ledger row 4) -----
 
-JAWS = ("upper", "lower")            # server.py:216, verbatim
+JAWS = ("upper", "lower")            # server.py:215, verbatim
 
 # A gingival relief is a fraction of a millimetre; anything past this is a typo, not a
 # clinical intent (the part would be eaten away). Bound, not a silent clamp.
@@ -405,6 +405,15 @@ def detect_case(case_id: str, request: Request, fresh: bool = False) -> CaseSess
             result = detect(case)
         except ScanUnreadable as exc:
             raise HTTPException(422, str(exc))
+        # detect() runs for many SECONDS on a real scan, and Intake auto-fires it while
+        # the choices panel stays live — a choices PUT can land mid-derivation. Saving
+        # the session loaded ABOVE would clobber that PUT with its stale document,
+        # silently discarding an operator act (the write-write cousin of the client
+        # claims AM-4 forbids; found by the slice-4 adversarial review). So: re-load
+        # AFTER the derivation and write ONLY the detection facts onto the fresh
+        # document. A store compare-and-swap is the durable answer once more writers
+        # exist (slice 5).
+        session = store.load(case_id)
         session.detection = _detection_record(result)
         store.save(session)
     return _detail(case, session, settings)

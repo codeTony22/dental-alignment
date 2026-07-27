@@ -236,6 +236,39 @@ class TestDetect:
         assert TestClient(create_app(settings)).get(
             "/api/case-sessions").json()[0]["detected"] is False
 
+    def test_a_choices_put_landing_mid_detect_is_not_clobbered(
+            self, settings, monkeypatch):
+        """The lost-update race the slice-4 adversarial review demonstrated: detection
+        runs for many seconds (7-30s on real cases), Intake auto-fires it on open, and
+        the choices panel stays live — so an operator's PUT can land WHILE detect runs.
+        The old handler loaded the session BEFORE detect() and saved that stale object
+        after, silently wiping the operator's persisted choices: an operator act
+        discarded by a write-write race, the exact class AM-4 exists to prevent (only
+        via clobber instead of client claim). The route must re-load AFTER detect()
+        returns and write ONLY the detection facts onto the fresh document."""
+        def detect_with_concurrent_put(case):
+            # while detection "runs", the operator's PUT lands over HTTP and persists
+            res = TestClient(create_app(settings)).put(
+                f"/api/case-sessions/{case.id}/choices", json={
+                    "construction_path": "dess/neodent-gm-scanbody.stl",
+                    "jaw": "upper",
+                    "gingival_offset_mm": 0.2,
+                })
+            assert res.json()["choices"]["complete"] is True
+            return stub_detection()
+
+        monkeypatch.setattr(case_sessions, "detect", detect_with_concurrent_put)
+        body = TestClient(create_app(settings)).post(
+            "/api/case-sessions/neodent-gm/detect").json()
+        # the detail the UI renders carries BOTH facts — detect's save must not have
+        # undone the operator's act (nor may the response re-render it as undone)
+        assert body["detection"] is not None
+        assert body["choices"]["complete"] is True
+        # and the store agrees after the dust settles
+        persisted = SessionStore(settings.product_root).load("neodent-gm")
+        assert persisted.detection is not None
+        assert persisted.choices.complete is True
+
 
 class TestChoices:
     """PUT /{id}/choices (plan §4/§6): the case-level operator choices, re-validated by

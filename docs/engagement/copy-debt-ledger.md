@@ -13,7 +13,7 @@ row moves to Retired.
 | 3 | Viewer stack (verifyScene, VerifyViewer, sceneController, partFrame, meshCrop, deviationColormap, siteRouting, anatomyOrientation, palette, scanPositions, Viewer3D) + their 5 test files, plus a 13-line domain/types Vec3 subset | apps/web/src/viewer + domain/types.ts | packages/viewer/src | measured 4,698 / 16 files (as landed 4,771 — divergences below) | slice 3 (`3487c16`) | demo retirement |
 | 4 | Server-side validation corpus (catalog membership, explicit-selection 422, relief bounds, point caps, ±45°, 15mm, ≤8 pairs, lever arm, diameter bounds) — copied VERBATIM then EXTENDED with coordinate finiteness | server.py request models | bff request models | 300 | recording STARTED slice 4 (see row 4 record); remainder slices 5a-8 (AM-9) | demo retirement |
 | 5 | Remaining application lift (explicit-selection gate, adjust-tool judging) | server.py:893-916, 1179-2324 | case_prep/application/* | 700 | slices 5c-6 (planned) | demo retirement |
-| 6 | Detection + capture assembly (propose orchestration; crowns-frame capture context; centre+radius precedence; per-proposal + curated-site capture blocks) | server.py:733-857 (`_capture_context`, `_capture_block`, `_site_capture_inputs`, `_with_capture`, `_run_sites_capture`, `POST /propose`) | case_prep/application/detection.py | 120 | slice 4 | demo retirement |
+| 6 | Detection + capture assembly (propose orchestration; crowns-frame capture context; centre+radius precedence; per-proposal + curated-site capture blocks) | server.py:733-853 (`_capture_context`, `_capture_block`, `_site_capture_inputs`, `_with_capture`, `_run_sites_capture`, `POST /propose`; 856+ is `_append_run_history`, NOT lifted) | case_prep/application/detection.py | 120 | slice 4 | demo retirement |
 
 Rules:
 - A new copy lands ONLY with a row here, in the same commit.
@@ -46,15 +46,16 @@ Row 3 record (slice 3, 2026-07-27) — trims and divergences, per the rules abov
 Row 4 record (recording started slice 4, 2026-07-27) — what has actually been copied so
 far, into `apps/bff/src/bff/resources/case_sessions.py` (`ChoicesIn` + the choices
 handler):
-- jaw enum: server.py:216 (`JAWS`) + 253-258 (`_known_jaw`), verbatim.
+- jaw enum: server.py:215 (`JAWS`) + 253-258 (`_known_jaw`), verbatim.
 - relief bounds incl. finiteness: server.py:165-167 (`_MAX_GINGIVAL_OFFSET_MM`) +
   260-266 (`_sane_offset`). Divergences: `np.isfinite` → `math.isfinite` (identical
   semantics, the BFF owns no numpy); the field is Optional (a choice not yet made is
   None, never a guessed default — the demo's RunIn always carries one because a run
   needs one; a choices document does not).
-- construction-part membership: the rule of server.py:341-346 (`_construction_for`'s
-  refusal), reached through `application.catalog.require_construction` (added slice 4;
-  wording per catalog.py's existing refusal) — membership, never a path join.
+- construction-part membership: the rule of server.py:341-344 (`_construction_for`'s
+  refusal; 345-346 are its cfg-cache lines, deliberately NOT copied), reached through
+  `application.catalog.require_construction` (added slice 4; wording per catalog.py's
+  existing refusal) — membership, never a path join.
 - NEW, not a copy (the corpus' promised extension): the BFF's 422 handler
   (`bff/main.py validation_refusal`) keeps refusals serializable when the offending
   input is non-finite — FastAPI's default handler 500s echoing NaN. The demo never hits
@@ -75,7 +76,7 @@ Row 6 record (slice 4, 2026-07-27) — divergences, per the rules above:
   here so nobody hunts server.py for its origin.
 - Refusals raise `ScanUnreadable` instead of the demo's implicit 500 on an unreadable
   scan; the BFF maps to 422 (the demo direction is unchanged).
-- Row 5's range shrank accordingly (capture assembly 741-830 + propose 832-857 moved
+- Row 5's range shrank accordingly (capture assembly 741-830 + propose 832-853 moved
   here); the explicit-selection gate stays row 5 at its true lines (893-916).
 
 Carried-forward minors (grill of slices 0b/1, 2026-07-26):
