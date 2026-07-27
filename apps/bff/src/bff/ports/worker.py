@@ -39,6 +39,15 @@ class JobState(str, enum.Enum):
     # A refusal is a first-class outcome, not an error: the pipeline saying "no" with a reason
     # (a gate, a validation, an unshippable part) is the product working as designed.
     REFUSED = "refused"
+    # A crash is NEITHER a verdict nor a refusal: the physics never reached an answer (a
+    # numpy error deep in alignment, disk-full mid-emission). It is a job STATE by
+    # necessity, not taste — phase-2's queue adapter returns from ``submit`` before the
+    # physics starts, so a crash can only ever surface as a status writeback, and an
+    # in-process adapter that raised instead would hand the resources above it a second,
+    # different contract (AM-3 forbids exactly that). Before this state existed, an
+    # escaping crash wedged the session's queued receipt forever and abandoned
+    # half-artifacts in the immutable run dir (the 5c verification's refuted claim).
+    FAILED = "failed"
 
 
 @dataclass(frozen=True)
@@ -48,6 +57,10 @@ class JobStatus:
     # The refusal's reason in the worker's own words, verbatim — the BFF never paraphrases
     # physics. None unless state is REFUSED.
     refusal: Optional[str] = None
+    # The crash's words (exception type + message); None unless state is FAILED. Kept
+    # DISTINCT from ``refusal``: a refusal is the product working as designed, a failure
+    # is it breaking — conflating them would let a stack trace masquerade as a verdict.
+    error: Optional[str] = None
     # The writeback timestamps (ISO-8601), mirroring phase-2's processing_jobs columns
     # (queued_at/started_at/finished_at) so the SQS adapter later fills the SAME fields.
     queued_at: Optional[str] = None
@@ -81,6 +94,7 @@ class _Job:
     request: dict[str, Any]        # snapshotted at submit (the queue will serialize here)
     state: JobState
     refusal: Optional[str] = None
+    error: Optional[str] = None
     summary: Optional[dict] = None
     queued_at: Optional[str] = None
     started_at: Optional[str] = None
@@ -104,8 +118,12 @@ class InProcessWorker:
     Refusals are first-class: the pipeline's own words land verbatim on the status
     (``RunRefused`` — the gates, "no confirmed site could be aligned" — and the
     catalog/scan refusals ``UnknownSelection``/``ScanUnreadable``, which the run gate
-    normally pre-empts but which stay honest answers if reached). The ``runner`` is
-    injectable for the port tests; the wired default is the application lift.
+    normally pre-empts but which stay honest answers if reached). Anything ELSE the
+    physics raises is CONTAINED as a FAILED status with ``failure.json`` as the run
+    dir's whole content — a crash may never escape ``submit``, because phase-2's
+    queue adapter cannot raise a later crash from ``submit`` either, and the resource
+    above must see one contract (AM-3). The ``runner`` is injectable for the port
+    tests; the wired default is the application lift.
     """
 
     def __init__(self, data_root: Path, product_root: Path,
@@ -138,8 +156,8 @@ class InProcessWorker:
     def status(self, job_id: str) -> JobStatus:
         job = self._jobs[job_id]
         return JobStatus(job_id=job.job_id, state=job.state, refusal=job.refusal,
-                         queued_at=job.queued_at, started_at=job.started_at,
-                         finished_at=job.finished_at)
+                         error=job.error, queued_at=job.queued_at,
+                         started_at=job.started_at, finished_at=job.finished_at)
 
     def result(self, job_id: str) -> dict[str, Any]:
         job = self._jobs[job_id]
@@ -152,8 +170,10 @@ class InProcessWorker:
     def _execute(self, case_id: str, job: _Job, run_dir: Path) -> None:
         job.state = JobState.RUNNING
         job.started_at = _now()
-        run_dir.mkdir(parents=True)
         try:
+            # mkdir INSIDE the containment: a filesystem failure here is a crashed
+            # job too, not an escape through ``submit``
+            run_dir.mkdir(parents=True)
             case = next((c for c in discover_cases(self._data_root)
                          if c.id == case_id), None)
             if case is None:
@@ -164,6 +184,15 @@ class InProcessWorker:
             job.state = JobState.REFUSED
             job.refusal = str(exc)
             self._leave_refusal(run_dir, case_id, job)
+        except Exception as exc:   # noqa: BLE001 — the containment IS the point
+            # THE CRASH CONTAINMENT (the 5c verification's refuted claim): an
+            # UNEXPECTED exception — numpy deep in the physics, disk-full
+            # mid-emission — is a FAILED terminal state, never an escape. Escaping
+            # here left the caller's queued receipt stranded (a wedged case with no
+            # recovery route) and half-artifacts abandoned in the immutable run dir.
+            job.state = JobState.FAILED
+            job.error = f"{type(exc).__name__}: {exc}"
+            self._leave_failure(run_dir, case_id, job)
         finally:
             job.finished_at = _now()
 
@@ -189,3 +218,24 @@ class InProcessWorker:
             "case_id": case_id, "run_id": job.job_id, "refusal": job.refusal,
             "refused_at": _now(),
         }, indent=2))
+
+    @staticmethod
+    def _leave_failure(run_dir: Path, case_id: str, job: _Job) -> None:
+        """A crashed run's directory holds ``failure.json`` and NOTHING else — the
+        same honesty ``_leave_refusal`` gives a refusal (AM-1's honesty half): a
+        later reader must never mistake whatever landed before the crash for a
+        package. Best-effort ON PURPOSE: when the crash IS the filesystem (disk
+        full, permissions, the mkdir itself), cleanup can fail too — and the FAILED
+        status carrying the ORIGINAL error must stand, so a cleanup error is
+        swallowed rather than allowed to escape and mask the crash it records."""
+        try:
+            if not run_dir.is_dir():
+                return   # the crash was the mkdir itself — nothing ever landed
+            for child in run_dir.iterdir():
+                shutil.rmtree(child) if child.is_dir() else child.unlink()
+            (run_dir / "failure.json").write_text(json.dumps({
+                "case_id": case_id, "run_id": job.job_id, "error": job.error,
+                "failed_at": _now(),
+            }, indent=2))
+        except OSError:
+            pass

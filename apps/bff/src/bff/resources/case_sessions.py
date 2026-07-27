@@ -898,6 +898,30 @@ def _authorized_selection(case: CaseRecord, case_id: str,
     }
 
 
+def _withdraw_queued_receipt(store: SessionStore, case_id: str, run_id: str) -> None:
+    """COMPENSATION (the 5c crash-path fix — the verification refuted claim 2 here):
+    the claim persisted a ``queued`` receipt, and no verdict can land — ``submit``
+    raised (the run-dir collision), the adapter reported FAILED (a crash inside the
+    physics), or the landing itself refused. Left in place, that receipt wedges the
+    case FOREVER: every later POST sees "a run is already in flight", and no reset
+    boundary is obliged to fire (the equality guards make identical re-writes inert,
+    so the only escape regressed the operator's real reviews). So the receipt is
+    WITHDRAWN — guarded: only if it is still OURS and still ``queued``, because a
+    rival's newer receipt or a landed verdict must never be clobbered by cleanup.
+    Best-effort by design: if even this tiny mutation loses the CAS race twice, the
+    ORIGINAL failure still propagates — masking it with a cleanup error would hide
+    the actual cause — and the next POST's claim re-judges whatever is really there."""
+    def clear(session: CaseSession) -> None:
+        run = session.run
+        if run is not None and run.job_id == run_id and run.state == "queued":
+            session.run = None
+
+    try:
+        _mutate_session(store, case_id, clear)
+    except Exception:
+        pass
+
+
 @router.post("/{case_id}/run", response_model=CaseSessionDetail)
 def run_case_action(case_id: str, request: Request) -> CaseSessionDetail:
     """Fire the full authorized run (plan §7 slice 5c) — body-less, like detect and
@@ -933,42 +957,62 @@ def run_case_action(case_id: str, request: Request) -> CaseSessionDetail:
         session.run = RunSession(job_id=run_id, run_id=run_id, state="queued")
 
     _mutate_session(store, case_id, claim)
-    job_id = worker.submit(case_id,
-                           {"run_id": run_id, "selection": submitted["selection"]})
-    outcome = worker.status(job_id)
-
-    def land(session: CaseSession) -> None:
-        # the pointer is the guard: every reset boundary clears it, and the
-        # selection cannot change without a boundary firing — so an intact pointer
-        # means these facts still describe the case as declared
-        if session.run is None or session.run.job_id != job_id:
-            raise HTTPException(409, f"case {case_id!r} changed while the run was "
-                                     f"computing — the run's artifacts remain under "
-                                     f"its run directory as history, but they no "
-                                     f"longer describe the current declarations; "
-                                     f"re-read the case")
-        if outcome.state is JobState.REFUSED:
-            session.run = RunSession(job_id=job_id, run_id=run_id, state="refused",
-                                     refusal=outcome.refusal)
-            return
-        summary = worker.result(job_id)
-        session.run = RunSession(
-            job_id=job_id, run_id=run_id, state="done", summary=summary,
-            package_files=[str(n) for n in (summary.get("package_files") or [])])
-        for row in summary.get("sites") or []:
-            site = session.sites.get(str(row.get("tooth")))
-            if site is None:
-                continue   # a row for a site the session no longer tracks
-            level = (row.get("guidance") or {}).get("level")
-            if level != "ready":
-                # "attention"/"action-needed": the run's evidence flags the site —
-                # the ladder's fork (plan §2), through the machine like every move
-                site.status = status.flag(site.status)
-
+    # From here on a ``queued`` receipt is on disk, and EVERY exit that cannot land
+    # a verdict must withdraw it (the except below) — an abandoned queued receipt
+    # is a wedged case: 409 forever, no reset boundary obliged to fire (the 5c
+    # crash-path fix; the verification refuted exactly this hole).
     try:
-        session = _mutate_session(store, case_id, land)
-    except status.IllegalTransition as exc:
-        raise HTTPException(422, str(exc))
+        job_id = worker.submit(case_id,
+                               {"run_id": run_id, "selection": submitted["selection"]})
+        outcome = worker.status(job_id)
+        if outcome.state is JobState.FAILED:
+            # A crash is an ERROR, not a verdict: REFUSED lands as a first-class
+            # outcome in the pipeline's own words, but FAILED means the physics
+            # never reached an answer — served as a 500 carrying the crash's words,
+            # while the except withdraws the receipt so the case stays runnable.
+            raise HTTPException(500, f"the run crashed before reaching a verdict — "
+                                     f"{outcome.error}; the queued receipt was "
+                                     f"withdrawn, so re-firing mints a fresh run")
+
+        def land(session: CaseSession) -> None:
+            # the pointer is the guard: every reset boundary clears it, and the
+            # selection cannot change without a boundary firing — so an intact pointer
+            # means these facts still describe the case as declared
+            if session.run is None or session.run.job_id != job_id:
+                raise HTTPException(409, f"case {case_id!r} changed while the run was "
+                                         f"computing — the run's artifacts remain under "
+                                         f"its run directory as history, but they no "
+                                         f"longer describe the current declarations; "
+                                         f"re-read the case")
+            if outcome.state is JobState.REFUSED:
+                session.run = RunSession(job_id=job_id, run_id=run_id, state="refused",
+                                         refusal=outcome.refusal)
+                return
+            summary = worker.result(job_id)
+            session.run = RunSession(
+                job_id=job_id, run_id=run_id, state="done", summary=summary,
+                package_files=[str(n) for n in (summary.get("package_files") or [])])
+            for row in summary.get("sites") or []:
+                site = session.sites.get(str(row.get("tooth")))
+                if site is None:
+                    continue   # a row for a site the session no longer tracks
+                level = (row.get("guidance") or {}).get("level")
+                if level != "ready":
+                    # "attention"/"action-needed": the run's evidence flags the site —
+                    # the ladder's fork (plan §2), through the machine like every move
+                    site.status = status.flag(site.status)
+
+        try:
+            session = _mutate_session(store, case_id, land)
+        except status.IllegalTransition as exc:
+            raise HTTPException(422, str(exc))
+    except Exception:
+        # No verdict landed: submit raised (collision/adapter bug), the worker
+        # crashed (the FAILED→500 above), or the landing refused — including the
+        # mid-run-rival 409, where the withdrawal's own guard (ours AND still
+        # "queued") makes it a no-op because the rival already moved the pointer.
+        _withdraw_queued_receipt(store, case_id, run_id)
+        raise
     return _detail(case, session, settings)
 
 

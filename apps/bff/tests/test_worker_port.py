@@ -199,3 +199,58 @@ class TestRefusals:
         worker = InProcessWorker(data_root, product_root, runner=_ok_runner(SUMMARY))
         with pytest.raises(ValueError):
             worker.submit("neodent-gm", {"selection": {}})
+
+
+class TestCrashContainment:
+    """The 5c crash-path fix (the verification refuted claim 2 on exactly this): an
+    UNEXPECTED exception — a numpy IndexError deep in the physics, a disk-full
+    OSError mid-emission — must land as a FAILED terminal status, never escape
+    ``submit``. Job-shaped by necessity, not taste: phase-2's queue adapter returns
+    from ``submit`` before the physics starts, so a crash can only ever surface as
+    a status writeback — an in-process adapter that raised instead would hand the
+    resources above it a second, different contract (AM-3 forbids exactly that).
+    And AM-1's honesty half applies to crashes as it does to refusals: the run dir
+    holds ``failure.json`` alone, never half-artifacts pretending to be a package."""
+
+    def test_a_crash_is_a_failed_status_not_an_escape(self, data_root, product_root):
+        def crashing(case, selection, out_dir):
+            raise IndexError("index 7 is out of bounds for axis 0 with size 3")
+
+        worker = InProcessWorker(data_root, product_root, runner=crashing)
+        job_id = worker.submit("neodent-gm", _request())   # must NOT raise
+        status = worker.status(job_id)
+        assert status.state is JobState.FAILED
+        assert "IndexError" in status.error and "out of bounds" in status.error
+        # a crash is NOT a refusal: refusal stays the pipeline's-own-words channel
+        assert status.refusal is None
+        assert status.queued_at <= status.started_at <= status.finished_at
+        with pytest.raises(KeyError):
+            worker.result(job_id)   # a failed job has no summary to serve
+
+    def test_a_crashed_run_leaves_failure_json_not_half_artifacts(
+            self, data_root, product_root):
+        def crashing(case, selection, out_dir):
+            # the pipeline got partway: files AND a subdir land before the crash
+            (Path(out_dir) / "half-cap.stl").write_text("partial")
+            (Path(out_dir) / "qc").mkdir()
+            (Path(out_dir) / "qc" / "img.png").write_text("x")
+            raise RuntimeError("boom mid-emission")
+
+        worker = InProcessWorker(data_root, product_root, runner=crashing)
+        worker.submit("neodent-gm", _request(run_id="run-x"))
+        run_dir = product_root / "neodent-gm" / "runs" / "run-x"
+        assert [p.name for p in run_dir.iterdir()] == ["failure.json"]
+        record = json.loads((run_dir / "failure.json").read_text())
+        assert record["error"] == "RuntimeError: boom mid-emission"
+        assert record["case_id"] == "neodent-gm"
+        assert record["run_id"] == "run-x"
+
+    def test_even_a_crashed_runs_dir_is_never_rewritten(
+            self, data_root, product_root):
+        def crashing(case, selection, out_dir):
+            raise RuntimeError("boom")
+
+        worker = InProcessWorker(data_root, product_root, runner=crashing)
+        worker.submit("neodent-gm", _request(run_id="run-1"))
+        with pytest.raises(FileExistsError):
+            worker.submit("neodent-gm", _request(run_id="run-1"))

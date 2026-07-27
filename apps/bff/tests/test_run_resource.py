@@ -46,9 +46,10 @@ class FakeWorker:
     test_worker_port's business — here the port is a seam."""
 
     def __init__(self, summary: Optional[dict] = None, refusal: Optional[str] = None,
-                 on_submit=None):
+                 error: Optional[str] = None, on_submit=None):
         self.summary = summary
         self.refusal = refusal
+        self.error = error
         self.on_submit = on_submit
         self.submitted = []
 
@@ -59,6 +60,8 @@ class FakeWorker:
         return request["run_id"]
 
     def status(self, job_id: str) -> JobStatus:
+        if self.error is not None:
+            return JobStatus(job_id=job_id, state=JobState.FAILED, error=self.error)
         if self.refusal is not None:
             return JobStatus(job_id=job_id, state=JobState.REFUSED,
                              refusal=self.refusal)
@@ -357,6 +360,97 @@ class TestMidRunRivals:
         persisted = SessionStore(settings.product_root).load("neodent-gm")
         assert persisted.run is None
         assert persisted.sites["4"].declared_variant == "5030"
+
+
+class TestCrashesAreNotWedges:
+    """The 5c crash-path fix (the verification refuted claim 2 on exactly this):
+    when NO verdict can land — the adapter reports FAILED (a crash inside the
+    physics), ``submit`` itself raises (the run-dir collision), or the landing
+    loses its CAS race twice — the queued receipt must be WITHDRAWN, not
+    abandoned. An abandoned ``queued`` receipt wedges the case forever: every
+    later POST 409s ("a run is already in flight") and no reset boundary is
+    obliged to fire. A crash is a 500 (an error), NOT a refusal (a first-class
+    outcome in the pipeline's own words) and NOT a landed run state."""
+
+    def test_a_worker_crash_is_a_500_and_the_receipt_is_withdrawn(
+            self, settings, product_root):
+        seed_ready(product_root)
+        worker = FakeWorker(error="IndexError: index 7 is out of bounds")
+        client = client_with(settings, worker)
+        res = client.post("/api/case-sessions/neodent-gm/run")
+        assert res.status_code == 500
+        detail = res.json()["detail"]
+        assert "crashed" in detail
+        assert "IndexError: index 7 is out of bounds" in detail
+        # withdrawn: nothing claims to be current, nothing is wedged "queued"
+        assert SessionStore(product_root).load("neodent-gm").run is None
+        assert client.get("/api/case-sessions/neodent-gm/run").status_code == 404
+        # a crash is evidence about the infrastructure, not about any site's review
+        detail = client.get("/api/case-sessions/neodent-gm").json()
+        assert all(s["status"] == "ready" for s in detail["sites"])
+        assert detail["session"]["run_state"] == "none"
+
+    def test_after_a_crash_a_retry_can_run_and_land(self, settings, product_root):
+        seed_ready(product_root)
+        worker = FakeWorker(error="RuntimeError: boom")
+        client = client_with(settings, worker)
+        assert client.post("/api/case-sessions/neodent-gm/run").status_code == 500
+        worker.error, worker.summary = None, summary_for([row(4), row(13)])
+        detail = client.post("/api/case-sessions/neodent-gm/run").json()
+        assert detail["session"]["run_state"] == "done"
+        assert detail["session"]["run_refusal"] is None
+
+    def test_a_submit_that_raises_withdraws_the_receipt_too(
+            self, settings, product_root):
+        """The collision ``FileExistsError`` (or any adapter bug) raised from
+        ``submit`` AFTER the receipt persisted: the 500 must not strand it."""
+        seed_ready(product_root)
+
+        def exploding(case_id, request):
+            raise FileExistsError("run directory already exists — immutable (AM-1)")
+
+        worker = FakeWorker(on_submit=exploding)
+        client = TestClient(create_app(settings), raise_server_exceptions=False)
+        client.app.state.worker = worker
+        assert client.post("/api/case-sessions/neodent-gm/run").status_code == 500
+        assert SessionStore(product_root).load("neodent-gm").run is None
+        # unwedged: the same case can immediately authorize a fresh run
+        worker.on_submit, worker.summary = None, summary_for([row(4), row(13)])
+        detail = client.post("/api/case-sessions/neodent-gm/run").json()
+        assert detail["session"]["run_state"] == "done"
+
+    def test_a_landing_that_loses_the_cas_twice_withdraws_the_receipt(
+            self, settings, product_root):
+        """The verification's second wedge class: rival (non-boundary) version
+        bumps land between the landing's load and save on BOTH attempts, so the
+        landing 409s — without the withdrawal, the queued receipt would sit
+        forever on a case whose physics actually finished."""
+        seed_ready(product_root)
+        worker = FakeWorker(summary=summary_for([row(4), row(13)]))
+        client = client_with(settings, worker)
+        store = client.app.state.sessions
+        original_save = store.save
+        rivals = {"left": 2}
+
+        def contended_save(session):
+            # interleave a rival bump under the LANDING's save only (it carries
+            # state "done"); the claim ("queued") and the withdrawal (run=None)
+            # pass through untouched
+            if (rivals["left"] > 0 and session.run is not None
+                    and session.run.state == "done"):
+                rivals["left"] -= 1
+                rival = SessionStore(product_root)
+                rival.save(rival.load("neodent-gm"))
+            return original_save(session)
+
+        store.save = contended_save
+        res = client.post("/api/case-sessions/neodent-gm/run")
+        assert res.status_code == 409
+        # withdrawn, not wedged: no current run, and a re-POST is authorized
+        assert SessionStore(product_root).load("neodent-gm").run is None
+        store.save = original_save
+        detail = client.post("/api/case-sessions/neodent-gm/run").json()
+        assert detail["session"]["run_state"] == "done"
 
 
 # --- reset boundaries --------------------------------------------------------------

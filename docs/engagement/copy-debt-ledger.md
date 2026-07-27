@@ -170,6 +170,13 @@ Row 8 record (slice 5c, 2026-07-27) — divergences, per the rules above:
   key-sets and the package file list against the demo's EXISTING warmed
   `reports/live-demo/neodent-gm/run.json` for the same selection — never by
   re-running the demo endpoint (which would emit into the frozen data plane).
+- Crash containment (5c fix, 2026-07-27; no demo counterpart — the demo lets FastAPI
+  500 and keeps no run dirs or receipts): an UNEXPECTED exception in the physics is a
+  FAILED job state (distinct from REFUSED — a crash is not a verdict), the run dir is
+  cleaned to `failure.json` alone (AM-1's honesty half), and the run route WITHDRAWS
+  its queued receipt whenever no verdict can land (submit raised, worker FAILED, or
+  the landing lost its CAS twice) — an abandoned queued receipt wedged the case with
+  no recovery route (the slice-5c verification's refuted claim).
 
 Carried-forward minors (grill of slices 0b/1, 2026-07-26):
 - Tie `bff/session.py` RunSession.state to `ports/worker.py` JobState (one test or derive the

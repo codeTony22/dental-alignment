@@ -140,7 +140,11 @@ class RunSession(BaseModel):
     current) while the run directory survives as immutable history."""
 
     job_id: str
-    state: Literal["queued", "running", "done", "refused"]
+    # "failed" is in the vocabulary because the PORT can report it (the tie holds both
+    # directions); the in-process route never persists it — a crash WITHDRAWS the
+    # queued receipt and serves a 500, so nothing wedges — but phase-2's async
+    # landing will write it back, and the receipt must already speak the word.
+    state: Literal["queued", "running", "done", "refused", "failed"]
     refusal: Optional[str] = None
     # the immutable run directory's name; equals job_id under the in-process adapter,
     # kept separate because phase-2's queue mints job ids the dir name must outlive
