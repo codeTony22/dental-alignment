@@ -82,6 +82,9 @@ class WorklistRow(BaseModel):
     sites: Optional[SiteRollup]
     run_state: Optional[str]        # "none" | queued | running | done | refused (AM-3)
     confirmed: Optional[bool]
+    # released is the worklist's delivery chip (slice 8): a CURRENT-run verdict,
+    # same derivation as the detail's (_released), never the record's bare existence
+    released: Optional[bool] = None
     # Intake's completion facts (plan §4 / slice 4), derived server-side like the rest:
     detected: Optional[bool]        # a detection record exists for this session
     choices_complete: Optional[bool]  # all three case-level choices explicitly made
@@ -170,6 +173,36 @@ class SystemView(BaseModel):
     source: str   # "declared" | "suggested" | "none"
 
 
+class ConfirmationView(BaseModel):
+    """The sealed state Deliver renders (slice 8): who confirmed, when, over which
+    evidence hash — plus the dispositions and per-flag acknowledgments the artifact
+    surface needs to show withheld sites honestly. The record's facts verbatim."""
+
+    operator: str
+    at: str
+    run_id: str
+    evidence_sha256: str
+    dispositions: Dict[str, str]
+    acknowledged_flags: List[int]
+
+
+class PaymentView(BaseModel):
+    """The stub's honest face (AM-11): the UI labels the button AS a stub, and the
+    provider field is how a reader tells a stub authorization from a real one."""
+
+    provider: str
+    operator: str
+    at: str
+
+
+class ReleaseView(BaseModel):
+    operator: str
+    at: str
+    run_id: str
+    evidence_sha256: str
+    released_teeth: List[int]
+
+
 class SessionView(BaseModel):
     tenant_id: str
     adjust_visited: bool
@@ -179,6 +212,14 @@ class SessionView(BaseModel):
     run_refusal: Optional[str] = None
     confirmed: bool
     payment_authorized: bool
+    # the disclosure chain's records (slice 8), verbatim where they exist
+    confirmation: Optional[ConfirmationView] = None
+    payment: Optional[PaymentView] = None
+    release: Optional[ReleaseView] = None
+    # ``released`` is a CURRENT-run verdict, not a record's existence: true only
+    # while the release record still names the current done run — the rail's
+    # deliver tick reads THIS (a stale release is history, not a state)
+    released: bool = False
 
 
 class RunView(BaseModel):
@@ -330,6 +371,37 @@ def _run_state(session: CaseSession) -> str:
     return session.run.state if session.run is not None else "none"
 
 
+def _released(session: CaseSession) -> bool:
+    """Released is a CURRENT-run fact: the record must name the run that is still
+    current and done. The reset boundaries clear the run pointer on any change, so
+    a stale release can never report a releasable case (the artifact endpoints
+    additionally re-verify the evidence hash — this is the cheap display half)."""
+    return (session.release is not None
+            and session.run is not None
+            and session.run.state == "done"
+            and session.release.run_id == (session.run.run_id or session.run.job_id))
+
+
+def _session_view(session: CaseSession) -> SessionView:
+    return SessionView(
+        tenant_id=session.tenant_id,
+        adjust_visited=session.adjust_visited,
+        run_state=_run_state(session),
+        run_refusal=(session.run.refusal if session.run is not None else None),
+        confirmed=session.confirmation is not None,
+        payment_authorized=session.payment_authorized,
+        confirmation=(ConfirmationView(**session.confirmation.model_dump())
+                      if session.confirmation is not None else None),
+        payment=(PaymentView(provider=session.payment.provider,
+                             operator=session.payment.operator,
+                             at=session.payment.at)
+                 if session.payment is not None else None),
+        release=(ReleaseView(**session.release.model_dump())
+                 if session.release is not None else None),
+        released=_released(session),
+    )
+
+
 def _effective_model(case: CaseRecord, session: CaseSession) -> Optional[str]:
     """The system the case works against: the operator's case-scoped declaration
     first, the case's non-binding suggestion else (plan §4 Declare / AM-8)."""
@@ -420,14 +492,7 @@ def _detail(case: CaseRecord, session: CaseSession,
         relief_ceilings=_ceilings(case, session, sites, settings),
         detection=_detection_view(session),
         choices=_choices_view(session),
-        session=SessionView(
-            tenant_id=session.tenant_id,
-            adjust_visited=session.adjust_visited,
-            run_state=_run_state(session),
-            run_refusal=(session.run.refusal if session.run is not None else None),
-            confirmed=session.confirmation is not None,
-            payment_authorized=session.payment_authorized,
-        ),
+        session=_session_view(session),
     )
 
 
@@ -511,6 +576,7 @@ def worklist(request: Request) -> List[WorklistRow]:
             sites=_rollup(sites),
             run_state=_run_state(session),
             confirmed=session.confirmation is not None,
+            released=_released(session),
             detected=session.detection is not None,
             choices_complete=session.choices.complete,
         ))

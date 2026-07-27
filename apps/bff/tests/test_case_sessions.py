@@ -158,6 +158,12 @@ class TestCaseSessionDetail:
             "run_refusal": None,   # 5c: a refused run's words ride here, verbatim
             "confirmed": False,
             "payment_authorized": False,
+            # the disclosure chain (slice 8): records verbatim once they exist,
+            # and "released" as a CURRENT-run verdict — all honestly empty here
+            "confirmation": None,
+            "payment": None,
+            "release": None,
+            "released": False,
         }
 
     def test_session_statuses_overlay_the_detected_sites(self, settings):
@@ -1134,6 +1140,20 @@ class TestStatusesAreNeverClientWritable:
         # the selection it runs is the session's own acts, the gate is server-minted
         # (AM-8), and the verdict landing goes through the status machine
         ("POST", "/api/case-sessions/{case_id}/run"),
+        # the confirmation (slice 8, AM-10/AM-12): the DELIBERATE extension of this
+        # allowlist's doctrine — dispositions (release|withhold per tooth) and
+        # per-flag acknowledgments are operator ACTS, like choices: they say what
+        # the operator DOES with a site, never what the site IS. Statuses, gates
+        # and evidence stay server-derived, and the server refuses any disposition
+        # set that does not match the evidence it derived itself.
+        ("POST", "/api/case-sessions/{case_id}/confirm"),
+        # the payment stub (slice 8, AM-11): {"authorize": true} — the explicit
+        # act, fail-closed, provider recorded as "stub"; no other field exists
+        ("POST", "/api/case-sessions/{case_id}/payment"),
+        # release = disclosure (slice 8, AM-1): body-less — everything it consumes
+        # (confirmation, dispositions, payment) is already the session's; validity
+        # is judged by RE-DERIVING the evidence, never by trusting the record
+        ("POST", "/api/case-sessions/{case_id}/release"),
     }
     STATUS_SHAPED = {"status", "state", "verdict", "gate", "flagged", "ready",
                      "confirmed"}

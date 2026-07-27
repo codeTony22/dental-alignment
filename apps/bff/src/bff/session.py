@@ -154,12 +154,50 @@ class RunSession(BaseModel):
 
 
 class ConfirmationRecord(BaseModel):
-    """Sealed by Deliver (plan §6): who confirmed WHAT, verifiable at release time.
-    Defined now so the read model's shape is stable; slice 8 writes it."""
+    """Sealed by Deliver (plan §6, grill AM-10/AM-11/AM-12): who confirmed WHAT.
 
-    confirmed_at: str
-    actor: str
-    evidence_hash: str
+    ``evidence_sha256`` is the content address of the bundle the confirm route wrote
+    under the run directory — release RE-DERIVES the evidence and compares, so this
+    record is a claim that gets re-verified, never trusted (a rival change between
+    confirm and release 409s by construction). ``dispositions`` are the operator's
+    per-site ACTS (release | withhold, keyed by tooth-as-string — JSON object keys);
+    ``acknowledged_flags`` are the flagged teeth the operator acknowledged ROW BY ROW
+    (AM-12: a flag is never confirmed in bulk). ``operator`` is the X-Operator name
+    verbatim (AM-11's named-session minimum)."""
+
+    operator: str
+    at: str
+    run_id: str
+    evidence_sha256: str
+    dispositions: Dict[str, str] = Field(default_factory=dict)
+    acknowledged_flags: List[int] = Field(default_factory=list)
+
+
+class PaymentRecord(BaseModel):
+    """THE PAYMENT STUB (plan §4 Deliver, grill AM-11): fail-closed — this record
+    exists only when an operator explicitly authorized, and ``provider: "stub"``
+    keeps stub-authorized sessions PERMANENTLY distinguishable from paid ones once a
+    real provider lands. Never faked deeper than this: no amounts, no receipts, no
+    provider ids — inventing those would be a lie wearing a schema."""
+
+    payment_authorized: bool
+    provider: str
+    operator: str
+    at: str
+
+
+class ReleaseRecord(BaseModel):
+    """The disclosure act (plan §4: release = disclosure; grill AM-1): who released,
+    over WHICH run and WHICH sealed evidence, and which teeth the released set
+    actually carries (withheld sites dropped and stayed open). The artifact
+    endpoints re-verify this record against the current run and the re-derived
+    evidence on every read — screen order is not a control."""
+
+    operator: str
+    at: str
+    run_id: str
+    evidence_sha256: str
+    released_teeth: List[int] = Field(default_factory=list)
 
 
 class CaseSession(BaseModel):
@@ -183,8 +221,18 @@ class CaseSession(BaseModel):
     adjust_visited: bool = False
     run: Optional[RunSession] = None
     confirmation: Optional[ConfirmationRecord] = None
-    # fail-closed: only the payment hook (slice 8) ever sets this
-    payment_authorized: bool = False
+    # fail-closed: only the payment stub route (slice 8) ever writes this record;
+    # its absence IS "not authorized" (pre-8 documents persisted a bare
+    # ``payment_authorized: false`` — always false, ignored on load)
+    payment: Optional[PaymentRecord] = None
+    # the disclosure act (slice 8); validity against the CURRENT run is judged at
+    # read time by the artifact endpoints, never assumed from the record existing
+    release: Optional[ReleaseRecord] = None
+
+    @property
+    def payment_authorized(self) -> bool:
+        """Derived, fail-closed: authorized exactly when the stub record says so."""
+        return self.payment is not None and self.payment.payment_authorized
 
 
 class SessionStore:

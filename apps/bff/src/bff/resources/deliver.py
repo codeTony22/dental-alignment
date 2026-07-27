@@ -22,18 +22,23 @@ pinned above the fold, then the worse gate leads).
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+import datetime
+from pathlib import Path
+from typing import Dict, List, Literal, Optional, Tuple
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from case_prep.application.cases import CaseRecord
 from case_prep.domain.acceptance import evaluate_acceptance
 
 from ..config import Settings
-from ..session import CaseSession, RunSession, SessionStore
-from .case_sessions import _case_or_404, _context
+from ..evidence import canonical_bundle, qc_image_hashes, write_bundle
+from ..session import (CaseSession, ConfirmationRecord, PaymentRecord,
+                       ReleaseRecord, RunSession, SessionStore)
+from .case_sessions import (CaseSessionDetail, _case_or_404, _context, _detail,
+                            _mutate_session)
 
 router = APIRouter(prefix="/api/case-sessions", tags=["deliver"])
 
@@ -256,3 +261,357 @@ def case_qc_image(case_id: str, filename: str, request: Request) -> FileResponse
                                  f"directory — the run's package claims it, but "
                                  f"the file is not there to serve")
     return FileResponse(path, media_type="image/png", filename=filename)
+
+
+# --- operator identity (grill AM-11) ----------------------------------------------------
+
+def _require_operator(x_operator: Optional[str], act: str) -> str:
+    """THE NAMED-SESSION MINIMUM (AM-11): every gating endpoint — confirm, payment,
+    release, artifacts — requires a human name in ``X-Operator``, recorded verbatim
+    on every record it produces, so no confirmation, payment or disclosure is ever
+    anonymous. HONESTLY A STUB: phase 2 brings real authentication; this is the
+    smallest form that keeps the records named — structurally required (a 422, not
+    a convention), never optional, and never pretended to be auth."""
+    if x_operator is None or not x_operator.strip():
+        raise HTTPException(422, f"who is {act}? the record names its actor — "
+                                 f"send the X-Operator header with a human name "
+                                 f"(a named-session minimum; phase 2 brings real "
+                                 f"authentication)")
+    return x_operator.strip()
+
+
+def _now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+# --- request models (operator ACTS — legitimate inputs, plan §6/AM-4) -------------------
+
+class ConfirmIn(BaseModel):
+    """The confirmation's body: per-site DISPOSITIONS (release | withhold, keyed by
+    tooth-as-string) and the flagged teeth acknowledged ROW BY ROW (AM-12).
+
+    These are operator ACTS, not claimed verdicts — the deliberate extension of the
+    no-status-fields doctrine (test_case_sessions' allowlist carries the comment): a
+    disposition says what the operator DOES with a site, never what the site IS; the
+    site's status, gate and evidence all stay server-derived, and the server refuses
+    any disposition set that does not match the evidence it derived itself."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dispositions: Dict[str, Literal["release", "withhold"]]
+    acknowledged_flags: List[int] = Field(default_factory=list)
+
+
+class PaymentIn(BaseModel):
+    """The stub's body: the explicit act, nothing else. ``authorize`` must be
+    literally true — the stub authorizes nothing implicitly, and there is no other
+    field because inventing amounts or references would fake deeper than AM-11
+    allows."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    authorize: bool
+
+
+# --- the gates' shared derivations ------------------------------------------------------
+
+def _require_done_run_for_act(session: CaseSession, case_id: str,
+                              act: str) -> RunSession:
+    """The act-flavoured twin of ``_require_done_run``: acting (confirm/release/
+    disclose) on a case without a completed current run is a CONFLICT with the
+    case's state (409), where merely reading was a missing resource (404)."""
+    run = session.run
+    if run is None or run.state != "done" or run.summary is None:
+        raise HTTPException(409, f"nothing to {act} — case {case_id!r} has no "
+                                 f"completed current run; the assurance evidence "
+                                 f"is the run's, and there is none")
+    return run
+
+
+def _run_dir(settings: Settings, case_id: str, run: RunSession) -> Path:
+    return settings.product_root / case_id / "runs" / (run.run_id or run.job_id)
+
+
+def _derive_evidence_sha(case: CaseRecord, session: CaseSession,
+                         settings: Settings, run: RunSession) -> str:
+    """The re-derivation both release and the artifact gate stand on (plan §4:
+    validity is re-derivation, never trust in a record): the assurance projection
+    as it stands NOW plus the QC images' bytes as they are NOW, hashed by the same
+    canonical rule the confirmation sealed. A missing QC image counts as drift —
+    evidence that cannot be re-covered no longer matches anything."""
+    assurance = derive_assurance(case, session)
+    try:
+        hashes = qc_image_hashes(_run_dir(settings, case_id=case.id, run=run),
+                                 _qc_image_names(run))
+    except FileNotFoundError:
+        return "evidence-incomplete"   # never equals a sha256 hex digest
+    return canonical_bundle(assurance.model_dump(mode="json"), hashes).sha256
+
+
+def _summary_teeth(run: RunSession) -> List[int]:
+    summary = run.summary or {}
+    return [int(r.get("tooth")) for r in (summary.get("sites") or [])]
+
+
+def _tooth_of_file(name: str, teeth: List[int]) -> Optional[int]:
+    """The summary's tooth-file naming: per-tooth files carry ``-<tooth>-`` (the
+    pipeline's own construction, e.g. ``neodent-gm-4-healingcap-aligned.stl``);
+    files without a tooth marker are case-level."""
+    for tooth in teeth:
+        if f"-{tooth}-" in name:
+            return tooth
+    return None
+
+
+# --- the confirmation (plan §6, grill AM-10/AM-12) --------------------------------------
+
+@router.post("/{case_id}/confirm", response_model=CaseSessionDetail)
+def confirm_case(case_id: str, body: ConfirmIn, request: Request,
+                 x_operator: Optional[str] = Header(default=None),
+                 ) -> CaseSessionDetail:
+    """Seal the confirmation over the evidence as it stands NOW.
+
+    Refuses unless: a done current run; EVERY site carries a disposition (each
+    missing one named); every FLAGGED site dispositioned ``release`` appears in
+    ``acknowledged_flags`` (AM-12 — row by row, never in bulk; an acknowledgment of
+    an unflagged site is refused too, a claim about nothing). On success, INSIDE
+    the CAS mutation: re-derive the assurance, hash the QC images' bytes, build and
+    WRITE the evidence bundle — a failed write REFUSES the whole confirmation
+    (AM-10's transactional half; the content-addressed write is idempotent, so the
+    mutation's one CAS retry re-writes the same bytes harmlessly) — then persist
+    the record with the operator named verbatim."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+    operator = _require_operator(x_operator, "confirming")
+
+    def apply(session: CaseSession) -> None:
+        run = _require_done_run_for_act(session, case_id, "confirm")
+        assurance = derive_assurance(case, session)
+        teeth = [site.tooth for site in assurance.sites]
+        known = {str(t) for t in teeth}
+        missing = [t for t in teeth if str(t) not in body.dispositions]
+        if missing:
+            raise HTTPException(422, "every site needs a disposition — release or "
+                                     "withhold, per row; still missing: "
+                                     + ", ".join(f"tooth {t}" for t in missing))
+        unknown = sorted(k for k in body.dispositions if k not in known)
+        if unknown:
+            raise HTTPException(422, "dispositions name sites this run does not "
+                                     "carry: "
+                                     + ", ".join(f"tooth {k}" for k in unknown))
+        flagged = {site.tooth for site in assurance.sites
+                   if site.status == "flagged"}
+        acknowledged = set(body.acknowledged_flags)
+        unacknowledged = [t for t in sorted(flagged)
+                          if body.dispositions.get(str(t)) == "release"
+                          and t not in acknowledged]
+        if unacknowledged:
+            # AM-12: the flag is confirmed ROW BY ROW — each unacknowledged one
+            # is named; a bulk "yes to all flags" cannot exist on this wire
+            raise HTTPException(422, "releasing a flagged site requires its own "
+                                     "acknowledgment — still unacknowledged: "
+                                     + ", ".join(f"tooth {t}"
+                                                 for t in unacknowledged))
+        over = sorted(acknowledged - flagged)
+        if over:
+            raise HTTPException(422, "acknowledged_flags names sites that are not "
+                                     "flagged: "
+                                     + ", ".join(f"tooth {t}" for t in over)
+                                     + " — an acknowledgment must point at a real "
+                                       "flag")
+        run_dir = _run_dir(settings, case_id, run)
+        try:
+            hashes = qc_image_hashes(run_dir, _qc_image_names(run))
+        except FileNotFoundError as exc:
+            raise HTTPException(409, f"the confirmation is refused — the run's "
+                                     f"package claims a QC image that is not on "
+                                     f"disk to seal: {exc}")
+        bundle = canonical_bundle(assurance.model_dump(mode="json"), hashes)
+        try:
+            write_bundle(run_dir, bundle)
+        except OSError as exc:
+            # AM-10: a confirmation whose bundle failed to persist never seals —
+            # a hash with nothing on disk behind it could not be re-verified
+            raise HTTPException(500, f"the evidence bundle could not be written — "
+                                     f"the confirmation is refused, nothing was "
+                                     f"sealed: {exc}")
+        session.confirmation = ConfirmationRecord(
+            operator=operator, at=_now(),
+            run_id=run.run_id or run.job_id,
+            evidence_sha256=bundle.sha256,
+            dispositions=dict(body.dispositions),
+            acknowledged_flags=list(body.acknowledged_flags),
+        )
+
+    session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
+# --- the payment stub (grill AM-11) -----------------------------------------------------
+
+@router.post("/{case_id}/payment", response_model=CaseSessionDetail)
+def authorize_payment(case_id: str, body: PaymentIn, request: Request,
+                      x_operator: Optional[str] = Header(default=None),
+                      ) -> CaseSessionDetail:
+    """Record the stubbed payment authorization — fail-closed (absence of this
+    record IS "not authorized") and honest (``provider: "stub"`` marks the session
+    permanently; when a real provider lands, its adapter replaces this route's
+    body, and stub-authorized history stays tellable from paid history)."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+    operator = _require_operator(x_operator, "authorizing payment")
+    if not body.authorize:
+        raise HTTPException(422, "the payment stub authorizes nothing implicitly — "
+                                 "the act is {\"authorize\": true}, or no act at "
+                                 "all")
+
+    def apply(session: CaseSession) -> None:
+        session.payment = PaymentRecord(payment_authorized=True, provider="stub",
+                                        operator=operator, at=_now())
+
+    session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
+# --- release = disclosure (plan §4/§6, grill AM-1) --------------------------------------
+
+@router.post("/{case_id}/release", response_model=CaseSessionDetail)
+def release_case(case_id: str, request: Request,
+                 x_operator: Optional[str] = Header(default=None),
+                 ) -> CaseSessionDetail:
+    """The disclosure act. Body-less: everything the release consumes — the
+    confirmation, its dispositions, the payment state — is already the session's,
+    so there is nothing a client could claim with.
+
+    Refuses (409) unless: a done current run; a confirmation record; the
+    RE-DERIVED evidence hashes to the confirmed sha256 (confirm → change → release
+    is structurally a 409: validity is re-derivation, never trust in the record);
+    and the stubbed payment is authorized. Persists who released what, over which
+    evidence, with the withheld sites already dropped from the released set."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+    operator = _require_operator(x_operator, "releasing")
+
+    def apply(session: CaseSession) -> None:
+        run = _require_done_run_for_act(session, case_id, "release")
+        confirmation = session.confirmation
+        if confirmation is None:
+            raise HTTPException(409, f"case {case_id!r} is not confirmed — confirm "
+                                     f"over the assurance evidence before release")
+        current_sha = _derive_evidence_sha(case, session, settings, run)
+        if current_sha != confirmation.evidence_sha256:
+            raise HTTPException(409, "the case changed since it was confirmed — "
+                                     "re-confirm over the current evidence")
+        if not session.payment_authorized:
+            raise HTTPException(409, f"payment is not authorized for case "
+                                     f"{case_id!r} — the (stub) payment gate "
+                                     f"precedes disclosure")
+        session.release = ReleaseRecord(
+            operator=operator, at=_now(),
+            run_id=run.run_id or run.job_id,
+            evidence_sha256=confirmation.evidence_sha256,
+            released_teeth=sorted(int(t) for t, act
+                                  in confirmation.dispositions.items()
+                                  if act == "release"),
+        )
+
+    session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
+# --- the artifact endpoints (class 2: DELIVERABLES, gated) ------------------------------
+
+class ArtifactsView(BaseModel):
+    run_id: str
+    # the released deliverables, package order preserved; QC images are the
+    # EVIDENCE class and never appear here, withheld sites' per-tooth files are
+    # excluded (they stay open, not shipped)
+    files: List[str]
+    withheld_teeth: List[int]
+
+
+def _require_valid_release(case: CaseRecord, session: CaseSession,
+                           settings: Settings) -> Tuple[RunSession, ReleaseRecord]:
+    """The artifact gate (AM-1's second class), enforced AT THE ENDPOINT — screen
+    order in a presentational app is not a control. Refuses 409 stating exactly
+    what is missing; validity means: done current run, a release record naming
+    THAT run, and evidence that still re-derives to the sha the release sealed
+    (post-release drift closes the door again until re-confirm + re-release)."""
+    run = _require_done_run_for_act(session, case.id, "disclose artifacts for")
+    release = session.release
+    if release is None or release.run_id != (run.run_id or run.job_id):
+        raise HTTPException(409, f"artifacts are not disclosed for case "
+                                 f"{case.id!r} — no release record covers the "
+                                 f"current run: confirm over the assurance "
+                                 f"evidence, authorize payment (stub), then "
+                                 f"release")
+    current_sha = _derive_evidence_sha(case, session, settings, run)
+    if current_sha != release.evidence_sha256:
+        raise HTTPException(409, "the evidence changed after release — disclosure "
+                                 "is closed until the case is re-confirmed and "
+                                 "re-released over what is actually there now")
+    return run, release
+
+
+def _released_files(run: RunSession, release: ReleaseRecord) -> List[str]:
+    teeth = _summary_teeth(run)
+    withheld = set(teeth) - set(release.released_teeth)
+    return [name for name in run.package_files
+            if not name.endswith(_QC_SUFFIX)
+            and _tooth_of_file(name, teeth) not in withheld]
+
+
+_ARTIFACT_MEDIA = {".stl": "model/stl", ".json": "application/json",
+                   ".html": "text/html"}
+
+
+@router.get("/{case_id}/runs/current/artifacts", response_model=ArtifactsView)
+def list_artifacts(case_id: str, request: Request,
+                   x_operator: Optional[str] = Header(default=None),
+                   ) -> ArtifactsView:
+    """The DELIVERABLE list — even listing is disclosure (names leak what was
+    made), so the release gate and the operator requirement sit on the list too."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+    _require_operator(x_operator, "taking delivery")
+    session = store.load(case_id)
+    run, release = _require_valid_release(case, session, settings)
+    withheld = sorted(set(_summary_teeth(run)) - set(release.released_teeth))
+    return ArtifactsView(run_id=run.run_id or run.job_id,
+                         files=_released_files(run, release),
+                         withheld_teeth=withheld)
+
+
+@router.get("/{case_id}/runs/current/artifacts/{filename}")
+def fetch_artifact(case_id: str, filename: str, request: Request,
+                   x_operator: Optional[str] = Header(default=None),
+                   ) -> FileResponse:
+    """One deliverable's bytes — the disclosure edge itself. Filename validates
+    against the run's own package list (no client path reaches the filesystem);
+    QC images refuse toward the evidence endpoint; a withheld site's files refuse
+    with the site's open status."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+    _require_operator(x_operator, "taking delivery")
+    session = store.load(case_id)
+    run, release = _require_valid_release(case, session, settings)
+    if ("/" in filename or "\\" in filename or filename.startswith(".")
+            or filename not in run.package_files):
+        raise HTTPException(404, f"{filename!r} is not among the run's package "
+                                 f"files")
+    if filename.endswith(_QC_SUFFIX):
+        raise HTTPException(403, f"{filename!r} is a QC image — evidence, not a "
+                                 f"deliverable; it serves ungated from the qc "
+                                 f"endpoint")
+    tooth = _tooth_of_file(filename, _summary_teeth(run))
+    if tooth is not None and tooth not in release.released_teeth:
+        raise HTTPException(403, f"tooth {tooth} is withheld — its site stays "
+                                 f"open and its files are not part of the "
+                                 f"released set")
+    path = _run_dir(settings, case_id, run) / filename
+    if not path.is_file():
+        raise HTTPException(404, f"artifact {filename!r} is missing from the run "
+                                 f"directory — the run's package claims it, but "
+                                 f"the file is not there to serve")
+    media = _ARTIFACT_MEDIA.get(path.suffix.lower(), "application/octet-stream")
+    return FileResponse(path, media_type=media, filename=filename)
