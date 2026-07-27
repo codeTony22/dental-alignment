@@ -13,11 +13,12 @@
  * The reset a system switch causes happens SERVER-side (bff status machine) — this
  * component only asks first and displays what came back.
  *
- * 5b adds the three live panes beside this queue, and WITH them the review tick
- * (AM-8: "reviewed over panels, not a checkbox") — deliberately absent here; see
- * domain/flow.ts's declare-completion note.
+ * 5b lands the three live panes beside this queue (components/DeclarePanes — the
+ * demo's VerifyStage semantics, rebuilt against BFF shapes) and WITH them the review
+ * tick (AM-8: "reviewed over panels, not a checkbox"); Declare completes only when
+ * every site is reviewed (domain/flow.ts).
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   putDeclaration,
@@ -35,6 +36,7 @@ import {
   type VariantCard,
 } from "../domain/declare";
 import { captureChipLabel } from "../domain/intake";
+import { DeclarePanes } from "./DeclarePanes";
 import { MainStage } from "./MainStage";
 
 /** What is in flight, named — the surface states it instead of freezing silently. */
@@ -163,6 +165,9 @@ export interface DeclareStageViewProps {
   readonly onConfirmSwitch: () => void;
   readonly onCancelSwitch: () => void;
   readonly onDeclare: (variantId: string) => void;
+  /** The three live panes + the review tick (5b) — the container passes the
+   * DeclarePanes container; View tests may omit it (the panes have their own). */
+  readonly panesSlot?: ReactNode;
 }
 
 /** The stage's whole surface, pure payload → markup — statically testable. */
@@ -177,6 +182,7 @@ export function DeclareStageView({
   onConfirmSwitch,
   onCancelSwitch,
   onDeclare,
+  panesSlot,
 }: DeclareStageViewProps) {
   const facts = factsFromCaseSession(detail);
   const active = activeSiteFrom(detail.sites, activeTooth);
@@ -207,6 +213,7 @@ export function DeclareStageView({
             sites={detail.sites}
             activeTooth={active?.tooth ?? null}
           />
+          {panesSlot}
           <section data-role="variant-cards" aria-label="Variant cards">
             <h3>
               {active !== null
@@ -362,6 +369,13 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
       onConfirmSwitch={handleConfirmSwitch}
       onCancelSwitch={() => setPendingSwitch(null)}
       onDeclare={handleDeclare}
+      panesSlot={
+        <DeclarePanes
+          detail={detail}
+          site={activeSiteFrom(detail.sites, activeTooth)}
+          onDetail={onDetail}
+        />
+      }
     />
   );
 }

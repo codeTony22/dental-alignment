@@ -132,13 +132,25 @@ describe("completion ticks", () => {
     ).toBe(true);
   });
 
-  it("declare completes when every site is DECLARED (5a; 5b extends this to reviewed)", () => {
-    // Updated DELIBERATELY for slice 5a: the review tick arrives in 5b with the
-    // live panes it ticks over (AM-8 forbids a checkbox over nothing), so 5a's
-    // completion is the strongest true fact — every site declared.
+  it("declare completes when every site is REVIEWED — ready via the tick (5b, AM-8)", () => {
+    // Updated DELIBERATELY for slice 5b: the panes and the review tick landed, so
+    // 5a's interim every-site-declared rule retires — Declare is done when the
+    // operator has ATTESTED every site over the live panes, and only then.
     expect(isComplete("declare", facts())).toBe(false); // nothing to declare ≠ done
-    expect(isComplete("declare", facts({ siteTotal: 2, siteDeclared: 1 }))).toBe(false);
-    expect(isComplete("declare", facts({ siteTotal: 2, siteDeclared: 2 }))).toBe(true);
+    expect(isComplete("declare", facts({ siteTotal: 2, siteDeclared: 2 }))).toBe(false);
+    expect(
+      isComplete("declare", facts({ siteTotal: 2, siteDeclared: 2, siteReady: 1 })),
+    ).toBe(false);
+    expect(
+      isComplete("declare", facts({ siteTotal: 2, siteDeclared: 2, siteReady: 2 })),
+    ).toBe(true);
+    // flagged is 5c's run evidence, not a review — it does not complete Declare
+    expect(
+      isComplete(
+        "declare",
+        facts({ siteTotal: 2, siteDeclared: 2, siteReady: 1, siteFlagged: 1 }),
+      ),
+    ).toBe(false);
   });
 
   it("adjust completes as 'nothing to adjust': a run and zero flags", () => {

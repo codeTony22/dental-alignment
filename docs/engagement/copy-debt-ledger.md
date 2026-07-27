@@ -118,6 +118,20 @@ Row 7 record (slice 5b, 2026-07-27) — divergences, per the rules above:
   `_deviation_payload` sat outside row 5's stated range and enter the ledger with
   this row).
 
+NOTE row (slice 5b, 2026-07-27) — a REBUILD with named borrowings, NOT a code copy
+(recorded so the conformance check knows the resemblance is deliberate): the product's
+`apps/product/src/components/DeclarePanes.tsx` reimplements the frozen demo's
+VerifyStage pane SEMANTICS against BFF shapes (plan AM-5 named VerifyStage as
+rebuild-not-copy from the start): top-of-cap framing per pane, the exact-axis-from-
+pose story with the occlusal fallback, the shared up-vector, the union's 0.45 scan
+opacity, and — kept verbatim as OPERATOR-FACING WORDS, not code — the busy sentence
+("seating this selection on the scan — preview, nothing is being processed…") and the
+preview caption shape ("preview — this selection seated now (…); nothing processed
+yet"). The ~15-line partFrame framing memo (centre from rimCentre+centroid, radius
+rmaxMm*1.6, view [0,0,1], up [1,0,0]) matches VerifyStage.tsx:428-449 numerically —
+those constants are the framing DECISION the client accepted on 2026-07-26 and must
+not drift between apps. Retires with the demo, alongside rows 3 and 7.
+
 Row 6 record (slice 4, 2026-07-27) — divergences, per the rules above:
 - The demo's THREE cache layers are deliberately NOT copied (per-process cfg dict,
   `proposals.json`, `capture.json`): the demo's propose endpoint re-fires per click, the

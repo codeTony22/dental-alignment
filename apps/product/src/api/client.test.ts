@@ -6,8 +6,11 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  deleteReview,
   fetchCaseSession,
   postDetect,
+  postPreview,
+  postReview,
   putChoices,
   putDeclaration,
   putSystem,
@@ -111,6 +114,30 @@ describe("the action requests (slice 4) — detect and choices", () => {
     expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({
       variant: "5020",
     });
+  });
+
+  it("preview POSTs with no body to the tooth's own path — everything derives from the session", async () => {
+    const calls = capturingFetch();
+    await postPreview("case-a", 19);
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/sites/19/preview");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(calls[0]!.init?.body).toBeUndefined();
+  });
+
+  it("the review tick POSTs with no body — the act IS the request (AM-8)", async () => {
+    const calls = capturingFetch();
+    await postReview("case-a", 19);
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/sites/19/review");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(calls[0]!.init?.body).toBeUndefined();
+  });
+
+  it("the untick DELETEs the same path, also body-less — two-way, never a field", async () => {
+    const calls = capturingFetch();
+    await deleteReview("case-a", 19);
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/sites/19/review");
+    expect(calls[0]!.init?.method).toBe("DELETE");
+    expect(calls[0]!.init?.body).toBeUndefined();
   });
 
   it("a pydantic-shaped 422 surfaces the backend's sentences, not machinery", async () => {

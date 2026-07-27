@@ -1,7 +1,8 @@
 /**
  * THE BFF CLIENT — the product's only network surface (plan §1.3, §3): the case-session
- * reads plus slice 4's two actions (detect — a compute trigger; choices — operator
- * acts), reached through the vite proxy so no backend host is hard-coded here.
+ * reads plus the actions (detect and preview — compute triggers; choices, system,
+ * declarations and the review tick — operator acts), reached through the vite proxy
+ * so no backend host is hard-coded here.
  *
  * Types below mirror the BFF's response models BY HAND (bff/resources/case_sessions.py
  * — WorklistRow, CaseSessionDetail and their parts); they are small, so codegen would
@@ -175,6 +176,69 @@ export interface CaseSessionDetail {
   detection: DetectionView | null;
   choices: ChoicesView;
   session: SessionView;
+}
+
+/** The seated pose block (5b): what the panes FRAME with — the exact axis the
+ * alignment produced (the demo's 2026-07-26 lesson: the occlusal proxy sat
+ * 6.2°-42.0° off the real axis; this is exact by construction). `x_axis` is the
+ * shared up-vector that makes clock positions match across the three panes. */
+export interface PreviewPose {
+  axis: number[];
+  x_axis: number[];
+  origin: number[];
+}
+
+export interface PreviewScale {
+  clamp_mm: number;
+  min_mm: number;
+  max_mm: number;
+  colormap: string;
+  sign_convention: string;
+  data_min_mm: number | null;
+  data_max_mm: number | null;
+  footprint_band_mm: number;
+}
+
+/** The site's published acceptance numbers — the SAME RMS/p90 the difference map
+ * prints and the run row will carry; the pane shows these, never a re-derivation. */
+export interface PreviewStats {
+  rms_mm: number | null;
+  p90_mm: number | null;
+  n_footprint: number;
+  n_samples: number;
+  source: string;
+}
+
+export interface PreviewSeat {
+  seat_method: string | null;
+  rim_agreement_mm: number | null;
+  fit: string | null;
+}
+
+/**
+ * The preview payload (POST /{id}/sites/{tooth}/preview — plan §7 slice 5b): the
+ * union pane's whole render, response-only (the BFF persists only the seat FACTS).
+ * Shape is the worker's deviation payload VERBATIM (application/preview.py — the
+ * demo's wire shape, which the copied deviationColormap code was written against).
+ */
+export interface SitePreviewPayload {
+  case_id: string;
+  tooth: number;
+  implant_model: string | null;
+  variant: string | null;
+  frame: string;
+  units: string;
+  pose: PreviewPose;
+  n_points: number;
+  points: number[][];
+  faces: number[][];
+  deviation_mm: (number | null)[];
+  scale: PreviewScale;
+  stats: PreviewStats;
+  vertex_footprint_points: number;
+  reporting_only: boolean;
+  preview: boolean;
+  seat: PreviewSeat;
 }
 
 /**
@@ -357,4 +421,53 @@ export async function putDeclaration(
       body: JSON.stringify({ variant }),
     },
   );
+}
+
+function siteActionPath(caseId: string, tooth: number, action: string): string {
+  return `/api/case-sessions/${encodeURIComponent(caseId)}/sites/${encodeURIComponent(
+    String(tooth),
+  )}/${action}`;
+}
+
+/**
+ * Seat the site's declared cap and fetch its deviation colouring (POST
+ * /{id}/sites/{tooth}/preview — plan §7 slice 5b). A compute TRIGGER like detect:
+ * no body — the declaration and choices it seats with are the session's persisted
+ * acts. The payload is response-only; the seat FACTS the BFF persisted arrive on
+ * the next detail read, which the caller re-fetches after this resolves.
+ */
+export async function postPreview(
+  caseId: string,
+  tooth: number,
+): Promise<ApiResult<SitePreviewPayload>> {
+  return fetchJson<SitePreviewPayload>(siteActionPath(caseId, tooth, "preview"), {
+    method: "POST",
+  });
+}
+
+/**
+ * The review tick (POST /{id}/sites/{tooth}/review — AM-8): the operator's
+ * attestation over the live panes. No body at all — the act is the POST itself, so
+ * there is no field a claimed outcome could ride in on. The BFF's status machine
+ * refuses a tick over an unpreviewed site; the returned detail is the whole new
+ * truth (the queue chip and the rail react to it).
+ */
+export async function postReview(
+  caseId: string,
+  tooth: number,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(siteActionPath(caseId, tooth, "review"), {
+    method: "POST",
+  });
+}
+
+/** The tick un-ticked (DELETE same path) — the attestation withdrawn; two-way like
+ * the demo's checkbox. */
+export async function deleteReview(
+  caseId: string,
+  tooth: number,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(siteActionPath(caseId, tooth, "review"), {
+    method: "DELETE",
+  });
 }

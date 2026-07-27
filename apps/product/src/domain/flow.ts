@@ -177,12 +177,11 @@ export function blockedReason(stage: StageId, facts: FlowFacts): string | null {
  *  - intake: detection RAN and the case-level choices are all made (plan §4 slice 4 —
  *    sites merely existing is not Intake done: curated suggestions predate detection,
  *    and the choices are Intake's other half). Both facts are the BFF's derivations.
- *  - declare: every site DECLARED (slice 5a). ONE deliberate deviation from the
- *    plan's slice table, honoured rather than hacked: the tick that sets a site
- *    `ready` is "the operator's review tick over the three live Declare panes"
- *    (AM-8), and the panes arrive in 5b — so the REVIEW tick arrives in 5b with
- *    them. A tick rendered now would be a checkbox over nothing, exactly what AM-8
- *    forbids. 5b extends this completion to every-site-reviewed (ready | flagged).
+ *  - declare: every site REVIEWED — the operator's tick over the three live panes
+ *    set it `ready` (AM-8; the 5a interim rule "every site declared" retired when
+ *    5b landed the panes and the tick). Ready ONLY: a flagged site is 5c's run
+ *    evidence, not a review — Declare is done when the operator has attested every
+ *    site, and the run gate (5c's AuthorizedRunSelection) reads the same fact.
  *  - adjust: a run exists and nothing is flagged — the plan's "nothing to adjust".
  *  - deliver: the confirmation is sealed.
  */
@@ -191,7 +190,7 @@ export function isComplete(stage: StageId, facts: FlowFacts): boolean {
     case "intake":
       return facts.detectionDone && facts.choicesComplete;
     case "declare":
-      return facts.siteTotal > 0 && facts.siteDeclared === facts.siteTotal;
+      return facts.siteTotal > 0 && facts.siteReady === facts.siteTotal;
     case "adjust":
       return runExists(facts) && facts.siteFlagged === 0;
     case "deliver":

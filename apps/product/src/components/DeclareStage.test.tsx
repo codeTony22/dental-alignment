@@ -205,7 +205,7 @@ describe("continue — per flow.ts, honestly blocked in 5a", () => {
 });
 
 describe("the DeclareStage container, statically (effects do not run)", () => {
-  it("mounts queue, system bar, cards and the 3D stage — no pending ceremony", () => {
+  it("mounts queue, system bar, cards, the 3D stage AND the three panes with the tick", () => {
     const html = renderToStaticMarkup(
       <StaticRouter location="/case/case-a/declare">
         <DeclareStage detail={detail} onDetail={() => undefined} />
@@ -215,6 +215,12 @@ describe("the DeclareStage container, statically (effects do not run)", () => {
     expect(html).toContain('data-role="system-bar"');
     expect(html).toContain('data-role="variant-cards"');
     expect(html).toContain('data-role="main-stage"');
+    // 5b: the three live panes and the review tick ride with the stage
+    expect(html).toContain('data-role="declare-panes"');
+    expect(html).toContain('data-role="pane-library"');
+    expect(html).toContain('data-role="pane-scan"');
+    expect(html).toContain('data-role="pane-union"');
+    expect(html).toContain('data-role="review-tick"');
     expect(html).not.toContain('data-role="system-switch-confirm"');
     expect(html).not.toContain('data-role="declare-error"');
   });

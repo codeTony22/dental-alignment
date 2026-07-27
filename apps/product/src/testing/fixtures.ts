@@ -7,6 +7,7 @@ import type {
   CaseSessionDetail,
   DetectedProposalView,
   DetectionView,
+  SitePreviewPayload,
   SiteView,
   WorklistRow,
   WorklistRowError,
@@ -140,6 +141,52 @@ export function caseSessionDetail(
       confirmed: false,
       payment_authorized: false,
     },
+    ...overrides,
+  };
+}
+
+/** The preview payload as the worker serves it (application/preview.py — the demo's
+ * wire shape verbatim; worker test_preview.py pins the key set on the real tree). */
+export function sitePreviewPayload(
+  overrides: Partial<SitePreviewPayload> = {},
+): SitePreviewPayload {
+  return {
+    case_id: "case-a",
+    tooth: 19,
+    implant_model: "conical-4x4",
+    variant: "5020",
+    frame: "jaw-scan world frame",
+    units: "mm",
+    pose: { axis: [0, 0, 1], x_axis: [1, 0, 0], origin: [1, 2, 3] },
+    n_points: 3,
+    points: [
+      [0, 0, 0],
+      [1, 0, 0],
+      [0, 1, 0],
+    ],
+    faces: [[0, 1, 2]],
+    deviation_mm: [0.1, -0.2, null],
+    scale: {
+      clamp_mm: 0.5,
+      min_mm: -0.5,
+      max_mm: 0.5,
+      colormap: "RdBu_r",
+      sign_convention: "+ = scan outside the cap surface",
+      data_min_mm: -0.2,
+      data_max_mm: 0.1,
+      footprint_band_mm: 1.0,
+    },
+    stats: {
+      rms_mm: 0.43,
+      p90_mm: 0.71,
+      n_footprint: 1200,
+      n_samples: 4000,
+      source: "area-uniform surface samples (the acceptance difference map)",
+    },
+    vertex_footprint_points: 900,
+    reporting_only: true,
+    preview: true,
+    seat: { seat_method: "rim-seat", rim_agreement_mm: 0.07, fit: "ok" },
     ...overrides,
   };
 }
