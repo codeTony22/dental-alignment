@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Route, Routes, StaticRouter } from "react-router-dom";
 import { caseSessionDetail, siteView } from "../testing/fixtures";
 import { ErrorBanner } from "../components/ErrorBanner";
-import { CaseShell, CaseShellView } from "./CaseShell";
+import { CaseLoadError, CaseShell, CaseShellView } from "./CaseShell";
 
 describe("the case shell view", () => {
   const detail = caseSessionDetail();
@@ -84,6 +84,39 @@ describe("the error banner", () => {
     const html = renderToStaticMarkup(<ErrorBanner detail="HTTP 502 — bad gateway" />);
     expect(html).toContain("The case service is unreachable.");
     expect(html).toContain("HTTP 502 — bad gateway");
+    expect(html).toContain("Start the BFF on :8001");
+  });
+});
+
+describe("the case load error", () => {
+  it("a 404 names the missing case and points home — the service is NOT down", () => {
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/case/gone-case/intake">
+        <CaseLoadError
+          id="gone-case"
+          error={{ kind: "error", status: 404, detail: "HTTP 404 — unknown case 'gone-case'" }}
+        />
+      </StaticRouter>,
+    );
+    expect(html).toContain("no longer in the data root");
+    expect(html).toContain("gone-case");
+    expect(html).toContain("HTTP 404 — unknown case &#x27;gone-case&#x27;");
+    expect(html).toContain('href="/"'); // the next move: back to the worklist
+    expect(html).not.toContain("unreachable"); // a refusal must not read as an outage
+    expect(html).not.toContain("Start the BFF");
+  });
+
+  it("any other failure keeps the unreachable-service banner and its next move", () => {
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/intake">
+        <CaseLoadError
+          id="case-a"
+          error={{ kind: "error", detail: "ECONNREFUSED" }}
+        />
+      </StaticRouter>,
+    );
+    expect(html).toContain("The case service is unreachable.");
+    expect(html).toContain("ECONNREFUSED");
     expect(html).toContain("Start the BFF on :8001");
   });
 });

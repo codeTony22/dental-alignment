@@ -35,6 +35,29 @@ const STAGE_BODY: Readonly<Record<StageId, string>> = {
   deliver: "Deliver — slice 8 builds this (assurance table, sealed confirmation, gated release).",
 };
 
+interface CaseLoadErrorProps {
+  readonly id: string;
+  readonly error: Extract<FetchState<CaseSessionDetail>, { kind: "error" }>;
+}
+
+/**
+ * A refusal is not an outage: a 404 means the BFF answered and this case is gone
+ * (a stale bookmark, a removed session) — telling the operator to restart a healthy
+ * service would misdiagnose it. Only the 404 gets the not-found words; every other
+ * failure keeps the unreachable-service banner and its next move.
+ */
+export function CaseLoadError({ id, error }: CaseLoadErrorProps) {
+  if (error.status === 404) {
+    return (
+      <ErrorBanner headline={`Case ${id} is no longer in the data root.`} detail={error.detail}>
+        The case service is up — this case just is not there to open.{" "}
+        <Link to="/">Back to the worklist</Link>
+      </ErrorBanner>
+    );
+  }
+  return <ErrorBanner detail={error.detail} />;
+}
+
 interface CaseShellViewProps {
   readonly detail: CaseSessionDetail;
   readonly stage: StageId;
@@ -93,7 +116,7 @@ export function CaseShell() {
     return <p data-role="case-loading">Loading case {id}…</p>;
   }
   if (state.kind === "error") {
-    return <ErrorBanner detail={state.detail} />;
+    return <CaseLoadError id={id} error={state} />;
   }
 
   const resolution = resolveStagePath(stage, factsFromCaseSession(state.data));

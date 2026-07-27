@@ -98,9 +98,15 @@ export interface CaseSessionDetail {
   session: SessionView;
 }
 
+/**
+ * An HTTP failure keeps its status so pages can tell a REFUSAL from an OUTAGE
+ * (a 404 for a stale bookmark is not a down service — the banner copy branches
+ * on this in pages/CaseShell.tsx). A network-level failure has no status: nothing
+ * answered, so "unreachable" is the honest diagnosis.
+ */
 export type ApiResult<T> =
   | { kind: "ok"; data: T }
-  | { kind: "error"; detail: string };
+  | { kind: "error"; detail: string; status?: number };
 
 /** What a fetching component holds: the result, or the honest in-between. */
 export type FetchState<T> = { kind: "loading" } | ApiResult<T>;
@@ -124,7 +130,7 @@ async function fetchJson<T>(path: string): Promise<ApiResult<T>> {
     } catch {
       // a non-JSON error body still yields the status line above
     }
-    return { kind: "error", detail };
+    return { kind: "error", detail, status: response.status };
   }
   try {
     return { kind: "ok", data: (await response.json()) as T };
