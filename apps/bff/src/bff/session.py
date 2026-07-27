@@ -17,6 +17,14 @@ silently starting fresh — a quiet reset would forget a confirmation or a payme
 authorization, which is exactly the state this store exists to protect. Writes are
 atomic (tmp file + ``os.replace``) so a crash mid-save leaves the previous session, not
 half a document.
+
+Writes are also COMPARE-AND-SWAP (slice 5a): every document carries ``version``, and
+``save`` refuses (``SessionConflict``) when the disk has moved past the version the
+caller loaded — the durable answer to the lost-update race slice 4's detect route
+dodged by hand (commit 1c4af60 named this store change as slice 5's obligation). With
+choices, system and per-site declarations all writing the same document, "last save
+wins" would silently discard operator acts — the write-write cousin of the client
+claims AM-4 forbids. Handlers retry once on a fresh load, then surface a 409.
 """
 from __future__ import annotations
 
@@ -26,6 +34,20 @@ from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+
+class SessionConflict(RuntimeError):
+    """A CAS save lost: the disk's version is no longer the one the caller loaded.
+    Carries both versions so a handler's 409 can say what happened instead of a bare
+    "conflict" — the caller re-loads and re-applies, or the operator re-reads."""
+
+    def __init__(self, case_id: str, expected: int, found: int):
+        super().__init__(
+            f"session {case_id!r} changed underneath this write: loaded version "
+            f"{expected}, but the disk holds version {found}")
+        self.case_id = case_id
+        self.expected = expected
+        self.found = found
 
 
 class SiteStatus(str, enum.Enum):
@@ -104,6 +126,9 @@ class ConfirmationRecord(BaseModel):
 
 class CaseSession(BaseModel):
     case_id: str
+    # the CAS version (slice 5a): bumped by every save; a save whose loaded version
+    # is stale refuses. Pre-5a documents carry none and default to 0 honestly.
+    version: int = 0
     # phase-2 carries a tenant on every case from day one (grill AM-3)
     tenant_id: str = "local"
     # keyed by tooth number as a string (JSON object keys are strings; kept honest here)
@@ -146,7 +171,18 @@ class SessionStore:
                 f"(it may hold a confirmation or payment record): {exc}") from exc
 
     def save(self, session: CaseSession) -> None:
+        """Compare-and-swap: refuse when the disk's version is not the one this
+        object was loaded at (``SessionConflict`` carries both), else bump and write.
+        The bump lands on the caller's object too, so a handler may keep mutating and
+        save again without a wasted re-load. The check-then-write pair is not atomic
+        across PROCESSES — one uvicorn worker is the deployment (plan §3) and the
+        in-process interleavings (a slow detect vs. a quick declaration) are the race
+        that actually bit in slice 4; cross-process CAS is the SQLite/phase-2 story."""
         path = self._path(session.case_id)
+        current = self.load(session.case_id)   # version 0 when nothing exists yet
+        if current.version != session.version:
+            raise SessionConflict(session.case_id, session.version, current.version)
+        session.version += 1
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(session.model_dump_json(indent=2))

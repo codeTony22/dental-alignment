@@ -1,11 +1,14 @@
 /**
  * The worklist's rules (plan §4 "Worklist first", AM-7), pinned: the blocked-first
  * sort order (flagged > in-progress > untouched > confirmed, unreadable entries above
- * all), resume-target computation, the row chips' words, and the defensive per-row
- * guard (the BFF defines no per-row error contract yet — see the module doc).
+ * all), resume-target computation, the row chips' words, and the per-row error
+ * contract (slice 5a): a row the BFF could not derive session facts for arrives with
+ * `error` set and every session-derived field null — the guard surfaces the BFF's own
+ * words instead of inventing a diagnosis, and stays defensive about rows that match
+ * neither shape.
  */
 import { describe, expect, it } from "vitest";
-import { worklistRow } from "../testing/fixtures";
+import { worklistErrorRow, worklistRow } from "../testing/fixtures";
 import {
   classifyWorklist,
   confirmChip,
@@ -56,7 +59,12 @@ describe("worklistBand — blocked-first (the documented order)", () => {
 
 describe("orderWorklist", () => {
   it("orders unreadable > flagged > in-progress > untouched > confirmed", () => {
-    const unreadable: WorklistEntry = { kind: "unreadable", index: 4, id: null };
+    const unreadable: WorklistEntry = {
+      kind: "unreadable",
+      index: 4,
+      id: null,
+      error: null,
+    };
     const entries: readonly WorklistEntry[] = [
       { kind: "row", row: confirmed },
       { kind: "row", row: untouched },
@@ -134,7 +142,7 @@ describe("the row's words", () => {
   });
 });
 
-describe("classifyWorklist — the defensive per-row guard", () => {
+describe("classifyWorklist — the per-row error contract and the defensive guard", () => {
   it("passes well-shaped rows through", () => {
     const entries = classifyWorklist([untouched, flagged]);
     expect(entries).toEqual([
@@ -143,18 +151,34 @@ describe("classifyWorklist — the defensive per-row guard", () => {
     ]);
   });
 
-  it("marks a malformed row unreadable, keeping its id when one is legible", () => {
+  it("an error row (the BFF's slice-5a contract) is unreadable WITH the BFF's words", () => {
+    const errorRow = worklistErrorRow({
+      id: "case-corrupt",
+      error: "corrupt session file … — refusing to silently reset flow state",
+    });
+    expect(classifyWorklist([untouched, errorRow])).toEqual([
+      { kind: "row", row: untouched },
+      {
+        kind: "unreadable",
+        index: 1,
+        id: "case-corrupt",
+        error: "corrupt session file … — refusing to silently reset flow state",
+      },
+    ]);
+  });
+
+  it("marks a malformed row unreadable with no invented diagnosis (error: null)", () => {
     const broken = { id: "case-broken", doctor: "Dr. X" }; // no sites/run_state
     expect(classifyWorklist([untouched, broken])).toEqual([
       { kind: "row", row: untouched },
-      { kind: "unreadable", index: 1, id: "case-broken" },
+      { kind: "unreadable", index: 1, id: "case-broken", error: null },
     ]);
   });
 
   it("survives entries that are not objects at all", () => {
     expect(classifyWorklist([42, null])).toEqual([
-      { kind: "unreadable", index: 0, id: null },
-      { kind: "unreadable", index: 1, id: null },
+      { kind: "unreadable", index: 0, id: null, error: null },
+      { kind: "unreadable", index: 1, id: null, error: null },
     ]);
   });
 });

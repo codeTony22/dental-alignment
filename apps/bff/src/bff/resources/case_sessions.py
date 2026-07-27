@@ -25,11 +25,11 @@ route sits on an explicit allowlist, and no request model carries a status-shape
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from case_prep.application.cases import CaseRecord, discover_cases
 from case_prep.application.catalog import (UnknownSelection, construction_parts,
@@ -39,7 +39,7 @@ from case_prep.application.detection import DetectionResult, ScanUnreadable, det
 
 from ..config import Settings
 from ..session import (CaseChoices, CaseSession, DetectedProposal, DetectionRecord,
-                       SessionStore, SiteStatus)
+                       SessionConflict, SessionStore, SiteStatus)
 
 router = APIRouter(prefix="/api/case-sessions", tags=["case-sessions"])
 
@@ -54,16 +54,25 @@ class SiteRollup(BaseModel):
 
 
 class WorklistRow(BaseModel):
+    """One case's row. Identity fields come from case DISCOVERY and are always present;
+    everything below them derives from the SESSION and goes None together, exactly when
+    ``error`` is set — THE PER-ROW ERROR CONTRACT (slice 5a, carried from the slice-4
+    review): one corrupt session file must not 500 the whole worklist (the 20-scan
+    morning's home screen), and a row that cannot state its facts states its trouble
+    instead of claiming zeros it never read."""
+
     id: str
     doctor: str
     jaw: str
     suggested_model: Optional[str]
-    sites: SiteRollup
-    run_state: str          # "none" | queued | running | done | refused (AM-3 states)
-    confirmed: bool
+    sites: Optional[SiteRollup]
+    run_state: Optional[str]        # "none" | queued | running | done | refused (AM-3)
+    confirmed: Optional[bool]
     # Intake's completion facts (plan §4 / slice 4), derived server-side like the rest:
-    detected: bool          # a detection record exists for this session
-    choices_complete: bool  # all three case-level choices explicitly made
+    detected: Optional[bool]        # a detection record exists for this session
+    choices_complete: Optional[bool]  # all three case-level choices explicitly made
+    # the session store's refusal, verbatim (its one home for those words); None = healthy
+    error: Optional[str] = None
 
 
 class SiteView(BaseModel):
@@ -179,6 +188,11 @@ class ChoicesIn(BaseModel):
 
     NO status-shaped field may ever join this model — the allowlist test introspects it.
     """
+
+    # extra="forbid" on EVERY request model (slice 5a, carried from the slice-4 review):
+    # pydantic's default silently DROPS unknown fields, so a smuggled {"status": ...}
+    # would 200 and the client would believe its claim landed. Refuse it loudly.
+    model_config = ConfigDict(extra="forbid")
 
     construction_path: Optional[str] = None
     jaw: Optional[str] = None
@@ -344,12 +358,48 @@ def _case_or_404(settings: Settings, case_id: str) -> CaseRecord:
     return case
 
 
+def _mutate_session(store: SessionStore, case_id: str,
+                    mutate: Callable[[CaseSession], None]) -> CaseSession:
+    """Every mutating route's one write path: fresh-load → mutate → CAS save, retrying
+    ONCE on a fresh document before refusing 409 (slice 5a). One retry, deliberately:
+    a single interleaved writer is the expected case (a slow detect finishing while a
+    quick declaration lands) and re-applying the mutation to the fresh document loses
+    neither act; losing TWICE means the case is genuinely contended, and the honest
+    move is to tell the operator what happened rather than keep fighting a race on
+    their behalf. The 409 carries the store's own words — what changed underneath."""
+    last: Optional[SessionConflict] = None
+    for _ in range(2):
+        session = store.load(case_id)
+        mutate(session)
+        try:
+            store.save(session)
+            return session
+        except SessionConflict as exc:
+            last = exc
+    assert last is not None  # the loop only exits here after two conflicts
+    raise HTTPException(409, f"{last} — twice in a row; re-read the case and repeat "
+                             f"the action on what is actually there now")
+
+
 @router.get("", response_model=List[WorklistRow])
 def worklist(request: Request) -> List[WorklistRow]:
     settings, store = _context(request)
     rows = []
     for case in discover_cases(settings.data_root):
-        session = store.load(case.id)
+        try:
+            session = store.load(case.id)
+        except ValueError as exc:
+            # THE PER-ROW ERROR CONTRACT (slice 5a): the store's refusal becomes THIS
+            # row's fact; the list stays up for every other case. Only the LIST absorbs
+            # it — the case detail still refuses loudly, because opening the corrupt
+            # case is where the trouble must be faced, not papered over.
+            rows.append(WorklistRow(
+                id=case.id, doctor=case.doctor, jaw=case.jaw,
+                suggested_model=case.suggested_model,
+                sites=None, run_state=None, confirmed=None,
+                detected=None, choices_complete=None, error=str(exc),
+            ))
+            continue
         sites = _site_views(case, session)
         rows.append(WorklistRow(
             id=case.id, doctor=case.doctor, jaw=case.jaw,
@@ -406,16 +456,18 @@ def detect_case(case_id: str, request: Request, fresh: bool = False) -> CaseSess
         except ScanUnreadable as exc:
             raise HTTPException(422, str(exc))
         # detect() runs for many SECONDS on a real scan, and Intake auto-fires it while
-        # the choices panel stays live — a choices PUT can land mid-derivation. Saving
-        # the session loaded ABOVE would clobber that PUT with its stale document,
-        # silently discarding an operator act (the write-write cousin of the client
-        # claims AM-4 forbids; found by the slice-4 adversarial review). So: re-load
-        # AFTER the derivation and write ONLY the detection facts onto the fresh
-        # document. A store compare-and-swap is the durable answer once more writers
-        # exist (slice 5).
-        session = store.load(case_id)
-        session.detection = _detection_record(result)
-        store.save(session)
+        # the choices panel stays live — a choices PUT can land mid-derivation (the
+        # slice-4 lost update). The derivation runs ONCE, above; only the WRITE goes
+        # through the CAS path, re-applying the same facts to a fresh document on a
+        # conflict. Retry-or-409 posture: a retry never re-runs detect(), and a 409
+        # here means two rivals landed during the seconds-long derivation — rare
+        # enough that telling the operator beats a third blind write.
+        record = _detection_record(result)
+
+        def apply(fresh_session: CaseSession) -> None:
+            fresh_session.detection = record
+
+        session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)
 
 
@@ -434,11 +486,16 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
             require_construction(settings.data_root, body.construction_path)
         except UnknownSelection as exc:
             raise HTTPException(422, str(exc))
-    session = store.load(case_id)
-    session.choices = CaseChoices(
-        construction_path=body.construction_path,
-        jaw=body.jaw,
-        gingival_offset_mm=body.gingival_offset_mm,
-    )
-    store.save(session)
+
+    # Retry-or-409 posture: replacing the choices document is idempotent over a fresh
+    # load (the operator's whole panel is the payload), so one retry is safe and loses
+    # no rival's fact; a second conflict surfaces as the 409.
+    def apply(session: CaseSession) -> None:
+        session.choices = CaseChoices(
+            construction_path=body.construction_path,
+            jaw=body.jaw,
+            gingival_offset_mm=body.gingival_offset_mm,
+        )
+
+    session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)

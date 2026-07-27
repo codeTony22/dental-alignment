@@ -17,6 +17,26 @@ from fastapi.testclient import TestClient
 from bff.main import create_app
 from bff.resources import case_sessions
 from bff.session import RunSession, SessionStore, SiteSession, SiteStatus
+
+
+class InterferingStore(SessionStore):
+    """A store whose ``load`` is immediately followed by a rival's write — the smallest
+    deterministic interleaving that forces a CAS conflict on the caller's save. With
+    ``interferences=1`` the handler's retry lands on a quiet second attempt; with more,
+    every attempt loses and the handler must 409."""
+
+    def __init__(self, root, interferences: int):
+        super().__init__(root)
+        self.interferences = interferences
+
+    def load(self, case_id):
+        session = super().load(case_id)
+        if self.interferences > 0:
+            self.interferences -= 1
+            rival = SessionStore(self.root).load(case_id)
+            rival.adjust_visited = True  # a server-side fact, same door the flow uses
+            SessionStore(self.root).save(rival)
+        return session
 from case_prep.application.detection import (DetectedSite, DetectionResult,
                                              ScanUnreadable, SuggestedSiteCapture)
 
@@ -364,6 +384,85 @@ class TestChoices:
             "atlantis/zimmer-4.5-scanbody.stl"
 
 
+class TestWriteConflicts:
+    """The store's CAS surfaced at the endpoints (slice 5a): every mutating route
+    fresh-loads, mutates, saves — and on a conflict retries ONCE on a fresh document
+    before refusing with 409. One retry is deliberate: a single interleaved writer is
+    the normal case (detect finishing while a declaration lands); losing twice means
+    the case is genuinely contended and the operator should see what changed rather
+    than have the BFF silently win a race on their behalf."""
+
+    def test_an_interleaved_write_is_absorbed_by_one_clean_retry(self, settings):
+        client = TestClient(create_app(settings))
+        client.app.state.sessions = InterferingStore(settings.product_root, 1)
+        res = client.put("/api/case-sessions/neodent-gm/choices", json={
+            "construction_path": "dess/neodent-gm-scanbody.stl",
+            "jaw": "upper",
+            "gingival_offset_mm": 0.2,
+        })
+        assert res.status_code == 200
+        assert res.json()["choices"]["complete"] is True
+        # BOTH writes survived: the rival's fact and the operator's choices
+        persisted = SessionStore(settings.product_root).load("neodent-gm")
+        assert persisted.adjust_visited is True
+        assert persisted.choices.complete is True
+
+    def test_a_genuinely_contended_case_is_a_409_that_says_so(self, settings):
+        client = TestClient(create_app(settings))
+        client.app.state.sessions = InterferingStore(settings.product_root, 99)
+        res = client.put("/api/case-sessions/neodent-gm/choices", json={"jaw": "upper"})
+        assert res.status_code == 409
+        detail = res.json()["detail"]
+        assert "changed underneath" in detail
+        assert "neodent-gm" in detail
+        # the refused write left nothing of itself behind
+        assert SessionStore(settings.product_root).load("neodent-gm").choices.jaw is None
+
+
+class TestWorklistRowErrors:
+    """THE PER-ROW ERROR CONTRACT (slice 5a, carried from the slice-4 review): one
+    corrupt session file must not 500 the whole worklist — the 20-scan morning's home
+    screen would go dark over one case's trouble. The row itself carries the refusal
+    (the store's own words) and every session-derived fact on it is honestly absent —
+    the identity fields (id, doctor, jaw) come from case DISCOVERY, which still works.
+    The case detail keeps refusing loudly: opening the corrupt case is where the
+    trouble must be faced, the list is where the other 19 cases must stay workable."""
+
+    @staticmethod
+    def _second_case(settings):
+        scans = settings.data_root / "scans/doctor-other"
+        scans.mkdir(parents=True)
+        (scans / "lower_jaw.stl").touch()
+
+    def test_a_corrupt_session_becomes_an_error_row_not_a_500(self, settings):
+        self._second_case(settings)
+        client = TestClient(create_app(settings))
+        bad = settings.product_root / "neodent-gm"
+        bad.mkdir(parents=True)
+        (bad / "session.json").write_text("{this is not json")
+        res = client.get("/api/case-sessions")
+        assert res.status_code == 200
+        rows = {row["id"]: row for row in res.json()}
+        assert set(rows) == {"neodent-gm", "other"}
+        # the corrupt row: identity intact, refusal stated, no claimed session facts
+        corrupt = rows["neodent-gm"]
+        assert corrupt["error"] is not None and "session" in corrupt["error"]
+        assert corrupt["sites"] is None
+        assert corrupt["run_state"] is None
+        assert corrupt["confirmed"] is None
+        assert corrupt["detected"] is None
+        assert corrupt["choices_complete"] is None
+        # the healthy row is untouched by its neighbour's trouble
+        healthy = rows["other"]
+        assert healthy["error"] is None
+        assert healthy["sites"] == {"total": 0, "declared": 0, "ready": 0,
+                                    "flagged": 0}
+
+    def test_a_healthy_worklist_carries_no_error_field_noise(self, client):
+        (row,) = client.get("/api/case-sessions").json()
+        assert row["error"] is None
+
+
 class TestStatusesAreNeverClientWritable:
     """STRUCTURAL (AM-4), slice-4 form. The old invariant was "the route table is
     GET-only"; slice 4 updates it DELIBERATELY, not around: choices and compute triggers
@@ -437,3 +536,48 @@ class TestStatusesAreNeverClientWritable:
         client.get("/api/case-sessions")
         client.get("/api/case-sessions/neodent-gm")
         assert not product_root.exists()
+
+    @staticmethod
+    def _nested_models(model, seen=None):
+        """Every Pydantic model reachable from a request model's annotations."""
+        import typing
+
+        from pydantic import BaseModel
+
+        seen = seen if seen is not None else set()
+        if model in seen:
+            return set()
+        seen.add(model)
+        out = {model}
+        for field in model.model_fields.values():
+            stack = [field.annotation]
+            while stack:
+                t = stack.pop()
+                if isinstance(t, type) and issubclass(t, BaseModel):
+                    out |= TestStatusesAreNeverClientWritable._nested_models(t, seen)
+                else:
+                    stack.extend(typing.get_args(t))
+        return out
+
+    def test_every_request_model_forbids_unknown_fields(self, client):
+        """extra="forbid" on EVERY request model, nested ones included (slice 5a,
+        carried from the slice-4 review): pydantic's default silently DROPS unknown
+        fields, so a client sending {"status": "ready"} beside a legitimate choice
+        would get a 200 and believe its claim was accepted. Refusing loudly keeps the
+        no-claimed-outcomes doctrine honest at the wire, not just in the field list."""
+        offenders = []
+        for route in self._case_session_routes(client):
+            body_field = getattr(route, "body_field", None)
+            if body_field is None:
+                continue
+            for model in self._nested_models(body_field.field_info.annotation):
+                if model.model_config.get("extra") != "forbid":
+                    offenders.append((route.path, model.__name__))
+        assert offenders == []
+
+    def test_an_unknown_field_beside_a_legitimate_choice_is_refused(self, client):
+        # the behavioral face of the introspection above: a smuggled claim is a 422,
+        # never a 200 that quietly ignored it
+        res = client.put("/api/case-sessions/neodent-gm/choices",
+                         json={"jaw": "upper", "status": "ready"})
+        assert res.status_code == 422

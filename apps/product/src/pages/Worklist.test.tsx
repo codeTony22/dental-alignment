@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StaticRouter } from "react-router-dom";
-import { worklistRow } from "../testing/fixtures";
+import { worklistErrorRow, worklistRow } from "../testing/fixtures";
 import { WorklistPage, WorklistScreen } from "./Worklist";
 
 function screenHtml(state: Parameters<typeof WorklistScreen>[0]["state"]) {
@@ -99,6 +99,29 @@ describe("a malformed row", () => {
     expect(html).toContain("could not be read");
     expect(html).toContain("case-broken");
     expect(html).not.toContain('href="/case/case-broken/');
+  });
+});
+
+describe("an error row (the BFF's per-row contract, slice 5a)", () => {
+  it("renders the BFF's own refusal words, inert, above readable rows", () => {
+    const html = screenHtml({
+      kind: "ok",
+      data: [
+        worklistRow({ id: "case-good" }),
+        worklistErrorRow({
+          id: "case-corrupt",
+          error: "corrupt session file session.json — refusing to silently reset",
+        }),
+      ],
+    });
+    // the BFF's words, verbatim — the row states its trouble instead of zeros
+    expect(html).toContain("refusing to silently reset");
+    expect(html).toContain("case-corrupt");
+    expect(html).not.toContain('href="/case/case-corrupt/');
+    // and it outranks the readable row (band -1: most blocked there is)
+    expect(html.indexOf("case-corrupt")).toBeLessThan(
+      html.indexOf('href="/case/case-good/'),
+    );
   });
 });
 

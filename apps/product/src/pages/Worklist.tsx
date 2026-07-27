@@ -29,12 +29,13 @@ const chipStyle: React.CSSProperties = {
 
 function WorklistEntryItem({ entry }: { readonly entry: WorklistEntry }) {
   if (entry.kind === "unreadable") {
-    // Defensive only: the BFF has no per-row error contract yet (slice 5a defines
-    // one there) — an unreadable element becomes an inert row, not a crashed list.
+    // The per-row error contract (slice 5a): the BFF's own refusal words render when
+    // it stated them; the defensive fallback (a malformed element) keeps the honest
+    // could-not-be-read line. Inert either way — a row without facts links nowhere.
     return (
       <li data-role="worklist-unreadable" style={{ opacity: 0.7 }}>
-        Case entry {entry.id ?? `#${entry.index + 1}`} could not be read — it needs
-        attention the BFF cannot describe yet.
+        Case entry {entry.id ?? `#${entry.index + 1}`} could not be read —{" "}
+        {entry.error ?? "it needs attention the BFF cannot describe yet."}
       </li>
     );
   }

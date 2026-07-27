@@ -32,6 +32,13 @@ export interface SiteRollup {
   flagged: number;
 }
 
+/**
+ * A healthy worklist row — every session-derived fact present and `error` null.
+ * The wire shape is a union (see WorklistRowError): the BFF's per-row error contract
+ * (slice 5a) sends `error` with the store's refusal and ALL session-derived fields
+ * null when a case's session could not be read, so one corrupt file never takes the
+ * whole list down. domain/worklist.ts's guard tells the two shapes apart.
+ */
 export interface WorklistRow {
   id: string;
   doctor: string;
@@ -42,6 +49,21 @@ export interface WorklistRow {
   confirmed: boolean;
   detected: boolean;
   choices_complete: boolean;
+  error: null;
+}
+
+/** The contract's other face: identity from discovery + the BFF's stated refusal. */
+export interface WorklistRowError {
+  id: string;
+  doctor: string;
+  jaw: string;
+  suggested_model: string | null;
+  sites: null;
+  run_state: null;
+  confirmed: null;
+  detected: null;
+  choices_complete: null;
+  error: string;
 }
 
 /** One capture check, as the worker's CaptureCheck.to_dict spells it. */
@@ -215,10 +237,10 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<ApiResult
 }
 
 /**
- * The worklist rows arrive as unknowns on purpose: the BFF defines no per-row error
- * contract yet (its worklist endpoint 500s whole if one session file is corrupt — see
- * bff/session.py's loud-refusal posture), so the worklist module guards each row
- * defensively instead of this client asserting a shape it cannot promise per-row.
+ * The worklist rows still arrive as unknowns: the per-row error contract (slice 5a)
+ * makes each element a UNION (WorklistRow | WorklistRowError), and the discrimination
+ * plus the defensive fallback for anything matching neither live in ONE place —
+ * domain/worklist.classifyWorklist — rather than being half-asserted here.
  */
 export async function fetchWorklist(): Promise<ApiResult<readonly unknown[]>> {
   const result = await fetchJson<unknown>("/api/case-sessions");

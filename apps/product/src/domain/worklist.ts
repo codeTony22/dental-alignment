@@ -13,12 +13,13 @@
  *            (plan §4), so it is not open work any more.
  * Within a band, rows sort by case id so the order is deterministic across reloads.
  *
- * ON THE DEFENSIVE GUARD (classifyWorklist): the BFF's WorklistRow defines NO per-row
- * error field today — a corrupt session file makes the whole endpoint refuse loudly
- * (bff/session.py), which the page surfaces as the error banner. The guard here only
- * protects the list against a malformed ELEMENT, rendering it as an inert
- * "unreadable" row instead of crashing every readable one. A real per-row error
- * contract is slice 5a's to define on the BFF — deliberately not invented here.
+ * ON THE GUARD (classifyWorklist): since slice 5a the BFF's per-row error contract is
+ * real — a corrupt session arrives as a row whose `error` carries the store's refusal
+ * and whose session-derived facts are all null (api/client.WorklistRowError). Such a
+ * row becomes an "unreadable" entry WITH the BFF's own words; the defensive fallback
+ * (a malformed element matching neither shape) stays, rendering with `error: null` —
+ * no invented diagnosis — so a half-broken payload still cannot crash the readable
+ * rows beside it.
  *
  * Display logic only (AM-4): every number in a row is the BFF's derivation; this
  * module orders and words them, and computes where a row resumes (domain/flow.ts).
@@ -28,7 +29,13 @@ import { factsFromWorklistRow, furthestStage } from "./flow";
 
 export type WorklistEntry =
   | { readonly kind: "row"; readonly row: WorklistRow }
-  | { readonly kind: "unreadable"; readonly index: number; readonly id: string | null };
+  | {
+      readonly kind: "unreadable";
+      readonly index: number;
+      readonly id: string | null;
+      /** The BFF's stated refusal (the error contract), or null for the fallback. */
+      readonly error: string | null;
+    };
 
 /** Bands 0-3 per the module doc; unreadable entries are handled by orderWorklist. */
 export function worklistBand(row: WorklistRow): 0 | 1 | 2 | 3 {
@@ -90,16 +97,27 @@ const isWorklistRow = (value: unknown): value is WorklistRow => {
   );
 };
 
+/** The error contract's shape: a string `error` beside a legible identity. Checked
+ * BEFORE the healthy-row guard so a row that somehow carried both never renders as
+ * workable — stated trouble outranks claimed facts. */
+const errorOf = (value: unknown): string | null => {
+  if (typeof value !== "object" || value === null) return null;
+  const e = (value as Record<string, unknown>)["error"];
+  return typeof e === "string" ? e : null;
+};
+
 export function classifyWorklist(
   data: readonly unknown[],
 ): readonly WorklistEntry[] {
   return data.map((raw, index): WorklistEntry => {
-    if (isWorklistRow(raw)) return { kind: "row", row: raw };
     const id =
       typeof raw === "object" && raw !== null &&
       typeof (raw as Record<string, unknown>)["id"] === "string"
         ? ((raw as Record<string, unknown>)["id"] as string)
         : null;
-    return { kind: "unreadable", index, id };
+    const error = errorOf(raw);
+    if (error !== null) return { kind: "unreadable", index, id, error };
+    if (isWorklistRow(raw)) return { kind: "row", row: raw };
+    return { kind: "unreadable", index, id, error: null };
   });
 }

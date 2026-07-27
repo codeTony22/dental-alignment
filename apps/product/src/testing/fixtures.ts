@@ -9,6 +9,7 @@ import type {
   DetectionView,
   SiteView,
   WorklistRow,
+  WorklistRowError,
 } from "../api/client";
 
 export function captureAssessment(
@@ -124,6 +125,27 @@ export function worklistRow(overrides: Partial<WorklistRow> = {}): WorklistRow {
     confirmed: false,
     detected: false,
     choices_complete: false,
+    error: null,
+    ...overrides,
+  };
+}
+
+/** The per-row error contract's shape (slice 5a): identity + the BFF's refusal,
+ * every session-derived fact honestly null. */
+export function worklistErrorRow(
+  overrides: Partial<WorklistRowError> = {},
+): WorklistRowError {
+  return {
+    id: "case-corrupt",
+    doctor: "Dr. Rivera",
+    jaw: "lower",
+    suggested_model: null,
+    sites: null,
+    run_state: null,
+    confirmed: null,
+    detected: null,
+    choices_complete: null,
+    error: "corrupt session file session.json — refusing to silently reset flow state",
     ...overrides,
   };
 }
