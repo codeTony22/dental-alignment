@@ -3,13 +3,21 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Landing zone (plan §3/AM-5) for the slice-3 viewer copies: the demo's 3D stack (~11,700 lines / ~35 files — palette, domain/types, librarySelection, meshCache, Viewer3D, sceneController + its characterization test) lands here, consumed ONLY by apps/product. Empty until slice 3, on purpose.",
+  "description": "The demo's 3D viewer stack, copied (plan §3/AM-5, copy-debt ledger row 3): sceneController + Viewer3D, verifyScene + VerifyViewer, and their pure geometry/colour/routing rules with their tests. Consumed ONLY by apps/product; the frozen apps/web keeps its own originals.",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "three": "0.185.1"
   },
   "devDependencies": {
-    "typescript": "5.9.3"
+    "@types/react": "18.3.31",
+    "@types/three": "0.185.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
   }
 }

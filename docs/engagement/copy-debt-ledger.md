@@ -10,7 +10,7 @@ row moves to Retired.
 |---|---|---|---|---|---|---|
 | 1 | Case discovery (case table construction: model-name match, first-STL scan pick, jaw-from-filename, doctor-label rules) | server.py:86-154, 374-386 | case_prep/application/cases.py | 150 | slice 1 (`5c7c4b8`) | demo retirement |
 | 2 | Catalog reads (library groups, constructions, relief ceiling) as refusal-raising functions | server.py endpoint bodies | case_prep/application/catalog.py | 200 | slice 1 (`5c7c4b8`) | demo retirement |
-| 3 | Viewer stack (verifyScene, VerifyViewer, sceneController, partFrame, meshCrop, deviationColormap, siteRouting, anatomyOrientation, palette, domain/types subset, librarySelection, meshCache, Viewer3D) + tests | apps/web/src/viewer + domain | packages/viewer | 11,700 / ~35 files | slice 3 (planned) | demo retirement |
+| 3 | Viewer stack (verifyScene, VerifyViewer, sceneController, partFrame, meshCrop, deviationColormap, siteRouting, anatomyOrientation, palette, scanPositions, Viewer3D) + their 5 test files, plus a 13-line domain/types Vec3 subset | apps/web/src/viewer + domain/types.ts | packages/viewer/src | measured 4,698 / 16 files (as landed 4,771 — divergences below) | slice 3 (this commit; hash backfilled by the slice's C-part commit, rows 1–2 precedent) | demo retirement |
 | 4 | Server-side validation corpus (catalog membership, explicit-selection 422, relief bounds, point caps, ±45°, 15mm, ≤8 pairs, lever arm, diameter bounds) — copied VERBATIM then EXTENDED with coordinate finiteness | server.py request models | bff request models (slices 5a-8) | 300 | planned (AM-9) | demo retirement |
 | 5 | Remaining application lift (explicit-selection gate, capture assembly, adjust-tool judging) | server.py:741-830, 1179-2324 | case_prep/application/* | 850 | slices 5c-6 (planned) | demo retirement |
 
@@ -21,6 +21,26 @@ Rules:
   intentionally departs — e.g. slice 1's frozen dataclass vs the demo's mutable cfg-dict).
 - The conformance check for a slice includes: does the diff touch a copied region without a
   ledger update?
+
+Row 3 record (slice 3, 2026-07-27) — trims and divergences, per the rules above:
+- TRIMS vs the plan's ~11,700 / ~35 estimate: `librarySelection` (domain) and `meshCache`
+  (api) are in that estimate but NO viewer module imports either — verified by grep — so
+  neither was copied (librarySelection semantics arrive with Declare, slice 5a, and get
+  their own row if copied then). `domain/types.ts` (1,008 lines) trimmed to the ONE name
+  the viewer stack imports: `Vec3` (13 lines). The estimate's `VerifyStage`/App wiring was
+  always REBUILD-not-copy (plan AM-5).
+- `scanPositions.scanPositionsFor` now takes the scan URL from the caller (+4 lines): the
+  demo resolved it via its api client's `scanUrlFor`; the package owns no route shape.
+- `sceneController`: pure helpers extracted and EXPORTED for the characterization test
+  (+69 lines): `fitPaddingFor`, `fitDistanceMm`, `clipPlanesFor`, `featureMarkerRadiusMm`,
+  `anyPointerToolActive`, `anatomyViewOrientation`, plus `percentile` and
+  `SITE_FIT_PADDING` made public. Formulas verbatim, class methods now call them —
+  behavior-preserving, verified by side-by-side read; the copied WebGL surfaces stay
+  browser-only and are documented (not mocked) in sceneController.characterization.test.ts.
+- `src/env.d.ts` (new, 15 lines) declares the one `import.meta.env` field the kept
+  dev-registry guards read; apps/web got it from vite/client.
+- NOT debt: the demo's ViewOrientationBar subject toggle was REIMPLEMENTED in
+  apps/product/src/components/MainStage.tsx (~40 lines of product chrome), not copied.
 
 Carried-forward minors (grill of slices 0b/1, 2026-07-26):
 - Tie `bff/session.py` RunSession.state to `ports/worker.py` JobState (one test or derive the
