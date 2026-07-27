@@ -19,6 +19,8 @@ session fields from a request body — see test_case_sessions for the route-shap
 """
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from bff.session import (CaseSession, RunSession, SessionConflict, SessionStore,
@@ -139,3 +141,48 @@ class TestCompareAndSwap:
         store.save(a)
         store.save(b)   # a's bump must not poison b's save
         assert store.load("case-b").version == 1
+
+
+class TestConcurrentWriters:
+    """The CAS under REAL concurrency (5a fix, from the 5a verification finding):
+    FastAPI runs sync handlers on a threadpool, so two same-case saves genuinely
+    overlap even in the one-uvicorn-worker deployment. Unlocked, both writers passed
+    the version check at the same loaded version (a silent lost update, every time)
+    and raced each other onto ONE shared tmp filename (``FileNotFoundError`` → 500,
+    ~60% of pairs). The check-then-write pair must be atomic across threads: exactly
+    one rival lands, the other is TOLD it lost."""
+
+    def test_rival_saves_of_the_same_version_yield_exactly_one_conflict(self, tmp_path):
+        store = SessionStore(tmp_path)
+        store.save(store.load("case-a"))
+        # repeat: the broken interleaving is scheduler-dependent, so one pair could
+        # get lucky; ten pairs releasing from a barrier reliably overlap
+        for round_no in range(10):
+            first = store.load("case-a")
+            second = store.load("case-a")   # both writers hold the same version
+            first.adjust_visited = True
+            second.sites[str(round_no)] = SiteSession()
+            barrier = threading.Barrier(2)
+            outcomes: list = []
+
+            def attempt(target):
+                barrier.wait()
+                try:
+                    store.save(target)
+                    outcomes.append("landed")
+                except SessionConflict:
+                    outcomes.append("conflict")
+
+            threads = [threading.Thread(target=attempt, args=(s,))
+                       for s in (first, second)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            # exactly one write lands and exactly one is told it lost — never two
+            # silent 'landed' (a clobber), never an escaped tmp-file error (a 500)
+            assert sorted(outcomes) == ["conflict", "landed"], (
+                f"round {round_no}: outcomes {outcomes}")
+            # and the disk moved exactly one version per round — the lost-update
+            # signature is a version that advanced once for two claimed landings
+            assert store.load("case-a").version == 2 + round_no

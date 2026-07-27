@@ -24,12 +24,17 @@ caller loaded — the durable answer to the lost-update race slice 4's detect ro
 dodged by hand (commit 1c4af60 named this store change as slice 5's obligation). With
 choices, system and per-site declarations all writing the same document, "last save
 wins" would silently discard operator acts — the write-write cousin of the client
-claims AM-4 forbids. Handlers retry once on a fresh load, then surface a 409.
+claims AM-4 forbids. Handlers retry once on a fresh load, then surface a 409. The
+check-then-write pair holds under an in-process lock (5a fix): FastAPI runs sync
+handlers on a threadpool, so rival saves genuinely overlap even with one uvicorn
+worker — cross-PROCESS CAS remains the SQLite/phase-2 story (plan §3).
 """
 from __future__ import annotations
 
 import enum
 import os
+import threading
+import uuid
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
@@ -156,6 +161,12 @@ class SessionStore:
 
     def __init__(self, root: Path):
         self.root = Path(root)
+        # save()'s check-then-write must be atomic across THREADS: sync handlers run
+        # on FastAPI's threadpool, so two same-case writes overlap even in the
+        # one-uvicorn-worker deployment (the 5a verification watched both rivals pass
+        # the version check unlocked — a silent lost update, every pair). One lock per
+        # store: saves are millisecond file writes, per-case locks are not worth it.
+        self._lock = threading.Lock()
 
     def _path(self, case_id: str) -> Path:
         # the id becomes a path segment — refuse anything that could leave the root
@@ -179,19 +190,32 @@ class SessionStore:
         """Compare-and-swap: refuse when the disk's version is not the one this
         object was loaded at (``SessionConflict`` carries both), else bump and write.
         The bump lands on the caller's object too, so a handler may keep mutating and
-        save again without a wasted re-load. The check-then-write pair is not atomic
-        across PROCESSES — one uvicorn worker is the deployment (plan §3) and the
-        in-process interleavings (a slow detect vs. a quick declaration) are the race
-        that actually bit in slice 4; cross-process CAS is the SQLite/phase-2 story."""
+        save again without a wasted re-load.
+
+        The pair runs under the store's lock because it must be atomic across
+        THREADS, not just uninterrupted by luck: one uvicorn worker still runs sync
+        handlers on a threadpool, and unlocked, two rivals both passed the version
+        check at the same loaded version (a silent lost update) while racing onto one
+        shared tmp filename (``FileNotFoundError`` → 500) — the 5a verification's
+        finding. The tmp name is unique per save as well, so even a SECOND process —
+        outside this lock's reach — can at worst lose the CAS race, never crash a
+        rival's replace mid-flight; true cross-process CAS is the SQLite/phase-2
+        story (plan §3)."""
         path = self._path(session.case_id)
-        current = self.load(session.case_id)   # version 0 when nothing exists yet
-        if current.version != session.version:
-            raise SessionConflict(session.case_id, session.version, current.version)
-        session.version += 1
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(session.model_dump_json(indent=2))
-        os.replace(tmp, path)
+        with self._lock:
+            current = self.load(session.case_id)   # version 0 when nothing exists yet
+            if current.version != session.version:
+                raise SessionConflict(session.case_id, session.version, current.version)
+            session.version += 1
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+            try:
+                tmp.write_text(session.model_dump_json(indent=2))
+                os.replace(tmp, path)
+            finally:
+                # a failed write may leave its uniquely-named tmp behind — remove it
+                # so the "nothing beside session.json" promise survives the failure
+                tmp.unlink(missing_ok=True)
 
     def rehydrate(self) -> Dict[str, CaseSession]:
         """Every persisted session, parsed — called at startup so a corrupt file fails

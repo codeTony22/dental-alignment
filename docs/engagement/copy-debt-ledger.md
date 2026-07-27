@@ -78,11 +78,21 @@ conformance check knows the resemblance is deliberate): the BFF's
 `PUT /api/case-sessions/{id}/system` reimplements the demo's system-switch semantics
 SERVER-side — switching the model drops every site's chosen variant and (in the
 product's ladder) regresses its status to `detected`; a same-model PUT changes
-nothing. Reference rule: apps/web/src/domain/librarySelection.ts:96-103
-(`clearAllReviews` + `withModel`, including its equality guard). No TypeScript was
-copied: the state lives in the case session now and the client only displays what the
-BFF returns (plan AM-4/AM-8); the transition itself runs through `bff/status.py`.
-Retires with the demo, alongside row 3.
+nothing. Reference rule: apps/web/src/domain/librarySelection.ts:96-108
+(`clearAllReviews` + `withModel` — the equality guard AND the reset lines that are
+the ported semantics). No TypeScript was copied: the state lives in the case session
+now and the client only displays what the BFF returns (plan AM-4/AM-8); the
+transition itself runs through `bff/status.py`. Retires with the demo, alongside
+row 3.
+Extension (5a fix, 2026-07-27): the demo's COMPANION rule — a construction, jaw or
+relief change clears EVERY site's review, because "they all describe the same shipped
+part" (librarySelection.ts:10-16; `withConstruction`/`withJaw`/`withOffsetInput`,
+111-138) — is deliberately NOT yet ported: no server-side review exists until 5b's
+`review_ready`. Its server home is NAMED at the boundary (`put_choices`' docstring in
+`bff/resources/case_sessions.py`): 5b clears later-ladder facts there, the third
+reset trigger beside the declaration (per-site) and the system switch (case-wide);
+the half decidable today — declared variants SURVIVE a choices change — is pinned by
+test. Ports (and moves into this row's record) when 5b lands it.
 
 Row 6 record (slice 4, 2026-07-27) — divergences, per the rules above:
 - The demo's THREE cache layers are deliberately NOT copied (per-process cfg dict,

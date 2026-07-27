@@ -11,6 +11,8 @@ field slipped into a legitimate write) cannot arrive unnoticed.
 """
 from __future__ import annotations
 
+import threading
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -35,6 +37,27 @@ class InterferingStore(SessionStore):
             self.interferences -= 1
             rival = SessionStore(self.root).load(case_id)
             rival.adjust_visited = True  # a server-side fact, same door the flow uses
+            SessionStore(self.root).save(rival)
+        return session
+
+
+class SystemSwitchingStore(SessionStore):
+    """A store whose FIRST ``load`` is immediately followed by a rival system SWITCH —
+    the dangling-variant race from the 5a verification: a declaration judged against
+    the pre-switch system must be re-judged against the switched document, never
+    landed on it with a 200."""
+
+    def __init__(self, root, model: str):
+        super().__init__(root)
+        self.model = model
+        self.fired = False
+
+    def load(self, case_id):
+        session = super().load(case_id)
+        if not self.fired:
+            self.fired = True
+            rival = SessionStore(self.root).load(case_id)
+            rival.system = self.model   # what PUT /system persists (no sites declared yet)
             SessionStore(self.root).save(rival)
         return session
 from case_prep.application.detection import (DetectedSite, DetectionResult,
@@ -321,6 +344,22 @@ class TestChoices:
         assert body["choices"]["jaw"] == "lower"
         assert body["choices"]["construction_path"] is None
         assert body["choices"]["complete"] is False
+
+    def test_a_choices_change_keeps_declarations_standing(self, settings):
+        # the demo's review-reset rule (librarySelection.ts:10-16): construction, jaw
+        # and relief describe the same shipped part, so changing any clears every
+        # site's REVIEW — but never its declared variant (withConstruction/withJaw/
+        # withOffsetInput touch `reviewed` only). No server-side review exists until
+        # 5b's review_ready; the half decidable TODAY is pinned here, beside the
+        # boundary where put_choices names 5b's obligation to clear the other half.
+        client = TestClient(create_app(settings))
+        client.put("/api/case-sessions/neodent-gm/sites/4/declaration",
+                   json={"variant": "5020"})
+        body = client.put("/api/case-sessions/neodent-gm/choices",
+                          json={"jaw": "lower"}).json()
+        sites = {v["tooth"]: v for v in body["sites"]}
+        assert sites[4]["status"] == "declared"
+        assert sites[4]["declared_variant"] == "5020"
 
     def test_an_unknown_construction_part_is_refused_by_catalog_membership(self, client):
         res = client.put("/api/case-sessions/neodent-gm/choices",
@@ -611,6 +650,67 @@ class TestWriteConflicts:
         assert "neodent-gm" in detail
         # the refused write left nothing of itself behind
         assert SessionStore(settings.product_root).load("neodent-gm").choices.jaw is None
+
+    def test_two_truly_concurrent_mutations_both_land(self, settings):
+        # the 5a verification's failing interleave: two handler writes overlapping on
+        # the threadpool. A barrier holds both writers on a fresh load until BOTH have
+        # mutated, forcing the save-save overlap every round: one must land directly,
+        # the other through the CAS retry — no silent loss, no escaped tmp-file error.
+        store = SessionStore(settings.product_root)
+        for round_no in range(5):
+            case_id = f"case-{round_no}"
+            barrier = threading.Barrier(2)
+
+            def mutate_for(tooth: str):
+                first_attempt = [True]
+
+                def mutate(session):
+                    session.sites[tooth] = SiteSession(status=SiteStatus.DECLARED,
+                                                       declared_variant="5020")
+                    if first_attempt[0]:       # the retry re-applies without waiting
+                        first_attempt[0] = False
+                        barrier.wait(timeout=5)
+                return mutate
+
+            errors: list = []
+
+            def run(tooth: str):
+                try:
+                    case_sessions._mutate_session(store, case_id, mutate_for(tooth))
+                except Exception as exc:   # noqa: BLE001 — any escape is the finding
+                    errors.append(exc)
+
+            threads = [threading.Thread(target=run, args=(t,)) for t in ("4", "13")]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            assert errors == [], f"round {round_no}: {errors}"
+            persisted = SessionStore(settings.product_root).load(case_id)
+            assert set(persisted.sites) == {"4", "13"}, (
+                f"round {round_no}: a write was silently lost — {set(persisted.sites)}")
+            assert persisted.version == 2   # two landings, one bump each
+
+    def test_a_rival_system_switch_forces_the_declaration_to_revalidate(self, settings):
+        # the dangling-variant race (5a adversarial review, item 3): the declaration's
+        # validity depends on SESSION state (the effective system), so a rival switch
+        # landing between its load and its save must force a re-judgment — the retry
+        # re-validates against the fresh document instead of re-applying a verdict
+        # reached against the old one. A neodent part must never land on an astra
+        # case with a 200.
+        caps = settings.data_root / "library/caps/astra-ev"
+        caps.mkdir(parents=True)
+        (caps / "astra-ev-3010.stl").touch()
+        client = TestClient(create_app(settings))
+        client.app.state.sessions = SystemSwitchingStore(settings.product_root,
+                                                         "astra-ev")
+        res = client.put("/api/case-sessions/neodent-gm/sites/4/declaration",
+                         json={"variant": "5020"})   # a neodent-gm part
+        assert res.status_code == 422
+        assert "not a part of the 'astra-ev' library" in res.json()["detail"]
+        persisted = SessionStore(settings.product_root).load("neodent-gm")
+        assert persisted.system == "astra-ev"        # the rival's act survived
+        assert not any(s.declared_variant for s in persisted.sites.values())
 
 
 class TestWorklistRowErrors:

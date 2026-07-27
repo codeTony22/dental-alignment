@@ -418,7 +418,12 @@ def _mutate_session(store: SessionStore, case_id: str,
     quick declaration lands) and re-applying the mutation to the fresh document loses
     neither act; losing TWICE means the case is genuinely contended, and the honest
     move is to tell the operator what happened rather than keep fighting a race on
-    their behalf. The 409 carries the store's own words — what changed underneath."""
+    their behalf. The 409 carries the store's own words — what changed underneath.
+
+    ``mutate`` may refuse (raise): a refusal on ANY attempt propagates before the
+    save, so validation whose verdict depends on session state belongs INSIDE it —
+    the retry then re-judges against the fresh document instead of re-applying a
+    stale verdict (the declaration route's rule; the 5a dangling-variant race)."""
     last: Optional[SessionConflict] = None
     for _ in range(2):
         session = store.load(case_id)
@@ -530,6 +535,18 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
     UI always submits its full current panel). Construction membership is checked here
     against the catalog (never a path join); jaw and relief were already refused by the
     request model in the demo's own words.
+
+    THE REVIEW-RESET RULE, named now for 5b (the demo's rule #1, librarySelection.ts:
+    10-16: a review is about a SPECIFIC part, and construction, jaw and relief "all
+    describe the same shipped part" — so ``withConstruction``/``withJaw``/
+    ``withOffsetInput`` each clear EVERY site's review): when 5b introduces previews
+    and review ticks, a CHANGE to any of these three choices must clear every site's
+    later-ladder facts HERE — the third reset trigger, beside the declaration
+    (per-site) and the system switch (case-wide). Declared VARIANTS survive a choices
+    change, exactly as in the demo (those transitions touch ``reviewed`` only) —
+    pinned by test. Nothing to clear exists today (no HTTP path reaches past
+    declared), but the rule lives at this boundary NOW so 5b extends it instead of
+    re-opening the acknowledgment bypass the demo closed on 2026-07-25.
     """
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
@@ -602,26 +619,34 @@ def put_declaration(case_id: str, tooth: int, body: DeclarationIn,
     until 5b's previews and review ticks), but the rule lives here NOW so later
     slices clear their facts at this stated boundary instead of rediscovering it.
     A re-declaration of the SAME variant changes nothing at all. Retry-or-409: the
-    transition re-derives from each fresh load; a second conflict is the 409.
+    validation AND the transition re-derive from each fresh load; a second conflict
+    is the 409.
     """
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
-    session = store.load(case_id)
-    known_teeth = ({int(s["tooth"]) for s in case.suggested_sites}
-                   | {int(k) for k in session.sites})
-    if tooth not in known_teeth:
-        raise HTTPException(404, f"tooth {tooth} is not a site on case {case_id!r}")
-    model = _effective_model(case, session)
-    if model is None:
-        raise HTTPException(422, f"case {case_id!r} has no implant system yet — "
-                                 f"declare the implant system before declaring "
-                                 f"variants")
-    try:
-        require_variant(settings.data_root, model, body.variant)
-    except UnknownSelection as exc:
-        raise HTTPException(422, str(exc))
 
     def apply(session: CaseSession) -> None:
+        # The validation lives INSIDE the mutation — deliberately, because this is
+        # the one route whose validity depends on SESSION state (the effective
+        # system). Judged against a separate pre-load, a rival system switch landing
+        # between that load and the CAS save let a foreign variant onto the switched
+        # document with a 200 (the 5a adversarial review's dangling-variant race):
+        # the retry must re-JUDGE against what is actually there, not re-apply a
+        # verdict reached against what used to be. A refusal raised here propagates
+        # before any save — asking still creates nothing.
+        known_teeth = ({int(s["tooth"]) for s in case.suggested_sites}
+                       | {int(k) for k in session.sites})
+        if tooth not in known_teeth:
+            raise HTTPException(404, f"tooth {tooth} is not a site on case {case_id!r}")
+        model = _effective_model(case, session)
+        if model is None:
+            raise HTTPException(422, f"case {case_id!r} has no implant system yet — "
+                                     f"declare the implant system before declaring "
+                                     f"variants")
+        try:
+            require_variant(settings.data_root, model, body.variant)
+        except UnknownSelection as exc:
+            raise HTTPException(422, str(exc))
         site = session.sites.get(str(tooth), SiteSession())
         if site.declared_variant != body.variant:
             site.status = status.declare(site.status)
