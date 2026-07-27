@@ -5,22 +5,48 @@
       "name": "demo-api",
       "cwd": "apps/worker",
       "runtimeExecutable": ".venv/bin/uvicorn",
-      "runtimeArgs": ["case_prep.server:app", "--port", "8000", "--app-dir", "src"],
+      "runtimeArgs": [
+        "case_prep.server:app",
+        "--port",
+        "8000",
+        "--app-dir",
+        "src"
+      ],
       "port": 8000
     },
     {
       "name": "demo-web",
       "cwd": "apps/web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev"],
+      "runtimeArgs": [
+        "dev"
+      ],
       "port": 5173
     },
     {
       "name": "demo-web-alt",
       "cwd": "apps/web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev", "--port", "5273", "--strictPort"],
+      "runtimeArgs": [
+        "dev",
+        "--port",
+        "5273",
+        "--strictPort"
+      ],
       "port": 5273
+    },
+    {
+      "name": "bff",
+      "cwd": "apps/bff",
+      "runtimeExecutable": "../worker/.venv/bin/uvicorn",
+      "runtimeArgs": [
+        "bff.main:app",
+        "--port",
+        "8001",
+        "--app-dir",
+        "src"
+      ],
+      "port": 8001
     }
   ]
 }

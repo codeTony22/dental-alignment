@@ -1,0 +1,26 @@
+[project]
+name = "bff"
+version = "0.1.0"
+description = "Presentation-shaped API for the product app: aggregation, session state, disclosure edge. Owns NO physics."
+requires-python = ">=3.9"
+# fastapi/uvicorn/pydantic already live in the worker venv this installs into (apps/worker/.venv
+# is the ONE local environment — see docs/engagement/product-app-plan.md §3); they are declared
+# so a future standalone install is honest about what it needs.
+dependencies = [
+    "fastapi>=0.100",
+    "pydantic>=2.0",
+    "case-prep",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "httpx>=0.24"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
