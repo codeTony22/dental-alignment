@@ -1,0 +1,3967 @@
+:root {
+  --color-bg: #ffffff;
+  --color-header-bg: #0e1613;
+  --color-brand-green: #2fd070;
+  --color-accent-green: #12994a;
+  --color-accent-green-dark: #0a6d2e;
+  --color-amber: #b8860b;
+  --color-amber-bg: #fdf3dd;
+  --color-amber-border: #e4c876;
+  --color-border: #e3e3e8;
+  --color-text: #1a1f1c;
+  --color-text-muted: #5c655f;
+  --color-danger: #c0392b;
+  --color-mark-rim: #2f7fe6;
+  --color-mark-rim-dark: #144a8c;
+  /* Multi-point rim-BORDER dots — deliberately distinct from the legacy single rim mark above
+     (see palette.ts's marker-color doc): teal/cyan, matching the scene sphere color exactly. */
+  --color-mark-rim-points: #17b6a8;
+  --color-mark-rim-points-dark: #0c6259;
+  --color-scan-bg: #141a17;
+  --radius-lg: 12px;
+  --radius-md: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* THE SHELL IS THE VIEWPORT (client, 2026-07-26: "the whole demo panel is too small"). The page
+   itself never scrolls: the work column and the results drawer scroll inside their own regions,
+   so the 3D stage keeps a stable, maximal height at every step instead of being pushed down the
+   page by whichever panels happen to be open. */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  /* THE CLIP ONLY BINDS IF THE SHELL IS A CONTAINING BLOCK (verifier, 2026-07-26). `overflow:
+     hidden` does NOT clip an absolutely-positioned descendant whose containing block is an
+     ANCESTOR of the clipper — and every `.sr-only` label is `position: absolute`. On a static
+     shell those 1px labels resolve against the initial containing block, so the ones sitting
+     inside the scrolled-away part of the work column extended the DOCUMENT's scrollable height
+     (measured 1161px at 1280x800) and the whole 100vh shell could be dragged off screen —
+     exactly the "page grows, the 3D gets pushed down" the workbench exists to end. `position:
+     relative` makes the shell their containing block, so the clip binds: document scroll height
+     back to 800, max scroll 0. */
+  position: relative;
+}
+
+/* Header */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-header-bg);
+  color: #ffffff;
+  padding: 14px 28px;
+}
+
+.app-header__brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.app-header__wordmark {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+}
+
+.app-header__wordmark-a {
+  color: var(--color-brand-green);
+}
+
+.app-header__sublabel {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: #a9b3ae;
+  font-weight: 600;
+}
+
+.app-header__context {
+  font-size: 14px;
+  color: #d7ddd9;
+  font-weight: 500;
+}
+
+.app-header__right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+/* The always-visible Library toggle (client ask 2026-07-23): ghost-on-dark so it belongs to
+   the header, green-lit while the browser panel is open. */
+.app-header__library-button {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 7px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.app-header__library-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.app-header__library-button--active {
+  border-color: var(--color-brand-green);
+  color: var(--color-brand-green);
+  background: rgba(47, 208, 112, 0.12);
+}
+
+/* ==========================================================================================
+   THE WORKBENCH (client, 2026-07-26). The old shell put the case grid, every step panel and a
+   fixed 480px viewer in two columns and let the page grow: the 3D — the thing the operator is
+   actually judging — got a corner, and the panels got everything else.
+
+   Three regions now, left to right: a compact RAIL (the client's stages — four since the
+   2026-07-26 one-flow collapse folded Library selection into Mark & declare), a narrow WORK
+   column carrying only the active stage's panel, and the STAGE, which takes every remaining
+   pixel in both directions. Each region owns its own overflow.
+   ========================================================================================== */
+.workbench {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 208px minmax(320px, 400px) minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px 20px;
+}
+
+.workbench__work {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 4px;
+}
+
+.workbench__stage {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The viewer takes the height the drawer is not using — never a fixed 480px again. */
+.workbench__stage .viewer3d-wrap {
+  flex: 1 1 auto;
+  min-height: 240px;
+}
+
+.workbench__stage .viewer3d {
+  height: 100%;
+}
+
+/* Panels */
+.panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  background: #ffffff;
+}
+
+.panel__title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-text);
+}
+
+/* Case id suffix on the Step 4 heading ("Step 4 · Run automation — 276794487-zimmer-4.5") — the
+   client reports metrics per run and needs the case number visible right there, de-emphasized
+   relative to the step title itself. */
+.panel__title-case {
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.panel__copy {
+  margin: 0 0 14px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.panel__hint {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  margin: 10px 0 0;
+}
+
+.panel__hint--recompute {
+  color: var(--color-accent-green-dark);
+  font-weight: 600;
+}
+
+.panel__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  background: #fdecea;
+  border: 1px solid #f2b8b0;
+  border-radius: var(--radius-md);
+  color: var(--color-danger);
+  font-size: 13px;
+}
+
+.panel__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.panel__actions--advance {
+  justify-content: flex-end;
+}
+
+/* Buttons */
+.button {
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  padding: 10px 18px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button--primary {
+  background: var(--color-accent-green);
+  color: #ffffff;
+}
+
+.button--primary:hover:not(:disabled) {
+  background: var(--color-accent-green-dark);
+}
+
+.button--ghost {
+  background: transparent;
+  color: var(--color-accent-green-dark);
+  border-color: var(--color-accent-green);
+}
+
+.button--ghost:hover:not(:disabled) {
+  background: #eafaf0;
+}
+
+.button--secondary {
+  background: #f4f6f5;
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.button--secondary:hover:not(:disabled) {
+  background: #e9ece9;
+}
+
+.button--active {
+  border-color: var(--color-accent-green);
+  color: var(--color-accent-green-dark);
+  background: #eafaf0;
+}
+
+.button--small {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+/* Case cards */
+.case-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.case-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: left;
+  padding: 18px;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: #fafbfa;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.case-card:hover {
+  border-color: var(--color-accent-green);
+}
+
+.case-card--selected {
+  border-color: var(--color-accent-green);
+  background: #eafaf0;
+}
+
+.case-card__doctor {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.case-card__jaw {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #e6f4ea;
+  color: var(--color-accent-green-dark);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chip--gate {
+  background: #eceef1;
+  color: #4a4f57;
+  letter-spacing: 0.04em;
+}
+
+.chip--seed-brush {
+  background: #e6f9ee;
+  color: var(--color-accent-green-dark);
+}
+
+.chip--seed-click {
+  background: #eceef1;
+  color: #4a4f57;
+}
+
+.chip--seed-marks {
+  background: #fdecea;
+  color: var(--color-danger);
+}
+
+.chip--patch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #e6f9ee;
+  color: var(--color-accent-green-dark);
+  border: 1px solid #b7ecce;
+}
+
+.chip--mark-center {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fdecea;
+  color: var(--color-danger);
+  border: 1px solid #f2b8b0;
+}
+
+/* LEGACY single rim mark chip only ("◐ set" — curated prefills with no rimPoints). Blue,
+   matching the legacy sphere's own color. */
+.chip--mark-rim {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #e9f1fd;
+  color: var(--color-mark-rim-dark);
+  border: 1px solid #b7d3f7;
+}
+
+/* Multi-point rim-BORDER chip ("◐ N pts") — teal/cyan, matching the border-dot spheres and
+   deliberately distinct from .chip--mark-rim's blue (see palette.ts's marker-color doc: the two
+   were indistinguishable on screen before this, actively misleading once a row had both). */
+.chip--mark-rim-points {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #e3f7f5;
+  color: var(--color-mark-rim-points-dark);
+  border: 1px solid #9fe0d9;
+}
+
+/* Fewer than RECOMMENDED_MIN_RIM_POINTS rim-border clicks — a nudge, not a block: the backend
+   still accepts it (behaves like the legacy single rim mark), but a robust circle fit wants 3+. */
+.chip--mark-rim-low {
+  background: var(--color-amber-bg);
+  color: var(--color-amber);
+  border: 1px solid var(--color-amber-border);
+}
+
+.chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.75;
+}
+
+.chip__remove:hover {
+  opacity: 1;
+}
+
+/* Guidance-gate level chips (Gate column + GuidancePanel headers) */
+.chip--gate-ready {
+  background: #e6f9ee;
+  color: var(--color-accent-green-dark);
+  border: 1px solid #b7ecce;
+}
+
+.chip--gate-attention {
+  background: var(--color-amber-bg);
+  color: var(--color-amber);
+  border: 1px solid var(--color-amber-border);
+}
+
+.chip--gate-action {
+  background: #fdecea;
+  color: var(--color-danger);
+  border: 1px solid #f2b8b0;
+}
+
+/* Gate cell stacks the readiness chip over the pose-confidence chip */
+.results-table__gate-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+/* Pose-stability confidence chips: green (high) / amber (medium) / red (low) */
+.chip--confidence {
+  font-size: 11px;
+}
+.chip--confidence-high {
+  background: #e6f4ea;
+  color: var(--color-accent-green-dark);
+  border: 1px solid #9ed7b0;
+}
+.chip--confidence-medium {
+  background: var(--color-amber-bg);
+  color: var(--color-amber);
+  border: 1px solid var(--color-amber-border);
+}
+.chip--confidence-low {
+  background: #fdecea;
+  color: var(--color-danger);
+  border: 1px solid #f2b8b0;
+}
+
+/* Seat mini-chip */
+.chip--seat {
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+
+.chip--seat-rim {
+  background: #ffffff;
+  color: var(--color-accent-green-dark);
+  border: 1px solid var(--color-accent-green);
+}
+
+.chip--seat-icp {
+  background: #eceef1;
+  color: #4a4f57;
+  border: 1px solid var(--color-border);
+}
+
+/* Agreement column: "auto" (no declaration) muted chip */
+.chip--agreement-auto {
+  background: #eceef1;
+  color: var(--color-text-muted);
+  letter-spacing: 0.02em;
+}
+
+/* Busy state */
+.busy-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: #f4f6f5;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.busy-state__spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent-green);
+  animation: spin 0.8s linear infinite;
+  flex: 0 0 auto;
+}
+
+.busy-state__elapsed {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Capture-gate chips (intake advisory, steps 2-3): pass green / marginal amber / RESCAN red —
+   the same traffic-light language as the gate & confidence chips. RESCAN is deliberately loud
+   (uppercase in the label, red) — the one state where continuing wastes the operator's marks. */
+.chip--capture-pass {
+  background: #e6f9ee;
+  color: var(--color-accent-green-dark);
+  border: 1px solid #b7ecce;
+}
+.chip--capture-marginal {
+  background: var(--color-amber-bg);
+  color: var(--color-amber);
+  border: 1px solid var(--color-amber-border);
+}
+.chip--capture-rescan {
+  background: #fdecea;
+  color: var(--color-danger);
+  border: 1px solid #f2b8b0;
+}
+
+/* Capture-gate RESCAN banner: red (a refused capture, not merely stale results) — shown in
+   steps 2-3 BEFORE the operator invests marks, with the concrete recapture instructions. */
+.capture-banner {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: #fdecea;
+  border: 1px solid #f2b8b0;
+  border-radius: var(--radius-md);
+}
+
+.capture-banner__title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-danger);
+}
+
+.capture-banner__list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.capture-banner__item {
+  font-size: 12.5px;
+  color: #7a2e28;
+  margin-top: 2px;
+}
+
+/* Confirm-table placeholder while no capture assessment exists near a row's centre yet. */
+.confirm-table__capture-none {
+  color: #9aa0a8;
+}
+
+/* Stale-results banner: the doctor edited marks (centre and/or rim points) after the last run —
+   results below are for the PREVIOUS marks until an explicit Recompute. Amber, matching the
+   codebase's existing "needs attention, not an error" language (chip--gate-attention etc.). */
+.stale-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--color-amber-bg);
+  border: 1px solid var(--color-amber-border);
+  border-radius: var(--radius-md);
+}
+
+.stale-banner__text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-amber);
+}
+
+/* Why Recompute is down: the run gate's own blocker list (usually an outstanding library review),
+   printed beside the button rather than hidden in its title — same sentence RunActions shows. */
+.stale-banner__blocked {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* Dims the results block (table + guidance + flags + viewer controls + package files) while its
+   contents are for marks that no longer match what's on screen — paired with .stale-banner above
+   so the "this is old" signal is unmistakable both above AND on the stale content itself. */
+.results-block {
+  margin-top: 14px;
+  transition: opacity 0.15s ease;
+}
+
+.results-block--stale {
+  opacity: 0.55;
+}
+
+.results-block__report-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.results-block__report-row .panel__hint {
+  margin: 0;
+}
+
+/* Proposal list */
+.proposal-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.proposal-list__item {
+  font-size: 13px;
+  padding: 8px 12px;
+  background: #fff8ee;
+  border: 1px solid #f0dfb8;
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+}
+
+/* Confirm table */
+.confirm-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+
+.confirm-table th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.confirm-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.confirm-table__input {
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  width: 100%;
+}
+
+.confirm-table__input--tooth {
+  max-width: 90px;
+}
+
+.confirm-table__input:focus {
+  outline: 2px solid var(--color-accent-green);
+  outline-offset: 1px;
+}
+
+.confirm-table__input--error {
+  border-color: var(--color-danger);
+  background: #fdecea;
+}
+
+/* A cap-variant picker still on the "declare" prompt: amber, so the required declaration
+   reads as an unfinished step rather than a silent default. */
+.confirm-table__input--needs-declare {
+  border-color: #e0a53d;
+  background: #fff7e8;
+}
+
+.confirm-table__check {
+  color: var(--color-accent-green-dark);
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.confirm-table__patch-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.confirm-table__variant-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.confirm-table__variant-cell .confirm-table__input--variant {
+  width: auto;
+  min-width: 200px;
+}
+
+/* Selected variant's Ø × height, always visible next to "view part" — the operator sees the
+   chosen part's dimensions without opening the dropdown (client ask 2026-07-23). */
+.confirm-table__dims {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* Brush banner (shown in the confirm table while painting a site's cap) */
+.brush-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  background: #eafaf0;
+  border: 1px solid var(--color-accent-green);
+  border-radius: var(--radius-md);
+}
+
+.brush-banner__text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-accent-green-dark);
+}
+
+.brush-banner__actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Results table */
+/* The scroll wrapper owns the horizontal overflow (13 columns > main-column width on most
+   screens; a table never shrinks below min-content, so without this it painted across the
+   layout gap into the 3D viewer). The bottom margin lives here so the scrollbar hugs the
+   table instead of floating 16px above the next block. */
+.results-table-scroll {
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.results-table th,
+.results-table td {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.results-table th {
+  background: #f7f8f7;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.results-table__candidates {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* Secondary line in the "Rim seat (mm)" cell — the cap's-own-footprint alignment number shown
+   alongside the primary p90 rim-agreement distance (see RimSeatCell). Same muted-caption
+   treatment as .results-table__candidates above, kept as its own class since the two cells'
+   values are unrelated (variant candidates vs. alignment percentage). */
+.results-table__cap-surface {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* THE ROTATION COLUMN — a VERDICT (2026-07-26). What the coded-cutout reader MEASURED, and one
+   button that opens the 3D. The steps that used to live here moved onto the union pane, where
+   what they do is visible; see .rotation-dial. The needs-review variant borrows the amber
+   "needs attention, not an error" language (chip--gate-attention). */
+.rotation-verdict {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.rotation-verdict__residual {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rotation-verdict__residual--review {
+  color: var(--color-amber);
+}
+
+/* Says WHO decided the number — the whole point of the column after the client read a stepper
+   here as "there is barely any automation". */
+.rotation-verdict__source,
+.rotation-verdict__cumulative {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* THE ROTATION DIAL, floated on the union pane's 3D. Compact by construction: it shares the
+   glass with the layer controls and the colorbar, and it is only on screen for a site that has
+   a shipped seat to rotate. */
+.rotation-dial {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.rotation-dial__head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px 6px;
+}
+
+.rotation-dial__label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.rotation-dial__residual {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rotation-dial__residual--review {
+  color: var(--color-amber);
+}
+
+.rotation-dial__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 3px;
+}
+
+.rotation-dial__buttons .button--small {
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+.rotation-dial__cumulative {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* Align-to-marked-trench: the armed "click the trench" instruction borrows the amber
+   attention language (an action is pending on the 3D scan); the applied outcome line
+   ("rotated +38.0° — code feature on your mark") uses the muted-caption treatment. */
+.rotation-nudge__mark-hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-amber);
+}
+
+.rotation-nudge__mark-notice {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  max-width: 220px;
+}
+
+/* MANUAL BEST FIT (the client's register/best-fit panel) — sits under the rotation controls in
+   the same cell, so every manual correction for a row is in one column. */
+.best-fit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #fbfbfc;
+  max-width: 260px;
+}
+
+.best-fit__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.best-fit__label {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.best-fit__slider {
+  flex: 1;
+  min-width: 70px;
+}
+
+.best-fit__value {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.best-fit__apply {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.best-fit__hint,
+.best-fit__notice {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.best-fit__notice {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.best-fit__unavailable {
+  font-size: 11px;
+}
+
+/* The "already optimal" outcome (client ask 2026-07-26): a PASS, so it wears the
+   confirmatory green — deliberately NOT .panel__error's danger red, which made the
+   server's own "nothing to correct" read as a failure. */
+.best-fit__confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+
+.best-fit__confirm-message {
+  font-weight: 600;
+  color: var(--color-accent-green-dark);
+}
+
+.agreement {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.agreement--ok {
+  color: var(--color-accent-green-dark);
+}
+
+.agreement--warn {
+  color: var(--color-amber);
+}
+
+/* Guidance panel — the centerpiece: one block per site, read top-to-bottom */
+.guidance-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: #fafbfa;
+}
+
+.guidance-panel__title {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.guidance-panel__site {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.guidance-panel__site-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.guidance-panel__tooth {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+.guidance-panel__ready-action {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.guidance-panel__actions {
+  margin: 2px 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--color-text);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Flags */
+.flags-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.flags-alerts__title {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-amber);
+}
+
+.flags-alerts__item {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 10px 14px;
+  background: var(--color-amber-bg);
+  border: 1px solid var(--color-amber-border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+.flags-alerts__tooth {
+  font-weight: 700;
+  color: var(--color-amber);
+  flex: 0 0 auto;
+}
+
+.flags-alerts__text {
+  color: #6b5210;
+}
+
+/* Viewer controls */
+.viewer-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+/* Package file list */
+.package-files__title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.package-files__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  columns: 2;
+  column-gap: 24px;
+}
+
+.package-files__item {
+  break-inside: avoid;
+  margin-bottom: 6px;
+}
+
+.package-files__link {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12.5px;
+  color: var(--color-accent-green-dark);
+  text-decoration: none;
+}
+
+.package-files__link:hover {
+  text-decoration: underline;
+}
+
+/* ---- the workflow rail: the client's four stages (one-flow collapse, 2026-07-26), as
+   navigation ---- */
+.workflow-rail {
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.workflow-rail__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.workflow-rail__step {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.workflow-rail__step:hover:not(:disabled) {
+  background: #ffffff;
+  border-color: var(--color-border);
+}
+
+.workflow-rail__step:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.workflow-rail__step--current {
+  background: #ffffff;
+  border-color: var(--color-accent-green);
+  color: var(--color-text);
+}
+
+.workflow-rail__marker {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workflow-rail__step--current .workflow-rail__marker {
+  border-color: var(--color-accent-green);
+  color: var(--color-accent-green-dark);
+}
+
+.workflow-rail__step--complete .workflow-rail__marker {
+  background: var(--color-accent-green);
+  border-color: var(--color-accent-green);
+  color: #ffffff;
+}
+
+.workflow-rail__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.workflow-rail__label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.workflow-rail__detail {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+}
+
+/* 3D viewer */
+.viewer3d-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.viewer3d {
+  width: 100%;
+  height: 480px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--color-scan-bg);
+}
+
+
+.viewer3d canvas {
+  display: block;
+}
+
+/* Composite-view legend: overlay, bottom-left of the viewer */
+.viewer-legend {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.viewer-legend__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  background: rgba(14, 22, 19, 0.78);
+  color: #ffffff;
+  backdrop-filter: blur(2px);
+}
+
+.viewer-legend__swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+/* Anatomical view presets: overlay, top-left of the viewer, clickable */
+/* Two rows now (2026-07-26): DIRECTION on top (Front/Left/Right/Top), SUBJECT below (this site /
+   whole arch). They compose — pick the site, then Top, and you are looking down at the cap. */
+.view-orient {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.view-orient__row {
+  display: flex;
+  gap: 6px;
+}
+
+.view-orient__button {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(14, 22, 19, 0.78);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  backdrop-filter: blur(2px);
+  cursor: pointer;
+}
+
+.view-orient__button:hover {
+  background: rgba(14, 22, 19, 0.92);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+/* Library browser (client ask 2026-07-23): the whole shelf, classified — system tabs as the
+   primary chooser, a card grid per system, honest badges (duplicate / superseded / legacy /
+   unloadable). Same panel language as the rest of the demo. */
+.library-browser__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.library-browser__error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.library-browser__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.library-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: #f4f6f5;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.library-tab:hover {
+  background: #e9ece9;
+}
+
+.library-tab--active {
+  border-color: var(--color-accent-green);
+  background: #eafaf0;
+  color: var(--color-accent-green-dark);
+}
+
+.library-tab--legacy {
+  font-weight: 500;
+  font-style: italic;
+}
+
+.library-tab__count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.library-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.library-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  text-align: left;
+  font: inherit;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.library-card:hover:not(:disabled) {
+  border-color: var(--color-accent-green);
+}
+
+.library-card:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.library-card--active {
+  border-color: var(--color-accent-green);
+  background: #eafaf0;
+}
+
+.library-card--muted {
+  background: #fafbfa;
+}
+
+.library-card__variant {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.library-card__dims {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.library-card__filename {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  word-break: break-all;
+}
+
+.library-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.library-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.library-badge--viewing {
+  background: #eafaf0;
+  border-color: var(--color-accent-green);
+  color: var(--color-accent-green-dark);
+}
+
+/* Byte-identity is a data finding worth attention, not an error — amber, matching the
+   codebase's "needs attention" language (chip--gate-attention et al.). */
+.library-badge--duplicate {
+  background: var(--color-amber-bg);
+  border-color: var(--color-amber-border);
+  color: var(--color-amber);
+}
+
+.library-badge--superseded,
+.library-badge--legacy {
+  background: #f0f1f3;
+  border-color: #d5d8dd;
+  color: var(--color-text-muted);
+}
+
+.library-badge--unloadable {
+  background: #fdecea;
+  border-color: #f2b8b0;
+  color: var(--color-danger);
+}
+
+/* MANUAL CORRESPONDENCE (client ask 2026-07-24), library half: annotate the previewed part's
+   holes/trenches. Sits under the card grid, tied to the part actually on screen. */
+.library-browser__annotate-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: #f7f9f8;
+}
+
+.library-browser__annotate-text {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.part-annotator {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.part-annotator__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.part-annotator__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.part-annotator__state {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.part-annotator__provenance {
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+/* Unsaved marks are a state worth noticing, not an error — the codebase's amber language. */
+.part-annotator__dirty {
+  font-weight: 700;
+  color: var(--color-amber);
+}
+
+.part-annotator__tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.part-annotator__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.part-annotator__hint {
+  font-size: 12px;
+  color: var(--color-amber);
+  font-weight: 600;
+}
+
+.part-annotator__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.part-annotator__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* One marked feature. The swatch color IS the sphere's color in 3D (viewer/palette.ts's
+   FEATURE_COLOR) — the list and the model must be readable as the same thing. */
+.feature-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  flex: none;
+}
+
+.feature-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+}
+
+.feature-row--selected {
+  border-color: var(--color-accent-green);
+  background: #eafaf0;
+}
+
+.feature-row__select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.feature-row__label {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.feature-row__source {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.feature-row__note {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* Correspondence panel (scan half), inside the Rotation column's control — deliberately
+   compact: it lives in a table cell next to the nudge buttons. */
+.correspondence {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 8px;
+  max-width: 260px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: #f7f9f8;
+}
+
+.correspondence__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.correspondence__title {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.correspondence__hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.correspondence__pairs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.correspondence__pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.correspondence__pair-label {
+  font-size: 11px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.correspondence__armed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.correspondence__arm-hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-amber);
+}
+
+.correspondence__picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.correspondence__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.correspondence__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.correspondence__residuals {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--color-border);
+}
+
+.correspondence__rms {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-accent-green-dark);
+}
+
+.correspondence__residual-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.correspondence__residual {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* Library-part preview chip: overlay, top-right of the viewer — the explicit "you are NOT
+   looking at the scan" state (client ask 2026-07-23), with its own way back. Amber-tinted so
+   it reads as a mode, not an error, and clearly distinct from the neutral dark overlays. */
+.part-preview-chip {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 28px);
+  padding: 6px 8px 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 196, 87, 0.65);
+  background: rgba(14, 22, 19, 0.85);
+  color: #ffffff;
+  backdrop-filter: blur(2px);
+}
+
+.part-preview-chip__text {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.part-preview-chip__spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffc457;
+  animation: spin 0.8s linear infinite;
+  flex: 0 0 auto;
+}
+
+.part-preview-chip__back {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.part-preview-chip__back:hover {
+  background: rgba(255, 255, 255, 0.24);
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+/* Controls hint: overlay, bottom-right of the viewer, always visible */
+.viewer-controls-hint {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(14, 22, 19, 0.78);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+/* Footer */
+.app-footer {
+  text-align: center;
+  padding: 14px;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border);
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  z-index: 1000;
+  max-width: 640px;
+}
+
+.toast--error {
+  background: #fdecea;
+  border: 1px solid #f2b8b0;
+  color: var(--color-danger);
+}
+
+.toast__message {
+  font-size: 14px;
+}
+
+.toast__dismiss {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+/* Doctor verification panel (expandable from a results row): the acceptance-numbers
+   catalog — check / our number / industry reference / band chip — over the two QC images
+   and the doctor's confirm control. Band chips reuse the gate-chip color language:
+   green pass, amber review, red fail, muted "not measured". */
+.results-table__verification-row > td {
+  padding: 0;
+  background: #fafbfa;
+}
+
+.verification-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.verification-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.verification-panel__table-scroll {
+  overflow-x: auto;
+}
+
+.verification-panel__table {
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 640px;
+}
+
+.verification-panel__table th,
+.verification-panel__table td {
+  padding: 5px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.verification-panel__group th {
+  padding-top: 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  border-bottom: none;
+}
+
+.verification-panel__value {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.verification-panel__ref {
+  color: var(--color-text-muted);
+  max-width: 300px;
+}
+
+.chip--band-pass {
+  background: #e6f4ea;
+  color: var(--color-accent-green-dark);
+}
+
+.chip--band-review {
+  background: var(--color-amber-bg);
+  color: var(--color-amber);
+}
+
+.chip--band-fail {
+  background: #fdecea;
+  color: var(--color-danger);
+}
+
+.chip--band-missing {
+  background: #f0f1f0;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.verification-panel__context {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  max-width: 720px;
+}
+
+.verification-panel__images {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.verification-panel__images figure {
+  margin: 0;
+}
+
+.verification-panel__images img {
+  max-width: 320px;
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.verification-panel__images figcaption {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.verification-panel__confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.verification-panel__note {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.verification-panel__note-input {
+  flex: 1 1 260px;
+  max-width: 420px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  font-size: 12px;
+}
+
+/* ==========================================================================================
+   THE LIBRARY SELECTION & VERIFICATION DIALOG (client directive 2026-07-25).
+   A modal gate over the workflow: the selection rail on the left, and on the right the
+   Information panel, the site stepper, the three verify panels and the acknowledgment.
+   ========================================================================================== */
+
+/* FULL VIEWPORT (client, 2026-07-26: "the three STL panels are currently small thumbnails in a
+   crowded dialog … they must dominate"). The backdrop no longer scrolls a card down the page —
+   the dialog IS the screen, and its three regions (header / body / acknowledgment bar) share the
+   height so the panels can take what is left. */
+.decode-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(14, 22, 19, 0.55);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 6px;
+  overflow: hidden;
+}
+
+.decode-dialog {
+  background: var(--color-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.32);
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.decode-dialog__identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.decode-dialog__header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.decode-dialog__progress {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.decode-dialog__progress--complete {
+  color: var(--color-accent-green-dark);
+}
+
+.decode-dialog__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.decode-dialog__title {
+  margin: 0;
+  font-size: 17px;
+}
+
+.decode-dialog__subject {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.decode-dialog__body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+/* Collapsed: the panels take the column's width too. */
+.decode-dialog__body--column-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* The selection lists are SECONDARY (client ask 1) — they scroll in their own column rather than
+   setting the dialog's height. */
+.decode-dialog__column {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-right: 4px;
+}
+
+.decode-dialog__main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The Information panel and the site stepper share ONE compact strip — they used to be two
+   half-width cards stacked above the panels, which is most of what made the panes thumbnails. */
+.decode-dialog__top {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  max-height: 84px;
+  overflow: auto;
+}
+
+/* ---- selection column ---- */
+
+.decode-column {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.decode-section__title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.decode-section__scope {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--color-text);
+}
+
+.decode-section__hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.decode-system-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.decode-system {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.decode-system:hover:not(:disabled) {
+  border-color: var(--color-accent-green);
+}
+
+.decode-system:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.decode-system--selected {
+  border-color: var(--color-accent-green);
+  background: #eafaf0;
+}
+
+.decode-system__name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.decode-system__count {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-right: auto;
+}
+
+.library-badge--suggested {
+  background: #eef4ff;
+  border-color: #b9cdf5;
+  color: #2f5fa8;
+}
+
+.decode-variant-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+}
+
+.decode-variant {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.decode-variant:hover:not(:disabled) {
+  border-color: var(--color-accent-green);
+}
+
+.decode-variant:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.decode-variant--selected {
+  border-color: var(--color-accent-green);
+  background: #eafaf0;
+}
+
+.decode-variant--archived {
+  background: #fafafb;
+}
+
+.decode-variant__name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.decode-variant__dims {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.decode-variant__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+/* Superseded parts are a SEPARATE group, never mixed into the current shelf. */
+.decode-archive {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--color-border);
+}
+
+.decode-archive__title {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.decode-archive__note {
+  margin: 2px 0 8px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.decode-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: 12px;
+  background: #fff;
+}
+
+.decode-select--needs {
+  border-color: var(--color-amber-border);
+  background: var(--color-amber-bg);
+}
+
+.decode-jaw {
+  display: flex;
+  gap: 6px;
+}
+
+.decode-jaw__option {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.decode-jaw__option--selected {
+  border-color: var(--color-accent-green);
+  background: #eafaf0;
+  font-weight: 600;
+}
+
+.decode-offset {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.decode-offset__input {
+  width: 90px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: 13px;
+}
+
+.decode-offset__input--error {
+  border-color: var(--color-danger);
+  background: #fdecea;
+}
+
+.decode-offset__unit,
+.decode-offset__applied {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* OFFSET HONESTY: the MEASURED clearance, beside the requested one. Given its own emphasis
+   (not muted like the request's echo) because it is the number that describes the delivered
+   part — and greyed only when nothing has measured it yet. */
+.decode-offset__achieved {
+  margin: 6px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.decode-offset__achieved--unmeasured {
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.decode-offset__method {
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.decode-offset__honesty {
+  font-style: italic;
+}
+
+/* ---- THE RELIEF CEILING, AT SELECTION TIME (client, 2026-07-25) --------------------------- */
+
+/* "max safe for this part: 0.06 mm (limited by channel wall)". Same weight as the achieved
+   read-out above: it is a measured property of the chosen part, not a hint. */
+.decode-offset__ceiling {
+  margin: 6px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Still measuring / not determined / this API build has no such endpoint — spoken, but muted:
+   none of them is a number, and none of them means "no limit". */
+.decode-offset__ceiling--pending {
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.decode-offset__ceiling--error {
+  font-weight: 400;
+  color: var(--color-danger);
+}
+
+.decode-offset__ceiling-pending {
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+/* OVER THE CEILING: a warning, not a refusal. Amber (the review colour), never the danger red
+   the parse error wears — the run WILL proceed, clamped and reported, and that is a choice the
+   operator is allowed to make. */
+.decode-offset__input--over-ceiling {
+  border-color: var(--color-amber-border);
+  background: var(--color-amber-bg);
+}
+
+.decode-offset__ceiling-warning {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--color-amber);
+  background: var(--color-amber-bg);
+  border: 1px solid var(--color-amber-border);
+  border-radius: var(--radius-md);
+}
+
+/* ---- THE CLAMP, AFTER THE RUN ------------------------------------------------------------ */
+
+/* Deliberately loud. The delivered part carries a relief the lab did not ask for; this is the
+   one place that fact lives in the UI, and it is mounted in three of them (results block,
+   verify dialog, selection column) so no route to the result can miss it. */
+.relief-clamp {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--color-amber-bg);
+  border: 1px solid var(--color-amber-border);
+  border-left: 4px solid var(--color-amber);
+  border-radius: var(--radius-md);
+}
+
+.relief-clamp--compact {
+  margin-top: 8px;
+  padding: 8px 10px;
+}
+
+.relief-clamp__title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-amber);
+}
+
+.relief-clamp--compact .relief-clamp__title {
+  font-size: 11px;
+}
+
+.relief-clamp__sites {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.relief-clamp__site {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+.relief-clamp--compact .relief-clamp__site {
+  font-size: 11px;
+}
+
+.relief-clamp__tooth {
+  font-weight: 700;
+}
+
+.relief-clamp__numbers {
+  font-variant-numeric: tabular-nums;
+}
+
+.relief-clamp__reason,
+.relief-clamp__why {
+  color: var(--color-text-muted);
+}
+
+.relief-clamp__why {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* The per-row chip in the results table's verdict cell. */
+.chip--relief-clamped {
+  background: var(--color-amber-bg);
+  color: var(--color-amber);
+  border: 1px solid var(--color-amber-border);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- THE REFUSAL, MADE ACTIONABLE -------------------------------------------------------- */
+
+/* Red, persistent, and laid out as what happened / why / what to do. The client met this
+   condition as a toast carrying a status code; nothing about it is transient any more. */
+.run-refusal {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: #fdecea;
+  border: 1px solid #f0b7b1;
+  border-left: 4px solid var(--color-danger);
+  border-radius: var(--radius-md);
+}
+
+.run-refusal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.run-refusal__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-danger);
+}
+
+/* The SERVER'S own sentence, verbatim — given the room to be read. */
+.run-refusal__detail {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text);
+}
+
+.run-refusal__next {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--color-text);
+}
+
+.run-refusal__next-label {
+  font-weight: 700;
+}
+
+.run-refusal__status {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* ---- information panel ---- */
+
+.decode-info {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.decode-info__title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.decode-info__subject {
+  display: block;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.decode-info__grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+
+.decode-info__grid div {
+  min-width: 0;
+}
+
+.decode-info__file {
+  grid-column: 1 / -1;
+}
+
+.decode-info__grid dt {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.decode-info__grid dd {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.decode-info__file dd {
+  font-size: 11px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.decode-info__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+/* ---- site stepper ---- */
+
+.decode-stepper {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.decode-stepper__control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.decode-stepper__position {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.decode-stepper__tooth {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.decode-stepper__overview {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 132px;
+  overflow: auto;
+}
+
+.decode-stepper__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: #f7f8f9;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.decode-stepper__item--active {
+  border-color: var(--color-accent-green);
+  background: #eafaf0;
+}
+
+.decode-stepper__item--reviewed .decode-stepper__state {
+  color: var(--color-accent-green-dark);
+  font-weight: 700;
+}
+
+/* ---- the three verify panels ---- */
+
+/* THE PANELS TAKE THE REST. `verify-panels` is the flex child that grows, its grid fills it, and
+   each pane's stage is what actually stretches — so the 3D is sized by the VIEWPORT, not by a
+   260px constant (client, 2026-07-26). */
+.verify-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.verify-panels__toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.verify-panels__grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.verify-panels__grid--maximized {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.verify-panel__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.verify-panel__maximize {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  cursor: pointer;
+  padding: 1px 7px;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--color-text-muted);
+}
+
+.verify-panel__maximize:hover {
+  border-color: var(--color-accent-green);
+  color: var(--color-accent-green-dark);
+}
+
+/* `overflow: hidden` is the STRUCTURAL guard behind the collision the client photographed
+   (2026-07-26): a grid item whose intrinsic content is taller than its row spills, and a spilling
+   pane painted straight across the Cancel / OK bar. The chrome moved onto the glass so nothing
+   should ever exceed the box again — this makes "should" into "cannot". */
+.verify-panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.verify-panel__header {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.verify-panel__title {
+  margin: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ONE LINE, with the whole caption in the title attribute. The union pane's caption is a
+   sentence; wrapping it to three lines took the height off all three stages, not just its own. */
+.verify-panel__caption {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* THE PANE ITSELF: it GROWS, and it is now the ONLY thing in the panel that has height — the
+   layer controls and the colorbar float over it (see the HUD rules below) rather than stacking
+   under it. The floor keeps a pane usable when a very short window leaves little to share. */
+.verify-panel__stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 220px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #d8e8f2;
+}
+
+/* ---- the on-glass chrome (HUDs) ---- */
+
+.verify-panel__hud {
+  position: absolute;
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: var(--radius-md);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 6px 8px;
+  backdrop-filter: blur(3px);
+}
+
+/* Top-left: out of the way of the cap, which the camera frames in the middle. The width cap is
+   what keeps it clear of the rotation dial opposite — the two share the top edge, and the union
+   pane (two layers AND a dial) is the case that proves it. */
+.verify-panel__hud--layers {
+  top: 8px;
+  left: 8px;
+  max-width: calc(56% - 14px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Top-right: opposite the layer stack, clear of both it and the colorbar strip. */
+.verify-panel__hud--rotate {
+  top: 8px;
+  right: 8px;
+  /* The two top HUDs must sum to less than the pane MINUS both 8px insets and a gap between
+     them — percentages alone left them 5px overlapped (measured). */
+  max-width: calc(44% - 14px);
+}
+
+/* Bottom strip: the ramp reads left-to-right like the mesh it explains. */
+.verify-panel__hud--scale {
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+}
+
+/* The busy/notice overlays must cover the HUDs — a pane that has nothing to show must not offer
+   opacity sliders for geometry that is not there. */
+.verify-panel__overlay {
+  z-index: 3;
+}
+
+.verify-viewer {
+  width: 100%;
+  height: 100%;
+}
+
+.verify-panel__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+/* A notice is a MESSAGE, never a control: it must not eat the pane's clicks or its orbit.
+   The fit-by-points part pane invites "click the part itself…" and the overlay it was
+   printed on swallowed exactly that click (review 2026-07-26). The busy overlay (base
+   class alone) keeps intercepting on purpose — a pane mid-request has nothing safe to
+   click. */
+.verify-panel__overlay--notice {
+  pointer-events: none;
+}
+
+/* The INVITE tone (fit-by-points, a part with nothing anchorable): the pane beneath is
+   LIVE and the sentence asks for a click on it, so it sits as a strip along the bottom
+   instead of veiling the very mesh the operator is being asked to click. */
+.verify-panel__overlay--invite {
+  inset: auto 8px 8px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.verify-layer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.verify-layer__eye {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.verify-layer__eye--on {
+  border-color: var(--color-accent-green);
+  background: #eafaf0;
+}
+
+.verify-layer__eye:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.verify-layer__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.verify-layer__label {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+}
+
+.verify-layer__slider {
+  flex: 1 1 auto;
+  min-width: 40px;
+}
+
+.verify-layer__percent {
+  width: 34px;
+  text-align: right;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the deviation colorbar (same ramp as the mesh — see deviationColormap.ts) ---- */
+
+.verify-colorbar {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* The folded small print. Collapsed it costs ONE line; opened it lifts off the glass over the
+   3D rather than pushing the 3D down, so reading the stats never resizes the thing being read. */
+.verify-colorbar__detail {
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.verify-colorbar__summary {
+  cursor: pointer;
+  color: var(--color-text-muted);
+  list-style-position: inside;
+}
+
+.verify-colorbar__detail[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+/* The two scales on offer (ours signed, the client's absolute "Contacts") — a compact segmented
+   control above the bar, so the bar underneath always belongs to the highlighted label. */
+.verify-colorbar__scales {
+  display: flex;
+  gap: 4px;
+}
+
+.verify-colorbar__scale {
+  flex: 1;
+  padding: 3px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.verify-colorbar__scale--selected {
+  border-color: var(--color-accent-green);
+  background: #eafaf0;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.verify-colorbar__bar {
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.verify-colorbar__ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.verify-colorbar__legend {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.verify-colorbar__unmeasured {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.verify-colorbar__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.verify-colorbar__clamp,
+.verify-colorbar__stats {
+  margin: 0;
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.verify-colorbar__source {
+  opacity: 0.8;
+}
+
+/* ---- acknowledgment ---- */
+
+/* THE ACKNOWLEDGMENT BAR: one strip along the bottom, always visible, never the tall block that
+   pushed the panels into thumbnails. */
+.decode-ack {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--color-border);
+  background: #ffffff;
+}
+
+/* THE TEXT SIDE YIELDS, THE BUTTONS DO NOT (client, 2026-07-26). Everything here is one wrapping
+   row of chips rather than a stack of paragraphs, `min-width: 0` lets it actually shrink, and the
+   disclaimer is the single flexible item that ellipsises — so the sentence can never grow into
+   the actions the way it did in the screenshot. */
+.decode-ack__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 14px;
+}
+
+.decode-ack__sites-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.decode-ack__title {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-amber);
+}
+
+.decode-ack__disclaimer {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  flex: 1 1 260px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.decode-ack__sites {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+
+.decode-ack__check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.decode-ack__complete,
+.decode-ack__summary,
+.decode-ack__blockers {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.decode-ack__blockers {
+  color: var(--color-danger);
+}
+
+/* Never shrinks, never wraps, never overlapped: the two buttons are the one thing in this bar
+   that must always be whole and clickable. */
+.decode-ack__actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+/* The selection stated on step 4, before either route runs. */
+.decode-selection-line {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.decode-selection-line__label {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.decode-selection-line--incomplete .decode-selection-line__missing {
+  color: var(--color-danger);
+}
+
+.decode-selection-line__achieved {
+  font-weight: 600;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* THE ACKNOWLEDGMENT STATE on step 4 — always visible, and loud when it blocks. This is the
+   line that replaces the silently-dead button the verifier found. */
+.decode-review-state {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.decode-review-state__progress {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.decode-review-state--blocking {
+  color: var(--color-danger);
+}
+
+.decode-review-state--blocking .decode-review-state__progress,
+.decode-review-state__blocked {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.decode-review-state__hint {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.decode-blockers {
+  margin: 0 0 10px;
+}
+
+/* ---- DENTAL TOOTH CHART (RealGUIDE screenshot parity: their left rail) ----
+   Two arches, each split into two quadrants with a midline gap, so column i holds the same
+   side of the mouth top and bottom (1 above 32). Every state a tooth reports is ALSO in its
+   accessible name and tooltip — colour here is reinforcement, never the only carrier. */
+.tooth-chart__arch {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.tooth-chart__row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* The arch the run is NOT selected for is dimmed, not hidden: an existing site over there is a
+   real (flagged) inconsistency the operator must still be able to see and reach. */
+.tooth-chart__row--other-jaw {
+  opacity: 0.5;
+}
+
+.tooth-chart__row-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.tooth-chart__row-badge {
+  color: var(--color-accent-green-dark);
+  font-weight: 700;
+}
+
+.tooth-chart__quadrants {
+  display: flex;
+  gap: 18px;
+}
+
+.tooth-chart__quadrant {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tooth-chart__quadrant > li {
+  flex: 1;
+  min-width: 0;
+}
+
+.tooth-chart__tooth {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: #fafbfa;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.1;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.tooth-chart__tooth:hover:not(:disabled) {
+  border-color: var(--color-accent-green);
+  background: #eafaf0;
+}
+
+.tooth-chart__tooth:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.tooth-chart__tooth--site {
+  background: #ffffff;
+  border-color: var(--color-accent-green);
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.tooth-chart__tooth--marked {
+  border-color: var(--color-accent-green-dark);
+}
+
+.tooth-chart__tooth--reviewed {
+  background: #eafaf0;
+}
+
+.tooth-chart__tooth--flagged {
+  border-color: var(--color-amber-border);
+  background: var(--color-amber-bg);
+  color: var(--color-amber);
+}
+
+/* The SHARED cursor — the same site the verify dialog's stepper is on. */
+.tooth-chart__tooth--active {
+  outline: 2px solid var(--color-accent-green-dark);
+  outline-offset: 1px;
+}
+
+.tooth-chart__tooth--armed {
+  border-color: var(--color-accent-green);
+  background: #eafaf0;
+}
+
+.tooth-chart__number {
+  font-size: 12px;
+}
+
+.tooth-chart__glyph {
+  font-size: 11px;
+  min-height: 12px;
+}
+
+.tooth-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.tooth-chart__add {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.tooth-chart__auto-toggle,
+.tooth-chart__manual {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.tooth-chart__manual-label {
+  color: var(--color-text-muted);
+}
+
+/* ---- POSE TRANSFER (export/import of a seated alignment) ---- */
+.pose-transfer {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.pose-transfer__title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.pose-transfer__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pose-transfer__import {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 10px;
+}
+
+.pose-transfer__file-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pose-transfer__file {
+  font: inherit;
+  font-size: 13px;
+}
+
+.pose-transfer__pending,
+.pose-transfer__applied {
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #fafbfa;
+}
+
+.pose-transfer__file-name {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pose-transfer__list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.pose-transfer__warnings {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--color-amber);
+}
+
+@media (max-width: 1180px) {
+  .decode-dialog__body {
+    grid-template-columns: 1fr;
+  }
+
+  /* Stacked, the panes each need their own height back — a 1fr row in a short viewport would
+     leave three slivers. The dialog body scrolls instead. */
+  .decode-dialog__body {
+    overflow-y: auto;
+  }
+
+  .verify-panels__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .verify-panel__stage {
+    height: 380px;
+    flex: 0 0 auto;
+  }
+
+  .decode-dialog__top {
+    grid-template-columns: 1fr;
+  }
+
+  .fit-points__body {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .fit-points__panes {
+    grid-template-columns: 1fr;
+  }
+
+  .fit-points__pane .verify-panel__stage {
+    height: 300px;
+  }
+}
+
+/* Responsive */
+@media (max-width: 1180px) {
+  /* Below this the three-region workbench cannot hold: the rail goes horizontal above one
+     column, and the shell scrolls as a page again rather than pretending to be an app frame. */
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-rail__list {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .workflow-rail__step {
+    width: auto;
+  }
+
+  .workbench__work {
+    overflow: visible;
+  }
+
+  .workbench__stage .viewer3d-wrap {
+    flex: 0 0 auto;
+  }
+
+  .workbench__stage .viewer3d {
+    height: 420px;
+  }
+
+  .stage-drawer {
+    max-height: none;
+  }
+}
+
+@media (max-width: 960px) {
+  .viewer3d {
+    height: 360px;
+  }
+
+  /* The arch never drops teeth on a narrow screen — it tightens. A chart missing numbers
+     would be a different chart. */
+  .tooth-chart__quadrants {
+    gap: 10px;
+  }
+
+  .tooth-chart__quadrant {
+    gap: 2px;
+  }
+
+  .tooth-chart__tooth {
+    padding: 5px 1px;
+    font-size: 11px;
+  }
+}
+
+/* ==========================================================================================
+   THE RESULTS DRAWER — docked over the 3D stage (client, 2026-07-26).
+
+   The run's output is wide (a fifteen-column table, staged views, the package list), so it takes
+   the STAGE's width rather than being squeezed into the 400px work column; and it collapses to a
+   bar, because the client's complaint was that the model never got to be big. Its own body
+   scrolls: the drawer never grows past its share of the stage.
+   ========================================================================================== */
+.stage-drawer {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 52%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.stage-drawer--collapsed {
+  flex: 0 0 auto;
+  max-height: none;
+}
+
+.stage-drawer__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.stage-drawer--collapsed .stage-drawer__bar {
+  border-bottom: none;
+}
+
+.stage-drawer__toggle {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+
+.stage-drawer__meta {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.stage-drawer__body {
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Nothing in a scrolling column may be SQUEEZED. A flex item whose own overflow is not visible
+   (the results table's horizontal scroller) has an automatic minimum size of ZERO, so in a
+   height-constrained column it collapsed to a 0px-tall strip — the table was in the DOM and
+   invisible (caught live, 2026-07-26). The column scrolls; its children keep their height. */
+.stage-drawer__body > *,
+.workbench__work > * {
+  flex: 0 0 auto;
+}
+
+/* ==========================================================================================
+   THE POST-ALIGNMENT CORRECTIONS (client ask 4, 2026-07-26: "it must be discoverable without
+   hunting"). A block at the top of the drawer, one strip per seated site — not a control inside
+   a control inside a cell of a sideways-scrolling table.
+   ========================================================================================== */
+.align-actions {
+  border: 1px solid var(--color-accent-green);
+  border-radius: var(--radius-md);
+  background: #f4fbf7;
+  padding: 12px 14px;
+}
+
+.align-actions__header {
+  margin-bottom: 10px;
+}
+
+.align-actions__title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.align-actions__hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.align-actions__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.align-actions__site {
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  padding-top: 10px;
+}
+
+.align-actions__site:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.align-actions__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.align-actions__tooth {
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 68px;
+}
+
+.align-actions__residual {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.align-actions__buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.align-actions__notice {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-accent-green-dark);
+}
+
+/* ==========================================================================================
+   FIT BY POINTS — the two-pane pairing stage (client ask 4: "numbered points on the scan AND on
+   the library part side by side").
+   ========================================================================================== */
+.fit-points {
+  background: var(--color-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.32);
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.fit-points__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.fit-points__body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 14px;
+  padding: 14px 18px 18px;
+}
+
+.fit-points__panes {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.fit-points__pane {
+  min-height: 0;
+}
+
+.fit-points__rail {
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.fit-points__arm-hint {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-accent-green-dark);
+}
+
+/* The pane whose next click places a point: a live border, so the operator can see which of the
+   two views is listening without reading the caption. */
+.verify-panel__stage--armed {
+  outline: 2px solid var(--color-accent-green);
+  outline-offset: -2px;
+}
+
+/* ==========================================================================================
+   THE LIBRARY-SELECTION SUMMARY in the work column
+   ========================================================================================== */
+.selection-summary__list {
+  margin: 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.selection-summary__row {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 10px;
+  font-size: 13px;
+}
+
+.selection-summary__row dt {
+  color: var(--color-text-muted);
+}
+
+.selection-summary__row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.selection-summary__sites {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.selection-summary__missing {
+  color: var(--color-amber);
+  font-weight: 600;
+}
+
+.selection-summary__review {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.selection-summary__missing-line {
+  margin-top: 6px;
+}
+
+/* ==========================================================================================
+   THE TOOTH CHART IN A NARROW COLUMN. The arch never drops teeth — it tightens (the same rule
+   the narrow-viewport block below applies), because a chart missing numbers is a different chart.
+   ========================================================================================== */
+.workbench__work .tooth-chart__quadrants {
+  gap: 8px;
+}
+
+.workbench__work .tooth-chart__quadrant {
+  gap: 2px;
+}
+
+.workbench__work .tooth-chart__tooth {
+  padding: 5px 1px;
+  font-size: 11px;
+}
+
+/* The chosen framing subject. Same green the rest of the app uses for "this is the active
+   choice", legible against the dark pill. */
+.view-orient__button--active {
+  border-color: var(--color-accent-green);
+  background: var(--color-accent-green-dark);
+}
+
+.view-orient__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* ==========================================================================================
+   THE STAGE SPLIT — scan | part, SIDE BY SIDE (client, 2026-07-26: "we should still see side
+   by side the scan and the model that we're selecting so we can compare").
+
+   A flex ROW inside the stage while Mark & declare is open: the main viewer keeps ~60% (and
+   its site routing), the docked compare pane takes ~40% with a 280px floor. Reasoned against
+   the workbench grid (208px rail + 400px work column + 72px gaps/padding):
+     1600x1000 — stage ≈ 920px: pane at its 40% basis (~368px), scan ~550px.
+     1280x800  — stage ≈ 600px: 40% (240px) is under the floor, so the pane holds 280px and
+                 the scan keeps ~310px; the WORK COLUMN scrolls, the 3D never does.
+   Below 590px (280 pane + this row's 10px gap + 300 scan) the pane auto-collapses to its
+   strip — the same numbers, gap included, live in ComparePartPane.compareAutoCollapsed,
+   pinned by test.
+
+   This section sits at the END of the sheet on purpose: `.stage-split .viewer3d-wrap` ties
+   `.workbench__stage .viewer3d-wrap` on specificity, so source order is what lets the split's
+   60% basis win over the stage's older flex rule.
+   ========================================================================================== */
+.stage-split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+}
+
+.stage-split .viewer3d-wrap {
+  flex: 1 1 60%;
+  min-width: 0;
+  min-height: 240px;
+}
+
+.compare-pane {
+  flex: 0 1 40%;
+  min-width: 280px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+  overflow: hidden;
+}
+
+/* Collapsed: a slim strip with the way back — costs no width and NO WebGL context. */
+.compare-pane--collapsed {
+  flex: 0 0 auto;
+  min-width: 0;
+  width: 36px;
+  align-items: center;
+  padding-top: 8px;
+  gap: 8px;
+}
+
+.compare-pane__collapsed-label {
+  writing-mode: vertical-rl;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.compare-pane__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.compare-pane__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.compare-pane__title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--color-text);
+}
+
+.compare-pane__caption {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compare-pane__toggle {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 7px;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.compare-pane__toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* The 3D fills whatever the header leaves — the pane's VerifyScene sizes itself to this box
+   (its own ResizeObserver), the same way the dialog's panes do. */
+.compare-pane__stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 200px;
+  background: var(--color-scan-bg);
+}
+
+/* The honest empty/error sentence: a strip along the bottom, never a veil over the 3D —
+   the same rule the verify panes' invite tone follows. */
+.compare-pane__notice {
+  position: absolute;
+  inset: auto 8px 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  color: var(--color-text);
+  text-align: center;
+}
+
+.compare-pane__busy {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(14, 22, 19, 0.72);
+  color: #ffffff;
+  font-size: 11px;
+}
+
+@media (max-width: 1180px) {
+  /* The page-scroll layout (single-column workbench): the split keeps its row — the full
+     viewport width holds both panes comfortably — but the stage's older `flex: 0 0 auto`
+     media rule must not shrink-wrap the viewer inside the row, and the pane matches the
+     viewer's fixed 420px height instead of stretching the page. */
+  .stage-split .viewer3d-wrap {
+    flex: 1 1 60%;
+  }
+
+  .compare-pane {
+    max-height: 420px;
+  }
+}

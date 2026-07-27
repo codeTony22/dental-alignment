@@ -1,0 +1,70 @@
+<!-- Adversarial grilling by a multi-agent workflow: cloud-architect lens + dental-domain product-owner lens -> triage. Findings reflect the plan + spike as of this review. -->
+
+# Dental Implant CAD Automation — Triaged Grilling Report
+
+## 1. Bottom line
+
+The AWS architecture is genuinely strong — better-than-average idempotency thinking, an honest re-costing, and the "system RPO = max(DB, S3)" insight put it ahead of most production designs. But the polish hides the fact that **the three things most likely to kill this project are not in the AWS layer at all**, and both reviewers converge hard on the same point: the value proposition is unproven where it matters. The RealGUIDE pose-handoff seam is completely unvalidated against the closed tool, the worker the orchestration claims to "harden" does not actually exist (the real code is a monolithic `run_case(case_dir)`), and validation is 100% synthetic with a clinical-safety metric (false-confidence-rate) that is structurally unmeasurable in production until an audit loop that hasn't been built ships. **Before any further 2B/AWS build spend, three gates must pass: a one-week RealGUIDE-import seam spike, a real-scan clear-rate measurement against manufacturer library meshes, and a commitment to run auto-seed in shadow/advisory mode behind a functioning human-audit loop.** The infra is sound enough to wait for those answers — and those answers, not the AWS design, decide whether this should be built at all.
+
+## 2. Top 5 must-fix
+
+1. **The RealGUIDE seam is unvalidated and load-bearing.** *Issue:* The entire economic case rests on "bake the 6-DoF pose into exported geometry + sidecar spec sheet" surviving RealGUIDE's STL import — but no spike, no worker code, and no evidence the closed importer preserves a shared world frame instead of re-centering/re-scaling. *Why it bites:* If import normalizes the frame, the baked pose is destroyed, the operator re-seeds by hand from the sidecar, and the 40–70% time saving evaporates — leaving AWS orchestrating a deliverable nobody can consume, downstream of ~$150k. *Fix:* Run a one-week spike now — export a known-pose mesh + sidecar into the client's actual RealGUIDE build, measure whether the implant lands in tolerance with zero re-seeding. Hard gate ahead of Foundation; a negative result is a pivot/re-price trigger (sidecar-only = assisted-manual).
+
+2. **The orchestrated worker does not exist — net-new build mislabeled as hardening.** *Issue:* The plan specifies a `python -m case_prep.worker` with STEP dispatch, SQS loop, S3 I/O, heartbeats, idempotency markers, DB claim-lock, and seed ingestion; the actual asset is a single `run_case(case_dir, thresholds) -> CaseResult` with no boto3, no stages, no idempotency. *Why it bites:* The four-layer idempotency, §1.10 determinism contract, and stage1→awaiting_seed→stage2 split are all specified against code yet to be written; the stage decomposition is a substantial rewrite with its own partial-failure/cross-stage-determinism risk the 90 synthetic tests don't cover. *Fix:* Re-label as net-new, budget it, and write the worker adapter (SQS/S3/boto3, STEP dispatch, idempotency, seed ingestion) under the same TDD rigor as the domain core **before** finalizing the Step Functions ASL — the per-STEP `runTask.sync` contract is meaningless until the S3 intermediate-artifact handoff exists and is tested.
+
+3. **Validation is synthetic-only with platform-divergent math.** *Issue:* 100% clear / 0% false-confidence is measured only on adversarial synthetic data with constructed (not recovered) ground truth; thresholds are tuned to one synthetic scan-body geometry; the spike runs 3.9/arm64/custom point-to-point ICP while prod runs 3.11/linux-amd64, and CI hides the numerical divergence under a 0.5mm/3° band — 7× looser than the measured 0.074mm. *Why it bites:* The go/no-go number gating ~$150k is a synthetic artifact, and the loose band can mask a real regression on a clinical-safety gate. *Fix:* Gate all 2B spend on the real-scan clear-rate run (real scans + manufacturer library meshes + ground truth); re-calibrate thresholds at real mesh resolution; pin per-platform golden values in a CI matrix instead of hiding arch divergence under a loose band.
+
+4. **The clinical-safety alarm is structurally blind in production.** *Issue:* FalseConfidenceRate needs recovered-vs-ground-truth comparison, but recovering the pose *is* the job — so on a real case there is no held-out truth. The live tripwire is therefore an estimate over a sampled human-audit loop that doesn't exist yet and is "decorative until the audit loop ships." *Why it bites:* A confident-but-wrong implant reaching a patient is the worst outcome in the system, and at launch its alarm doesn't fire; the only real compensating control is the same synthetic-calibrated gate from #3 — a clinical/liability exposure the client owns but the software enables. *Fix:* Make the audit loop a hard precondition for enabling auto-seed on real cases. Until AuditedN per segment clears a floor, run in shadow/advisory mode (compute pose, always route to human, log what it *would* have auto-passed) and quantify the standing audit labor as a permanent line item.
+
+5. **The DB migration and tenancy model — an undecided domain dependency under most of the security design.** *Issue:* `processing_jobs.stage`, the enriched `case_status` (awaiting_seed|queued|assigned), and `cases.tenant_id` (today `owner_id`) don't exist, and tenancy itself is an open question (tenant == owner, or org-above-logins?). The two-stage claim-lock, `(case_id, stage)` idempotency, `tenant/{tenant_id}/...` S3 layout, IAM prefix scoping, and per-case KMS encryption context all key off columns and an identity that aren't decided. *Why it bites:* A large fraction of the security boundary is specified against an undecided data model; if tenancy resolves to org-above-logins after IAM/KMS are written against tenant==owner, every resource ARN and encryption-context key churns. *Fix:* Resolve tenancy first (it's a domain decision, not infra), land and apply the migration in staging, **then** write a single IAM or KMS policy.
+
+## 3. Findings by theme
+
+**Orchestration & reliability**
+- `waitForTaskToken` human-seed has multiple silent stuck/dump failure modes (lost token → 24h death + silent no-op on operator click; non-PITR token storage strands cases on API restart; 24h is a placeholder that can dump good cases; 90-day execution history loses long-parked cases; double-seed throws unhandled). **[High]**
+- Byte-identical re-run idempotency is overstated: SVD/KD-tree/BLAS reductions aren't bitwise-reproducible across thread counts/arch, yet the content-hash output key depends on it. **[Medium]**
+- Per-tenant Fargate has no concurrency cap (min=0, launch-per-message); a bulk-submitting or buggy-retrying tenant launches unbounded 2vCPU/8GB tasks — cost-amplification with no circuit breaker. **[Low]**
+
+**Security & IaC**
+- MVP KMS encryption context only requires *some* tenant/case context, not a match to the case being processed — so the marketed "genuine second access boundary" is aspirational until the per-case `sts:AssumeRole` session arrives in 2B; a mesh-parser RCE could decrypt any case. **[Medium]**
+- Terraform estate (S3-native locking, ~12 modules × 2 envs, cross-stack remote-state, SCP/permission-boundary guardrails, separate logging account, OIDC role split) is operationally heavy for a small team with no SRE function; real drift/blast-radius risk. **[Medium]**
+- Single-region MVP with no tested cross-asset DR mismatches the compliance ambition (compliance-mode Object Lock, separate audit account); the referential-consistency game-day is gated behind a CRR the MVP skips. **[Low]**
+
+**Closed-RealGUIDE seam** *(see must-fix #1 — the dominant existential risk)*
+- MeshLib is named as the 2B production geometry engine for healing/boolean/offset but is licence-gated, quote-based, and not currently a dependency; the spike built a self-built SDF-CSG fallback instead, with materially different robustness on non-watertight scans. **[Medium]**
+
+**Registration / clinical accuracy**
+- Spec-vs-implementation mismatch on the highest-risk component: pipeline docs and `open3d_engine` docstring say point-to-plane ICP, but the implemented core is trimmed point-to-point — slower/less accurate on smooth scan-body shafts, with no convergence proof and silent abandonment of diverged trials. **[High]**
+- Open3D fragility on the critical path: `registration_icp` segfaults on the dev arm64 wheel (forced the custom ICP) yet Open3D still drives DBSCAN in `localize()`, and the production sandbox (readonly-rootfs, cap_drop ALL, no /dev/dri) may break its GL dlopen at import — two requirements in direct tension. **[High]**
+
+**Case-mix & clinical coverage**
+- Thresholds (fitness, RMSE, clocking ratio ~1.7–1.8× vs 1.3×) are calibrated to one synthetic scan-body geometry; real dense scans will re-calibrate — coverage across real case-mix is unmeasured. **[High, folded into must-fix #3]**
+
+**Product / commercial**
+- ROI (300 cases ≈ 10mo payback) omits recurring OPEX that decides break-even at this scale: standing audit-loop labor, MeshLib annual licence (quote-based, excluded from every infra figure), Sentry team tier, and maintenance of a custom ICP + multi-tool geometry stack + a seam that breaks on RealGUIDE updates. **[Medium]**
+- 2B is scoped against an undecided geometry engine (MeshLib vs open fallback) — a choice that cascades into the container image, cost line, and indefinite maintenance burden; deferring it risks a late cost surprise or an owned robustness problem. **[Medium]**
+
+**Validation credibility** *(see must-fix #3 and #4)*
+- Go/no-go number that gates ~$150k has never touched a real scan; the one metric that protects a patient is synthetic and, in production, an estimate over a loop that doesn't exist. **[High]**
+
+## 4. What this means for the Terraform IaC specifically
+
+**Must address now (Foundation phase, before 2B):**
+- **Resolve tenancy + apply the migration first.** Do not author any IAM resource ARN, S3 key layout, or KMS encryption-context key until `tenant_id`/`stage`/`case_status` exist and the tenant identity is decided — otherwise every policy churns. *(must-fix #5)*
+- **awaiting_seed reliability primitives:** a reaper/alarm for awaiting_seed cases with no resolvable token; CloudWatch alarms for stuck cases and for cases approaching the 90-day execution-history horizon; token persisted transactionally in the PITR-backed DB (outbox extension).
+- **DLQ + redrive** on the SQS queues, with alarms — the idempotency story is meaningless without somewhere for poison/failed messages to land and be observed.
+- **Least-privilege from day one:** prefix-scoped IAM and a real per-case KMS encryption-context pin. Bring the per-case scoped `sts:AssumeRole` forward to MVP (the launcher Lambda or task can assume it — Step Functions isn't required) so the "second boundary" claim is true at launch, not 2B. *(closes must-fix-adjacent KMS gap)*
+- **Cost/abuse guardrails:** account-level Fargate task-ceiling alarm and a per-tenant in-flight cap before any high-volume shop onboards.
+- **Sandboxed Open3D import smoke test as a blocking CI gate on day one** (not at 2A sign-off), plus drift detection (scheduled `terraform plan`) in CI from the start.
+
+**Can wait / right-size (explicit phase-2 with a runbook):**
+- Separate logging account, SCP/permission-boundary guardrails, compliance-mode Object Lock — good posture but operationally heavy; ship MVP without standing up a full multi-account org.
+- Cross-region replication / replica CMK DR — decide against the client's actual RPO/RTO; if deferred, still run the referential-consistency assertion against versioned single-region restores.
+- Consider collapsing stack count and keeping DynamoDB locking if the team already knows it — fewer state files, simpler cross-references, until operational maturity grows.
+
+## 5. Cross-lens tension
+
+- **Synthetic validation: violent agreement, not disagreement.** Both lenses independently flag synthetic-only validation as the headline credibility problem (the architect at length, the dentist in three words: "Not clinical. Run real cases."). This is the strongest cross-lens signal in the report — when the cloud architect and the dental PO converge from opposite ends on the same gate, treat it as non-negotiable.
+- **Security hardening vs the geometry dependency.** The architect's max-sandbox posture (readonly-rootfs, cap_drop ALL, no /dev/dri) directly threatens Open3D's GL dlopen at import. Solving the security lens can break the clinical pipeline at container start, with an opaque native crash instead of a traceback. Resolution leans toward the clinical side: remove Open3D from the path (scikit-learn DBSCAN) so both hardening *and* reliability improve — fewer parser CVEs and no GL-load fragility.
+- **Audit loop: the architect's safety control is the dentist's cost problem.** The fix for the blind safety metric — route a fraction of PASS cases to manual RealGUIDE ground-truthing — reintroduces exactly the manual registration work the automation exists to remove, indefinitely, for the audited fraction. Solving clinical credibility (real false-confidence measurement) directly worsens the commercial case (permanent audit-labor OPEX the ROI omits). The two must be reconciled in one number: a fully-loaded per-case cost that includes standing audit labor, presented as the *real* break-even.
+- **Point-to-point vs point-to-plane: where infra rigor and clinical accuracy pull apart.** The architect wants docs reconciled to the implemented point-to-point ICP; the clinical lens wants the accuracy margin that point-to-plane literature implies. Reconciling the docs downward (admit point-to-point) is cheap but may quietly accept a thinner-than-claimed margin to clinical tolerance on real, noisier scans — a case where the honest engineering fix and the clinical-safety fix are not the same fix.

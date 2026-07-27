@@ -1,0 +1,17 @@
+<svg width="640" height="205" viewBox="0 0 640 205" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ArTech Software Labs">
+  <defs>
+    <linearGradient id="artechA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#12994a"/><stop offset="1" stop-color="#0a6d2e"/>
+    </linearGradient>
+  </defs>
+  <!-- EMBEDDED WORDMARK: the gradient precision-A (apex node = the aligned point) IS the first
+       letter of "ArTech"; SOFTWARE LABS locks up beneath. Primary version for LIGHT backgrounds. -->
+  <g fill="none" stroke="url(#artechA)" stroke-width="17" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M96 52 L52 158 M96 52 L140 158 M67 122 L125 122"/>
+  </g>
+  <circle cx="96" cy="52" r="10" fill="#12994a"/><circle cx="96" cy="52" r="4" fill="#ffffff"/>
+  <text x="150" y="158" font-family="'Helvetica Neue', Arial, sans-serif" font-size="112"
+        font-weight="800" letter-spacing="-4" fill="url(#artechA)">rTech</text>
+  <text x="54" y="192" font-family="'Helvetica Neue', Arial, sans-serif" font-size="22"
+        font-weight="600" letter-spacing="10.5" fill="#5f6b64">SOFTWARE LABS</text>
+</svg>

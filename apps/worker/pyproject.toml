@@ -1,0 +1,55 @@
+[project]
+name = "case-prep"
+version = "0.1.0"
+description = "Phase 2A automated case-prep spike: count -> localize -> align -> 6-DoF pose -> gate -> report"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "trimesh>=4.0",
+    "pydantic>=2.0",
+    "jinja2>=3.0",
+    "open3d>=0.18",
+    "scikit-image>=0.21",   # marching cubes for SDF-CSG surface extraction
+    "rtree>=1.0",            # spatial index for trimesh point-in-mesh queries
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "matplotlib>=3.7", "pytest-json-report>=1.5"]
+
+[project.scripts]
+case-prep = "case_prep.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+# THE BATTERY HAS TWO LANES. `make test` runs EVERYTHING and remains the certification
+# gate — this marker weakens nothing. `make test-fast` runs `-m "not slow"`: the lane you
+# can afford between edits, so a broken invariant is found in seconds instead of at the
+# end of a 24-minute wait (the measured cost of having only one lane: people stop running
+# it). A test is marked `slow` on MEASUREMENT (pytest --durations), never on suspicion:
+# re-measure before adding or removing a mark, and mark whole classes/modules only when
+# the measurement says the whole thing is slow.
+markers = [
+    "slow: measured >1s — real-data/pipeline/end-to-end work. Excluded from `make test-fast` ONLY.",
+]
+filterwarnings = [
+    # third-party env noise (LibreSSL vs OpenSSL on macOS system python); not our code
+    "ignore::urllib3.exceptions.NotOpenSSLWarning",
+    # numpy 2.0 + macOS Accelerate BLAS sets spurious FP-status flags on valid matmul
+    # calls (results verified correct by tests); env artifact, not a logic signal.
+    "ignore:.*encountered in matmul:RuntimeWarning",
+]
+
+# Notes:
+# - Python 3.9 is the spike interpreter (Open3D 0.18 arm64 wheel target on this host).
+#   Production CI/container pins 3.11 per the design docs.
+# - Open3D is imported ONLY inside adapters/open3d_engine.py (lazily), so the domain
+#   core, synthetic generator, metrics and report are testable without it.

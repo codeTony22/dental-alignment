@@ -1,0 +1,154 @@
+/* Minimal, self-contained styles for the standalone offline viewer. Kept small and inlined
+   into the single view.html by Vite's built-in CSS injection (see vite.config.ts) — no
+   external stylesheet, no network fetch, works from file://. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: #ffffff;
+  color: #1a1f1c;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.app-header {
+  padding: 14px 20px;
+  background: #0e1613;
+  color: #ffffff;
+  flex: 0 0 auto;
+}
+
+.app-title {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.meta-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+
+.meta-table th,
+.meta-table td {
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  text-align: left;
+}
+
+.meta-table th {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #a9b3ae;
+  font-size: 10px;
+}
+
+.view-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 20px;
+  flex: 0 0 auto;
+  background: #f4f6f5;
+  border-bottom: 1px solid #e3e3e8;
+}
+
+.view-button {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #e3e3e8;
+  background: #ffffff;
+  color: #1a1f1c;
+  cursor: pointer;
+}
+
+.view-button:hover {
+  border-color: #12994a;
+}
+
+.view-button.active {
+  border-color: #12994a;
+  color: #0a6d2e;
+  background: #eafaf0;
+}
+
+.viewer3d-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.viewer3d {
+  width: 100%;
+  height: 100%;
+}
+
+.viewer3d canvas {
+  display: block;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.legend-slot {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.legend-chip {
+  width: fit-content;
+  background: rgba(14, 22, 19, 0.78);
+  color: #ffffff;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.case-error {
+  margin: 20px;
+  padding: 16px;
+  background: #fdecea;
+  border: 1px solid #f2b8b0;
+  border-radius: 8px;
+  color: #c0392b;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+}

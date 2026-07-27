@@ -1,0 +1,30 @@
+# Python
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.mypy_cache/
+**/*.egg-info/
+
+# Node
+node_modules/
+.turbo/
+dist/
+
+# Phase 2 worker — generated artifacts & real clinical data (never commit scans)
+apps/worker/reports/
+apps/worker/data/real/
+apps/worker/data/synthetic/
+
+# OS
+.DS_Store
+
+# Terraform local state (infrastructure/ sources are versioned; provider binaries are not)
+**/.terraform/
+*.tfstate
+*.tfstate.*
+
+# local environment noise
+*.log
+.env
+.env.*

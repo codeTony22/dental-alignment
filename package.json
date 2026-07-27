@@ -1,0 +1,16 @@
+{
+  "name": "dental-implant-cad",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Implant CAD Portal (Phase 1) & Automation (Phase 2) monorepo",
+  "packageManager": "pnpm@10.32.1",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "worker:test": "cd apps/worker && PYTHONWARNINGS='ignore:::urllib3' .venv/bin/pytest",
+    "worker:demo": "cd apps/worker && PYTHONWARNINGS='ignore:::urllib3' .venv/bin/python -m case_prep.cli run --synthetic",
+    "demo": "./scripts/run-demo.sh"
+  }
+}
