@@ -7,7 +7,7 @@ module enforces the boundary:
   1. EVIDENCE — the assurance summary (per-site numbers, gate and clamp words, QC
      images) — is visible BEFORE any confirmation: signing over visible evidence is
      the whole design (plan §1.4). ``GET .../assurance`` and ``GET .../runs/current/
-     qc/{filename}`` are UNGATED (no operator header, no payment).
+     qc/{filename}`` are UNGATED (no confirmation, no payment).
   2. DELIVERABLE ARTIFACTS — the STLs and package files a mill consumes — disclose
      ONLY behind a still-valid confirmation AND payment (slice 8-ii's release-gated
      artifact endpoints). Anything that is not a QC image refuses on the evidence
@@ -26,7 +26,7 @@ import datetime
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Tuple
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -267,22 +267,18 @@ def case_qc_image(case_id: str, filename: str, request: Request) -> FileResponse
     return FileResponse(path, media_type="image/png", filename=filename)
 
 
-# --- operator identity (grill AM-11) ----------------------------------------------------
-
-def _require_operator(x_operator: Optional[str], act: str) -> str:
-    """THE NAMED-SESSION MINIMUM (AM-11): every gating endpoint — confirm, payment,
-    release, artifacts — requires a human name in ``X-Operator``, recorded verbatim
-    on every record it produces, so no confirmation, payment or disclosure is ever
-    anonymous. HONESTLY A STUB: phase 2 brings real authentication; this is the
-    smallest form that keeps the records named — structurally required (a 422, not
-    a convention), never optional, and never pretended to be auth."""
-    if x_operator is None or not x_operator.strip():
-        raise HTTPException(422, f"who is {act}? the record names its actor — "
-                                 f"send the X-Operator header with a human name "
-                                 f"(a named-session minimum; phase 2 brings real "
-                                 f"authentication)")
-    return x_operator.strip()
-
+# --- no operator header, deliberately (client 2026-07-27) -------------------------------
+#
+# "WE dont need operator name the checkmark is sufficient."
+#
+# AM-11's named-session minimum lived here: an ``X-Operator`` header, required by a
+# 422 on confirm/payment/release/artifacts and recorded verbatim on every record.
+# It is GONE. A self-typed name behind no authentication was never identity — it was
+# a text field — and recording it made the records LOOK rigorous while proving
+# nothing. The ACT is the record now: a run authorized only by per-site attestations,
+# a confirmation sealed over evidence that re-derives, a release that re-verifies
+# both. Real identity arrives with real auth (plan §8 / phase-2), where it will mean
+# something; until then these endpoints ask nobody's name and keep none.
 
 def _now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -347,7 +343,11 @@ def _mutate_signing(store: SessionStore, case_id: str, mutate, act: str,
     when the rival write WAS the same kind of signing record, the 409 names whose
     act landed first so the loser re-reads deliberately instead of guessing.
     ``record_of`` picks the record this act signs (session→record), compared
-    before/after the loss to tell a rival signature from an unrelated write."""
+    before/after the loss to tell a rival signature from an unrelated write.
+
+    The 409 names WHEN the rival landed, not who: since the identity removal
+    (client 2026-07-27) the record carries no name to print, and its timestamp is
+    the fact the loser can actually check against what they re-read."""
     session = store.load(case_id)
     before = record_of(session)
     mutate(session)
@@ -356,7 +356,7 @@ def _mutate_signing(store: SessionStore, case_id: str, mutate, act: str,
         return session
     except SessionConflict as exc:
         rival = record_of(store.load(case_id))
-        landed = (f" — {rival.operator}'s {act} landed first"
+        landed = (f" — another {act} landed first, at {rival.at}"
                   if rival is not None and rival != before else "")
         raise HTTPException(409, f"{exc}{landed}; nothing was recorded for this "
                                  f"{act} — re-read the case and repeat the act "
@@ -405,9 +405,8 @@ def _tooth_of_file(name: str, case_id: str, teeth: List[int]) -> Optional[int]:
 # --- the confirmation (plan §6, grill AM-10/AM-12) --------------------------------------
 
 @router.post("/{case_id}/confirm", response_model=CaseSessionDetail)
-def confirm_case(case_id: str, body: ConfirmIn, request: Request,
-                 x_operator: Optional[str] = Header(default=None),
-                 ) -> CaseSessionDetail:
+def confirm_case(case_id: str, body: ConfirmIn,
+                 request: Request) -> CaseSessionDetail:
     """Seal the confirmation over the evidence as it stands NOW.
 
     Refuses unless: a done current run; EVERY site carries a disposition (each
@@ -418,10 +417,9 @@ def confirm_case(case_id: str, body: ConfirmIn, request: Request,
     WRITE the evidence bundle — a failed write REFUSES the whole confirmation
     (AM-10's transactional half; the content-addressed write is idempotent, so the
     mutation's one CAS retry re-writes the same bytes harmlessly) — then persist
-    the record with the operator named verbatim."""
+    the record."""
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
-    operator = _require_operator(x_operator, "confirming")
 
     def apply(session: CaseSession) -> None:
         run = _require_done_run_for_act(session, case_id, "confirm")
@@ -475,7 +473,7 @@ def confirm_case(case_id: str, body: ConfirmIn, request: Request,
                                      f"the confirmation is refused, nothing was "
                                      f"sealed: {exc}")
         session.confirmation = ConfirmationRecord(
-            operator=operator, at=_now(),
+            at=_now(),
             run_id=run.run_id or run.job_id,
             evidence_sha256=bundle.sha256,
             dispositions=dict(body.dispositions),
@@ -490,16 +488,14 @@ def confirm_case(case_id: str, body: ConfirmIn, request: Request,
 # --- the payment stub (grill AM-11) -----------------------------------------------------
 
 @router.post("/{case_id}/payment", response_model=CaseSessionDetail)
-def authorize_payment(case_id: str, body: PaymentIn, request: Request,
-                      x_operator: Optional[str] = Header(default=None),
-                      ) -> CaseSessionDetail:
+def authorize_payment(case_id: str, body: PaymentIn,
+                      request: Request) -> CaseSessionDetail:
     """Record the stubbed payment authorization — fail-closed (absence of this
     record IS "not authorized") and honest (``provider: "stub"`` marks the session
     permanently; when a real provider lands, its adapter replaces this route's
     body, and stub-authorized history stays tellable from paid history)."""
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
-    operator = _require_operator(x_operator, "authorizing payment")
     if not body.authorize:
         raise HTTPException(422, "the payment stub authorizes nothing implicitly — "
                                  "the act is {\"authorize\": true}, or no act at "
@@ -507,7 +503,7 @@ def authorize_payment(case_id: str, body: PaymentIn, request: Request,
 
     def apply(session: CaseSession) -> None:
         session.payment = PaymentRecord(payment_authorized=True, provider="stub",
-                                        operator=operator, at=_now())
+                                        at=_now())
 
     session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)
@@ -516,9 +512,7 @@ def authorize_payment(case_id: str, body: PaymentIn, request: Request,
 # --- release = disclosure (plan §4/§6, grill AM-1) --------------------------------------
 
 @router.post("/{case_id}/release", response_model=CaseSessionDetail)
-def release_case(case_id: str, request: Request,
-                 x_operator: Optional[str] = Header(default=None),
-                 ) -> CaseSessionDetail:
+def release_case(case_id: str, request: Request) -> CaseSessionDetail:
     """The disclosure act. Body-less: everything the release consumes — the
     confirmation, its dispositions, the payment state — is already the session's,
     so there is nothing a client could claim with.
@@ -526,11 +520,10 @@ def release_case(case_id: str, request: Request,
     Refuses (409) unless: a done current run; a confirmation record; the
     RE-DERIVED evidence hashes to the confirmed sha256 (confirm → change → release
     is structurally a 409: validity is re-derivation, never trust in the record);
-    and the stubbed payment is authorized. Persists who released what, over which
+    and the stubbed payment is authorized. Persists WHAT was released, over which
     evidence, with the withheld sites already dropped from the released set."""
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
-    operator = _require_operator(x_operator, "releasing")
 
     def apply(session: CaseSession) -> None:
         run = _require_done_run_for_act(session, case_id, "release")
@@ -547,7 +540,7 @@ def release_case(case_id: str, request: Request,
                                      f"{case_id!r} — the (stub) payment gate "
                                      f"precedes disclosure")
         session.release = ReleaseRecord(
-            operator=operator, at=_now(),
+            at=_now(),
             run_id=run.run_id or run.job_id,
             evidence_sha256=confirmation.evidence_sha256,
             # the ONE shared derivation (session.released_teeth_of): the gate and
@@ -642,14 +635,11 @@ _ARTIFACT_MEDIA = {".stl": "model/stl", ".json": "application/json",
 
 
 @router.get("/{case_id}/runs/current/artifacts", response_model=ArtifactsView)
-def list_artifacts(case_id: str, request: Request,
-                   x_operator: Optional[str] = Header(default=None),
-                   ) -> ArtifactsView:
+def list_artifacts(case_id: str, request: Request) -> ArtifactsView:
     """The DELIVERABLE list — even listing is disclosure (names leak what was
-    made), so the release gate and the operator requirement sit on the list too."""
+    made), so the release gate sits on the list too."""
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
-    _require_operator(x_operator, "taking delivery")
     session = store.load(case_id)
     run, release = _require_valid_release(case, session, settings)
     withheld = sorted(set(_summary_teeth(run)) - set(release.released_teeth))
@@ -661,16 +651,14 @@ def list_artifacts(case_id: str, request: Request,
 
 
 @router.get("/{case_id}/runs/current/artifacts/{filename}")
-def fetch_artifact(case_id: str, filename: str, request: Request,
-                   x_operator: Optional[str] = Header(default=None),
-                   ) -> FileResponse:
+def fetch_artifact(case_id: str, filename: str,
+                   request: Request) -> FileResponse:
     """One deliverable's bytes — the disclosure edge itself. Filename validates
     against the run's own package list (no client path reaches the filesystem);
     QC images refuse toward the evidence endpoint; a withheld site's files refuse
     with the site's open status."""
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
-    _require_operator(x_operator, "taking delivery")
     session = store.load(case_id)
     run, release = _require_valid_release(case, session, settings)
     if ("/" in filename or "\\" in filename or filename.startswith(".")

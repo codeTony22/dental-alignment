@@ -1,18 +1,22 @@
-"""THE DISCLOSURE GATES (plan §4 Deliver, §6; grill AM-1/AM-10/AM-11/AM-12): the
+"""THE DISCLOSURE GATES (plan §4 Deliver, §6; grill AM-1/AM-10/AM-12): the
 confirmation over sealed evidence, the payment stub, release-as-disclosure, and the
 gated artifact endpoints — slice 8-ii.
 
 The chain under test, end to end:
 
-  operator (X-Operator, AM-11) → POST /confirm (dispositions + per-flag
-  acknowledgments; seals the evidence bundle TRANSACTIONALLY) → POST /payment (the
-  honest stub) → POST /release (re-derives the evidence and refuses on ANY drift) →
-  GET /runs/current/artifacts[/{filename}] (the deliverable class, disclosed at last;
-  withheld sites excluded).
+  POST /confirm (dispositions + per-flag acknowledgments; seals the evidence bundle
+  TRANSACTIONALLY) → POST /payment (the honest stub) → POST /release (re-derives the
+  evidence and refuses on ANY drift) → GET /runs/current/artifacts[/{filename}] (the
+  deliverable class, disclosed at last; withheld sites excluded).
 
 Confirm → change → release must 409 — pinned here both ways the case can change:
 a reset boundary clearing the run pointer, and an evidence drift the pointer
 survives (a withdrawn review tick, a mutated QC byte).
+
+NO OPERATOR HEADER ANYWHERE (client 2026-07-27: "WE dont need operator name the
+checkmark is sufficient"). AM-11's X-Operator requirement is GONE — deliberately,
+not by oversight — and TestIdentityIsNoLongerClaimed below is where that decision
+is pinned so nobody restores the 422 as a "regression fix".
 """
 from __future__ import annotations
 
@@ -26,9 +30,6 @@ from bff.session import SessionStore
 from conftest import make_data_tree
 from test_assurance import PACKAGE_FILES, landed_client
 from test_run_resource import FakeWorker, client_with, row, seed_ready, summary_for
-
-
-OPERATOR = {"X-Operator": "Ana Petrova"}
 
 
 @pytest.fixture
@@ -65,19 +66,18 @@ def confirm_body(dispositions=None, acknowledged=()):
             "acknowledged_flags": list(acknowledged)}
 
 
-def confirm(client, body=None, headers=OPERATOR):
+def confirm(client, body=None):
     return client.post("/api/case-sessions/neodent-gm/confirm",
-                       json=body if body is not None else confirm_body(),
-                       headers=headers)
+                       json=body if body is not None else confirm_body())
 
 
-def pay(client, headers=OPERATOR):
+def pay(client):
     return client.post("/api/case-sessions/neodent-gm/payment",
-                       json={"authorize": True}, headers=headers)
+                       json={"authorize": True})
 
 
-def release(client, headers=OPERATOR):
-    return client.post("/api/case-sessions/neodent-gm/release", headers=headers)
+def release(client):
+    return client.post("/api/case-sessions/neodent-gm/release")
 
 
 def confirmed_paid_client(settings, product_root, dispositions=None,
@@ -88,26 +88,31 @@ def confirmed_paid_client(settings, product_root, dispositions=None,
     return client
 
 
-# --- operator identity (AM-11) ---------------------------------------------------------
+# --- identity, DELIBERATELY REMOVED (client 2026-07-27) --------------------------------
 
-class TestOperatorIdentity:
-    """The minimum honest form: every gating endpoint REQUIRES a named human, so no
-    confirmation, payment, release or disclosure record is ever anonymous. A stub —
-    phase 2 brings real auth — but structurally required, never optional."""
+class TestIdentityIsNoLongerClaimed:
+    """THE DELETED REQUIREMENT, pinned so it is never "restored" as a regression fix.
 
-    def test_confirm_without_an_operator_is_refused_in_words(
+    Client, verbatim: "WE dont need operator name the checkmark is sufficient."
+
+    The reasoning, because a reader deserves it: a self-typed name behind no
+    authentication was never identity — it was a text field. Recording it made the
+    records LOOK rigorous while proving nothing (anyone could type anyone), and a
+    record that looks like proof and is not is worse than one that claims less.
+    What the records now stand on is the ATTESTATION ACT itself — a run authorized
+    only by per-site review ticks, a confirmation sealed over re-derivable evidence.
+    Real identity arrives with real auth (plan §8 / phase-2), where a name will
+    mean something. A deliberate reduction, not an oversight.
+
+    Every test below used to assert a 422. They assert the act instead."""
+
+    def test_confirming_with_no_header_at_all_seals_the_record(
             self, settings, product_root):
         client = deliverable_client(settings, product_root)
-        res = confirm(client, headers={})
-        assert res.status_code == 422
-        assert "who is confirming? the record names its actor" in \
-            res.json()["detail"]
-        # nothing sealed: the refusal happened before any act
-        assert SessionStore(product_root).load("neodent-gm").confirmation is None
-
-    def test_a_blank_operator_is_no_operator(self, settings, product_root):
-        client = deliverable_client(settings, product_root)
-        assert confirm(client, headers={"X-Operator": "   "}).status_code == 422
+        assert confirm(client).status_code == 200
+        record = SessionStore(product_root).load("neodent-gm").confirmation
+        assert record is not None
+        assert record.at   # the timestamp stays: WHEN is a fact the act produced
 
     @pytest.mark.parametrize("method,path", [
         ("POST", "/api/case-sessions/neodent-gm/payment"),
@@ -116,24 +121,39 @@ class TestOperatorIdentity:
         ("GET", "/api/case-sessions/neodent-gm/runs/current/artifacts/"
                 "neodent-gm-4-healingcap-aligned.stl"),
     ])
-    def test_every_gating_endpoint_requires_the_operator(
+    def test_no_gating_endpoint_asks_who_you_are(
             self, settings, product_root, method, path):
+        """Whatever these refuse, it is never "who is acting?" — the 422 that used
+        to greet an unnamed caller is gone from every one of them."""
         client = deliverable_client(settings, product_root)
         res = client.request(
             method, path, json={"authorize": True} if "payment" in path else None)
-        assert res.status_code == 422
-        assert "names its actor" in res.json()["detail"]
+        assert res.status_code != 422
+        assert "names its actor" not in res.text
 
-    def test_the_operator_is_recorded_verbatim(self, settings, product_root):
-        # the name lands exactly as sent — punctuation, casing, inner spacing (the
-        # record names its actor in the actor's own spelling; only outer whitespace
-        # is trimmed, it is transport noise, not a name). Header transport is
-        # latin-1 by RFC — the pin stays ASCII because the test client re-encodes
-        # bytes, not because names must be
+    def test_a_sent_header_is_simply_ignored_never_recorded(
+            self, settings, product_root):
+        # a stale client (or a curl someone kept) may still send X-Operator: the
+        # server neither refuses it nor keeps it — an unauthenticated name is not a
+        # fact worth persisting, and a nullable column that never fills would be a
+        # lie about intent
         client = deliverable_client(settings, product_root)
-        confirm(client, headers={"X-Operator": "  Dr. O'Neill-Smith, Lab 3  "})
-        record = SessionStore(product_root).load("neodent-gm").confirmation
-        assert record.operator == "Dr. O'Neill-Smith, Lab 3"
+        assert confirm(client).status_code == 200
+        assert client.post("/api/case-sessions/neodent-gm/payment",
+                           json={"authorize": True},
+                           headers={"X-Operator": "Ana Petrova"}).status_code == 200
+        session = SessionStore(product_root).load("neodent-gm")
+        assert "Ana Petrova" not in session.model_dump_json()
+
+    @pytest.mark.parametrize("record", ["ConfirmationRecord", "PaymentRecord",
+                                        "ReleaseRecord"])
+    def test_the_three_records_carry_no_operator_field_at_all(self, record):
+        """STRUCTURAL: the field is GONE, not nullable. A column that can only ever
+        hold None documents an intention nobody has."""
+        import bff.session as session_module
+        model = getattr(session_module, record)
+        assert "operator" not in model.model_fields
+        assert "at" in model.model_fields   # the timestamp is what survives
 
 
 # --- the confirmation (AM-10, AM-12) ---------------------------------------------------
@@ -172,8 +192,7 @@ class TestConfirmRefusals:
     def test_a_smuggled_extra_field_is_refused(self, settings, product_root):
         client = deliverable_client(settings, product_root)
         res = client.post("/api/case-sessions/neodent-gm/confirm",
-                          json={**confirm_body(), "status": "confirmed"},
-                          headers=OPERATOR)
+                          json={**confirm_body(), "status": "confirmed"})
         assert res.status_code == 422
 
 
@@ -231,8 +250,7 @@ class TestConfirmSealsTheEvidence:
         session = SessionStore(product_root).load("neodent-gm")
         record = session.confirmation
         assert record is not None
-        assert record.operator == "Ana Petrova"
-        assert record.at   # ISO stamp
+        assert record.at   # ISO stamp — the record's own fact, no actor beside it
         assert record.run_id == session.run.run_id
         assert record.dispositions == {"4": "release", "13": "withhold"}
         assert record.acknowledged_flags == []
@@ -246,7 +264,8 @@ class TestConfirmSealsTheEvidence:
         # and the response's session view says so, for the UI's sealed state
         view = res.json()["session"]
         assert view["confirmed"] is True
-        assert view["confirmation"]["operator"] == "Ana Petrova"
+        assert "operator" not in view["confirmation"]   # the wire dropped it too
+        assert view["confirmation"]["at"] == record.at
         assert view["confirmation"]["evidence_sha256"] == record.evidence_sha256
 
     def test_a_missing_qc_image_refuses_the_whole_confirmation(
@@ -280,7 +299,7 @@ class TestPaymentStub:
         detail = client.get("/api/case-sessions/neodent-gm").json()
         assert detail["session"]["payment_authorized"] is False
 
-    def test_the_stub_records_provider_operator_and_time(
+    def test_the_stub_records_provider_and_time(
             self, settings, product_root):
         client = deliverable_client(settings, product_root)
         res = pay(client)
@@ -288,7 +307,6 @@ class TestPaymentStub:
         session = SessionStore(product_root).load("neodent-gm")
         assert session.payment is not None
         assert session.payment.provider == "stub"   # permanently distinguishable
-        assert session.payment.operator == "Ana Petrova"
         assert session.payment.at
         view = res.json()["session"]
         assert view["payment_authorized"] is True
@@ -297,15 +315,14 @@ class TestPaymentStub:
     def test_authorize_false_authorizes_nothing(self, settings, product_root):
         client = deliverable_client(settings, product_root)
         res = client.post("/api/case-sessions/neodent-gm/payment",
-                          json={"authorize": False}, headers=OPERATOR)
+                          json={"authorize": False})
         assert res.status_code == 422
         assert SessionStore(product_root).load("neodent-gm").payment is None
 
     def test_an_extra_field_is_refused(self, settings, product_root):
         client = deliverable_client(settings, product_root)
         res = client.post("/api/case-sessions/neodent-gm/payment",
-                          json={"authorize": True, "amount": 0},
-                          headers=OPERATOR)
+                          json={"authorize": True, "amount": 0})
         assert res.status_code == 422
 
 
@@ -337,7 +354,7 @@ class TestReleaseGates:
         session = SessionStore(product_root).load("neodent-gm")
         record = session.release
         assert record is not None
-        assert record.operator == "Ana Petrova"
+        assert record.at
         assert record.run_id == session.run.run_id
         assert record.evidence_sha256 == session.confirmation.evidence_sha256
         assert record.released_teeth == [4]   # the withheld site stays open
@@ -407,7 +424,7 @@ class TestArtifactsAreGated:
     def test_no_release_no_disclosure_with_the_missing_pieces_named(
             self, settings, product_root, path):
         client = deliverable_client(settings, product_root)
-        res = client.get(path, headers=OPERATOR)
+        res = client.get(path)
         assert res.status_code == 409
         assert "release" in res.json()["detail"]
 
@@ -430,8 +447,7 @@ class TestArtifactsAreGated:
             variant="5030", jaw="upper", gingival_offset_mm=0.2)
         store.save(s)
         assert client.post("/api/case-sessions/neodent-gm/run").status_code == 200
-        res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts",
-                         headers=OPERATOR)
+        res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts")
         assert res.status_code == 409
 
     def test_evidence_drift_after_release_closes_the_door_again(
@@ -443,8 +459,7 @@ class TestArtifactsAreGated:
         client = confirmed_paid_client(settings, product_root)
         assert release(client).status_code == 200
         client.delete("/api/case-sessions/neodent-gm/sites/13/review")
-        res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts",
-                         headers=OPERATOR)
+        res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts")
         assert res.status_code == 409
 
 
@@ -458,8 +473,7 @@ class TestArtifactsDisclose:
     def test_the_list_is_the_deliverables_qc_images_are_evidence_not_artifacts(
             self, settings, product_root):
         client = self._released(settings, product_root)
-        body = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts",
-                          headers=OPERATOR).json()
+        body = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts").json()
         assert body["run_id"]
         assert body["files"] == ["neodent-gm-4-healingcap-aligned.stl",
                                  "neodent-gm-13-healingcap-aligned.stl",
@@ -479,8 +493,7 @@ class TestArtifactsDisclose:
         to a released tooth leave, and the list names what is held and why."""
         client = self._released(settings, product_root,
                                 {"4": "release", "13": "withhold"})
-        body = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts",
-                          headers=OPERATOR).json()
+        body = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts").json()
         assert body["files"] == ["neodent-gm-4-healingcap-aligned.stl"]
         assert body["withheld_teeth"] == [13]
         assert body["withheld_case_files"] == ["neodent-gm-upper-overlay.stl",
@@ -495,7 +508,7 @@ class TestArtifactsDisclose:
         for name in ("neodent-gm-upper-overlay.stl", "neodent-gm-manifest.json",
                      "view.html"):
             res = client.get("/api/case-sessions/neodent-gm/runs/current/"
-                             f"artifacts/{name}", headers=OPERATOR)
+                             f"artifacts/{name}")
             assert res.status_code == 403, name
             detail = res.json()["detail"]
             assert "case-wide" in detail
@@ -505,14 +518,14 @@ class TestArtifactsDisclose:
             self, settings, product_root):
         client = self._released(settings, product_root)
         res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts/"
-                         "neodent-gm-upper-overlay.stl", headers=OPERATOR)
+                         "neodent-gm-upper-overlay.stl")
         assert res.status_code == 200
         assert res.content == b"STL:neodent-gm-upper-overlay.stl"
 
     def test_a_released_file_serves_its_bytes(self, settings, product_root):
         client = self._released(settings, product_root)
         res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts/"
-                         "neodent-gm-4-healingcap-aligned.stl", headers=OPERATOR)
+                         "neodent-gm-4-healingcap-aligned.stl")
         assert res.status_code == 200
         assert res.content == b"STL:neodent-gm-4-healingcap-aligned.stl"
 
@@ -521,7 +534,7 @@ class TestArtifactsDisclose:
         client = self._released(settings, product_root,
                                 {"4": "release", "13": "withhold"})
         res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts/"
-                         "neodent-gm-13-healingcap-aligned.stl", headers=OPERATOR)
+                         "neodent-gm-13-healingcap-aligned.stl")
         assert res.status_code == 403
         assert "withheld" in res.json()["detail"]
 
@@ -529,7 +542,7 @@ class TestArtifactsDisclose:
             self, settings, product_root):
         client = self._released(settings, product_root)
         res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts/"
-                         "neodent-gm-4-clockview.png", headers=OPERATOR)
+                         "neodent-gm-4-clockview.png")
         assert res.status_code == 403
         assert "QC image" in res.json()["detail"]
 
@@ -538,7 +551,7 @@ class TestArtifactsDisclose:
         client = self._released(settings, product_root)
         for name in ("nope.stl", "..%2Fsession.json"):
             res = client.get("/api/case-sessions/neodent-gm/runs/current/"
-                             f"artifacts/{name}", headers=OPERATOR)
+                             f"artifacts/{name}")
             assert res.status_code == 404, name
 
 
@@ -593,14 +606,13 @@ class TestAReconfirmRetiresTheRelease:
         # the display half flips with the record: the rail tick is rail truth
         assert res.json()["session"]["released"] is False
         listing = client.get(
-            "/api/case-sessions/neodent-gm/runs/current/artifacts",
-            headers=OPERATOR)
+            "/api/case-sessions/neodent-gm/runs/current/artifacts",)
         assert listing.status_code == 409
         assert "confirmation changed after release" in listing.json()["detail"]
         assert "re-release" in listing.json()["detail"]
         fetched = client.get(
             "/api/case-sessions/neodent-gm/runs/current/artifacts/"
-            "neodent-gm-13-healingcap-aligned.stl", headers=OPERATOR)
+            "neodent-gm-13-healingcap-aligned.stl")
         assert fetched.status_code == 409   # the gate closes before per-file logic
 
     def test_an_explicit_re_release_re_opens_over_the_new_dispositions(
@@ -610,8 +622,7 @@ class TestAReconfirmRetiresTheRelease:
         confirm(client, confirm_body({"4": "release", "13": "withhold"}))
         assert release(client).status_code == 200
         body = client.get(
-            "/api/case-sessions/neodent-gm/runs/current/artifacts",
-            headers=OPERATOR).json()
+            "/api/case-sessions/neodent-gm/runs/current/artifacts",).json()
         assert body["withheld_teeth"] == [13]
         assert "neodent-gm-13-healingcap-aligned.stl" not in body["files"]
 
@@ -625,8 +636,7 @@ class TestAReconfirmRetiresTheRelease:
         assert res.status_code == 200
         assert res.json()["session"]["released"] is True
         assert client.get(
-            "/api/case-sessions/neodent-gm/runs/current/artifacts",
-            headers=OPERATOR).status_code == 200
+            "/api/case-sessions/neodent-gm/runs/current/artifacts",).status_code == 200
 
     def test_the_worklist_released_chip_unticks_with_the_retired_release(
             self, settings, product_root):
@@ -642,9 +652,13 @@ class TestAReconfirmRetiresTheRelease:
 class TestSigningActsAreOneWinner:
     """A CAS loss on a SIGNING act never silently retries: re-applying a
     signature over a rival's write would erase the rival's record while both
-    operators hold a 200 — two winners with contradictory receipts. The loser
-    gets a 409 that names whose act landed first; disk holds exactly the
-    winner's record."""
+    callers hold a 200 — two winners with contradictory receipts. The loser
+    gets a 409 that says a rival act landed first AND WHEN; disk holds exactly
+    the winner's record.
+
+    WHEN, not WHO, since the identity removal (client 2026-07-27): the rival
+    record no longer carries a name to print, and its timestamp is the fact the
+    loser can actually check against what they are re-reading."""
 
     @staticmethod
     def _racing_save(monkeypatch, product_root, rival_write):
@@ -662,7 +676,7 @@ class TestSigningActsAreOneWinner:
 
         monkeypatch.setattr(SessionStore, "save", save)
 
-    def test_a_rival_confirmation_wins_and_the_loser_is_told_who(
+    def test_a_rival_confirmation_wins_and_the_loser_is_told_when(
             self, settings, product_root, monkeypatch):
         from bff.session import ConfirmationRecord
         client = deliverable_client(settings, product_root)
@@ -671,22 +685,22 @@ class TestSigningActsAreOneWinner:
         def rival_write(store, orig_save):
             rival = store.load("neodent-gm")
             rival.confirmation = ConfirmationRecord(
-                operator="Boris Ivanov", at="2026-07-27T00:00:00+00:00",
+                at="2026-07-27T00:00:00+00:00",
                 run_id=run_id, evidence_sha256="0" * 64,
                 dispositions={"4": "withhold", "13": "withhold"})
             orig_save(store, rival)
 
         self._racing_save(monkeypatch, product_root, rival_write)
-        res = confirm(client)   # Ana's release-everything confirmation
+        res = confirm(client)   # the release-everything confirmation
         assert res.status_code == 409
         detail = res.json()["detail"]
-        assert "Boris Ivanov" in detail and "landed first" in detail
-        # ONE winner on disk: Boris's withhold-everything record stands untouched
+        assert "2026-07-27T00:00:00+00:00" in detail and "landed first" in detail
+        # ONE winner on disk: the withhold-everything record stands untouched
         record = SessionStore(product_root).load("neodent-gm").confirmation
-        assert record.operator == "Boris Ivanov"
+        assert record.at == "2026-07-27T00:00:00+00:00"
         assert record.dispositions == {"4": "withhold", "13": "withhold"}
 
-    def test_a_rival_release_wins_and_the_loser_is_told_who(
+    def test_a_rival_release_wins_and_the_loser_is_told_when(
             self, settings, product_root, monkeypatch):
         from bff.session import ReleaseRecord
         client = confirmed_paid_client(settings, product_root)
@@ -696,7 +710,7 @@ class TestSigningActsAreOneWinner:
         def rival_write(store, orig_save):
             rival = store.load("neodent-gm")
             rival.release = ReleaseRecord(
-                operator="Boris Ivanov", at="2026-07-27T00:00:00+00:00",
+                at="2026-07-27T00:00:00+00:00",
                 run_id=session.run.run_id, evidence_sha256=sha,
                 released_teeth=[4, 13])
             orig_save(store, rival)
@@ -704,9 +718,9 @@ class TestSigningActsAreOneWinner:
         self._racing_save(monkeypatch, product_root, rival_write)
         res = release(client)
         assert res.status_code == 409
-        assert "Boris Ivanov" in res.json()["detail"]
+        assert "2026-07-27T00:00:00+00:00" in res.json()["detail"]
         assert SessionStore(product_root).load(
-            "neodent-gm").release.operator == "Boris Ivanov"
+            "neodent-gm").release.at == "2026-07-27T00:00:00+00:00"
 
     def test_a_non_signing_rival_still_costs_the_act_one_honest_409(
             self, settings, product_root, monkeypatch):
@@ -729,7 +743,7 @@ class TestTheViewsCarryTheChain:
     def test_the_worklist_confirmed_chip_is_real_and_released_rides_beside_it(
             self, settings, product_root):
         client = confirmed_paid_client(settings, product_root)
-        (row_,) = client.get("/api/case-sessions", headers=OPERATOR).json()
+        (row_,) = client.get("/api/case-sessions").json()
         assert row_["confirmed"] is True
         assert row_["released"] is False
         assert release(client).status_code == 200

@@ -25,6 +25,11 @@ The bundle's payload shape is ``{"assurance": <projection>, "qc_sha256":
 {filename: hex}}`` — the projection is the SAME dict the assurance endpoint serves
 (one derivation, two readers), so what the operator saw and what the seal covers can
 never be two different documents.
+
+WHAT THE BUNDLE NEVER CARRIED, and now cannot: an ACTOR. The confirmation record
+used to hold an ``X-Operator`` name (the bundle itself never did); that field is
+gone entirely (client 2026-07-27 — see bff/session.py's note). The bundle seals the
+EVIDENCE, and the act of sealing it is the whole attestation.
 """
 from __future__ import annotations
 

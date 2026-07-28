@@ -34,9 +34,7 @@ import {
   confirmBlockers,
   confirmWireBody,
   isEvidenceDrift409,
-  loadOperator,
   releaseBlockers,
-  saveOperator,
   type Disposition,
   type DispositionMap,
 } from "../domain/deliver";
@@ -264,7 +262,6 @@ function AssuranceRow({
 export interface DeliverStageViewProps {
   readonly detail: CaseSessionDetail;
   readonly assurance: FetchState<AssuranceView>;
-  readonly operatorName: string;
   readonly dispositions: DispositionMap;
   readonly acknowledged: readonly number[];
   readonly expanded: readonly number[];
@@ -275,7 +272,6 @@ export interface DeliverStageViewProps {
   readonly staleWords?: string | null;
   /** The gated artifact list's fetch state; null until a release exists. */
   readonly artifacts?: FetchState<ArtifactsView> | null;
-  readonly onOperatorName: (name: string) => void;
   readonly onDisposition: (tooth: number, act: Disposition) => void;
   readonly onAcknowledge: (tooth: number, on: boolean) => void;
   readonly onToggleExpand: (tooth: number) => void;
@@ -290,7 +286,6 @@ export interface DeliverStageViewProps {
 export function DeliverStageView({
   detail,
   assurance,
-  operatorName,
   dispositions,
   acknowledged,
   expanded,
@@ -298,7 +293,6 @@ export function DeliverStageView({
   actionError = null,
   staleWords = null,
   artifacts = null,
-  onOperatorName,
   onDisposition,
   onAcknowledge,
   onToggleExpand,
@@ -311,7 +305,7 @@ export function DeliverStageView({
   const session = detail.session;
   const blockers =
     assurance.kind === "ok"
-      ? confirmBlockers(assurance.data, dispositions, acknowledged, operatorName)
+      ? confirmBlockers(assurance.data, dispositions, acknowledged)
       : [];
   const releaseMissing = releaseBlockers(session);
   const statusOf = (tooth: number): string =>
@@ -322,19 +316,10 @@ export function DeliverStageView({
     // own panel); the disclosure chain lives in the work column.
     <div data-role="deliver-stage" className="stage-contents">
       <div className="workbench__work">
-        <section className="panel">
-          <h3 className="panel__title">Operator</h3>
-          <label data-role="operator-field" className="operator-field">
-            Operator name — the confirmation, payment and release records name you:
-            <input
-              data-role="operator-name"
-              className="operator-field__input"
-              value={operatorName}
-              onChange={(event) => onOperatorName(event.target.value)}
-              placeholder="your name"
-            />
-          </label>
-        </section>
+        {/* NO OPERATOR PANEL (client 2026-07-27: "WE dont need operator name the
+            checkmark is sufficient"). A name field with no authentication behind
+            it asked for work and proved nothing; the attestation acts are the
+            record. Deliberate — see domain/deliver.ts's note. */}
 
         {/* the 409 re-confirm flow: the BFF's words + the one honest next move —
             amber: the evidence moved, nothing failed */}
@@ -357,8 +342,8 @@ export function DeliverStageView({
           <h3 className="panel__title">Confirm</h3>
           {session.confirmed && session.confirmation !== null && (
             <div data-role="sealed-confirmation" className="sealed-note">
-              Confirmed by {session.confirmation.operator} at {session.confirmation.at} —
-              evidence <code>{session.confirmation.evidence_sha256}</code>
+              Confirmed at {session.confirmation.at} — evidence{" "}
+              <code>{session.confirmation.evidence_sha256}</code>
             </div>
           )}
           <div data-role="confirm-controls" className="panel__actions">
@@ -385,8 +370,7 @@ export function DeliverStageView({
           <h3 className="panel__title">Payment</h3>
           {session.payment_authorized && session.payment !== null ? (
             <p data-role="payment-done" className="sealed-note">
-              Payment authorized ({session.payment.provider}) by {session.payment.operator}{" "}
-              at {session.payment.at}
+              Payment authorized ({session.payment.provider}) at {session.payment.at}
             </p>
           ) : (
             <>
@@ -415,7 +399,7 @@ export function DeliverStageView({
           <h3 className="panel__title">Release</h3>
           {session.released && session.release !== null ? (
             <div data-role="released" className="sealed-note">
-              Released by {session.release.operator} at {session.release.at} — evidence{" "}
+              Released at {session.release.at} — evidence{" "}
               <code>{session.release.evidence_sha256}</code>
             </div>
           ) : (
@@ -457,8 +441,8 @@ export function DeliverStageView({
                   <ul data-role="artifact-list" className="package-files__list">
                     {artifacts.data.files.map((file) => (
                       <li key={file} className="package-files__item">
-                        {/* the gated endpoint needs the operator header, so the
-                            download is a fetch, never a bare <a href> */}
+                        {/* the endpoint is release-gated and answers refusals in
+                            JSON, so the download is a fetch, never a bare href */}
                         <button
                           type="button"
                           data-role="artifact-download"
@@ -567,20 +551,14 @@ export interface DeliverStageProps {
   readonly onDetail: (next: CaseSessionDetail) => void;
 }
 
-const sessionStorageOrNull = (): Storage | null =>
-  typeof window === "undefined" ? null : window.sessionStorage;
-
-/** The container: the evidence fetch, the operator's persisted name, the local
- * acts (dispositions/acknowledgments/expands), and the three gated POSTs. */
+/** The container: the evidence fetch, the local acts (dispositions/
+ * acknowledgments/expands), and the three gated POSTs. */
 export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
   const caseId = detail.case.id;
   const mountedRef = useRef(true);
   const [assurance, setAssurance] = useState<FetchState<AssuranceView>>({
     kind: "loading",
   });
-  const [operatorName, setOperatorName] = useState(() =>
-    loadOperator(sessionStorageOrNull()),
-  );
   const [dispositions, setDispositions] = useState<DispositionMap>({});
   const [acknowledged, setAcknowledged] = useState<readonly number[]>([]);
   const [expanded, setExpanded] = useState<readonly number[]>([]);
@@ -617,7 +595,7 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
     });
   }, [caseId, runState]);
 
-  // once released, the gated list is fetched with the operator's name on it
+  // once released, the gated list is fetched — the release record is the gate
   const released = detail.session.released;
   useEffect(() => {
     if (!released) {
@@ -625,15 +603,10 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
       return;
     }
     setArtifacts({ kind: "loading" });
-    void fetchArtifacts(caseId, operatorName).then((result) => {
+    void fetchArtifacts(caseId).then((result) => {
       if (mountedRef.current) setArtifacts(result);
     });
-  }, [caseId, released, operatorName]);
-
-  const handleOperatorName = useCallback((name: string) => {
-    setOperatorName(name);
-    saveOperator(sessionStorageOrNull(), name);
-  }, []);
+  }, [caseId, released]);
 
   const handleDisposition = useCallback((tooth: number, act: Disposition) => {
     setDispositions((current) => ({ ...current, [tooth]: act }));
@@ -679,26 +652,22 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
 
   const handleConfirm = useCallback(() => {
     setPhase("confirming");
-    void postConfirm(
-      caseId,
-      operatorName,
-      confirmWireBody(dispositions, acknowledged),
-    ).then(settle);
-  }, [caseId, operatorName, dispositions, acknowledged, settle]);
+    void postConfirm(caseId, confirmWireBody(dispositions, acknowledged)).then(settle);
+  }, [caseId, dispositions, acknowledged, settle]);
 
   const handlePay = useCallback(() => {
     setPhase("paying");
-    void postPayment(caseId, operatorName).then(settle);
-  }, [caseId, operatorName, settle]);
+    void postPayment(caseId).then(settle);
+  }, [caseId, settle]);
 
   const handleRelease = useCallback(() => {
     setPhase("releasing");
-    void postRelease(caseId, operatorName).then(settle);
-  }, [caseId, operatorName, settle]);
+    void postRelease(caseId).then(settle);
+  }, [caseId, settle]);
 
   const handleDownload = useCallback(
     (filename: string) => {
-      void fetchArtifactBlob(caseId, filename, operatorName).then((result) => {
+      void fetchArtifactBlob(caseId, filename).then((result) => {
         if (!mountedRef.current) return;
         if (result.kind === "error") {
           setActionError(result.detail);
@@ -712,14 +681,13 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
         URL.revokeObjectURL(url);
       });
     },
-    [caseId, operatorName],
+    [caseId],
   );
 
   return (
     <DeliverStageView
       detail={detail}
       assurance={assurance}
-      operatorName={operatorName}
       dispositions={dispositions}
       acknowledged={acknowledged}
       expanded={expanded}
@@ -727,7 +695,6 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
       actionError={actionError}
       staleWords={staleWords}
       artifacts={artifacts}
-      onOperatorName={handleOperatorName}
       onDisposition={handleDisposition}
       onAcknowledge={handleAcknowledge}
       onToggleExpand={handleToggleExpand}

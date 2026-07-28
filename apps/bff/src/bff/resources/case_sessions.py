@@ -196,11 +196,12 @@ class SystemView(BaseModel):
 
 
 class ConfirmationView(BaseModel):
-    """The sealed state Deliver renders (slice 8): who confirmed, when, over which
+    """The sealed state Deliver renders (slice 8): WHEN it was confirmed, over which
     evidence hash — plus the dispositions and per-flag acknowledgments the artifact
-    surface needs to show withheld sites honestly. The record's facts verbatim."""
+    surface needs to show withheld sites honestly. The record's facts verbatim, and
+    since the identity removal (client 2026-07-27) the record names no actor: the
+    attestation act is the record, and the wire says exactly that much."""
 
-    operator: str
     at: str
     run_id: str
     evidence_sha256: str
@@ -209,16 +210,14 @@ class ConfirmationView(BaseModel):
 
 
 class PaymentView(BaseModel):
-    """The stub's honest face (AM-11): the UI labels the button AS a stub, and the
-    provider field is how a reader tells a stub authorization from a real one."""
+    """The stub's honest face: the UI labels the button AS a stub, and the provider
+    field is how a reader tells a stub authorization from a real one."""
 
     provider: str
-    operator: str
     at: str
 
 
 class ReleaseView(BaseModel):
-    operator: str
     at: str
     run_id: str
     evidence_sha256: str
@@ -418,7 +417,6 @@ def _session_view(session: CaseSession) -> SessionView:
         confirmation=(ConfirmationView(**session.confirmation.model_dump())
                       if session.confirmation is not None else None),
         payment=(PaymentView(provider=session.payment.provider,
-                             operator=session.payment.operator,
                              at=session.payment.at)
                  if session.payment is not None else None),
         release=(ReleaseView(**session.release.model_dump())

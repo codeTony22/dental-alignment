@@ -177,9 +177,10 @@ export interface ReliefCeilingView {
   error: string | null;
 }
 
-/** The sealed confirmation's facts (slice 8, AM-10/AM-11): the record verbatim. */
+/** The sealed confirmation's facts (slice 8, AM-10): the record verbatim. No
+ * actor: the operator name was removed at the client's word (2026-07-27) — the
+ * attestation act is the record, and `at` is what the act genuinely produced. */
 export interface ConfirmationView {
-  operator: string;
   at: string;
   run_id: string;
   evidence_sha256: string;
@@ -188,15 +189,13 @@ export interface ConfirmationView {
   acknowledged_flags: number[];
 }
 
-/** The payment stub's record (AM-11): provider "stub" keeps it honest forever. */
+/** The payment stub's record: provider "stub" keeps it honest forever. */
 export interface PaymentView {
   provider: string;
-  operator: string;
   at: string;
 }
 
 export interface ReleaseView {
-  operator: string;
   at: string;
   run_id: string;
   evidence_sha256: string;
@@ -643,11 +642,11 @@ export function qcImageUrl(caseId: string, filename: string): string {
   return `/api/case-sessions/${encodeURIComponent(caseId)}/runs/current/qc/${encodeURIComponent(filename)}`;
 }
 
-/** The operator header (AM-11): every gating call names its actor — the BFF 422s
- * without it, so the header is attached here, in one place. */
-function operatorHeaders(operator: string): Record<string, string> {
-  return { "X-Operator": operator };
-}
+// NO ACTOR HEADER (client 2026-07-27: "WE dont need operator name the checkmark is
+// sufficient"). Every gating call used to carry `X-Operator` and the BFF 422'd
+// without it. A self-typed name behind no authentication was a text field, not
+// identity; the acts themselves are the record now, and real identity arrives with
+// real auth (plan §8 / phase-2). Deliberate — do not re-add it as a missing header.
 
 /** The confirmation's wire body: dispositions keyed tooth-as-string. */
 export interface ConfirmBody {
@@ -657,30 +656,28 @@ export interface ConfirmBody {
 
 export async function postConfirm(
   caseId: string,
-  operator: string,
   body: ConfirmBody,
 ): Promise<ApiResult<CaseSessionDetail>> {
   return fetchJson<CaseSessionDetail>(
     `/api/case-sessions/${encodeURIComponent(caseId)}/confirm`,
     {
       method: "POST",
-      headers: { "content-type": "application/json", ...operatorHeaders(operator) },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     },
   );
 }
 
-/** The payment STUB (AM-11): {authorize: true} or nothing — the UI labels the
- * button as a stub, and the BFF records provider "stub" so it stays tellable. */
+/** The payment STUB: {authorize: true} or nothing — the UI labels the button as a
+ * stub, and the BFF records provider "stub" so it stays tellable. */
 export async function postPayment(
   caseId: string,
-  operator: string,
 ): Promise<ApiResult<CaseSessionDetail>> {
   return fetchJson<CaseSessionDetail>(
     `/api/case-sessions/${encodeURIComponent(caseId)}/payment`,
     {
       method: "POST",
-      headers: { "content-type": "application/json", ...operatorHeaders(operator) },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ authorize: true }),
     },
   );
@@ -691,11 +688,10 @@ export async function postPayment(
  * was confirmed", which the UI answers with the re-confirm flow. */
 export async function postRelease(
   caseId: string,
-  operator: string,
 ): Promise<ApiResult<CaseSessionDetail>> {
   return fetchJson<CaseSessionDetail>(
     `/api/case-sessions/${encodeURIComponent(caseId)}/release`,
-    { method: "POST", headers: operatorHeaders(operator) },
+    { method: "POST" },
   );
 }
 
@@ -712,28 +708,26 @@ export interface ArtifactsView {
 
 export async function fetchArtifacts(
   caseId: string,
-  operator: string,
 ): Promise<ApiResult<ArtifactsView>> {
   return fetchJson<ArtifactsView>(
     `/api/case-sessions/${encodeURIComponent(caseId)}/runs/current/artifacts`,
-    { headers: operatorHeaders(operator) },
   );
 }
 
 /**
- * One deliverable's bytes (the gated endpoint needs the operator header, so a bare
- * <a href> cannot fetch it): resolves to a Blob the component turns into an object
- * URL and clicks — or to the BFF's stated refusal.
+ * One deliverable's bytes: resolves to a Blob the component turns into an object
+ * URL and clicks — or to the BFF's stated refusal. A FETCH rather than a bare
+ * <a href> because the endpoint is release-gated and a refusal must be READ (a
+ * bare href would navigate the browser into a JSON 409 the surface never sees).
  */
 export async function fetchArtifactBlob(
   caseId: string,
   filename: string,
-  operator: string,
 ): Promise<ApiResult<Blob>> {
   const path = `/api/case-sessions/${encodeURIComponent(caseId)}/runs/current/artifacts/${encodeURIComponent(filename)}`;
   let response: Response;
   try {
-    response = await fetch(path, { headers: operatorHeaders(operator) });
+    response = await fetch(path);
   } catch (err: unknown) {
     return {
       kind: "error",

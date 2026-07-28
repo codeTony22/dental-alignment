@@ -1,10 +1,12 @@
 /**
- * Deliver's DISPLAY rules (plan §4 Deliver; AM-11/AM-12), pure and pinned: the
- * confirm button's inertia derivation (each missing piece NAMED — flow's
- * blockedReason doctrine at the button), the acknowledgment-per-flag rule as the
- * UI enforces it locally (the BFF re-refuses it server-side either way), the wire
- * body assembly, the 409 re-confirm detection, and the operator name's
- * client-side persistence.
+ * Deliver's DISPLAY rules (plan §4 Deliver; AM-12), pure and pinned: the confirm
+ * button's inertia derivation (each missing piece NAMED — flow's blockedReason
+ * doctrine at the button), the acknowledgment-per-flag rule as the UI enforces it
+ * locally (the BFF re-refuses it server-side either way), the wire body assembly,
+ * and the 409 re-confirm detection.
+ *
+ * The operator-name store's tests are GONE with the store (client 2026-07-27: "WE
+ * dont need operator name the checkmark is sufficient") — see the module's note.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -12,9 +14,7 @@ import {
   confirmBlockers,
   confirmWireBody,
   isEvidenceDrift409,
-  loadOperator,
   releaseBlockers,
-  saveOperator,
 } from "./deliver";
 import {
   assuranceSite,
@@ -26,23 +26,19 @@ import {
 const TWO_SITES = assuranceView(); // flagged tooth 30 pinned first, ready tooth 19
 
 describe("confirmBlockers — inert until complete, each missing piece named", () => {
-  it("names the operator, every undispositioned site, and nothing else done", () => {
-    const blockers = confirmBlockers(TWO_SITES, {}, [], "");
+  it("names every undispositioned site and nothing else — NO name is ever asked for", () => {
+    const blockers = confirmBlockers(TWO_SITES, {}, []);
     expect(blockers).toEqual([
-      "your name — the record names its actor",
       "tooth 30 needs a disposition — release or withhold",
       "tooth 19 needs a disposition — release or withhold",
       "tooth 30 is flagged — releasing it needs its own acknowledgment",
     ]);
+    // the removed blocker, pinned as an absence (client 2026-07-27)
+    expect(blockers.join(" ")).not.toContain("name");
   });
 
   it("a flagged site dispositioned RELEASE needs its own acknowledgment", () => {
-    const blockers = confirmBlockers(
-      TWO_SITES,
-      { 30: "release", 19: "release" },
-      [],
-      "Ana",
-    );
+    const blockers = confirmBlockers(TWO_SITES, { 30: "release", 19: "release" }, []);
     expect(blockers).toEqual([
       "tooth 30 is flagged — releasing it needs its own acknowledgment",
     ]);
@@ -50,20 +46,14 @@ describe("confirmBlockers — inert until complete, each missing piece named", (
 
   it("acknowledging the flag clears the last blocker", () => {
     expect(
-      confirmBlockers(TWO_SITES, { 30: "release", 19: "release" }, [30], "Ana"),
+      confirmBlockers(TWO_SITES, { 30: "release", 19: "release" }, [30]),
     ).toEqual([]);
   });
 
   it("a WITHHELD flagged site needs no acknowledgment — there is no release to acknowledge", () => {
     expect(
-      confirmBlockers(TWO_SITES, { 30: "withhold", 19: "release" }, [], "Ana"),
+      confirmBlockers(TWO_SITES, { 30: "withhold", 19: "release" }, []),
     ).toEqual([]);
-  });
-
-  it("a whitespace name is no name", () => {
-    expect(
-      confirmBlockers(TWO_SITES, { 30: "withhold", 19: "release" }, [], "   "),
-    ).toEqual(["your name — the record names its actor"]);
   });
 
   it("two flagged releases each demand their own acknowledgment (AM-12: row by row)", () => {
@@ -73,12 +63,7 @@ describe("confirmBlockers — inert until complete, each missing piece named", (
         flaggedAssuranceSite({ tooth: 19 }),
       ],
     });
-    const blockers = confirmBlockers(
-      view,
-      { 30: "release", 19: "release" },
-      [30],
-      "Ana",
-    );
+    const blockers = confirmBlockers(view, { 30: "release", 19: "release" }, [30]);
     expect(blockers).toEqual([
       "tooth 19 is flagged — releasing it needs its own acknowledgment",
     ]);
@@ -147,33 +132,13 @@ describe("the 409 re-confirm detection", () => {
   });
 });
 
-describe("the operator name's client-side persistence", () => {
-  function memoryStorage(): Storage {
-    const map = new Map<string, string>();
-    return {
-      getItem: (k: string) => map.get(k) ?? null,
-      setItem: (k: string, v: string) => void map.set(k, v),
-      removeItem: (k: string) => void map.delete(k),
-      clear: () => map.clear(),
-      key: () => null,
-      get length() {
-        return map.size;
-      },
-    } as Storage;
-  }
-
-  it("round-trips the name", () => {
-    const storage = memoryStorage();
-    saveOperator(storage, "Ana Petrova");
-    expect(loadOperator(storage)).toBe("Ana Petrova");
-  });
-
-  it("no stored name loads as empty — never invented", () => {
-    expect(loadOperator(memoryStorage())).toBe("");
-  });
-
-  it("a null storage (no window) is harmless", () => {
-    expect(loadOperator(null)).toBe("");
-    expect(() => saveOperator(null, "Ana")).not.toThrow();
+describe("the operator name store, DELETED (client 2026-07-27)", () => {
+  it("the module exports no name loader or saver at all", async () => {
+    // an absence test, deliberately: the three round-trip tests that used to live
+    // here proved a sessionStorage name survived a reload. Nothing reads a name
+    // now, and a store nobody reads is a place for a stale one to hide
+    const module = await import("./deliver");
+    expect(Object.keys(module)).not.toContain("loadOperator");
+    expect(Object.keys(module)).not.toContain("saveOperator");
   });
 });

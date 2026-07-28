@@ -2312,26 +2312,9 @@ a.workflow-rail__step {
   max-width: 320px;
 }
 
-.operator-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--color-text);
-}
-
-.operator-field__input {
-  font: inherit;
-  font-size: 14px;
-  padding: 8px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.operator-field__input:focus {
-  outline: 2px solid var(--color-accent-green);
-  outline-offset: 1px;
-}
+/* .operator-field + __input(+:focus) DELETED here (client 2026-07-27: "WE dont need
+   operator name the checkmark is sufficient") — the panel they dressed is gone, and
+   dead product-own CSS is drift, not a spare part. */
 
 /* The disposition pair as a segmented control; withhold's active state is amber —
    holding work back is an attention state, not a pass. */

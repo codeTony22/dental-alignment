@@ -218,7 +218,7 @@ describe("the scan-stream URL (slice 3)", () => {
   });
 });
 
-describe("the Deliver calls (slice 8) — every gating request names its actor (AM-11)", () => {
+describe("the Deliver calls (slice 8) — no actor rides on any of them", () => {
   function capturingFetch(status = 200, body: unknown = {}) {
     const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
     stubFetch(((url: string, init?: RequestInit) => {
@@ -233,7 +233,7 @@ describe("the Deliver calls (slice 8) — every gating request names its actor (
     return calls;
   }
 
-  it("assurance GETs ungated — the EVIDENCE class needs no operator (AM-1)", async () => {
+  it("assurance GETs ungated — the EVIDENCE class is visible before anything (AM-1)", async () => {
     const calls = capturingFetch();
     await fetchAssurance("case-a");
     expect(calls[0]!.url).toBe("/api/case-sessions/case-a/assurance");
@@ -249,17 +249,18 @@ describe("the Deliver calls (slice 8) — every gating request names its actor (
     );
   });
 
-  it("confirm POSTs the acts with the X-Operator header", async () => {
+  it("confirm POSTs the acts and NOTHING about who sent them", async () => {
+    // the X-Operator header is gone from this client entirely (client 2026-07-27:
+    // "WE dont need operator name the checkmark is sufficient") — asserted as an
+    // absence so nobody re-adds it as a "missing header" fix
     const calls = capturingFetch();
-    await postConfirm("case-a", "Ana Petrova", {
+    await postConfirm("case-a", {
       dispositions: { "30": "release", "19": "withhold" },
       acknowledged_flags: [30],
     });
     expect(calls[0]!.url).toBe("/api/case-sessions/case-a/confirm");
     expect(calls[0]!.init?.method).toBe("POST");
-    expect(
-      (calls[0]!.init?.headers as Record<string, string>)["X-Operator"],
-    ).toBe("Ana Petrova");
+    expect(calls[0]!.init?.headers).toEqual({ "content-type": "application/json" });
     expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({
       dispositions: { "30": "release", "19": "withhold" },
       acknowledged_flags: [30],
@@ -268,44 +269,38 @@ describe("the Deliver calls (slice 8) — every gating request names its actor (
 
   it("payment POSTs exactly {authorize: true} — the stub's one honest act", async () => {
     const calls = capturingFetch();
-    await postPayment("case-a", "Ana Petrova");
+    await postPayment("case-a");
     expect(calls[0]!.url).toBe("/api/case-sessions/case-a/payment");
-    expect(
-      (calls[0]!.init?.headers as Record<string, string>)["X-Operator"],
-    ).toBe("Ana Petrova");
+    expect(calls[0]!.init?.headers).toEqual({ "content-type": "application/json" });
     expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({
       authorize: true,
     });
   });
 
-  it("release POSTs body-less with the operator — everything else is the session's", async () => {
+  it("release POSTs body-less and header-less — everything it consumes is the session's", async () => {
     const calls = capturingFetch();
-    await postRelease("case-a", "Ana Petrova");
+    await postRelease("case-a");
     expect(calls[0]!.url).toBe("/api/case-sessions/case-a/release");
     expect(calls[0]!.init?.method).toBe("POST");
     expect(calls[0]!.init?.body).toBeUndefined();
-    expect(
-      (calls[0]!.init?.headers as Record<string, string>)["X-Operator"],
-    ).toBe("Ana Petrova");
+    expect(calls[0]!.init?.headers).toBeUndefined();
   });
 
-  it("the artifact list GETs with the operator — even listing is disclosure", async () => {
+  it("the artifact list GETs behind the release gate alone — even listing is disclosure", async () => {
     const calls = capturingFetch(200, {
       run_id: "r",
       files: [],
       withheld_teeth: [],
       withheld_case_files: [],
     });
-    await fetchArtifacts("case-a", "Ana Petrova");
+    await fetchArtifacts("case-a");
     expect(calls[0]!.url).toBe(
       "/api/case-sessions/case-a/runs/current/artifacts",
     );
-    expect(
-      (calls[0]!.init?.headers as Record<string, string>)["X-Operator"],
-    ).toBe("Ana Petrova");
+    expect(calls[0]!.init?.headers).toBeUndefined();
   });
 
-  it("an artifact download fetches with the header and yields the bytes — a bare <a href> could not carry the actor", async () => {
+  it("an artifact download fetches the bytes — a fetch, not a bare <a href>, because the endpoint is gated", async () => {
     const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
     stubFetch(((url: string, init?: RequestInit) => {
       calls.push({ url, init });
@@ -313,13 +308,10 @@ describe("the Deliver calls (slice 8) — every gating request names its actor (
         new Response(new Blob([new Uint8Array([83, 84, 76])]), { status: 200 }),
       );
     }) as never);
-    const result = await fetchArtifactBlob("case-a", "cap-19.stl", "Ana Petrova");
+    const result = await fetchArtifactBlob("case-a", "cap-19.stl");
     expect(calls[0]!.url).toBe(
       "/api/case-sessions/case-a/runs/current/artifacts/cap-19.stl",
     );
-    expect(
-      (calls[0]!.init?.headers as Record<string, string>)["X-Operator"],
-    ).toBe("Ana Petrova");
     expect(result.kind).toBe("ok");
   });
 
@@ -332,7 +324,7 @@ describe("the Deliver calls (slice 8) — every gating request names its actor (
         ),
       ),
     );
-    const result = await fetchArtifactBlob("case-a", "cap-19.stl", "Ana");
+    const result = await fetchArtifactBlob("case-a", "cap-19.stl");
     expect(result).toEqual({
       kind: "error",
       status: 409,

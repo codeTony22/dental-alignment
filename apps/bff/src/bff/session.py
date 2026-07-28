@@ -183,8 +183,22 @@ class RunSession(BaseModel):
     package_files: List[str] = Field(default_factory=list)
 
 
+"""THE THREE SIGNED RECORDS CARRY NO ACTOR (client 2026-07-27: "WE dont need
+operator name the checkmark is sufficient").
+
+Until this change each record held an ``operator`` string taken verbatim from an
+``X-Operator`` header. Behind no authentication that was not identity — it was a
+text field anyone could type anything into — and persisting it made the records
+LOOK rigorous while proving nothing. What each record now stands on is the ACT
+itself (a run authorized only by per-site attestations, a confirmation sealed over
+re-derivable evidence) plus ``at``: WHEN is a fact the act genuinely produced.
+Real identity arrives with real auth (plan §8 / phase-2), where a name will mean
+something. The field is GONE rather than nullable — a column that could only ever
+hold None would document an intention nobody has."""
+
+
 class ConfirmationRecord(BaseModel):
-    """Sealed by Deliver (plan §6, grill AM-10/AM-11/AM-12): who confirmed WHAT.
+    """Sealed by Deliver (plan §6, grill AM-10/AM-12): WHAT was confirmed, and when.
 
     ``evidence_sha256`` is the content address of the bundle the confirm route wrote
     under the run directory — release RE-DERIVES the evidence and compares, so this
@@ -192,10 +206,8 @@ class ConfirmationRecord(BaseModel):
     confirm and release 409s by construction). ``dispositions`` are the operator's
     per-site ACTS (release | withhold, keyed by tooth-as-string — JSON object keys);
     ``acknowledged_flags`` are the flagged teeth the operator acknowledged ROW BY ROW
-    (AM-12: a flag is never confirmed in bulk). ``operator`` is the X-Operator name
-    verbatim (AM-11's named-session minimum)."""
+    (AM-12: a flag is never confirmed in bulk)."""
 
-    operator: str
     at: str
     run_id: str
     evidence_sha256: str
@@ -204,26 +216,24 @@ class ConfirmationRecord(BaseModel):
 
 
 class PaymentRecord(BaseModel):
-    """THE PAYMENT STUB (plan §4 Deliver, grill AM-11): fail-closed — this record
-    exists only when an operator explicitly authorized, and ``provider: "stub"``
-    keeps stub-authorized sessions PERMANENTLY distinguishable from paid ones once a
-    real provider lands. Never faked deeper than this: no amounts, no receipts, no
+    """THE PAYMENT STUB (plan §4 Deliver): fail-closed — this record exists only
+    when someone explicitly authorized, and ``provider: "stub"`` keeps
+    stub-authorized sessions PERMANENTLY distinguishable from paid ones once a real
+    provider lands. Never faked deeper than this: no amounts, no receipts, no
     provider ids — inventing those would be a lie wearing a schema."""
 
     payment_authorized: bool
     provider: str
-    operator: str
     at: str
 
 
 class ReleaseRecord(BaseModel):
-    """The disclosure act (plan §4: release = disclosure; grill AM-1): who released,
-    over WHICH run and WHICH sealed evidence, and which teeth the released set
-    actually carries (withheld sites dropped and stayed open). The artifact
-    endpoints re-verify this record against the current run and the re-derived
-    evidence on every read — screen order is not a control."""
+    """The disclosure act (plan §4: release = disclosure; grill AM-1): WHAT was
+    released — over which run and which sealed evidence, and which teeth the
+    released set actually carries (withheld sites dropped and stayed open). The
+    artifact endpoints re-verify this record against the current run and the
+    re-derived evidence on every read — screen order is not a control."""
 
-    operator: str
     at: str
     run_id: str
     evidence_sha256: str

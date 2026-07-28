@@ -19,21 +19,20 @@ export type DispositionMap = Readonly<Record<number, Disposition>>;
 
 /**
  * Everything still standing between the operator and a confirmable table, in the
- * order the surface lists it: the actor's name first (AM-11 — nothing signs
- * anonymously), then each row without a disposition (table order — worst first,
- * exactly as served), then each flagged row dispositioned release without its own
- * acknowledgment (AM-12: row by row, never in bulk).
+ * order the surface lists it: each row without a disposition (table order — worst
+ * first, exactly as served), then each flagged row dispositioned release without
+ * its own acknowledgment (AM-12: row by row, never in bulk).
+ *
+ * THE ACTOR'S NAME USED TO LEAD THIS LIST. It is gone (client 2026-07-27: "WE dont
+ * need operator name the checkmark is sufficient") — an unauthenticated self-typed
+ * name blocked the button while proving nothing. Deliberate; do not restore it.
  */
 export function confirmBlockers(
   assurance: AssuranceView,
   dispositions: DispositionMap,
   acknowledged: readonly number[],
-  operatorName: string,
 ): readonly string[] {
   const blockers: string[] = [];
-  if (operatorName.trim() === "") {
-    blockers.push("your name — the record names its actor");
-  }
   for (const site of assurance.sites) {
     if (dispositions[site.tooth] === undefined) {
       blockers.push(`tooth ${site.tooth} needs a disposition — release or withhold`);
@@ -103,15 +102,8 @@ export function isEvidenceDrift409(result: ApiResult<unknown>): boolean {
   );
 }
 
-const OPERATOR_KEY = "deliver-operator-name";
-
-/** The operator's name, persisted client-side per browser session (AM-11's
- * named-session minimum — the header rides on every gating call). Storage is
- * injectable and nullable: server-side rendering has no window. */
-export function loadOperator(storage: Storage | null): string {
-  return storage?.getItem(OPERATOR_KEY) ?? "";
-}
-
-export function saveOperator(storage: Storage | null, name: string): void {
-  storage?.setItem(OPERATOR_KEY, name);
-}
+// THE OPERATOR NAME STORE IS GONE (client 2026-07-27: "WE dont need operator name
+// the checkmark is sufficient"). `loadOperator`/`saveOperator` kept a self-typed
+// name in sessionStorage and rode it on every gating call as `X-Operator`. Behind
+// no authentication that was never identity — the acts are the record now, and a
+// real name arrives with real auth (plan §8 / phase-2).

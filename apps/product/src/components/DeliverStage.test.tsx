@@ -1,5 +1,5 @@
 /**
- * Deliver's surface (plan §4 Deliver; AM-1/AM-11/AM-12), statically rendered per
+ * Deliver's surface (plan §4 Deliver; AM-1/AM-12), statically rendered per
  * the repo convention: the assurance table in the BFF's worst-first order (flags
  * pinned — the order is SERVED, never re-sorted here), row-expand QC images via
  * the ungated evidence endpoint, the disposition + per-flag acknowledgment
@@ -35,7 +35,6 @@ function deliverableDetail(
 const CONFIRMED = {
   confirmed: true,
   confirmation: {
-    operator: "Ana Petrova",
     at: "2026-07-27T12:00:00+00:00",
     run_id: "20260727-120000-abc123",
     evidence_sha256: "c0ffee".padEnd(64, "0"),
@@ -46,7 +45,7 @@ const CONFIRMED = {
 
 const PAID = {
   payment_authorized: true,
-  payment: { provider: "stub", operator: "Ana Petrova", at: "2026-07-27T12:01:00+00:00" },
+  payment: { provider: "stub", at: "2026-07-27T12:01:00+00:00" },
 };
 
 function view(overrides: Partial<Parameters<typeof DeliverStageView>[0]> = {}) {
@@ -55,11 +54,9 @@ function view(overrides: Partial<Parameters<typeof DeliverStageView>[0]> = {}) {
       <DeliverStageView
         detail={deliverableDetail()}
         assurance={{ kind: "ok", data: assuranceView() }}
-        operatorName="Ana Petrova"
         dispositions={{}}
         acknowledged={[]}
         expanded={[]}
-        onOperatorName={() => undefined}
         onDisposition={() => undefined}
         onAcknowledge={() => undefined}
         onToggleExpand={() => undefined}
@@ -138,14 +135,22 @@ describe("dispositions and the per-flag acknowledgment (AM-12)", () => {
 
 describe("the confirm button — inert until complete, each missing piece named", () => {
   it("disabled with the blockers listed under it", () => {
-    const html = view({ operatorName: "" });
+    const html = view();
     expect(html).toContain('data-role="confirm"');
     expect(html).toContain("disabled");
     expect(html).toContain('data-role="confirm-blockers"');
-    expect(html).toContain("your name — the record names its actor");
     expect(html).toContain("tooth 30 needs a disposition");
     expect(html).toContain("tooth 19 needs a disposition");
     expect(html).toContain("tooth 30 is flagged — releasing it needs its own acknowledgment");
+  });
+
+  it("asks for no operator name anywhere — the field and its blocker are GONE", () => {
+    // client 2026-07-27: "WE dont need operator name the checkmark is sufficient".
+    // Pinned as an absence so the panel is never restored as a missing-field fix
+    const html = view();
+    expect(html).not.toContain('data-role="operator-field"');
+    expect(html).not.toContain('data-role="operator-name"');
+    expect(html).not.toContain("names its actor");
   });
 
   it("armed once every piece is present — no blockers named", () => {
@@ -158,11 +163,10 @@ describe("the confirm button — inert until complete, each missing piece named"
 });
 
 describe("the sealed state after confirmation", () => {
-  it("shows who confirmed, when, and the evidence hash", () => {
+  it("shows WHEN it was confirmed and the evidence hash — no actor to show", () => {
     const html = view({ detail: deliverableDetail(CONFIRMED) });
     expect(html).toContain('data-role="sealed-confirmation"');
-    expect(html).toContain("Confirmed by Ana Petrova");
-    expect(html).toContain("2026-07-27T12:00:00+00:00");
+    expect(html).toContain("Confirmed at 2026-07-27T12:00:00+00:00");
     expect(html).toContain("c0ffee".padEnd(64, "0"));
   });
 });
@@ -175,11 +179,10 @@ describe("the payment stub — labelled AS a stub (AM-11)", () => {
     expect(html).toContain("disabled"); // unconfirmed: the chain has an order
   });
 
-  it("once paid, the stub's record renders — provider named", () => {
+  it("once paid, the stub's record renders — provider named, actor absent", () => {
     const html = view({ detail: deliverableDetail({ ...CONFIRMED, ...PAID }) });
     expect(html).toContain('data-role="payment-done"');
-    expect(html).toContain("stub");
-    expect(html).toContain("Ana Petrova");
+    expect(html).toContain("Payment authorized (stub) at 2026-07-27T12:01:00+00:00");
   });
 });
 
@@ -197,7 +200,6 @@ describe("release — the disclosure act", () => {
         ...PAID,
         released: true,
         release: {
-          operator: "Ana Petrova",
           at: "2026-07-27T12:02:00+00:00",
           run_id: "20260727-120000-abc123",
           evidence_sha256: "c0ffee".padEnd(64, "0"),
@@ -237,7 +239,6 @@ describe("release — the disclosure act", () => {
         ...PAID,
         released: true,
         release: {
-          operator: "Ana Petrova",
           at: "2026-07-27T12:02:00+00:00",
           run_id: "20260727-120000-abc123",
           evidence_sha256: "c0ffee".padEnd(64, "0"),
