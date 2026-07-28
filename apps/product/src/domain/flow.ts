@@ -70,7 +70,9 @@ export interface FlowFacts {
   /** Detection ran and its record is persisted (slice 4) — a BFF fact, never inferred
    * from sites being present (curated suggestions exist before detection ever runs). */
   readonly detectionDone: boolean;
-  /** All three case-level choices explicitly made — the BFF's derivation, verbatim. */
+  /** EFFECTIVE case-level values all present — an explicit act, the case's
+   * suggestion, or the standing relief default each count (client 2026-07-27) —
+   * the BFF's derivation, verbatim. */
   readonly choicesComplete: boolean;
 }
 
@@ -191,9 +193,10 @@ export function blockedReason(stage: StageId, facts: FlowFacts): string | null {
 
 /**
  * Completion, per stage — a display verdict for the rail's tick, never a gate:
- *  - intake: detection RAN and the case-level choices are all made (plan §4 slice 4 —
- *    sites merely existing is not Intake done: curated suggestions predate detection,
- *    and the choices are Intake's other half). Both facts are the BFF's derivations.
+ *  - intake: detection RAN and the EFFECTIVE case-level choices are all present
+ *    (plan §4 slice 4; client 2026-07-27 — suggestions and the standing relief
+ *    default count, so a well-suggested case completes Intake without a panel
+ *    visit). Both facts are the BFF's derivations.
  *  - declare: every site REVIEWED — the operator's tick over the three live panes
  *    set it `ready` (AM-8; the 5a interim rule "every site declared" retired when
  *    5b landed the panes and the tick). Ready ONLY: a flagged site is 5c's run

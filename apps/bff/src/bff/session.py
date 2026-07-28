@@ -99,7 +99,11 @@ class CaseChoices(BaseModel):
 
     @property
     def complete(self) -> bool:
-        """All three choices explicitly made — the fact Intake's completion tick reads."""
+        """All three choices EXPLICITLY made — the raw-acts fact. The wire's
+        completion (worklist ``choices_complete``, the detail's ``choices.
+        complete``) is the EFFECTIVE one since the 2026-07-27 automation ask —
+        derived in ``resources.case_sessions._effective_choices``, where the
+        case's suggestions and the standing relief default count too."""
         return (self.construction_path is not None and self.jaw is not None
                 and self.gingival_offset_mm is not None)
 

@@ -99,7 +99,7 @@ describe("the site list with capture chips", () => {
   });
 });
 
-describe("the choices panel — persisted state, pre-fills, refusals verbatim", () => {
+describe("the choices panel — the BFF's effective values, with their source chips", () => {
   const withCatalog = caseSessionDetail({
     case: {
       id: "case-a",
@@ -113,16 +113,33 @@ describe("the choices panel — persisted state, pre-fills, refusals verbatim", 
       groups: [],
       constructions: [{ path_id: "dess/a.stl", label: "dess — a" }],
     },
+    // the BFF's effective document for this case (client 2026-07-27): suggestion
+    // covers construction and jaw, the standing default covers relief
+    choices: {
+      construction_path: null,
+      jaw: null,
+      gingival_offset_mm: null,
+      gingival_offset_default_mm: 0.2,
+      effective_construction: { value: "dess/a.stl", source: "suggested" },
+      effective_jaw: { value: "lower", source: "suggested" },
+      effective_relief: { value: 0.2, source: "default" },
+      complete: true,
+    },
   });
 
-  it("pre-fills construction from the suggestion and jaw from the case", () => {
+  it("renders the effective values with their source chips, like the system bar", () => {
     const html = view({ detail: withCatalog });
     expect(html).toMatch(/data-role="choice-construction"[^>]*>/);
     expect(html).toContain('<option value="dess/a.stl" selected="">');
     expect(html).toMatch(/aria-pressed="true"[^>]*>lower/);
+    expect(html).toMatch(/data-role="choice-relief"[^>]*value="0.2"/);
+    // the chips are the SERVER's attribution, never a client-side comparison
+    expect(html).toMatch(/data-role="choice-source"[^>]*data-choice="construction"[^>]*>[^<]*suggested/);
+    expect(html).toMatch(/data-role="choice-source"[^>]*data-choice="jaw"[^>]*>[^<]*suggested/);
+    expect(html).toMatch(/data-role="choice-source"[^>]*data-choice="relief"[^>]*>[^<]*default/);
   });
 
-  it("a persisted choice wins over the pre-fill", () => {
+  it("a persisted choice wins over the pre-fill and drops its chip", () => {
     const html = view({
       detail: caseSessionDetail({
         ...withCatalog,
@@ -131,12 +148,19 @@ describe("the choices panel — persisted state, pre-fills, refusals verbatim", 
           jaw: "upper",
           gingival_offset_mm: 0.1,
           gingival_offset_default_mm: 0.2,
-          complete: false,
+          effective_construction: { value: "dess/a.stl", source: "suggested" },
+          effective_jaw: { value: "upper", source: "chosen" },
+          effective_relief: { value: 0.1, source: "chosen" },
+          complete: true,
         },
       }),
     });
     expect(html).toMatch(/aria-pressed="true"[^>]*>upper/);
     expect(html).toMatch(/data-role="choice-relief"[^>]*value="0.1"/);
+    // chosen values carry no chip; the still-suggested construction keeps its own
+    expect(html).not.toMatch(/data-role="choice-source"[^>]*data-choice="jaw"/);
+    expect(html).not.toMatch(/data-role="choice-source"[^>]*data-choice="relief"/);
+    expect(html).toMatch(/data-role="choice-source"[^>]*data-choice="construction"/);
   });
 
   it("the ceiling readout renders per variant row", () => {

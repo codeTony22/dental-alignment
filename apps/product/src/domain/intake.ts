@@ -144,12 +144,13 @@ export function constructionOptions(
 
 /**
  * A single panel change becomes the FULL choice document (PUT semantics — what is sent
- * is what is chosen). Unchanged fields carry the session's persisted choice when one
- * exists, else the PRE-FILL the plan names (§4: "pre-filled from the suggestion"):
- * construction from the case's name-matched suggestion, jaw from the scan-filename
- * reading, relief from the worker's default ask. The pre-fill only ever leaves this
- * app inside an operator-initiated PUT — one change makes the whole panel an explicit
- * act, which is exactly the demo's send-it-back-explicitly contract.
+ * is what is chosen). Unchanged fields carry the BFF's EFFECTIVE values (client
+ * 2026-07-27: the chosen-??-suggested-??-default derivation has ONE home, server-
+ * side; this panel renders those values, so it submits exactly what it shows).
+ * The pre-fill only ever leaves this app inside an operator-initiated PUT — one
+ * change makes the whole panel an explicit act, which is exactly the demo's
+ * send-it-back-explicitly contract — and the BFF's reset guard judges the change
+ * over the same effective document, so pinning a prefill destroys no preview.
  */
 export function choicesUpdateFrom(
   detail: CaseSessionDetail,
@@ -160,12 +161,12 @@ export function choicesUpdateFrom(
     construction_path:
       patch.construction_path !== undefined
         ? patch.construction_path
-        : (chosen.construction_path ?? detail.case.suggested_construction),
-    jaw: patch.jaw !== undefined ? patch.jaw : (chosen.jaw ?? detail.case.jaw),
+        : chosen.effective_construction.value,
+    jaw: patch.jaw !== undefined ? patch.jaw : chosen.effective_jaw.value,
     gingival_offset_mm:
       patch.gingival_offset_mm !== undefined
         ? patch.gingival_offset_mm
-        : (chosen.gingival_offset_mm ?? chosen.gingival_offset_default_mm),
+        : chosen.effective_relief.value,
   };
 }
 

@@ -101,6 +101,10 @@ class TestWorklist:
         assert row["sites"] == {"total": 2, "declared": 0, "ready": 0, "flagged": 0}
         assert row["run_state"] == "none"
         assert row["confirmed"] is False
+        # choices_complete is the EFFECTIVE fact (client 2026-07-27): this case's
+        # suggestions + the standing relief default cover all three, so a fresh
+        # session is already complete on the worklist
+        assert row["choices_complete"] is True
 
     def test_persisted_session_state_reaches_the_rollup(self, settings):
         # state changes arrive ONLY via the server-side store — this is the same door
@@ -142,14 +146,22 @@ class TestCaseSessionDetail:
         # the effective system: the suggestion, and the payload SAYS so (AM-8)
         assert body["system"] == {"effective_model": "neodent-gm",
                                   "source": "suggested"}
-        # detection has not run; choices not yet made — both honestly empty, never guessed
+        # detection has not run; choices not yet made — the RAW acts stay honestly
+        # None, while the EFFECTIVE values (client 2026-07-27: the automation uses
+        # the suggestions) fall back with their attribution, the SystemView pattern
+        # mirrored: suggestion for construction and jaw, the standing 0.20mm default
+        # for relief — and ``complete`` is the EFFECTIVE completeness
         assert body["detection"] is None
         assert body["choices"] == {
             "construction_path": None,
             "jaw": None,
             "gingival_offset_mm": None,
             "gingival_offset_default_mm": 0.2,
-            "complete": False,
+            "effective_construction": {"value": "dess/neodent-gm-scanbody.stl",
+                                       "source": "suggested"},
+            "effective_jaw": {"value": "upper", "source": "suggested"},
+            "effective_relief": {"value": 0.2, "source": "default"},
+            "complete": True,
         }
         assert body["session"] == {
             "tenant_id": "local",
@@ -341,18 +353,68 @@ class TestChoices:
             "jaw": "upper",
             "gingival_offset_mm": 0.15,
             "gingival_offset_default_mm": 0.2,
+            # explicit acts flip every attribution to "chosen" (the system bar's
+            # declared/suggested pattern, mirrored per choice)
+            "effective_construction": {"value": "dess/neodent-gm-scanbody.stl",
+                                       "source": "chosen"},
+            "effective_jaw": {"value": "upper", "source": "chosen"},
+            "effective_relief": {"value": 0.15, "source": "chosen"},
             "complete": True,
         }
         # persisted: a fresh app serves the same choices and the worklist's fact
         row, = TestClient(create_app(settings)).get("/api/case-sessions").json()
         assert row["choices_complete"] is True
 
-    def test_partial_choices_are_honest_not_complete(self, client):
+    def test_partial_choices_keep_honest_attribution(self, client):
+        # one explicit act beside two fallbacks: the RAW fields stay None, the
+        # EFFECTIVE views say who supplied each value (client 2026-07-27)
         body = client.put("/api/case-sessions/neodent-gm/choices",
                           json={"jaw": "lower"}).json()
         assert body["choices"]["jaw"] == "lower"
         assert body["choices"]["construction_path"] is None
+        assert body["choices"]["effective_jaw"] == {"value": "lower",
+                                                    "source": "chosen"}
+        assert body["choices"]["effective_construction"]["source"] == "suggested"
+        assert body["choices"]["effective_relief"] == {"value": 0.2,
+                                                       "source": "default"}
+        assert body["choices"]["complete"] is True
+
+    def test_a_case_without_a_construction_suggestion_is_honestly_incomplete(
+            self, settings):
+        # the effective fallback is a suggestion, never a guess: a scan folder
+        # matching no library name has no suggested construction, so the effective
+        # construction is absent (source "none") and completeness fails with it
+        scans = settings.data_root / "scans/doctor-nobody"
+        scans.mkdir(parents=True)
+        (scans / "upper_jaw.stl").touch()
+        client = TestClient(create_app(settings))
+        body = client.get("/api/case-sessions/nobody").json()
+        assert body["choices"]["effective_construction"] == {"value": None,
+                                                             "source": "none"}
+        # jaw still falls back (read off the scan filename), relief to the default
+        assert body["choices"]["effective_jaw"] == {"value": "upper",
+                                                    "source": "suggested"}
         assert body["choices"]["complete"] is False
+        rows = {r["id"]: r for r in client.get("/api/case-sessions").json()}
+        assert rows["nobody"]["choices_complete"] is False
+
+    def test_pinning_the_effective_document_resets_nothing(self, settings):
+        # the system route's withModel equality guard, mirrored (client 2026-07-27:
+        # "the effective-default path is not a change"): a PUT that lands exactly
+        # the values already in effect — the suggestion + the standing default —
+        # changes no effective value, so no preview or review falls to it
+        store = SessionStore(settings.product_root)
+        s = store.load("neodent-gm")
+        s.sites["4"] = SiteSession(status=SiteStatus.READY, declared_variant="5020",
+                                   seat_method="rim-seat", rim_agreement_mm=0.07)
+        store.save(s)
+        client = TestClient(create_app(settings))
+        complete_choices(client)   # exactly the suggested/default values
+        persisted = SessionStore(settings.product_root).load("neodent-gm")
+        assert persisted.sites["4"].status is SiteStatus.READY
+        assert persisted.sites["4"].seat_method == "rim-seat"
+        # the acts themselves DID persist — only the reset was judged a non-change
+        assert persisted.choices.construction_path == "dess/neodent-gm-scanbody.stl"
 
     def test_a_choices_change_clears_previews_and_reviews_but_keeps_declarations(
             self, settings):
@@ -767,18 +829,43 @@ class TestPreview:
         assert "declared cap variant" in res.json()["detail"]
         assert calls == []   # the refusal costs no physics
 
-    def test_incomplete_choices_are_a_422_naming_each_missing_choice(
+    def test_a_fresh_session_with_only_a_declaration_previews_on_the_suggestions(
             self, settings, monkeypatch):
+        """THE CLIENT'S COMPLAINT (2026-07-27), pinned: 'once implant system and
+        variant for tooth are selected the union needs to show up'. No choices PUT
+        was ever made — the preview seats with the EFFECTIVE values: the case's
+        suggested construction, the filename-read jaw, the standing 0.20mm relief
+        default. A 422 here is the bug this test exists to keep dead."""
         client, calls = self._client_with_stub(settings, monkeypatch)
-        declare_site(client)
-        client.put("/api/case-sessions/neodent-gm/choices", json={"jaw": "upper"})
+        declare_site(client)   # the ONLY act on this session
         res = client.post("/api/case-sessions/neodent-gm/sites/4/preview")
+        assert res.status_code == 200
+        (_case_id, selection, _tooth), = calls
+        assert selection.construction_path == "dess/neodent-gm-scanbody.stl"
+        assert selection.jaw == "upper"
+        assert selection.gingival_offset_mm == 0.2
+
+    def test_a_case_without_a_construction_suggestion_still_refuses_naming_it(
+            self, settings, monkeypatch):
+        # the effective fallback is a suggestion, never a guess: a case whose
+        # folder matched no library name has none, and the preview refusal names
+        # exactly the piece no fallback covers (jaw and relief have fallbacks)
+        scans = settings.data_root / "scans/doctor-nobody"
+        scans.mkdir(parents=True)
+        (scans / "upper_jaw.stl").touch()
+        import json as _json
+        (scans / "sites.json").write_text(_json.dumps({"suggested_sites": [
+            {"tooth": 8, "center": [0.0, 0.0, 0.0], "declared_variant": None}]}))
+        client, calls = self._client_with_stub(settings, monkeypatch)
+        client.put("/api/case-sessions/nobody/system", json={"model": "neodent-gm"})
+        declare_site(client, tooth=8, case_id="nobody")
+        res = client.post("/api/case-sessions/nobody/sites/8/preview")
         assert res.status_code == 422
         detail = res.json()["detail"]
         assert "construction part" in detail
-        assert "gingival relief" in detail
-        assert "jaw" not in detail   # chosen — only what is actually missing is named
-        assert calls == []
+        assert "jaw" not in detail
+        assert "gingival relief" not in detail
+        assert calls == []   # the refusal costs no physics
 
     def test_preview_runs_persists_the_seat_facts_and_returns_the_payload(
             self, settings, monkeypatch):

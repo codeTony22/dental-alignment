@@ -169,11 +169,15 @@ export function variantMeshUrl(
 
 /**
  * THE PREVIEW'S IDENTITY — one string naming exactly what a preview would be computed
- * FROM (case, tooth, system, variant, the three case-level choices). null = the
- * session cannot preview yet (nothing declared, or choices incomplete), which is also
- * the auto-fire's off switch. Keyed on server FACTS only (the demo's previewKey
- * lesson: an effect that re-derives its trigger from render state re-fires forever;
- * one that compares a stable key fires once per distinct preview).
+ * FROM (case, tooth, system, variant, the three EFFECTIVE case-level choices — the
+ * values the BFF actually seats with since the 2026-07-27 automation ask, so a
+ * fresh case with suggestions previews with no Intake visit, and pinning a
+ * suggestion mints the SAME key instead of refiring identical physics). null = the
+ * session cannot preview yet (nothing declared, or an effective value absent),
+ * which is also the auto-fire's off switch. Keyed on server FACTS only (the demo's
+ * previewKey lesson: an effect that re-derives its trigger from render state
+ * re-fires forever; one that compares a stable key fires once per distinct
+ * preview).
  */
 export function previewKeyFor(
   detail: CaseSessionDetail,
@@ -189,9 +193,9 @@ export function previewKeyFor(
     tooth,
     detail.system.effective_model,
     site.declared_variant,
-    detail.choices.construction_path,
-    detail.choices.jaw,
-    detail.choices.gingival_offset_mm,
+    detail.choices.effective_construction.value,
+    detail.choices.effective_jaw.value,
+    detail.choices.effective_relief.value,
   ].join("|");
 }
 
@@ -328,9 +332,10 @@ export function runKeyFor(detail: CaseSessionDetail): string | null {
     detail.case.id,
     detail.system.effective_model,
     ...detail.sites.map((s) => `${s.tooth}:${s.declared_variant}`),
-    detail.choices.construction_path,
-    detail.choices.jaw,
-    detail.choices.gingival_offset_mm,
+    // the EFFECTIVE choices — the same document the run's authorized gate reads
+    detail.choices.effective_construction.value,
+    detail.choices.effective_jaw.value,
+    detail.choices.effective_relief.value,
   ].join("|");
 }
 
@@ -433,9 +438,13 @@ export function paneNotices(inputs: PaneNoticeInputs): PaneNotices {
     if (noSite) return noSite;
     if (undeclared) return undeclared;
     if (!choicesComplete) {
+      // effective-incomplete (client 2026-07-27): suggestions and the standing
+      // default normally cover the choices, so this only shows when a piece has
+      // NO fallback (a case whose folder matched no construction part)
       return (
         "Complete the case-level choices at Intake (construction part, jaw, " +
-        "relief) — the preview seats the cap with them."
+        "relief) — no suggestion covers them all yet, and the preview seats " +
+        "the cap with them."
       );
     }
     if (previewPhase === "error") {

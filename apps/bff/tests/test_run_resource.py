@@ -157,16 +157,22 @@ class TestTheAuthorizedGate:
     complete AND every site reviewed READY. The 422 names EACH missing piece: the
     operator fixes what is named, never guesses."""
 
-    def test_a_fresh_session_is_refused_naming_every_missing_piece(self, settings):
+    def test_a_fresh_session_is_refused_naming_only_what_is_actually_missing(
+            self, settings):
+        # the gate reads the EFFECTIVE choices (client 2026-07-27): this case's
+        # suggestions + the standing relief default cover construction/jaw/relief,
+        # so a fresh session is short ONLY of its reviews — the refusal names the
+        # unreviewed teeth and nothing the fallbacks already supply
         worker = FakeWorker()
         client = client_with(settings, worker)
         res = client.post("/api/case-sessions/neodent-gm/run")
         assert res.status_code == 422
         detail = res.json()["detail"]
         assert "not authorized" in detail
-        for piece in ("the construction part", "the jaw", "the gingival relief",
-                      "tooth 4", "tooth 13"):
+        for piece in ("tooth 4", "tooth 13"):
             assert piece in detail, piece
+        for covered in ("the construction part", "the jaw", "the gingival relief"):
+            assert covered not in detail, covered
         # asking created nothing: no job submitted, no receipt persisted
         assert worker.submitted == []
         res = client.get("/api/case-sessions/neodent-gm/run")
@@ -199,6 +205,9 @@ class TestTheAuthorizedGate:
         detail = res.json()["detail"]
         assert "the implant system" in detail
         assert "at least one site" in detail
+        # no suggestion exists here, so the effective construction is honestly
+        # absent and the refusal still names it — fallbacks are facts, not guesses
+        assert "the construction part" in detail
 
 
 # --- the authorized run + landing --------------------------------------------------
@@ -214,6 +223,25 @@ class TestTheRunLands:
         ((case_id, request),) = worker.submitted
         assert case_id == "neodent-gm"
         assert request["run_id"]  # BFF-minted, non-empty — the immutable dir's name
+        assert request["selection"] == {
+            "model": "neodent-gm",
+            "construction_path": "dess/neodent-gm-scanbody.stl",
+            "jaw": "upper", "gingival_offset_mm": 0.2,
+            "variants": {"4": "5020", "13": "5020"},
+        }
+
+    def test_an_authorized_run_consumes_the_effective_choices(
+            self, settings, product_root):
+        # the client's 2026-07-27 automation ask, at the RUN: every site reviewed
+        # but no choices PUT ever made — the run fires with the case's suggestions
+        # and the standing 0.20mm relief default, the same values the detail's
+        # effective views attribute
+        seed_ready(product_root, choices_complete=False)
+        worker = FakeWorker(summary=summary_for([row(4), row(13)]))
+        client = client_with(settings, worker)
+        res = client.post("/api/case-sessions/neodent-gm/run")
+        assert res.status_code == 200
+        ((_case_id, request),) = worker.submitted
         assert request["selection"] == {
             "model": "neodent-gm",
             "construction_path": "dess/neodent-gm-scanbody.stl",

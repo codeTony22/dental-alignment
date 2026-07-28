@@ -125,22 +125,54 @@ export interface ChoicesPanelProps {
   readonly onChoice: (patch: Partial<ChoicesUpdate>) => void;
 }
 
-/** The case-level choices — rendered from the PERSISTED choices (pre-fills shown where
- * nothing is chosen yet), PUT whole on every change. Parity slice: the demo's
- * selection-card language — the decode select, the Upper/Lower pair, the relief input
- * beside its measured ceilings with the amber over-ceiling tone. */
+/** The prefilled-choice chip (client 2026-07-27): the SERVER's attribution, worn
+ * exactly like the system bar's "suggested" tag — "suggested" on a fallback the
+ * case supplied, "default" on the standing relief. An operator's chosen value
+ * carries no chip, and "none" has no value to tag. */
+function ChoiceSourceChip({
+  source,
+  choice,
+}: {
+  readonly source: "chosen" | "suggested" | "default" | "none";
+  readonly choice: string;
+}) {
+  if (source === "chosen" || source === "none") return null;
+  return (
+    <span
+      data-role="choice-source"
+      data-choice={choice}
+      className="library-badge library-badge--suggested"
+    >
+      {" "}
+      {source}
+    </span>
+  );
+}
+
+/** The case-level choices — rendered from the BFF's EFFECTIVE values (client
+ * 2026-07-27: the same chosen-??-suggested-??-default document the previews seat
+ * with, each with its source chip), PUT whole on every change — the operator
+ * changes them by the existing PUT; nothing here auto-writes a default. Parity
+ * slice: the demo's selection-card language — the decode select, the Upper/Lower
+ * pair, the relief input beside its measured ceilings with the amber
+ * over-ceiling tone. */
 export function ChoicesPanel({ detail, saving, error, onChoice }: ChoicesPanelProps) {
   const chosen = detail.choices;
-  const construction =
-    chosen.construction_path ?? detail.case.suggested_construction ?? "";
-  const jaw = chosen.jaw ?? detail.case.jaw;
-  const relief = chosen.gingival_offset_mm ?? chosen.gingival_offset_default_mm;
+  const construction = chosen.effective_construction.value ?? "";
+  const jaw = chosen.effective_jaw.value;
+  const relief = chosen.effective_relief.value ?? chosen.gingival_offset_default_mm;
   return (
     <section data-role="intake-choices" className="panel">
       <h3 className="panel__title">Case-level choices</h3>
       <div className="decode-column">
         <div>
-          <h4 className="decode-section__title">Construction part</h4>
+          <h4 className="decode-section__title">
+            Construction part
+            <ChoiceSourceChip
+              source={chosen.effective_construction.source}
+              choice="construction"
+            />
+          </h4>
           <select
             data-role="choice-construction"
             className={`decode-select${construction === "" ? " decode-select--needs" : ""}`}
@@ -158,7 +190,10 @@ export function ChoicesPanel({ detail, saving, error, onChoice }: ChoicesPanelPr
           </select>
         </div>
         <div>
-          <h4 className="decode-section__title">Jaw</h4>
+          <h4 className="decode-section__title">
+            Jaw
+            <ChoiceSourceChip source={chosen.effective_jaw.source} choice="jaw" />
+          </h4>
           <div data-role="choice-jaw" className="decode-jaw" role="group" aria-label="Jaw">
             {JAW_CHOICES.map((candidate) => (
               <button
@@ -176,7 +211,10 @@ export function ChoicesPanel({ detail, saving, error, onChoice }: ChoicesPanelPr
           </div>
         </div>
         <div>
-          <h4 className="decode-section__title">Gingival relief</h4>
+          <h4 className="decode-section__title">
+            Gingival relief
+            <ChoiceSourceChip source={chosen.effective_relief.source} choice="relief" />
+          </h4>
           <label className="decode-offset">
             <input
               data-role="choice-relief"

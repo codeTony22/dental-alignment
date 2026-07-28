@@ -111,13 +111,27 @@ export interface DetectionView {
   proposals: DetectedProposalView[];
 }
 
-/** The operator's case-level choices as persisted; `complete` is the BFF's derivation
- * (this app never computes completion itself — trust direction, AM-4). */
+/** One case-level choice as the automation consumes it (the SystemView pattern
+ * mirrored per choice — client 2026-07-27): the effective value plus WHO supplied
+ * it, so the Intake panel renders its "suggested"/"default" chips from server
+ * facts, exactly like the system bar's tag. */
+export interface EffectiveChoiceView<T> {
+  value: T | null;
+  source: "chosen" | "suggested" | "default" | "none";
+}
+
+/** The operator's case-level choices as persisted (raw acts, None until made),
+ * beside the EFFECTIVE values preview/run actually consume; `complete` is the
+ * BFF's derivation over the EFFECTIVE values (this app never computes completion
+ * itself — trust direction, AM-4). */
 export interface ChoicesView {
   construction_path: string | null;
   jaw: string | null;
   gingival_offset_mm: number | null;
   gingival_offset_default_mm: number;
+  effective_construction: EffectiveChoiceView<string>;
+  effective_jaw: EffectiveChoiceView<string>;
+  effective_relief: EffectiveChoiceView<number>;
   complete: boolean;
 }
 

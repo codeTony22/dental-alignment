@@ -134,6 +134,12 @@ export function caseSessionDetail(
       jaw: null,
       gingival_offset_mm: null,
       gingival_offset_default_mm: 0.2,
+      // this fixture case carries NO construction suggestion, so the effective
+      // construction is honestly absent and completeness fails with it — the
+      // BFF's attribution shapes, mirrored (client 2026-07-27)
+      effective_construction: { value: null, source: "none" },
+      effective_jaw: { value: "lower", source: "suggested" },
+      effective_relief: { value: 0.2, source: "default" },
       complete: false,
     },
     session: {
@@ -167,6 +173,12 @@ export function runnableDetail(
       jaw: "lower",
       gingival_offset_mm: 0.2,
       gingival_offset_default_mm: 0.2,
+      effective_construction: {
+        value: "dess/conical-scanbody.stl",
+        source: "chosen",
+      },
+      effective_jaw: { value: "lower", source: "chosen" },
+      effective_relief: { value: 0.2, source: "chosen" },
       complete: true,
     },
     ...overrides,

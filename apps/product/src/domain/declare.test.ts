@@ -200,6 +200,9 @@ const previewable = caseSessionDetail({
     jaw: "lower",
     gingival_offset_mm: 0.2,
     gingival_offset_default_mm: 0.2,
+    effective_construction: { value: "dess/a.stl", source: "chosen" },
+    effective_jaw: { value: "lower", source: "chosen" },
+    effective_relief: { value: 0.2, source: "chosen" },
     complete: true,
   },
 });
@@ -254,9 +257,33 @@ describe("previewKeyFor — the preview's identity, from server facts only", () 
   it("a different variant or choice is a different key — the re-fire trigger", () => {
     const other = caseSessionDetail({
       ...previewable,
-      choices: { ...previewable.choices, gingival_offset_mm: 0.1 },
+      choices: {
+        ...previewable.choices,
+        gingival_offset_mm: 0.1,
+        effective_relief: { value: 0.1, source: "chosen" },
+      },
     });
     expect(previewKeyFor(other, 19)).not.toBe(previewKeyFor(previewable, 19));
+  });
+
+  it("a fresh case previews on its suggestions — no Intake visit needed (client 2026-07-27)", () => {
+    // the client's complaint, client-side: declaration only, raw choices all None —
+    // the EFFECTIVE values mint the key, and it EQUALS the explicitly-pinned key,
+    // so pinning a prefill later refires no identical physics
+    const fresh = caseSessionDetail({
+      ...previewable,
+      choices: {
+        construction_path: null,
+        jaw: null,
+        gingival_offset_mm: null,
+        gingival_offset_default_mm: 0.2,
+        effective_construction: { value: "dess/a.stl", source: "suggested" },
+        effective_jaw: { value: "lower", source: "suggested" },
+        effective_relief: { value: 0.2, source: "default" },
+        complete: true,
+      },
+    });
+    expect(previewKeyFor(fresh, 19)).toBe(previewKeyFor(previewable, 19));
   });
 });
 
@@ -539,11 +566,15 @@ describe("runKeyFor — the run's identity, from server facts only", () => {
     expect(
       runKeyFor(
         runnableDetail({
+          // effective-incomplete: no act AND no fallback for the construction
           choices: {
             construction_path: null,
             jaw: null,
             gingival_offset_mm: null,
             gingival_offset_default_mm: 0.2,
+            effective_construction: { value: null, source: "none" },
+            effective_jaw: { value: "lower", source: "suggested" },
+            effective_relief: { value: 0.2, source: "default" },
             complete: false,
           },
         }),

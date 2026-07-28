@@ -146,6 +146,8 @@ describe("detectionMarkers — what the 3D stage rings", () => {
 });
 
 describe("choicesUpdateFrom — one change makes the whole panel explicit", () => {
+  // the derivation has ONE home, server-side (client 2026-07-27): the panel
+  // renders the BFF's effective values and submits exactly what it shows
   const detail = caseSessionDetail({
     case: {
       id: "case-a",
@@ -155,17 +157,30 @@ describe("choicesUpdateFrom — one change makes the whole panel explicit", () =
       suggested_model: "conical-4x4",
       suggested_construction: "dess/conical-scanbody.stl",
     },
+    choices: {
+      construction_path: null,
+      jaw: null,
+      gingival_offset_mm: null,
+      gingival_offset_default_mm: 0.2,
+      effective_construction: {
+        value: "dess/conical-scanbody.stl",
+        source: "suggested",
+      },
+      effective_jaw: { value: "lower", source: "suggested" },
+      effective_relief: { value: 0.2, source: "default" },
+      complete: true,
+    },
   });
 
-  it("an unchanged field carries the pre-fill the plan names", () => {
+  it("an unchanged field carries the server's effective value", () => {
     expect(choicesUpdateFrom(detail, { jaw: "upper" })).toEqual({
       construction_path: "dess/conical-scanbody.stl", // the case's suggestion
       jaw: "upper",
-      gingival_offset_mm: 0.2, // the worker's default ask
+      gingival_offset_mm: 0.2, // the standing default
     });
   });
 
-  it("a persisted choice beats the pre-fill", () => {
+  it("a persisted choice beats the pre-fill (the BFF attributes it 'chosen')", () => {
     const chosen = caseSessionDetail({
       ...detail,
       choices: {
@@ -173,6 +188,9 @@ describe("choicesUpdateFrom — one change makes the whole panel explicit", () =
         jaw: "upper",
         gingival_offset_mm: 0.1,
         gingival_offset_default_mm: 0.2,
+        effective_construction: { value: "atlantis/other.stl", source: "chosen" },
+        effective_jaw: { value: "upper", source: "chosen" },
+        effective_relief: { value: 0.1, source: "chosen" },
         complete: true,
       },
     });

@@ -30,10 +30,11 @@ route sits on an explicit allowlist, and no request model carries a status-shape
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import math
 import uuid
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Union
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -87,7 +88,9 @@ class WorklistRow(BaseModel):
     released: Optional[bool] = None
     # Intake's completion facts (plan §4 / slice 4), derived server-side like the rest:
     detected: Optional[bool]        # a detection record exists for this session
-    choices_complete: Optional[bool]  # all three case-level choices explicitly made
+    # EFFECTIVE values all present (client 2026-07-27): an explicit act, the case's
+    # suggestion, or the standing relief default each count — the automation's fact
+    choices_complete: Optional[bool]
     # the session store's refusal, verbatim (its one home for those words); None = healthy
     error: Optional[str] = None
 
@@ -117,15 +120,34 @@ class DetectionView(BaseModel):
     proposals: List[DetectedProposalView]
 
 
+class EffectiveChoiceView(BaseModel):
+    """One case-level choice as the AUTOMATION consumes it (client 2026-07-27) — the
+    SystemView pattern mirrored per choice: the operator's explicit act when made,
+    the case's non-binding suggestion else (construction from the name-matched
+    catalog part, jaw read off the scan filename), the standing default else
+    (relief) — and ``source`` says which, so the UI renders its "suggested"/
+    "default" chip from a server fact instead of comparing fields itself. ``value``
+    is None (source "none") only where no fallback exists: a case whose folder
+    matched no construction part."""
+
+    value: Optional[Union[str, float]]
+    source: str   # "chosen" | "suggested" | "default" | "none"
+
+
 class ChoicesView(BaseModel):
     """The operator's case-level choices as persisted (None = not yet made), plus the
-    facts the UI needs to render them honestly: the worker's default relief ask and the
-    server-derived completion verdict (the UI never computes completion itself)."""
+    facts the UI needs to render them honestly: the worker's default relief ask, the
+    EFFECTIVE value+attribution per choice (what preview and run actually consume —
+    client 2026-07-27), and the server-derived completion verdict over the EFFECTIVE
+    values (the UI never computes completion itself)."""
 
     construction_path: Optional[str]
     jaw: Optional[str]
     gingival_offset_mm: Optional[float]
     gingival_offset_default_mm: float
+    effective_construction: EffectiveChoiceView
+    effective_jaw: EffectiveChoiceView
+    effective_relief: EffectiveChoiceView
     complete: bool
 
 
@@ -411,6 +433,76 @@ def _effective_model(case: CaseRecord, session: CaseSession) -> Optional[str]:
     return session.system or case.suggested_model
 
 
+# THE STANDING RELIEF DEFAULT (client 2026-07-27): the demo ran every case at the
+# worker's own 0.20mm ask unless the lab changed it, so the automation treats the
+# unmade relief choice as that standing default rather than refusing. One home for
+# the number — the worker's DEFAULT_GINGIVAL_OFFSET_MM — re-exported under the name
+# the effective-choices derivation reads.
+STANDING_RELIEF_DEFAULT_MM = DEFAULT_GINGIVAL_OFFSET_MM
+
+
+@dataclasses.dataclass(frozen=True)
+class EffectiveChoices:
+    """The three case-level choices as the automation consumes them, each with its
+    attribution — the internal shape behind ``EffectiveChoiceView`` and the ONE
+    document preview/run authorization read. The choices route's reset guard
+    compares ``values`` (the withModel pattern — attribution flips are not
+    changes); ``complete`` is the worklist/flow completion fact."""
+
+    construction_path: Optional[str]
+    construction_source: str
+    jaw: Optional[str]
+    jaw_source: str
+    gingival_offset_mm: Optional[float]
+    gingival_offset_source: str
+
+    @property
+    def complete(self) -> bool:
+        """Effective values all present — the completion fact worklist/flow serve
+        since the 2026-07-27 automation ask (raw acts alone no longer gate)."""
+        return (self.construction_path is not None and self.jaw is not None
+                and self.gingival_offset_mm is not None)
+
+    @property
+    def values(self) -> tuple:
+        """The VALUE triple alone, without attribution — what the choices route's
+        reset guard compares: pinning a suggestion flips source suggested→chosen
+        while describing the SAME shipped part, and a source flip must never cost
+        a preview."""
+        return (self.construction_path, self.jaw, self.gingival_offset_mm)
+
+
+def _effective_choices(case: CaseRecord, choices: CaseChoices) -> EffectiveChoices:
+    """The ``_effective_model`` pattern, mirrored onto the case-level choices
+    (client 2026-07-27: 'once implant system and variant for tooth are selected
+    the union needs to show up' — the case already carries the suggestions):
+    chosen ?? suggested (construction, jaw) ?? standing default (relief). A pure
+    READ-time derivation: nothing here ever writes the session, so the raw choices
+    stay honestly None until the operator acts and the reset boundaries only fire
+    on an explicit CHANGE, never off a default."""
+    if choices.construction_path is not None:
+        construction = (choices.construction_path, "chosen")
+    elif case.suggested_construction is not None:
+        construction = (case.suggested_construction, "suggested")
+    else:
+        construction = (None, "none")
+    if choices.jaw is not None:
+        jaw = (choices.jaw, "chosen")
+    elif case.jaw:
+        jaw = (case.jaw, "suggested")   # read off the scan filename by discovery
+    else:
+        jaw = (None, "none")
+    if choices.gingival_offset_mm is not None:
+        relief = (choices.gingival_offset_mm, "chosen")
+    else:
+        relief = (STANDING_RELIEF_DEFAULT_MM, "default")
+    return EffectiveChoices(
+        construction_path=construction[0], construction_source=construction[1],
+        jaw=jaw[0], jaw_source=jaw[1],
+        gingival_offset_mm=relief[0], gingival_offset_source=relief[1],
+    )
+
+
 def _system_view(case: CaseRecord, session: CaseSession) -> SystemView:
     if session.system is not None:
         return SystemView(effective_model=session.system, source="declared")
@@ -428,7 +520,7 @@ def _ceilings(case: CaseRecord, session: CaseSession, sites: List[SiteView],
     declaration since slice 5a, the suggestion else). Without a system+construction
     there is nothing meaningful to measure — the list is honestly empty, never
     guessed."""
-    construction = session.choices.construction_path or case.suggested_construction
+    construction = _effective_choices(case, session.choices).construction_path
     model = _effective_model(case, session)
     if model is None or construction is None:
         return []
@@ -464,13 +556,21 @@ def _detection_view(session: CaseSession) -> Optional[DetectionView]:
         DetectedProposalView(**p.model_dump()) for p in session.detection.proposals])
 
 
-def _choices_view(session: CaseSession) -> ChoicesView:
+def _choices_view(case: CaseRecord, session: CaseSession) -> ChoicesView:
+    effective = _effective_choices(case, session.choices)
     return ChoicesView(
         construction_path=session.choices.construction_path,
         jaw=session.choices.jaw,
         gingival_offset_mm=session.choices.gingival_offset_mm,
         gingival_offset_default_mm=DEFAULT_GINGIVAL_OFFSET_MM,
-        complete=session.choices.complete,
+        effective_construction=EffectiveChoiceView(
+            value=effective.construction_path, source=effective.construction_source),
+        effective_jaw=EffectiveChoiceView(
+            value=effective.jaw, source=effective.jaw_source),
+        effective_relief=EffectiveChoiceView(
+            value=effective.gingival_offset_mm,
+            source=effective.gingival_offset_source),
+        complete=effective.complete,
     )
 
 
@@ -494,7 +594,7 @@ def _detail(case: CaseRecord, session: CaseSession,
         ),
         relief_ceilings=_ceilings(case, session, sites, settings),
         detection=_detection_view(session),
-        choices=_choices_view(session),
+        choices=_choices_view(case, session),
         session=_session_view(session),
     )
 
@@ -581,7 +681,7 @@ def worklist(request: Request) -> List[WorklistRow]:
             confirmed=session.confirmation is not None,
             released=_released(session),
             detected=session.detection is not None,
-            choices_complete=session.choices.complete,
+            choices_complete=_effective_choices(case, session.choices).complete,
         ))
     return rows
 
@@ -661,6 +761,12 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
     change, exactly as in the demo (its transitions touch ``reviewed`` only), and an
     IDENTICAL re-PUT resets nothing (the demo's own equality guards,
     ``withConstruction``/``withJaw``/``withOffsetInput``) — both pinned by test.
+
+    Since the effective choices landed (client 2026-07-27), "change" is judged over
+    the EFFECTIVE document — the system route's ``withModel`` guard, mirrored: a PUT
+    that pins exactly the values already in effect (the suggestion, the standing
+    default) describes the SAME shipped part, so the previews the automation already
+    computed with those values survive the pinning act.
     """
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
@@ -680,7 +786,9 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
             jaw=body.jaw,
             gingival_offset_mm=body.gingival_offset_mm,
         )
-        if replacement != session.choices:
+        effective_changed = (_effective_choices(case, replacement).values
+                             != _effective_choices(case, session.choices).values)
+        if effective_changed:
             for site in session.sites.values():
                 site.status = status.invalidate_preview(site.status)
                 site.clear_preview_facts()
@@ -813,30 +921,35 @@ def preview_site_action(case_id: str, tooth: int, request: Request) -> dict:
         """What the preview seats WITH, read off one session document — refusing
         (404/422, naming exactly what is missing) when the session cannot answer.
         Called on the pre-derivation load (an impossible ask must not cost seconds of
-        physics) and AGAIN on the fresh document inside the mutation."""
+        physics) and AGAIN on the fresh document inside the mutation.
+
+        The choices consumed are the EFFECTIVE ones (client 2026-07-27: a fresh
+        session + a declaration previews on the suggestions and the standing
+        relief default); a case whose suggestion is absent still refuses, naming
+        the piece no fallback covers."""
         _require_known_tooth(case, session, tooth)
         site = session.sites.get(str(tooth))
-        choices = session.choices
+        effective = _effective_choices(case, session.choices)
         model = _effective_model(case, session)
         missing = []
         if site is None or site.declared_variant is None:
             missing.append("a declared cap variant for this site")
         if model is None:
             missing.append("the implant system")
-        if choices.construction_path is None:
+        if effective.construction_path is None:
             missing.append("the construction part")
-        if choices.jaw is None:
+        if effective.jaw is None:
             missing.append("the jaw")
-        if choices.gingival_offset_mm is None:
+        if effective.gingival_offset_mm is None:
             missing.append("the gingival relief")
         if missing:
             raise HTTPException(422, f"nothing to preview yet — tooth {tooth} on "
                                      f"case {case_id!r} still needs: "
                                      + ", ".join(missing))
         return PreviewSelection(
-            model=model, construction_path=choices.construction_path,
-            variant=site.declared_variant, jaw=choices.jaw,
-            gingival_offset_mm=choices.gingival_offset_mm)
+            model=model, construction_path=effective.construction_path,
+            variant=site.declared_variant, jaw=effective.jaw,
+            gingival_offset_mm=effective.gingival_offset_mm)
 
     selection = judge(store.load(case_id))
     try:
@@ -929,22 +1042,24 @@ def _mint_run_id() -> str:
 def _authorized_selection(case: CaseRecord, case_id: str,
                           session: CaseSession) -> dict:
     """THE AUTHORIZED GATE, server-minted (AM-8): the full run fires only when the
-    case-level choices are complete AND every site is READY — the operator's review
-    tick over the live panes, not a checkbox. Refuses 422 naming EACH missing piece
-    (the operator fixes what is named, never guesses). Returns the job-shaped
-    selection — every field an operator act read from this one session document,
-    which is why this is judged INSIDE the mutation that persists the receipt
-    (25604e7's rule: a rival change mid-anything is a 409, not a stale verdict)."""
+    EFFECTIVE case-level choices are complete AND every site is READY — the
+    operator's review tick over the live panes, not a checkbox. Refuses 422 naming
+    EACH missing piece (the operator fixes what is named, never guesses); pieces a
+    suggestion or the standing default covers are not missing (client 2026-07-27 —
+    the same effective document the previews seated with). Returns the job-shaped
+    selection, judged INSIDE the mutation that persists the receipt (25604e7's
+    rule: a rival change mid-anything is a 409, not a stale verdict)."""
     sites = _site_views(case, session)
     missing: List[str] = []
     model = _effective_model(case, session)
+    effective = _effective_choices(case, session.choices)
     if model is None:
         missing.append("the implant system")
-    if session.choices.construction_path is None:
+    if effective.construction_path is None:
         missing.append("the construction part")
-    if session.choices.jaw is None:
+    if effective.jaw is None:
         missing.append("the jaw")
-    if session.choices.gingival_offset_mm is None:
+    if effective.gingival_offset_mm is None:
         missing.append("the gingival relief")
     if not sites:
         missing.append("at least one site")
@@ -957,9 +1072,9 @@ def _authorized_selection(case: CaseRecord, case_id: str,
                                  f"still needs: " + "; ".join(missing))
     return {
         "model": model,
-        "construction_path": session.choices.construction_path,
-        "jaw": session.choices.jaw,
-        "gingival_offset_mm": session.choices.gingival_offset_mm,
+        "construction_path": effective.construction_path,
+        "jaw": effective.jaw,
+        "gingival_offset_mm": effective.gingival_offset_mm,
         # READY implies a declaration (the ladder's construction), so this lookup
         # cannot miss; keyed by tooth-as-string — the wire is JSON either way
         "variants": {str(view.tooth): session.sites[str(view.tooth)].declared_variant
