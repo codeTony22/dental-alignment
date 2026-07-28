@@ -18,7 +18,8 @@ from fastapi.testclient import TestClient
 
 from bff.main import create_app
 from bff.resources import case_sessions
-from bff.session import RunSession, SessionStore, SiteSession, SiteStatus
+from bff.session import (RunSession, SeatedSelection, SessionStore, SiteSession,
+                         SiteStatus)
 
 
 class InterferingStore(SessionStore):
@@ -593,7 +594,8 @@ class TestSystem:
                                    declared_variant="5020")
         s.sites["13"] = SiteSession(status=SiteStatus.READY,
                                     declared_variant="5020",
-                                    seat_method="rim-seat", rim_agreement_mm=0.07)
+                                    seat_method="rim-seat", rim_agreement_mm=0.07,
+                                    seated_selection=seated())
         store.save(s)
         client = TestClient(create_app(settings))
         body = client.put("/api/case-sessions/neodent-gm/system",
@@ -609,6 +611,7 @@ class TestSystem:
         assert persisted.sites["4"].declared_variant is None
         assert persisted.sites["13"].seat_method is None
         assert persisted.sites["13"].rim_agreement_mm is None
+        assert persisted.sites["13"].seated_selection is None
 
     def test_re_declaring_the_effective_system_resets_nothing(self, settings):
         # withModel's own guard (state.model === model → no change): PUTting the
@@ -698,7 +701,8 @@ class TestDeclaration:
         store = SessionStore(settings.product_root)
         s = store.load("neodent-gm")
         s.sites["4"] = SiteSession(status=SiteStatus.READY, declared_variant="5020",
-                                   seat_method="rim-seat", rim_agreement_mm=0.07)
+                                   seat_method="rim-seat", rim_agreement_mm=0.07,
+                                   seated_selection=seated())
         store.save(s)
         client = TestClient(create_app(settings))
         body = client.put("/api/case-sessions/neodent-gm/sites/4/declaration",
@@ -708,6 +712,8 @@ class TestDeclaration:
         persisted = SessionStore(settings.product_root).load("neodent-gm")
         assert persisted.sites["4"].seat_method is None
         assert persisted.sites["4"].rim_agreement_mm is None
+        # the seat record is a preview fact: it falls at the same boundary
+        assert persisted.sites["4"].seated_selection is None
 
     def test_re_declaring_the_same_variant_changes_nothing_at_all(self, settings):
         # the same idempotence the system route has: re-clicking the declared card
@@ -772,6 +778,17 @@ def stub_preview_payload(tooth: int = 4, variant: str = "5020") -> dict:
         "vertex_footprint_points": 1, "reporting_only": True, "preview": True,
         "seat": {"seat_method": "rim-seat", "rim_agreement_mm": 0.07, "fit": "ok"},
     }
+
+
+def seated(variant: str = "5020", **overrides) -> SeatedSelection:
+    """The seat record the preview route persists for the conftest case's effective
+    document — overrides express a HISTORIC seat (what a review once attested)
+    diverging from the current one, the 2026-07-28 drift finding's raw material."""
+    fields = dict(model="neodent-gm",
+                  construction_path="dess/neodent-gm-scanbody.stl",
+                  variant=variant, jaw="upper", gingival_offset_mm=0.2)
+    fields.update(overrides)
+    return SeatedSelection(**fields)
 
 
 def complete_choices(client: TestClient, case_id: str = "neodent-gm"):
@@ -890,6 +907,10 @@ class TestPreview:
         assert site.status is SiteStatus.PREVIEWED
         assert site.seat_method == "rim-seat"
         assert site.rim_agreement_mm == 0.07
+        # the SEAT RECORD rides with the facts (the 2026-07-28 drift guard): the
+        # full selection this preview actually seated, so a later gate can judge
+        # whether READY still describes the case instead of assuming it
+        assert site.seated_selection == seated()
         assert "points" not in site.model_dump()
         # …and the detail the UI re-reads says previewed
         detail = client.get("/api/case-sessions/neodent-gm").json()
@@ -911,8 +932,55 @@ class TestPreview:
 
     def test_a_re_preview_over_a_reviewed_site_keeps_the_review(
             self, settings, monkeypatch):
-        # a page reload re-renders a READY site's panes; the attestation must stand —
-        # the derivation is deterministic over the unchanged declaration+choices
+        # a page reload re-renders a READY site's panes; the attestation stands
+        # because the seat is judged the SAME — the seeded record mirrors what the
+        # preview route itself persists (since 2026-07-28, READY holding is an
+        # equality over the recorded seat, no longer an assumption)
+        client, _ = self._client_with_stub(settings, monkeypatch)
+        complete_choices(client)
+        store = SessionStore(settings.product_root)
+        s = store.load("neodent-gm")
+        s.sites["4"] = SiteSession(status=SiteStatus.READY, declared_variant="5020",
+                                   seat_method="rim-seat", rim_agreement_mm=0.07,
+                                   seated_selection=seated())
+        store.save(s)
+        res = client.post("/api/case-sessions/neodent-gm/sites/4/preview")
+        assert res.status_code == 200
+        assert SessionStore(settings.product_root).load(
+            "neodent-gm").sites["4"].status is SiteStatus.READY
+
+    def test_a_re_preview_whose_seat_drifted_unticks_the_review(
+            self, settings, monkeypatch):
+        """THE EFFECTIVE-DEFAULT DRIFT BOUNDARY (the 2026-07-28 review's refuted
+        finding): the effective fallbacks — the case's suggestions, the standing
+        relief default — live OUTSIDE the session, so they can change while READY
+        stands and no reset boundary fires. The UI auto-refires the preview when
+        its key changes; before this boundary, that repainted the panes with the
+        NEW physics while the tick stayed ticked — invisible drift. Now the
+        landing judges seat equality: a differing seat drops READY to PREVIEWED
+        (the machine's reseat_preview) — the drift COSTS the tick, visibly."""
+        client, _ = self._client_with_stub(settings, monkeypatch)
+        # no choices PUT: the preview seats on the suggestions + the 0.20 standing
+        # default. The RECORD says the review attested a 0.15 relief — a former
+        # standing default, seeded as the historic fact a deploy left behind.
+        store = SessionStore(settings.product_root)
+        s = store.load("neodent-gm")
+        s.sites["4"] = SiteSession(status=SiteStatus.READY, declared_variant="5020",
+                                   seat_method="rim-seat", rim_agreement_mm=0.07,
+                                   seated_selection=seated(gingival_offset_mm=0.15))
+        store.save(s)
+        res = client.post("/api/case-sessions/neodent-gm/sites/4/preview")
+        assert res.status_code == 200
+        site = SessionStore(settings.product_root).load("neodent-gm").sites["4"]
+        assert site.status is SiteStatus.PREVIEWED   # the tick fell with the drift
+        assert site.seated_selection == seated()     # the record now names THIS seat
+
+    def test_a_ready_site_with_no_recorded_seat_falls_on_re_preview(
+            self, settings, monkeypatch):
+        # a document persisted before the seat record existed: READY with no record
+        # cannot prove WHAT its review attested, so the judgment fails closed — the
+        # re-preview lands PREVIEWED and writes the record; one re-review restores
+        # READY over a seat that can be verified from then on
         client, _ = self._client_with_stub(settings, monkeypatch)
         complete_choices(client)
         store = SessionStore(settings.product_root)
@@ -922,8 +990,9 @@ class TestPreview:
         store.save(s)
         res = client.post("/api/case-sessions/neodent-gm/sites/4/preview")
         assert res.status_code == 200
-        assert SessionStore(settings.product_root).load(
-            "neodent-gm").sites["4"].status is SiteStatus.READY
+        site = SessionStore(settings.product_root).load("neodent-gm").sites["4"]
+        assert site.status is SiteStatus.PREVIEWED
+        assert site.seated_selection == seated()
 
     def test_the_pipelines_refusal_is_a_409_in_its_own_words(
             self, settings, monkeypatch):

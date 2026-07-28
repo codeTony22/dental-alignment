@@ -33,7 +33,8 @@ from fastapi.testclient import TestClient
 from bff.config import Settings
 from bff.main import create_app
 from bff.ports.worker import JobState, JobStatus
-from bff.session import (CaseChoices, SessionStore, SiteSession, SiteStatus)
+from bff.session import (CaseChoices, SeatedSelection, SessionStore, SiteSession,
+                         SiteStatus)
 
 from conftest import make_data_tree
 
@@ -99,13 +100,20 @@ def client_with(settings: Settings, worker: FakeWorker) -> TestClient:
 def seed_ready(product_root, teeth=("4", "13"), variant="5020",
                choices_complete=True) -> None:
     """Drive the session to Declare-complete THROUGH THE STORE — the same server-side
-    door the resource itself uses; there is no client path to a status by design."""
+    door the resource itself uses; there is no client path to a status by design.
+    The ``seated_selection`` mirrors what the preview route itself persists (the
+    2026-07-28 drift guard): a READY whose recorded seat is absent or no longer
+    matches the case's current selection is refused by the authorized gate."""
     store = SessionStore(product_root)
     s = store.load("neodent-gm")
     for tooth in teeth:
-        s.sites[tooth] = SiteSession(status=SiteStatus.READY,
-                                     declared_variant=variant,
-                                     seat_method="rim-seat", rim_agreement_mm=0.07)
+        s.sites[tooth] = SiteSession(
+            status=SiteStatus.READY, declared_variant=variant,
+            seat_method="rim-seat", rim_agreement_mm=0.07,
+            seated_selection=SeatedSelection(
+                model="neodent-gm",
+                construction_path="dess/neodent-gm-scanbody.stl",
+                variant=variant, jaw="upper", gingival_offset_mm=0.2))
     if choices_complete:
         s.choices = CaseChoices(construction_path="dess/neodent-gm-scanbody.stl",
                                 jaw="upper", gingival_offset_mm=0.2)
@@ -192,6 +200,55 @@ class TestTheAuthorizedGate:
         detail = res.json()["detail"]
         assert "tooth 13 reviewed over the panes (now 'previewed')" in detail
         assert "tooth 4" not in detail  # ready sites are not named as missing
+
+    def test_a_drifted_effective_value_after_review_refuses_the_run(
+            self, settings, product_root):
+        """THE 2026-07-28 REVIEW'S SCENARIO, pinned: reviews landed READY, then an
+        effective fallback drifted — here tooth 4's recorded seat says its review
+        attested a 0.15 relief (a former standing default), while the case's
+        current effective relief is 0.20. No reset boundary fires for a fallback
+        (they live outside the session), so the GATE itself must refuse — naming
+        the drifted tooth and only it — rather than seat physics the review never
+        attested."""
+        seed_ready(product_root, choices_complete=False)
+        store = SessionStore(product_root)
+        s = store.load("neodent-gm")
+        s.sites["4"].seated_selection = s.sites["4"].seated_selection.model_copy(
+            update={"gingival_offset_mm": 0.15})
+        store.save(s)
+        worker = FakeWorker(summary=summary_for([row(4), row(13)]))
+        client = client_with(settings, worker)
+        res = client.post("/api/case-sessions/neodent-gm/run")
+        assert res.status_code == 422
+        detail = res.json()["detail"]
+        assert "tooth 4 re-previewed and re-reviewed" in detail
+        assert "tooth 13" not in detail   # its recorded seat still matches
+        # asking created nothing: no physics fired over the unattested selection
+        assert worker.submitted == []
+        assert SessionStore(product_root).load("neodent-gm").run is None
+
+    def test_a_ready_site_with_no_recorded_seat_is_refused(
+            self, settings, product_root):
+        # a document persisted before the seat record existed: READY with no
+        # record cannot prove what its review attested — fail-closed, the gate
+        # asks for one re-preview + re-review instead of trusting the rung
+        store = SessionStore(product_root)
+        s = store.load("neodent-gm")
+        for tooth in ("4", "13"):
+            s.sites[tooth] = SiteSession(status=SiteStatus.READY,
+                                         declared_variant="5020",
+                                         seat_method="rim-seat",
+                                         rim_agreement_mm=0.07)
+        store.save(s)
+        worker = FakeWorker(summary=summary_for([row(4), row(13)]))
+        client = client_with(settings, worker)
+        res = client.post("/api/case-sessions/neodent-gm/run")
+        assert res.status_code == 422
+        detail = res.json()["detail"]
+        for piece in ("tooth 4 re-previewed and re-reviewed",
+                      "tooth 13 re-previewed and re-reviewed"):
+            assert piece in detail, piece
+        assert worker.submitted == []
 
     def test_a_case_with_no_sites_and_no_system_names_both(self, settings, data_root):
         # a scan folder matching no library name: a real case (the patient-4471

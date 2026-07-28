@@ -67,6 +67,27 @@ class SiteStatus(str, enum.Enum):
     ADJUSTED = "adjusted"
 
 
+class SeatedSelection(BaseModel):
+    """WHAT a site's preview actually seated (plan §4 Declare / AM-8; the 2026-07-28
+    effective-default drift finding): the full selection — system, construction,
+    variant, jaw, relief — recorded beside the seat facts. The effective fallbacks
+    (the case's suggestions, the standing relief default) live OUTSIDE this document
+    and can change with no reset boundary firing, so a READY rung alone cannot prove
+    the review still describes the case: THIS record is what the proof compares.
+    Written only by the preview route from the selection the BFF itself minted (a
+    server derivation, never a client claim — AM-4 holds); values only, no
+    attribution, so pinning a suggestion as an explicit act flips no equality. The
+    run gate refuses any READY site whose record no longer matches the case's
+    current selection, and a re-preview whose seat differs drops READY through
+    ``bff.status.reseat_preview`` instead of repainting under a standing tick."""
+
+    model: str
+    construction_path: str
+    variant: str
+    jaw: Optional[str] = None
+    gingival_offset_mm: float
+
+
 class SiteSession(BaseModel):
     status: SiteStatus = SiteStatus.DETECTED
     declared_variant: Optional[str] = None
@@ -76,6 +97,10 @@ class SiteSession(BaseModel):
     # stored; these clear at every reset boundary (see ``clear_preview_facts``).
     seat_method: Optional[str] = None
     rim_agreement_mm: Optional[float] = None
+    # the seat RECORD (2026-07-28): the selection those facts were derived with —
+    # None on documents persisted before the record existed, which the run gate
+    # treats as unverifiable (fail-closed: re-preview + re-review once)
+    seated_selection: Optional[SeatedSelection] = None
 
     def clear_preview_facts(self) -> None:
         """The reset boundaries' ONE home for forgetting a preview's facts — called
@@ -84,6 +109,7 @@ class SiteSession(BaseModel):
         can never drift apart."""
         self.seat_method = None
         self.rim_agreement_mm = None
+        self.seated_selection = None
 
 
 class CaseChoices(BaseModel):

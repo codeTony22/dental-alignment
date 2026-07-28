@@ -23,8 +23,9 @@ Three events are legal from EVERY rung, deliberately:
     rung past DECLARED back to DECLARED, leaving earlier rungs standing.
 
 5b reaches ``preview`` (the live panes) and ``review_ready``/``withdraw_review`` (the
-two-way tick); 5c/6 call ``flag`` and ``adjust``. Written together so the WHOLE ladder
-has one home.
+two-way tick); 5c/6 call ``flag`` and ``adjust``; ``reseat_preview`` (2026-07-28) is
+``preview``'s changed-seat twin — same act, but READY falls because the review
+attested a different seat. Written together so the WHOLE ladder has one home.
 """
 from __future__ import annotations
 
@@ -60,6 +61,14 @@ _PREVIEW_LANDINGS: Dict[SiteStatus, SiteStatus] = {
     _S.READY: _S.READY,
 }
 
+# ``reseat_preview``: the same act over a DIFFERENT seat (see the function's doc) —
+# identical landings except READY, whose attestation falls with the changed physics.
+_RESEAT_LANDINGS: Dict[SiteStatus, SiteStatus] = {
+    _S.DECLARED: _S.PREVIEWED,
+    _S.PREVIEWED: _S.PREVIEWED,
+    _S.READY: _S.PREVIEWED,
+}
+
 
 def _step(event: str, current: SiteStatus) -> SiteStatus:
     legal_from, target = _EDGES[event]
@@ -83,21 +92,45 @@ def regress_to_detected(current: SiteStatus) -> SiteStatus:
 
 
 def preview(current: SiteStatus) -> SiteStatus:
-    """A preview rendered for the declared part (5b's live panes).
+    """A preview rendered for the declared part (5b's live panes), seating the SAME
+    selection the site's facts already record.
 
     Legal from DECLARED (the first render), PREVIEWED (a re-render — the payload is
     response-only, so the UI's auto-fire re-asks after a page reload) and READY (the
     SAME re-render over a reviewed site). READY holds its rung deliberately: the
-    derivation is deterministic over an unchanged declaration+choices — and the reset
-    boundaries guarantee they are unchanged wherever READY still stands — so a reload's
-    re-render must never silently untick an operator's review (the re-click
-    pair-integrity lesson: a re-render never destroys an operator act)."""
+    derivation is deterministic over an unchanged seat, so a reload's re-render must
+    never silently untick an operator's review (the re-click pair-integrity lesson:
+    a re-render never destroys an operator act). "Unchanged" is JUDGED, not assumed
+    (the 2026-07-28 effective-default drift finding): the preview route compares the
+    landed selection against the site's recorded seat and routes a differing one
+    through ``reseat_preview`` — the reset boundaries only guarantee the OPERATOR
+    acts, while the effective fallbacks can drift outside them."""
     target = _PREVIEW_LANDINGS.get(current)
     if target is None:
         allowed = ", ".join(sorted(s.value for s in _PREVIEW_LANDINGS))
         raise IllegalTransition(
             f"cannot preview a site that is {current.value!r} — the ladder allows "
             f"preview only from: {allowed}")
+    return target
+
+
+def reseat_preview(current: SiteStatus) -> SiteStatus:
+    """A preview rendered whose SEAT differs from the site's recorded one — or whose
+    record is absent, which proves nothing and fails closed (the 2026-07-28
+    effective-default drift finding). The effective fallbacks — the case's
+    suggestions, the standing relief default — live outside the session, so they can
+    drift while READY stands and no reset boundary fires; the UI then auto-refires
+    the preview when its key changes. That render is NEW physics: READY falls to
+    PREVIEWED because the review attested the OLD seat (AM-8: reviewed over the
+    panes means THESE panes), and the drift costs the tick visibly instead of the
+    panes repainting under it. Every other landing matches ``preview`` — the caller
+    (the preview route) judges seat equality and picks between the two events."""
+    target = _RESEAT_LANDINGS.get(current)
+    if target is None:
+        allowed = ", ".join(sorted(s.value for s in _RESEAT_LANDINGS))
+        raise IllegalTransition(
+            f"cannot reseat_preview a site that is {current.value!r} — the ladder "
+            f"allows reseat_preview only from: {allowed}")
     return target
 
 

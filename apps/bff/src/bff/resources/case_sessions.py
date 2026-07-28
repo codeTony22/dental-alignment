@@ -53,8 +53,8 @@ from .. import status
 from ..config import Settings
 from ..ports.worker import JobState, WorkerPort
 from ..session import (CaseChoices, CaseSession, DetectedProposal, DetectionRecord,
-                       RunSession, SessionConflict, SessionStore, SiteSession,
-                       SiteStatus, release_matches_confirmation)
+                       RunSession, SeatedSelection, SessionConflict, SessionStore,
+                       SiteSession, SiteStatus, release_matches_confirmation)
 
 router = APIRouter(prefix="/api/case-sessions", tags=["case-sessions"])
 
@@ -967,11 +967,23 @@ def preview_site_action(case_id: str, tooth: int, request: Request) -> dict:
                                      f"was computing — re-read the case; the panes "
                                      f"re-ask against what is actually there now")
         site = session.sites[str(tooth)]
-        # declared -> previewed; a re-preview holds previewed; READY holds ready (a
-        # reload's re-render must never untick a review) — all the machine's ruling
-        site.status = status.preview(site.status)
+        # THE SEAT RECORD (AM-8; the 2026-07-28 effective-default drift finding):
+        # what this preview actually seated, kept beside the facts. Equality with
+        # the site's previous record picks the landing — unchanged seat goes
+        # through the machine's ``preview`` (READY holds: a reload never unticks),
+        # a changed or unrecorded seat through ``reseat_preview`` (READY falls:
+        # these panes now show physics the review never attested, and the drift
+        # must cost the tick visibly, never repaint under it).
+        seated = SeatedSelection(
+            model=selection.model, construction_path=selection.construction_path,
+            variant=selection.variant, jaw=selection.jaw,
+            gingival_offset_mm=selection.gingival_offset_mm)
+        site.status = (status.preview(site.status)
+                       if site.seated_selection == seated
+                       else status.reseat_preview(site.status))
         site.seat_method = seat.get("seat_method")
         site.rim_agreement_mm = seat.get("rim_agreement_mm")
+        site.seated_selection = seated
 
     try:
         _mutate_session(store, case_id, apply)
@@ -1046,9 +1058,14 @@ def _authorized_selection(case: CaseRecord, case_id: str,
     operator's review tick over the live panes, not a checkbox. Refuses 422 naming
     EACH missing piece (the operator fixes what is named, never guesses); pieces a
     suggestion or the standing default covers are not missing (client 2026-07-27 —
-    the same effective document the previews seated with). Returns the job-shaped
-    selection, judged INSIDE the mutation that persists the receipt (25604e7's
-    rule: a rival change mid-anything is a 409, not a stale verdict)."""
+    the same effective document the previews seated with). READY alone does not
+    authorize (the 2026-07-28 effective-default drift finding): each reviewed
+    site's RECORDED seat must still equal the selection the run would seat, else
+    the fallbacks drifted since the review — no boundary fires for those, so the
+    gate is where the drift must refuse, never a run over unattested physics.
+    Returns the job-shaped selection, judged INSIDE the mutation that persists the
+    receipt (25604e7's rule: a rival change mid-anything is a 409, not a stale
+    verdict)."""
     sites = _site_views(case, session)
     missing: List[str] = []
     model = _effective_model(case, session)
@@ -1061,12 +1078,28 @@ def _authorized_selection(case: CaseRecord, case_id: str,
         missing.append("the jaw")
     if effective.gingival_offset_mm is None:
         missing.append("the gingival relief")
+    # with any case-level piece missing there is no selection to compare seats
+    # against — the refusal already names the piece, so the per-site judgment
+    # below only runs over a complete document
+    case_level_complete = not missing
     if not sites:
         missing.append("at least one site")
     for view in sites:
         if view.status != SiteStatus.READY.value:
             missing.append(f"tooth {view.tooth} reviewed over the panes "
                            f"(now {view.status!r})")
+        elif case_level_complete:
+            # READY implies a declaration (the ladder's construction), so the
+            # variant lookup cannot miss; the record is absent only on documents
+            # persisted before it existed — unverifiable, so it fails closed too
+            site = session.sites[str(view.tooth)]
+            if site.seated_selection != SeatedSelection(
+                    model=model, construction_path=effective.construction_path,
+                    variant=site.declared_variant, jaw=effective.jaw,
+                    gingival_offset_mm=effective.gingival_offset_mm):
+                missing.append(f"tooth {view.tooth} re-previewed and re-reviewed "
+                               f"— its review attested a seat the case's current "
+                               f"selection no longer describes")
     if missing:
         raise HTTPException(422, f"the run is not authorized yet — case {case_id!r} "
                                  f"still needs: " + "; ".join(missing))
@@ -1159,9 +1192,14 @@ def run_case_action(case_id: str, request: Request) -> CaseSessionDetail:
                                      f"withdrawn, so re-firing mints a fresh run")
 
         def land(session: CaseSession) -> None:
-            # the pointer is the guard: every reset boundary clears it, and the
-            # selection cannot change without a boundary firing — so an intact pointer
-            # means these facts still describe the case as declared
+            # the pointer guards the OPERATOR acts: every reset boundary clears it,
+            # so an intact pointer means no system/declaration/choices change landed
+            # mid-run. The effective FALLBACKS (suggestions, the standing default)
+            # have no boundary — their drift is refused at the authorized gate by
+            # the seated-selection check (the 2026-07-28 finding), and mid-run they
+            # cannot move under this route because the case record is read once per
+            # request (one snapshot end to end). Phase-2's async landing re-opens
+            # that window and must re-judge the seats at landing time (plan §3).
             if session.run is None or session.run.job_id != job_id:
                 raise HTTPException(409, f"case {case_id!r} changed while the run was "
                                          f"computing — the run's artifacts remain under "

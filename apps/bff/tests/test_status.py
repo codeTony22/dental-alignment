@@ -55,6 +55,15 @@ LADDER = {
                                   # they are unchanged), so a page reload must never
                                   # silently untick an operator's review
     },
+    status.reseat_preview: {
+        S.DECLARED: S.PREVIEWED,  # a first render lands exactly as ``preview`` does
+        S.PREVIEWED: S.PREVIEWED, # …and so does a re-render over an unticked site
+        S.READY: S.PREVIEWED,     # but a render whose SEAT differs from the recorded
+                                  # one is NEW physics (the 2026-07-28 effective-
+                                  # default drift finding): the review attested the
+                                  # OLD seat, so the tick falls VISIBLY instead of
+                                  # the panes repainting under it
+    },
     status.review_ready: {
         S.PREVIEWED: S.READY,     # the operator's tick over the live panes (5b)
         S.ADJUSTED: S.READY,      # re-verify after an adjust tool (slice 6)

@@ -421,8 +421,13 @@ class TestArtifactsAreGated:
                    json={"variant": "5030"})
         store = SessionStore(product_root)
         s = store.load("neodent-gm")
-        from bff.session import SiteStatus
+        from bff.session import SeatedSelection, SiteStatus
         s.sites["4"].status = SiteStatus.READY
+        # the re-preview + re-review this seeding stands in for records its seat
+        # (the 2026-07-28 drift guard would otherwise refuse the new run)
+        s.sites["4"].seated_selection = SeatedSelection(
+            model="neodent-gm", construction_path="dess/neodent-gm-scanbody.stl",
+            variant="5030", jaw="upper", gingival_offset_mm=0.2)
         store.save(s)
         assert client.post("/api/case-sessions/neodent-gm/run").status_code == 200
         res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts",
