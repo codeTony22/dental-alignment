@@ -60,8 +60,25 @@ interface AssuranceRowProps {
   readonly onToggleExpand: (tooth: number) => void;
 }
 
+/** The gate chip's tone from the verdict's own word — the demo's traffic lights. */
+function gateChipClass(level: string): string {
+  const word = level.toLowerCase();
+  if (word.includes("ready")) return "chip chip--gate-ready";
+  if (word.includes("attention") || word.includes("review")) return "chip chip--gate-attention";
+  if (word.includes("action") || word.includes("fail")) return "chip chip--gate-action";
+  return "chip chip--gate";
+}
+
+/** The identity-agreement chip: the backend's own word wears its tone. */
+function agreementChipClass(agreement: string | null): string {
+  if (agreement === "match") return "chip chip--band-pass";
+  if (agreement === "mismatch") return "chip chip--band-fail";
+  return "chip chip--agreement-auto";
+}
+
 /** One verdict row: the facts, each numeric beside its industry reference, the
- * operator's controls, and the QC evidence behind the expand. */
+ * operator's controls, and the QC evidence behind the expand — in the demo's
+ * results-table language (chips, muted references, the clamp's requested→applied). */
 function AssuranceRow({
   caseId,
   site,
@@ -82,103 +99,161 @@ function AssuranceRow({
         data-tooth={site.tooth}
         data-status={site.status ?? "unknown"}
         data-flagged={site.status === "flagged"}
+        className={site.status === "flagged" ? "assurance-row--flagged" : undefined}
       >
         <td>
           <strong>Tooth {site.tooth}</strong>{" "}
-          <span data-role="status-chip" data-status={site.status ?? "unknown"}>
+          <span
+            data-role="status-chip"
+            data-status={site.status ?? "unknown"}
+            className="chip chip--status"
+          >
             {site.status ?? "unknown"}
           </span>
         </td>
         <td data-role="cell-identity">
           declared {site.declared_variant ?? "—"} / measured{" "}
           {site.identified_variant ?? "—"}{" "}
-          <span data-role="identity-agreement">{site.variant_agreement ?? "unmeasured"}</span>
+          <span
+            data-role="identity-agreement"
+            className={agreementChipClass(site.variant_agreement)}
+          >
+            {site.variant_agreement ?? "unmeasured"}
+          </span>
         </td>
         <td data-role="cell-seat">
-          {site.seat_method ?? "—"} · rim {site.rim_agreement_mm ?? "—"}
+          <span
+            className={`chip chip--seat ${
+              (site.seat_method ?? "").startsWith("rim") ? "chip--seat-rim" : "chip--seat-icp"
+            }`}
+          >
+            {site.seat_method ?? "—"}
+          </span>{" "}
+          rim {site.rim_agreement_mm ?? "—"}
           {site.rim_agreement_mm !== null && " mm"}
           {rimRef && (
-            <small data-role="industry-ref"> vs {rimRef.industry_ref.value}</small>
+            <small data-role="industry-ref" className="results-table__candidates">
+              {" "}
+              vs {rimRef.industry_ref.value}
+            </small>
           )}
         </td>
         <td data-role="cell-rotation">
-          {rotation.deg !== null ? `${rotation.deg}°` : "no reading"} (
-          {rotation.evidence ?? "no evidence"})
-          {rotation.unverified && (
-            <em data-role="rotation-unverified"> rotation unverified</em>
-          )}
+          <span className="rotation-verdict">
+            <span className="rotation-verdict__residual">
+              {rotation.deg !== null ? `${rotation.deg}°` : "no reading"} (
+              {rotation.evidence ?? "no evidence"})
+            </span>
+            {rotation.unverified && (
+              <em
+                data-role="rotation-unverified"
+                className="rotation-verdict__residual rotation-verdict__residual--review"
+              >
+                {" "}
+                rotation unverified
+              </em>
+            )}
+          </span>
         </td>
         <td data-role="cell-deviation">
           RMS {site.deviation_rms_mm ?? "—"} / p90 {site.deviation_p90_mm ?? "—"} mm
           {rmsRef && (
-            <small data-role="industry-ref"> vs {rmsRef.industry_ref.value}</small>
+            <small data-role="industry-ref" className="results-table__candidates">
+              {" "}
+              vs {rmsRef.industry_ref.value}
+            </small>
           )}
         </td>
         <td data-role="cell-gate">
-          <span data-role="gate-level">{site.gate.level}</span>
-          {site.gate.actions.map((words) => (
-            <p key={words} data-role="gate-words">
-              {words}
-            </p>
-          ))}
+          <div className="results-table__gate-cell">
+            <span data-role="gate-level" className={gateChipClass(site.gate.level)}>
+              {site.gate.level}
+            </span>
+            {site.gate.actions.map((words) => (
+              <p key={words} data-role="gate-words" className="results-table__candidates">
+                {words}
+              </p>
+            ))}
+          </div>
         </td>
         <td data-role="cell-clamp">
-          {site.clamp.clamped
-            ? `relief clamped to ${site.clamp.applied_mm ?? "—"} mm — ${site.clamp.reason ?? "no reason recorded"}`
-            : "relief as requested"}
+          {site.clamp.clamped ? (
+            <>
+              <span className="chip chip--relief-clamped">
+                {site.clamp.requested_mm ?? "—"} → {site.clamp.applied_mm ?? "—"} mm
+              </span>
+              <p className="results-table__candidates">
+                relief clamped — {site.clamp.reason ?? "no reason recorded"}
+              </p>
+            </>
+          ) : (
+            "relief as requested"
+          )}
         </td>
         <td>
-          <button
-            type="button"
-            data-role="disposition-release"
-            aria-pressed={disposition === "release"}
-            onClick={() => onDisposition(site.tooth, "release")}
-          >
-            release
-          </button>
-          <button
-            type="button"
-            data-role="disposition-withhold"
-            aria-pressed={disposition === "withhold"}
-            onClick={() => onDisposition(site.tooth, "withhold")}
-          >
-            withhold
-          </button>
-          {ackRequired(site, disposition) && (
-            <label data-role="acknowledge-flag">
-              <input
-                type="checkbox"
-                checked={acknowledged}
-                onChange={(event) => onAcknowledge(site.tooth, event.target.checked)}
-              />
-              acknowledge this flag
-            </label>
-          )}
-          <button
-            type="button"
-            data-role="row-expand"
-            aria-expanded={expanded}
-            onClick={() => onToggleExpand(site.tooth)}
-          >
-            {expanded ? "hide QC evidence" : "QC evidence"}
-          </button>
+          <div className="assurance-controls">
+            <span className="segmented">
+              <button
+                type="button"
+                data-role="disposition-release"
+                aria-pressed={disposition === "release"}
+                className="segmented__option"
+                onClick={() => onDisposition(site.tooth, "release")}
+              >
+                release
+              </button>
+              <button
+                type="button"
+                data-role="disposition-withhold"
+                aria-pressed={disposition === "withhold"}
+                className="segmented__option segmented__option--withhold"
+                onClick={() => onDisposition(site.tooth, "withhold")}
+              >
+                withhold
+              </button>
+            </span>
+            {ackRequired(site, disposition) && (
+              <label data-role="acknowledge-flag" className="assurance-ack">
+                <input
+                  type="checkbox"
+                  checked={acknowledged}
+                  onChange={(event) => onAcknowledge(site.tooth, event.target.checked)}
+                />
+                acknowledge this flag
+              </label>
+            )}
+            <button
+              type="button"
+              data-role="row-expand"
+              aria-expanded={expanded}
+              className="button button--ghost button--small"
+              onClick={() => onToggleExpand(site.tooth)}
+            >
+              {expanded ? "hide QC evidence" : "QC evidence"}
+            </button>
+          </div>
         </td>
       </tr>
       {expanded && (
-        <tr data-role="qc-row" data-tooth={site.tooth}>
+        <tr data-role="qc-row" data-tooth={site.tooth} className="results-table__verification-row">
           <td colSpan={8}>
-            {site.qc_images.map((name) => (
-              // lazy: six sites are 12 renders — the scroll must not fetch what
-              // the operator never opens (plan §4: images behind row-expand)
-              <img
-                key={name}
-                data-role="qc-image"
-                loading="lazy"
-                src={qcImageUrl(caseId, name)}
-                alt={`QC render ${name}`}
-                style={{ maxWidth: "24rem", marginRight: "0.5rem" }}
-              />
-            ))}
+            <div className="verification-panel">
+              <div className="verification-panel__images">
+                {site.qc_images.map((name) => (
+                  // lazy: six sites are 12 renders — the scroll must not fetch what
+                  // the operator never opens (plan §4: images behind row-expand)
+                  <figure key={name}>
+                    <img
+                      data-role="qc-image"
+                      loading="lazy"
+                      src={qcImageUrl(caseId, name)}
+                      alt={`QC render ${name}`}
+                    />
+                    <figcaption>{name}</figcaption>
+                  </figure>
+                ))}
+              </div>
+            </div>
           </td>
         </tr>
       )}
@@ -242,190 +317,246 @@ export function DeliverStageView({
   const statusOf = (tooth: number): string =>
     detail.sites.find((s) => s.tooth === tooth)?.status ?? "unknown";
   return (
-    <div data-role="deliver-stage">
-      <label data-role="operator-field">
-        Operator name — the confirmation, payment and release records name you:
-        <input
-          data-role="operator-name"
-          value={operatorName}
-          onChange={(event) => onOperatorName(event.target.value)}
-          placeholder="your name"
-        />
-      </label>
+    // Two regions for the workbench grid: the EVIDENCE takes the stage (the demo's
+    // drawer doctrine — wide output takes the stage's width and scrolls inside its
+    // own panel); the disclosure chain lives in the work column.
+    <div data-role="deliver-stage" className="stage-contents">
+      <div className="workbench__work">
+        <section className="panel">
+          <h3 className="panel__title">Operator</h3>
+          <label data-role="operator-field" className="operator-field">
+            Operator name — the confirmation, payment and release records name you:
+            <input
+              data-role="operator-name"
+              className="operator-field__input"
+              value={operatorName}
+              onChange={(event) => onOperatorName(event.target.value)}
+              placeholder="your name"
+            />
+          </label>
+        </section>
 
-      {assurance.kind === "loading" && (
-        <p data-role="assurance-loading">Loading the run’s assurance evidence…</p>
-      )}
-      {assurance.kind === "error" && (
-        <div data-role="assurance-error" role="alert">
-          {assurance.detail}
-        </div>
-      )}
-      {assurance.kind === "ok" && (
-        <table data-role="assurance-table">
-          <thead>
-            <tr>
-              <th>Site</th>
-              <th>Identity</th>
-              <th>Seat</th>
-              <th>Rotation</th>
-              <th>Deviation</th>
-              <th>Gate</th>
-              <th>Relief</th>
-              <th>Disposition</th>
-            </tr>
-          </thead>
-          <tbody>
-            {assurance.data.sites.map((site) => (
-              <AssuranceRow
-                key={site.tooth}
-                caseId={detail.case.id}
-                site={site}
-                disposition={dispositions[site.tooth]}
-                acknowledged={acknowledged.includes(site.tooth)}
-                expanded={expanded.includes(site.tooth)}
-                onDisposition={onDisposition}
-                onAcknowledge={onAcknowledge}
-                onToggleExpand={onToggleExpand}
-              />
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {/* the 409 re-confirm flow: the BFF's words + the one honest next move */}
-      {staleWords !== null && (
-        <div data-role="reconfirm" role="alert">
-          <p>{staleWords}</p>
-          <button type="button" onClick={onReloadEvidence}>
-            Reload the evidence to re-confirm
-          </button>
-        </div>
-      )}
-
-      {session.confirmed && session.confirmation !== null && (
-        <div data-role="sealed-confirmation">
-          Confirmed by {session.confirmation.operator} at {session.confirmation.at} —
-          evidence <code>{session.confirmation.evidence_sha256}</code>
-        </div>
-      )}
-      <div data-role="confirm-controls">
-        <button
-          type="button"
-          data-role="confirm"
-          disabled={assurance.kind !== "ok" || blockers.length > 0 || phase !== "idle"}
-          onClick={onConfirm}
-        >
-          Confirm over this evidence
-        </button>
-        {blockers.length > 0 && (
-          <ul data-role="confirm-blockers">
-            {blockers.map((piece) => (
-              <li key={piece}>{piece}</li>
-            ))}
-          </ul>
+        {/* the 409 re-confirm flow: the BFF's words + the one honest next move —
+            amber: the evidence moved, nothing failed */}
+        {staleWords !== null && (
+          <div data-role="reconfirm" role="alert" className="switch-confirm">
+            <p className="switch-confirm__words">{staleWords}</p>
+            <div className="switch-confirm__actions">
+              <button
+                type="button"
+                className="button button--secondary button--small"
+                onClick={onReloadEvidence}
+              >
+                Reload the evidence to re-confirm
+              </button>
+            </div>
+          </div>
         )}
-      </div>
 
-      {session.payment_authorized && session.payment !== null ? (
-        <p data-role="payment-done">
-          Payment authorized ({session.payment.provider}) by {session.payment.operator}{" "}
-          at {session.payment.at}
-        </p>
-      ) : (
-        <div>
-          {/* labelled AS a stub (AM-11): the button never pretends a provider */}
-          <button
-            type="button"
-            data-role="payment-stub"
-            disabled={!session.confirmed || phase !== "idle"}
-            onClick={onPay}
-          >
-            Authorize payment (stub)
-          </button>
-          {!session.confirmed && (
-            <p data-role="payment-blocked">Confirm over the evidence first.</p>
+        <section className="panel">
+          <h3 className="panel__title">Confirm</h3>
+          {session.confirmed && session.confirmation !== null && (
+            <div data-role="sealed-confirmation" className="sealed-note">
+              Confirmed by {session.confirmation.operator} at {session.confirmation.at} —
+              evidence <code>{session.confirmation.evidence_sha256}</code>
+            </div>
           )}
-        </div>
-      )}
-
-      {session.released && session.release !== null ? (
-        <div data-role="released">
-          Released by {session.release.operator} at {session.release.at} — evidence{" "}
-          <code>{session.release.evidence_sha256}</code>
-        </div>
-      ) : (
-        <div>
-          <button
-            type="button"
-            data-role="release"
-            disabled={releaseMissing.length > 0 || phase !== "idle"}
-            onClick={onRelease}
-          >
-            Release the artifacts
-          </button>
-          {releaseMissing.length > 0 && (
-            <ul data-role="release-blockers">
-              {releaseMissing.map((piece) => (
+          <div data-role="confirm-controls" className="panel__actions">
+            <button
+              type="button"
+              data-role="confirm"
+              className="button button--primary"
+              disabled={assurance.kind !== "ok" || blockers.length > 0 || phase !== "idle"}
+              onClick={onConfirm}
+            >
+              Confirm over this evidence
+            </button>
+          </div>
+          {blockers.length > 0 && (
+            <ul data-role="confirm-blockers" className="blocker-list">
+              {blockers.map((piece) => (
                 <li key={piece}>{piece}</li>
               ))}
             </ul>
           )}
-        </div>
-      )}
+        </section>
 
-      {session.released && artifacts !== null && (
-        <section data-role="artifacts" aria-label="Released artifacts">
-          {artifacts.kind === "loading" && <p>Listing the released artifacts…</p>}
-          {artifacts.kind === "error" && (
-            <div data-role="artifacts-error" role="alert">
-              {artifacts.detail}
-            </div>
-          )}
-          {artifacts.kind === "ok" && (
+        <section className="panel">
+          <h3 className="panel__title">Payment</h3>
+          {session.payment_authorized && session.payment !== null ? (
+            <p data-role="payment-done" className="sealed-note">
+              Payment authorized ({session.payment.provider}) by {session.payment.operator}{" "}
+              at {session.payment.at}
+            </p>
+          ) : (
             <>
-              <ul data-role="artifact-list">
-                {artifacts.data.files.map((file) => (
-                  <li key={file}>
-                    {/* the gated endpoint needs the operator header, so the
-                        download is a fetch, never a bare <a href> */}
-                    <button
-                      type="button"
-                      data-role="artifact-download"
-                      data-file={file}
-                      onClick={() => onDownload(file)}
-                    >
-                      {file}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              {artifacts.data.withheld_teeth.map((tooth) => (
-                <p key={tooth} data-role="withheld-site">
-                  Tooth {tooth} — withheld; its files are not in the released set
-                  and the site stays open ({statusOf(tooth)}).
-                </p>
-              ))}
-              {/* the BFF holds case-wide files back while any site is withheld
-                  (they aggregate every site); the surface names each one so a
-                  partial release never masquerades as the whole package */}
-              {artifacts.data.withheld_case_files.length > 0 && (
-                <p data-role="withheld-case-files">
-                  Held back with the withheld sites — case-wide files release only
-                  when every site does: {artifacts.data.withheld_case_files.join(", ")}
+              {/* labelled AS a stub (AM-11): the button never pretends a provider */}
+              <div className="panel__actions">
+                <button
+                  type="button"
+                  data-role="payment-stub"
+                  className="button button--secondary"
+                  disabled={!session.confirmed || phase !== "idle"}
+                  onClick={onPay}
+                >
+                  Authorize payment (stub)
+                </button>
+              </div>
+              {!session.confirmed && (
+                <p data-role="payment-blocked" className="panel__hint">
+                  Confirm over the evidence first.
                 </p>
               )}
             </>
           )}
         </section>
-      )}
 
-      {phase !== "idle" && <p data-role="deliver-phase">{PHASE_WORDS[phase]}</p>}
-      {actionError !== null && (
-        <div data-role="deliver-error" role="alert">
-          {actionError}
-        </div>
-      )}
+        <section className="panel">
+          <h3 className="panel__title">Release</h3>
+          {session.released && session.release !== null ? (
+            <div data-role="released" className="sealed-note">
+              Released by {session.release.operator} at {session.release.at} — evidence{" "}
+              <code>{session.release.evidence_sha256}</code>
+            </div>
+          ) : (
+            <>
+              <div className="panel__actions">
+                <button
+                  type="button"
+                  data-role="release"
+                  className="button button--primary"
+                  disabled={releaseMissing.length > 0 || phase !== "idle"}
+                  onClick={onRelease}
+                >
+                  Release the artifacts
+                </button>
+              </div>
+              {releaseMissing.length > 0 && (
+                <ul data-role="release-blockers" className="blocker-list">
+                  {releaseMissing.map((piece) => (
+                    <li key={piece}>{piece}</li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+
+          {session.released && artifacts !== null && (
+            <section data-role="artifacts" aria-label="Released artifacts">
+              {artifacts.kind === "loading" && (
+                <p className="panel__hint">Listing the released artifacts…</p>
+              )}
+              {artifacts.kind === "error" && (
+                <div data-role="artifacts-error" role="alert" className="panel__error">
+                  {artifacts.detail}
+                </div>
+              )}
+              {artifacts.kind === "ok" && (
+                <>
+                  <h4 className="package-files__title">Released files</h4>
+                  <ul data-role="artifact-list" className="package-files__list">
+                    {artifacts.data.files.map((file) => (
+                      <li key={file} className="package-files__item">
+                        {/* the gated endpoint needs the operator header, so the
+                            download is a fetch, never a bare <a href> */}
+                        <button
+                          type="button"
+                          data-role="artifact-download"
+                          data-file={file}
+                          className="package-files__link"
+                          onClick={() => onDownload(file)}
+                        >
+                          {file}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {artifacts.data.withheld_teeth.map((tooth) => (
+                    <p key={tooth} data-role="withheld-site" className="withheld-note">
+                      Tooth {tooth} — withheld; its files are not in the released set
+                      and the site stays open ({statusOf(tooth)}).
+                    </p>
+                  ))}
+                  {/* the BFF holds case-wide files back while any site is withheld
+                      (they aggregate every site); the surface names each one so a
+                      partial release never masquerades as the whole package */}
+                  {artifacts.data.withheld_case_files.length > 0 && (
+                    <p data-role="withheld-case-files" className="withheld-note">
+                      Held back with the withheld sites — case-wide files release only
+                      when every site does: {artifacts.data.withheld_case_files.join(", ")}
+                    </p>
+                  )}
+                </>
+              )}
+            </section>
+          )}
+        </section>
+
+        {phase !== "idle" && (
+          <div data-role="deliver-phase" className="busy-state" role="status">
+            <span className="busy-state__spinner" aria-hidden="true" />
+            <span>{PHASE_WORDS[phase]}</span>
+          </div>
+        )}
+        {actionError !== null && (
+          <div data-role="deliver-error" role="alert" className="panel__error">
+            {actionError}
+          </div>
+        )}
+      </div>
+
+      <div className="workbench__stage">
+        <section className="panel deliver-evidence" aria-label="Assurance evidence">
+          <h3 className="panel__title">
+            Assurance — worst first
+            <span className="panel__title-case"> · {detail.case.id}</span>
+          </h3>
+          {assurance.kind === "loading" && (
+            <div data-role="assurance-loading" className="busy-state" role="status">
+              <span className="busy-state__spinner" aria-hidden="true" />
+              <span>Loading the run’s assurance evidence…</span>
+            </div>
+          )}
+          {assurance.kind === "error" && (
+            <div data-role="assurance-error" role="alert" className="panel__error">
+              {assurance.detail}
+            </div>
+          )}
+          {assurance.kind === "ok" && (
+            <div className="results-table-scroll">
+              <table data-role="assurance-table" className="results-table">
+                <thead>
+                  <tr>
+                    <th>Site</th>
+                    <th>Identity</th>
+                    <th>Seat</th>
+                    <th>Rotation</th>
+                    <th>Deviation</th>
+                    <th>Gate</th>
+                    <th>Relief</th>
+                    <th>Disposition</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {assurance.data.sites.map((site) => (
+                    <AssuranceRow
+                      key={site.tooth}
+                      caseId={detail.case.id}
+                      site={site}
+                      disposition={dispositions[site.tooth]}
+                      acknowledged={acknowledged.includes(site.tooth)}
+                      expanded={expanded.includes(site.tooth)}
+                      onDisposition={onDisposition}
+                      onAcknowledge={onAcknowledge}
+                      onToggleExpand={onToggleExpand}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

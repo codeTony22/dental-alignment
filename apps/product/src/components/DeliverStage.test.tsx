@@ -259,6 +259,34 @@ describe("release — the disclosure act", () => {
   });
 });
 
+describe("the parity chrome (ledger row 9): the demo's results-table language", () => {
+  it("the table wears the demo's clothes inside its own scroll wrapper", () => {
+    const html = view();
+    expect(html).toMatch(/data-role="assurance-table"[^>]*class="results-table"/);
+    expect(html).toContain("results-table-scroll");
+  });
+
+  it("dispositions are a segmented control; withhold wears its own tone class", () => {
+    const html = view();
+    expect(html).toMatch(/data-role="disposition-release"[^>]*class="segmented__option"/);
+    expect(html).toMatch(
+      /data-role="disposition-withhold"[^>]*segmented__option--withhold/,
+    );
+  });
+
+  it("the flagged row is toned; gate level and status render as chips", () => {
+    const html = view();
+    expect(html).toContain("assurance-row--flagged");
+    expect(html).toMatch(/data-role="gate-level"[^>]*class="chip chip--gate/);
+    expect(html).toMatch(/data-role="status-chip"[^>]*class="chip chip--status"/);
+  });
+
+  it("the sealed confirmation is the quiet block with the hash in mono", () => {
+    const html = view({ detail: deliverableDetail(CONFIRMED) });
+    expect(html).toMatch(/data-role="sealed-confirmation"[^>]*class="sealed-note"/);
+  });
+});
+
 describe("the 409 re-confirm flow", () => {
   it("renders the BFF's words and the reload affordance", () => {
     const html = view({

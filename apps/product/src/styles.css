@@ -2258,6 +2258,15 @@ a.workflow-rail__step {
   overflow: auto;
 }
 
+/* The demo's muted-caption class assumes variant codes (nowrap); this table's small
+   print is SENTENCES — industry references and gate action words — so here it wraps
+   instead of forcing a mile-wide column. */
+.deliver-evidence .results-table__candidates {
+  white-space: normal;
+  min-width: 180px;
+  max-width: 320px;
+}
+
 .operator-field {
   display: flex;
   flex-direction: column;
@@ -2336,6 +2345,37 @@ a.workflow-rail__step {
 /* A flagged verdict row wears the attention tone across the row. */
 .assurance-row--flagged > td {
   background: var(--color-amber-bg);
+}
+
+/* The named missing pieces under an inert button — flow.ts's blockedReason doctrine
+   at a control: red, listed, never a silently-dead button. */
+.blocker-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-danger);
+}
+
+/* A withheld site/file is an attention state, spoken in amber beside the open list. */
+.withheld-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-amber);
+}
+
+/* The artifact downloads are BUTTONS in link clothes (the gated endpoint needs the
+   operator header, so a bare <a href> cannot carry it). */
+button.package-files__link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+button.package-files__link:hover {
+  text-decoration: underline;
 }
 
 /* The sealed records: quiet confirmation blocks, the hash in mono. */
