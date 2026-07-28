@@ -12,7 +12,7 @@ row moves to Retired.
 | 2 | Catalog reads (library groups, constructions, relief ceiling) as refusal-raising functions | server.py endpoint bodies | case_prep/application/catalog.py | 200 | slice 1 (`5c7c4b8`) | demo retirement |
 | 3 | Viewer stack (verifyScene, VerifyViewer, sceneController, partFrame, meshCrop, deviationColormap, siteRouting, anatomyOrientation, palette, scanPositions, Viewer3D) + their 5 test files, plus a 13-line domain/types Vec3 subset | apps/web/src/viewer + domain/types.ts | packages/viewer/src | measured 4,698 / 16 files (as landed 4,771 — divergences below) | slice 3 (`3487c16`) | demo retirement |
 | 4 | Server-side validation corpus (catalog membership, explicit-selection 422, relief bounds, point caps, ±45°, 15mm, ≤8 pairs, lever arm, diameter bounds) — copied VERBATIM then EXTENDED with coordinate finiteness | server.py request models | bff request models | 300 | recording STARTED slice 4 (see row 4 record); remainder slices 5a-8 (AM-9) | demo retirement |
-| 5 | Remaining application lift (adjust-tool judging) | server.py:1259-2324 | case_prep/application/* | 450 | slice 6 (planned) | demo retirement |
+| 5 | The adjust tools' judging: the rotation nudge + its gates, align-to-mark, align-to-correspondence, the manual best-fit | server.py:1268-1608 (`_NUDGE_*`, `_read_clock_at`, `_load_rotation_site`, `_certification_gates`, `_judge_rotation`, `_reemit_site`, `_finish_adjustment`, `_adopt_rotation`, `POST /nudge-rotation`), 1611-1742 (`_MARK_MAX_DISTANCE_MM`, `POST /align-to-mark`), 1745-1994 (`_CORRESPONDENCE_MAX_PAIRS`, `_site_click_azimuth`, `POST /align-to-correspondence`), 1997-2244 (`_BEST_FIT_*`, `_pose_move`, `_fit_residual`, `POST /best-fit`). NOT lifted: the `_append_*_history` streams (1290-1312, 1639-1667, 1805-1832, 2054-2082), `_update_run_row` (1337-1375), `confirm-alignment` (2247-2324) | case_prep/application/adjust.py | 520 (as landed; the two-point span is NEW physics beside the copy — see row 5 record) | slice 6 (`this commit`) | demo retirement |
 | 6 | Detection + capture assembly (propose orchestration; crowns-frame capture context; centre+radius precedence; per-proposal + curated-site capture blocks) | server.py:733-853 (`_capture_context`, `_capture_block`, `_site_capture_inputs`, `_with_capture`, `_run_sites_capture`, `POST /propose`; 856+ is `_append_run_history`, NOT lifted) | case_prep/application/detection.py | 120 | slice 4 | demo retirement |
 | 7 | Pre-run preview: the deviation payload builder + the one-site preview seat | server.py:1038 (`_DEVIATION_ROUND`), 1068-1156 (`_deviation_payload`), 1176-1257 (`_PREVIEW_DIRNAME` + `preview_site_alignment`) | case_prep/application/preview.py | 170 | slice 5b | demo retirement |
 | 8 | The full run: explicit-selection gate + run orchestration (everything on: product, QC, confidence, package emission) | server.py:893-916 (`_required_selection`), 933-1011 (`POST /run`) | case_prep/application/run.py | 150 | slice 5c | demo retirement |
@@ -273,6 +273,42 @@ and the counts re-measured:
 - COUNTS re-measured this slice (the parity fix's 1,873/561/2,448 had drifted with the
   panes/arch work as well as this one): 1,950 copied lines above the PRODUCT ADDITIONS
   marker, 814 product-own from the marker to EOF, file total 2,773.
+
+Row 5 record (slice 6, 2026-07-28) — divergences, per the rules above:
+- THE PACKAGE IS THE CALLER'S RUN DIRECTORY. The demo worked under `OUT/<case>/package`
+  (`_load_rotation_site`); `application/adjust.py` takes `run_dir` as a parameter, like
+  `run.run_case`'s `out_dir` — application code names no reports path (AM-1).
+- NO `run-history.jsonl`. The four `_append_*_history` writers (server.py:1290-1312,
+  1639-1667, 1805-1832, 2054-2082) are serve-time provenance into the demo's data plane
+  and are deliberately NOT copied. The product's replayable audit is the site record's
+  own append-only `adjustments` list, which now carries an `evidence` block (the
+  operator's points and the derived observations) — so the geometry replays from the
+  SHIPPED record rather than from a side file.
+- NO `_update_run_row` (1337-1375). The demo folded the post-adjustment reading into its
+  cached `run.json` + `_cache`; the product's run summary lives in the case session, so
+  the reading RETURNS on `AdjustOutcome.clocking`/`.best_fit` and the BFF folds it in
+  inside its own CAS mutation.
+- NO persisted part ANNOTATION. `_seeded_annotation` (590-598) reads the demo's stored
+  operator marks; the product has no annotator yet, so features are the machine's own
+  `auto_features` reading — the demo's own auto-seed half, with the override half
+  arriving when the annotator does.
+- Refusals RAISE in two classes matching the demo's own status split: `AdjustInvalid`
+  (the demo's 422 — mark distance, ≤8 pairs, the lever arm, the ±45° step, the diameter
+  band) and `AdjustRefused` (the demo's 409 — every gate sentence, verbatim), with
+  `AlreadyOptimal` carrying the machine-readable widen fields the demo added at 2183-2185.
+- The tools also return the SEATED PANE PAYLOAD (`preview.deviation_payload` over the new
+  pose): the product's Adjust stage re-renders the three panes from the pose that just
+  passed the gates, where the demo reloaded the shipped STL. One payload builder, so a
+  pose read before and after an adjustment is the same instrument on the same scale.
+- NOT a copy — NEW physics beside it (plan §5, client ask 2026-07-26): the TWO-POINT
+  SPAN (`span_readings`, `direction_delta`, `validate_span`, `MIN_SPAN_MM`,
+  `SPAN_RADIAL_TOLERANCE_DEG`, the `midpoint`/`direction` observation kinds and the
+  per-observation residual rows). The demo has no counterpart; recorded here so nobody
+  hunts server.py for its origin. The existing circular mean is UNCHANGED — a span's
+  midpoint observation is the demo's single-point observation computed at the averaged
+  click (pinned by test_adjust's agreement test).
+- `confirm-alignment` (2247-2324) is deliberately NOT lifted: the product's confirmation
+  is the sealed evidence bundle at Deliver (slice 8), not a per-site doctor note.
 
 Carried-forward minors (grill of slices 0b/1, 2026-07-26):
 - Tie `bff/session.py` RunSession.state to `ports/worker.py` JobState (one test or derive the
