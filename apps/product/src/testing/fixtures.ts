@@ -60,6 +60,10 @@ export function siteView(overrides: Partial<SiteView> = {}): SiteView {
     suggested_variant: "RP",
     center: [1.0, 2.0, 3.0],
     capture: null,
+    // the preview's seat facts: honestly absent until a preview has run (the BFF
+    // clears them at every reset boundary with the rung that justified them)
+    seat_method: null,
+    rim_agreement_mm: null,
     ...overrides,
   };
 }
@@ -145,6 +149,7 @@ export function caseSessionDetail(
     session: {
       tenant_id: "local",
       adjust_visited: false,
+      adjust_decision: null,
       run_state: "none",
       run_refusal: null,
       confirmed: false,

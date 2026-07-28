@@ -22,9 +22,24 @@ CANONICAL ENCODING, stated in full (a dispute re-implements this from the text):
     a bundle that cannot be re-encoded byte-for-byte is no evidence at all.
 
 The bundle's payload shape is ``{"assurance": <projection>, "qc_sha256":
-{filename: hex}}`` — the projection is the SAME dict the assurance endpoint serves
-(one derivation, two readers), so what the operator saw and what the seal covers can
-never be two different documents.
+{filename: hex}, "adjustments": <"skip" | "adjust" | null>}`` — the projection is
+the SAME dict the assurance endpoint serves (one derivation, two readers), so what
+the operator saw and what the seal covers can never be two different documents.
+
+``adjustments`` JOINED THE SHAPE (client 2026-07-27's Delivery-vs-Skip fork): the
+standing directive is that when Adjust is not surfaced the assurance must still show
+what was done, so whether the fits were reworked or waved through is part of what a
+confirmation covers — confirm, change the decision, and release 409s through the
+same re-derivation that catches a moved number. The VALUE alone rides, not the
+record: the fork's ``at``/``run_id`` are attribution, and re-deciding the same way
+describes the same case (the SeatedSelection precedent — values only, so an
+identical re-act flips no equality).
+
+THAT MAKES BUNDLES WRITTEN BEFORE THIS CHANGE STALE — their canonical bytes lack the
+key and hash differently. Harmless by construction: a bundle is per-RUN and always
+re-derived, so a case confirmed under the old shape simply refuses release with "the
+case changed since it was confirmed" until it is re-confirmed over what is there now
+— the same honest path any other drift takes.
 
 WHAT THE BUNDLE NEVER CARRIED, and now cannot: an ACTOR. The confirmation record
 used to hold an ``X-Operator`` name (the bundle itself never did); that field is
@@ -39,7 +54,7 @@ import os
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping
+from typing import Any, Dict, Iterable, Mapping, Optional
 
 ROUND_DECIMALS = 6
 
@@ -72,13 +87,20 @@ def _rounded(value: Any) -> Any:
 
 
 def canonical_bundle(assurance: Mapping[str, Any],
-                     qc_hashes: Mapping[str, str]) -> EvidenceBundle:
+                     qc_hashes: Mapping[str, str],
+                     adjustments: Optional[str]) -> EvidenceBundle:
     """Build the bundle: rounded payload → canonical bytes → sha256. Raises
     ``ValueError`` on non-finite numbers (``allow_nan=False`` — see the module doc:
-    evidence that cannot be re-encoded identically is not evidence)."""
+    evidence that cannot be re-encoded identically is not evidence).
+
+    ``adjustments`` is the fork's decision WORD ("skip" | "adjust") or None when the
+    fork was never faced. Required positionally, deliberately: a default would let a
+    caller omit the case's own answer to "were the fits reworked?" and seal a bundle
+    that quietly says nothing."""
     payload = {
         "assurance": _rounded(dict(assurance)),
         "qc_sha256": dict(sorted(qc_hashes.items())),
+        "adjustments": adjustments,
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"),
                            ensure_ascii=True, allow_nan=False).encode("ascii")

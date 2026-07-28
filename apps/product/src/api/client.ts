@@ -96,6 +96,12 @@ export interface SiteView {
   suggested_variant: string | null;
   center: number[] | null;
   capture: CaptureAssessmentView | null;
+  /** THE PREVIEW'S SEAT FACTS (client 2026-07-27 #2): what this site's attestation
+   * actually stood on — the two numbers a seat is judged by, persisted by the BFF's
+   * preview route and cleared with the rung at every reset boundary. Declare's
+   * move-forward summary reads these; null until this site has previewed. */
+  seat_method: string | null;
+  rim_agreement_mm: number | null;
 }
 
 /** A detector proposal: centre + evidence + the NON-BINDING tooth guess + capture. */
@@ -202,9 +208,20 @@ export interface ReleaseView {
   released_teeth: number[];
 }
 
+/** The Delivery-vs-Skip fork as recorded (client 2026-07-27): what was decided,
+ * when, over which run. A record of an ACT — nothing in flow.ts reads it. */
+export interface AdjustDecisionView {
+  decision: "skip" | "adjust";
+  at: string;
+  run_id: string;
+}
+
 export interface SessionView {
   tenant_id: string;
   adjust_visited: boolean;
+  /** null until the fork is faced, and null again once a reset boundary clears
+   * the run whose verdicts it was decided over. */
+  adjust_decision: AdjustDecisionView | null;
   run_state: RunState;
   /** A refused run's words, VERBATIM (5c) — null unless run_state is "refused". */
   run_refusal: string | null;
@@ -539,6 +556,28 @@ export async function postRun(
   return fetchJson<CaseSessionDetail>(
     `/api/case-sessions/${encodeURIComponent(caseId)}/run`,
     { method: "POST" },
+  );
+}
+
+/**
+ * THE FORK, RECORDED (POST /{id}/adjust-decision — client 2026-07-27: "Skipping
+ * adjust should be optional we should have two options one to skip and another to
+ * delivery — Delivery vs Skip Adjustments"). An ACT: it moves no site and gates
+ * nothing (flow.ts reachability never reads it — skip does not close Adjust), and a
+ * later decision replaces it. The BFF refuses (422) unless a done run exists and
+ * every site carries a verdict; the response is the whole new detail.
+ */
+export async function postAdjustDecision(
+  caseId: string,
+  decision: "skip" | "adjust",
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/adjust-decision`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decision }),
+    },
   );
 }
 

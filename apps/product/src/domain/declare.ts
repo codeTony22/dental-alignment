@@ -573,3 +573,111 @@ export function reviewTick(site: SiteView | null): ReviewTickState {
     reason: "The tick attests the live panes — preview this site first.",
   };
 }
+
+/**
+ * THE ATTESTATION'S SENTENCE (client 2026-07-27 #2: "The reviewed over the panes
+ * check mark needs to be better confirmed"). A bare "Reviewed over the panes"
+ * checkbox never said WHAT was being attested; this names it for THIS site — the
+ * tooth, the declared cap, and that the panes on screen are the subject — in the
+ * demo acknowledgment bar's own voice (VerifyDialog's REVIEW_DISCLAIMER: "I
+ * acknowledge that the library part selected matches the corresponding scan data").
+ *
+ * Two sentences, because attesting and having-attested are different statements: the
+ * first is what the act will mean, the second is what the record now says. Both name
+ * the same three things, so withdrawing is as explicit as giving.
+ */
+export function attestationSentence(site: SiteView | null): string {
+  if (site === null) return "No site selected — pick a site in the queue.";
+  const cap =
+    site.declared_variant !== null
+      ? `the declared cap ${site.declared_variant}`
+      : "no cap declared yet";
+  if (site.status === "ready") {
+    return (
+      `Attested: the three panes above showed tooth ${site.tooth}'s scan with ` +
+      `${cap} seated on it, and they matched.`
+    );
+  }
+  return (
+    `I acknowledge that the three panes above show tooth ${site.tooth}'s scan with ` +
+    `${cap} seated on it, and that they match.`
+  );
+}
+
+/** The attestation button's label — an act's weight, not a checkbox's. */
+export function attestationAction(site: SiteView | null): string {
+  return site !== null && site.status === "ready"
+    ? "Withdraw the attestation"
+    : "Attest this site";
+}
+
+/** One line of Declare's move-forward summary: a site and what its tick stands on. */
+export interface AttestationLine {
+  readonly tooth: number;
+  readonly attested: boolean;
+  /** The whole line, ready to render — facts only, never a verdict of our own. */
+  readonly words: string;
+}
+
+/** The seat facts as one phrase, or the honest absence (a READY site whose facts
+ * were cleared by a boundary is a state worth SEEING, never one to paper over). */
+function seatWords(site: SiteView): string {
+  if (site.seat_method === null && site.rim_agreement_mm === null) {
+    return "no seat facts recorded";
+  }
+  const rim =
+    site.rim_agreement_mm !== null
+      ? `rim ${site.rim_agreement_mm.toFixed(2)} mm`
+      : "rim not measured";
+  return `${site.seat_method ?? "seat method not recorded"}, ${rim}`;
+}
+
+/**
+ * THE SET, FACED AT THE MOMENT OF MOVING FORWARD (client 2026-07-27 #2: "maybe at
+ * the time to move forward to the next step"). One line per site — tooth, declared
+ * cap, and the seat facts that preview produced — so the operator confirms the whole
+ * set before advancing rather than trusting a count of ticks.
+ *
+ * A site that is NOT attested is named as such instead (the blockedReason doctrine:
+ * a surface that cannot advance says exactly which site is holding it, never a bare
+ * "incomplete"). Facts only — every value here is the BFF's.
+ */
+export function attestationSummary(
+  sites: readonly SiteView[],
+): readonly AttestationLine[] {
+  return sites.map((site) => {
+    const cap = site.declared_variant ?? "no cap declared";
+    if (site.status !== "ready") {
+      return {
+        tooth: site.tooth,
+        attested: false,
+        words: `Tooth ${site.tooth} · ${cap} · not attested (${site.status})`,
+      };
+    }
+    return {
+      tooth: site.tooth,
+      attested: true,
+      words: `Tooth ${site.tooth} · ${cap} · ${seatWords(site)}`,
+    };
+  });
+}
+
+/**
+ * WHAT SKIPPING ACTUALLY COSTS, said truthfully against what Deliver does (client
+ * 2026-07-27 #3: two options, and the skip must not pretend the flags evaporate).
+ * With nothing flagged, skipping forfeits nothing. With flags, Deliver still refuses
+ * to release one without its own row acknowledgment — so the sentence names the
+ * count and the two honest ways through it.
+ */
+export function skipConsequenceWords(flaggedCount: number): string {
+  if (flaggedCount === 0) {
+    return "Nothing is flagged — there are no fits waiting to be reworked.";
+  }
+  const sites = `${flaggedCount} flagged site${flaggedCount === 1 ? "" : "s"}`;
+  return (
+    `${sites} stay${flaggedCount === 1 ? "s" : ""} exactly as the run left ` +
+    `${flaggedCount === 1 ? "it" : "them"}. Deliver will not release a flagged ` +
+    `site without its own acknowledgment on the row — acknowledge it there, or ` +
+    `withhold it and leave the site open.`
+  );
+}

@@ -28,7 +28,11 @@ import {
   previewKeyFor,
   siteFrameFor,
   resetCount,
+  attestationAction,
+  attestationSentence,
+  attestationSummary,
   reviewTick,
+  skipConsequenceWords,
   runKeyFor,
   settleSlot,
   shouldAutoPreview,
@@ -468,6 +472,98 @@ describe("reviewTick — enabled only over a preview (AM-8)", () => {
       expect(tick.reason).toContain("preview this site first");
     }
     expect(reviewTick(null).enabled).toBe(false);
+  });
+});
+
+describe("the attestation's sentence — what is actually being attested", () => {
+  it("names the tooth, the declared cap and the panes as the subject", () => {
+    const words = attestationSentence(
+      siteView({ tooth: 19, status: "previewed", declared_variant: "5020" }),
+    );
+    expect(words).toContain("tooth 19");
+    expect(words).toContain("the declared cap 5020");
+    expect(words).toContain("the three panes above");
+    expect(words).toContain("I acknowledge"); // the demo ack bar's voice
+  });
+
+  it("an attested site states what WAS attested, in the past tense", () => {
+    const words = attestationSentence(
+      siteView({ tooth: 19, status: "ready", declared_variant: "5020" }),
+    );
+    expect(words).toContain("Attested:");
+    expect(words).toContain("tooth 19");
+    expect(words).toContain("5020");
+  });
+
+  it("an undeclared site is not asked to attest a cap it does not have", () => {
+    expect(
+      attestationSentence(siteView({ status: "previewed", declared_variant: null })),
+    ).toContain("no cap declared yet");
+    expect(attestationSentence(null)).toContain("No site selected");
+  });
+
+  it("the act's label says which way the act goes", () => {
+    expect(attestationAction(siteView({ status: "previewed" }))).toBe(
+      "Attest this site",
+    );
+    expect(attestationAction(siteView({ status: "ready" }))).toBe(
+      "Withdraw the attestation",
+    );
+  });
+});
+
+describe("attestationSummary — the set faced at the moment of moving forward", () => {
+  it("an attested site's line carries its cap and the seat facts it stood on", () => {
+    const [line] = attestationSummary([
+      siteView({
+        tooth: 19,
+        status: "ready",
+        declared_variant: "5020",
+        seat_method: "rim-seat",
+        rim_agreement_mm: 0.07,
+      }),
+    ]);
+    expect(line).toEqual({
+      tooth: 19,
+      attested: true,
+      words: "Tooth 19 · 5020 · rim-seat, rim 0.07 mm",
+    });
+  });
+
+  it("an unattested site is NAMED with its rung instead (the blockedReason doctrine)", () => {
+    const lines = attestationSummary([
+      siteView({ tooth: 30, status: "previewed", declared_variant: "6020" }),
+      siteView({ tooth: 19, status: "detected", declared_variant: null }),
+    ]);
+    expect(lines.map((l) => l.attested)).toEqual([false, false]);
+    expect(lines[0]!.words).toBe("Tooth 30 · 6020 · not attested (previewed)");
+    expect(lines[1]!.words).toBe(
+      "Tooth 19 · no cap declared · not attested (detected)",
+    );
+  });
+
+  it("a READY site whose seat facts are gone SAYS so — never a blank half-line", () => {
+    const [line] = attestationSummary([
+      siteView({ tooth: 19, status: "ready", declared_variant: "5020" }),
+    ]);
+    expect(line!.words).toContain("no seat facts recorded");
+  });
+});
+
+describe("skipConsequenceWords — the skip states its cost truthfully", () => {
+  it("with nothing flagged, it says exactly that", () => {
+    expect(skipConsequenceWords(0)).toContain("Nothing is flagged");
+  });
+
+  it("with flags it names the count AND what Deliver will actually do", () => {
+    const words = skipConsequenceWords(2);
+    expect(words).toContain("2 flagged sites");
+    expect(words).toContain("own acknowledgment");
+    expect(words).toContain("withhold");
+  });
+
+  it("one flagged site reads as one, not as a plural with a stray s", () => {
+    expect(skipConsequenceWords(1)).toContain("1 flagged site stays");
   });
 });
 

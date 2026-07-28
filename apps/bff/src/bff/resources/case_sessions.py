@@ -22,6 +22,8 @@ The ACTIONS (slices 4-5b) — writes that carry no claimed outcomes:
     persists the seat FACTS, returns the pane payload response-only.
   - ``POST/DELETE .../sites/{tooth}/review`` (5b) — the operator's two-way ATTESTATION
     over the panes; no body either way, the act is the request itself.
+  - ``POST .../adjust-decision`` (client 2026-07-27) — the Delivery-vs-Skip fork,
+    recorded: an act about the Adjust STAGE, keyed to the run, gating nothing.
 
 Every status is still DERIVED: cases and suggestions from ``case_prep.application``,
 statuses from the session store. The doctrine is structural and tested: every non-GET
@@ -34,7 +36,7 @@ import dataclasses
 import datetime
 import math
 import uuid
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Literal, Optional, Union
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -52,9 +54,11 @@ from case_prep.application.preview import (PreviewRefused, PreviewSelection,
 from .. import status
 from ..config import Settings
 from ..ports.worker import JobState, WorkerPort
-from ..session import (CaseChoices, CaseSession, DetectedProposal, DetectionRecord,
-                       RunSession, SeatedSelection, SessionConflict, SessionStore,
-                       SiteSession, SiteStatus, release_matches_confirmation)
+from ..session import (AdjustDecisionRecord, CaseChoices, CaseSession,
+                       DetectedProposal, DetectionRecord, RunSession,
+                       SeatedSelection, SessionConflict, SessionStore, SiteSession,
+                       SiteStatus, clear_current_run,
+                       release_matches_confirmation)
 
 router = APIRouter(prefix="/api/case-sessions", tags=["case-sessions"])
 
@@ -104,6 +108,14 @@ class SiteView(BaseModel):
     # the worker's capture assessment (CaptureAssessment.to_dict), once detection ran —
     # the chair-side verdict Intake surfaces BEFORE any work is invested (plan §4)
     capture: Optional[dict] = None
+    # THE PREVIEW'S SEAT FACTS on the wire (client 2026-07-27 #2: the attestation is
+    # faced again "at the time to move forward", so Declare's footer must say what
+    # each site's tick actually attested). Persisted by the preview route from what
+    # the application derived — worker facts, never a client's — and cleared at every
+    # reset boundary with the rung that justified them, so a line in that summary can
+    # never describe a preview the case has moved past.
+    seat_method: Optional[str] = None
+    rim_agreement_mm: Optional[float] = None
 
 
 class DetectedProposalView(BaseModel):
@@ -224,9 +236,21 @@ class ReleaseView(BaseModel):
     released_teeth: List[int]
 
 
+class AdjustDecisionView(BaseModel):
+    """The Delivery-vs-Skip fork as recorded (client 2026-07-27) — the record
+    verbatim, so a surface can SAY what was decided and when, over which run."""
+
+    decision: str
+    at: str
+    run_id: str
+
+
 class SessionView(BaseModel):
     tenant_id: str
     adjust_visited: bool
+    # the fork's record (client 2026-07-27), None until it is faced — and None again
+    # the moment the run boundary clears the verdicts it was decided over
+    adjust_decision: Optional[AdjustDecisionView] = None
     run_state: str
     # the refused run's words, VERBATIM (5c) — the one fact the Declare footer needs
     # beside the state; None unless run_state is "refused"
@@ -338,6 +362,20 @@ class SystemIn(BaseModel):
     model: str
 
 
+class AdjustDecisionIn(BaseModel):
+    """THE FORK'S ONE FIELD (client 2026-07-27: "Delivery vs Skip Adjustments") — the
+    act the operator took at Declare's footer, and nothing else.
+
+    An ACT, like choices and dispositions: it says what the operator DID with the
+    Adjust stage, never what any site IS. There is deliberately no field for a reason,
+    a note or a site list — a decision that could carry a claim about the fits would
+    be a status field wearing a different name, and the ladder stays server-derived."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["skip", "adjust"]
+
+
 class DeclarationIn(BaseModel):
     """The per-site variant declaration (plan §4 Declare / AM-8) — one required
     catalog entry id. Membership against the EFFECTIVE system's library is judged in
@@ -368,6 +406,8 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
             suggested_variant=s.get("declared_variant"),
             center=s.get("center"),
             capture=capture.get(str(tooth)),
+            seat_method=(sess.seat_method if sess else None),
+            rim_agreement_mm=(sess.rim_agreement_mm if sess else None),
         )
     for key, sess in session.sites.items():
         tooth = int(key)
@@ -375,7 +415,9 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
             views[tooth] = SiteView(tooth=tooth, status=sess.status.value,
                                     declared_variant=sess.declared_variant,
                                     suggested_variant=None, center=None,
-                                    capture=capture.get(key))
+                                    capture=capture.get(key),
+                                    seat_method=sess.seat_method,
+                                    rim_agreement_mm=sess.rim_agreement_mm)
     return [views[t] for t in sorted(views)]
 
 
@@ -410,6 +452,8 @@ def _session_view(session: CaseSession) -> SessionView:
     return SessionView(
         tenant_id=session.tenant_id,
         adjust_visited=session.adjust_visited,
+        adjust_decision=(AdjustDecisionView(**session.adjust_decision.model_dump())
+                         if session.adjust_decision is not None else None),
         run_state=_run_state(session),
         run_refusal=(session.run.refusal if session.run is not None else None),
         confirmed=session.confirmation is not None,
@@ -792,8 +836,10 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
                 site.clear_preview_facts()
             # the run boundary (5c): changed choices describe a different shipped
             # part, so the current-run pointer clears — the run directory survives
-            # as immutable history, but a stale run never masquerades as current
-            session.run = None
+            # as immutable history, but a stale run never masquerades as current.
+            # ``clear_current_run`` is that boundary's one home: the adjust decision
+            # was made over these verdicts and falls with them
+            clear_current_run(session)
         session.choices = replacement
 
     session = _mutate_session(store, case_id, apply)
@@ -827,7 +873,9 @@ def put_system(case_id: str, body: SystemIn, request: Request) -> CaseSessionDet
                 site.status = status.regress_to_detected(site.status)
                 site.declared_variant = None
                 site.clear_preview_facts()   # a preview of a dropped variant (5b)
-            session.run = None   # the run boundary (5c): a run of the old system
+            # the run boundary (5c): a run of the old system — and the fork
+            # decided over its verdicts (see ``clear_current_run``)
+            clear_current_run(session)
         session.system = body.model
 
     session = _mutate_session(store, case_id, apply)
@@ -884,8 +932,9 @@ def put_declaration(case_id: str, tooth: int, body: DeclarationIn,
             # 5b): the old part's preview facts fall with its rung
             site.clear_preview_facts()
             # the run boundary (5c): the current run aligned a part this site no
-            # longer declares — the pointer clears (the run dir stays, as history)
-            session.run = None
+            # longer declares — the pointer clears (the run dir stays, as history),
+            # and the fork decided over its verdicts goes with it
+            clear_current_run(session)
         session.sites[str(tooth)] = site
 
     session = _mutate_session(store, case_id, apply)
@@ -1041,6 +1090,12 @@ def delete_review(case_id: str, tooth: int, request: Request) -> CaseSessionDeta
 
 # --- the run (plan §7 slice 5c; §1.2/AM-1, §3/AM-3, §4 Declare/AM-8) --------------------
 
+def _now_iso() -> str:
+    """The one wall-clock stamp this module records (the fork's ``at``); deliver.py
+    keeps its own for the signing records — same UTC-ISO shape, different module."""
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
 def _mint_run_id() -> str:
     """The immutable run directory's name (AM-1): sortable wall-clock prefix + a
     random suffix so two same-second runs (two uvicorn threads, two operators) can
@@ -1129,7 +1184,7 @@ def _withdraw_queued_receipt(store: SessionStore, case_id: str, run_id: str) -> 
     def clear(session: CaseSession) -> None:
         run = session.run
         if run is not None and run.job_id == run_id and run.state == "queued":
-            session.run = None
+            clear_current_run(session)
 
     try:
         _mutate_session(store, case_id, clear)
@@ -1170,6 +1225,10 @@ def run_case_action(case_id: str, request: Request) -> CaseSessionDetail:
                                      f"receipt is on the session")
         submitted["selection"] = _authorized_selection(case, case_id, session)
         session.run = RunSession(job_id=run_id, run_id=run_id, state="queued")
+        # a NEW run's fork has not been faced: the previous decision was made over
+        # verdicts this run is about to replace (client 2026-07-27's fork, keyed to
+        # the run — see session.AdjustDecisionRecord)
+        session.adjust_decision = None
 
     _mutate_session(store, case_id, claim)
     # From here on a ``queued`` receipt is on disk, and EVERY exit that cannot land
@@ -1233,6 +1292,57 @@ def run_case_action(case_id: str, request: Request) -> CaseSessionDetail:
         # "queued") makes it a no-op because the rival already moved the pointer.
         _withdraw_queued_receipt(store, case_id, run_id)
         raise
+    return _detail(case, session, settings)
+
+
+# --- the Delivery-vs-Skip fork (client 2026-07-27) --------------------------------------
+
+@router.post("/{case_id}/adjust-decision", response_model=CaseSessionDetail)
+def post_adjust_decision(case_id: str, body: AdjustDecisionIn,
+                         request: Request) -> CaseSessionDetail:
+    """Record which way the operator took Declare's fork — "Skip adjustments" or
+    "Adjust the fits" (client: "Skipping adjust should be optional we should have
+    two options one to skip and another to delivery — Delivery vs Skip
+    Adjustments").
+
+    AN ACT, NOT A GATE, and the distinction is the whole design:
+
+      - it moves no site and touches no run; ``domain/flow.ts`` reachability never
+        reads it, so recording "skip" does NOT close Adjust — the operator may walk
+        straight back into it, and a later decision REPLACES this one (newest act
+        wins, the slice-8 rule).
+      - it is EVIDENCE: the decision word rides into the confirmation's bundle
+        (bff/evidence.py), so what a client confirms includes whether adjustments
+        were skipped — the standing directive that when Adjust is not surfaced the
+        assurance must still show what was done.
+
+    Refuses 422 unless there is something to decide ABOUT: a done current run, and
+    every site carrying a verdict (ready or flagged) — a site still climbing has no
+    fit to skip or rework. Judged INSIDE the mutation (25604e7's rule: a rival
+    change mid-flight must be re-judged, never re-applied from a stale verdict);
+    keyed to the run, which the reset boundaries clear beneath it."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+
+    def apply(session: CaseSession) -> None:
+        run = session.run
+        if run is None or run.state != "done" or run.summary is None:
+            raise HTTPException(422, f"there is nothing to decide about yet — case "
+                                     f"{case_id!r} has no completed current run, and "
+                                     f"the fork is a choice about ITS verdicts")
+        unresolved = [v for v in _site_views(case, session)
+                      if v.status not in (SiteStatus.READY.value,
+                                          SiteStatus.FLAGGED.value)]
+        if unresolved:
+            raise HTTPException(422, "every site needs its verdict before the fork — "
+                                     "still climbing: "
+                                     + ", ".join(f"tooth {v.tooth} ({v.status})"
+                                                 for v in unresolved))
+        session.adjust_decision = AdjustDecisionRecord(
+            decision=body.decision, at=_now_iso(),
+            run_id=run.run_id or run.job_id)
+
+    session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)
 
 

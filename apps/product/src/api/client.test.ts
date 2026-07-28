@@ -18,6 +18,7 @@ import {
   postPreview,
   postRelease,
   postReview,
+  postAdjustDecision,
   postRun,
   putChoices,
   putDeclaration,
@@ -155,6 +156,16 @@ describe("the action requests (slice 4) — detect and choices", () => {
     expect(calls[0]!.url).toBe("/api/case-sessions/case-a/run");
     expect(calls[0]!.init?.method).toBe("POST");
     expect(calls[0]!.init?.body).toBeUndefined();
+  });
+
+  it("the fork POSTs exactly the decision — an act, with nothing else to claim", async () => {
+    // client 2026-07-27 #3: "Delivery vs Skip Adjustments". The body carries one
+    // word; the decision gates nothing, so there is no site list or reason to send
+    const calls = capturingFetch();
+    await postAdjustDecision("case-a", "skip");
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/adjust-decision");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({ decision: "skip" });
   });
 
   it("the run facts read GETs the run subresource", async () => {

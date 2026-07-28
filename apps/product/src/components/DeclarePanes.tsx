@@ -73,6 +73,8 @@ import {
   type SiteView,
 } from "../api/client";
 import {
+  attestationAction,
+  attestationSentence,
   createPreviewFirer,
   indicesFrom,
   paneNotices,
@@ -578,21 +580,22 @@ export function DeclarePanesView({
           />
         )}
       </div>
-      {/* The acknowledgment strip, under the panes it attests — the demo's
-          decode-ack bar language. */}
+      {/* THE ATTESTATION BAR, under the panes it attests — the demo's decode-ack bar
+          shape (text side yields, the ACT never shrinks). Client 2026-07-27 #2: "The
+          reviewed over the panes check mark needs to be better confirmed" — so the
+          checkbox became a button-weight act with the SENTENCE beside it naming what
+          is attested for this site, and withdrawing is equally explicit. The
+          authorization itself has not moved: this is still the same ladder event
+          (POST/DELETE .../review) that the run gate reads. */}
       <div data-role="review-tick-row" className="decode-ack">
         <div className="decode-ack__text">
-          <label className="decode-ack__check">
-            <input
-              type="checkbox"
-              data-role="review-tick"
-              checked={tick.ticked}
-              disabled={!tick.enabled || reviewSaving !== "idle"}
-              onChange={(event) => onToggleReview(event.target.checked)}
-            />{" "}
-            Reviewed over the panes
-            {site !== null ? ` — tooth ${site.tooth}` : ""}
-          </label>
+          <p
+            data-role="attestation-sentence"
+            className="decode-ack__disclaimer"
+            title={attestationSentence(site)}
+          >
+            {attestationSentence(site)}
+          </p>
           {tick.reason !== null && (
             <span data-role="review-tick-reason" className="decode-ack__summary">
               {tick.reason}
@@ -601,8 +604,8 @@ export function DeclarePanesView({
           {reviewSaving !== "idle" && (
             <span data-role="review-saving" className="decode-ack__summary">
               {reviewSaving === "ticking"
-                ? "Recording the review…"
-                : "Withdrawing the review…"}
+                ? "Recording the attestation…"
+                : "Withdrawing the attestation…"}
             </span>
           )}
           {reviewError !== null && (
@@ -610,6 +613,21 @@ export function DeclarePanesView({
               {reviewError}
             </span>
           )}
+        </div>
+        <div className="decode-ack__actions">
+          <button
+            type="button"
+            data-role="review-tick"
+            aria-pressed={tick.ticked}
+            className={`button ${
+              tick.ticked ? "button--secondary" : "button--primary"
+            }`}
+            disabled={!tick.enabled || reviewSaving !== "idle"}
+            title={tick.reason ?? attestationSentence(site)}
+            onClick={() => onToggleReview(!tick.ticked)}
+          >
+            {attestationAction(site)}
+          </button>
         </div>
       </div>
     </div>

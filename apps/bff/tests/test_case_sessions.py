@@ -167,6 +167,9 @@ class TestCaseSessionDetail:
         assert body["session"] == {
             "tenant_id": "local",
             "adjust_visited": False,
+            # the Delivery-vs-Skip fork (client 2026-07-27) — None until it is
+            # faced, and None again once the run boundary clears its verdicts
+            "adjust_decision": None,
             "run_state": "none",
             "run_refusal": None,   # 5c: a refused run's words ride here, verbatim
             "confirmed": False,
@@ -178,6 +181,25 @@ class TestCaseSessionDetail:
             "release": None,
             "released": False,
         }
+
+    def test_a_site_carries_its_preview_seat_facts_on_the_wire(self, settings):
+        """Client 2026-07-27 #2: the attestation must be faced again "at the time to
+        move forward", so Declare's footer summarizes what each tick attested — which
+        needs the seat facts the preview persisted. Read-only worker facts, served
+        beside the rung that justified them and cleared with it."""
+        store = SessionStore(settings.product_root)
+        s = store.load("neodent-gm")
+        s.sites["4"] = SiteSession(status=SiteStatus.READY, declared_variant="5020",
+                                   seat_method="rim-seat", rim_agreement_mm=0.07)
+        store.save(s)
+        client = TestClient(create_app(settings))
+        sites = {s["tooth"]: s
+                 for s in client.get("/api/case-sessions/neodent-gm").json()["sites"]}
+        assert sites[4]["seat_method"] == "rim-seat"
+        assert sites[4]["rim_agreement_mm"] == 0.07
+        # a site with no preview says so honestly rather than inventing a seat
+        assert sites[13]["seat_method"] is None
+        assert sites[13]["rim_agreement_mm"] is None
 
     def test_session_statuses_overlay_the_detected_sites(self, settings):
         store = SessionStore(settings.product_root)
@@ -1310,6 +1332,14 @@ class TestStatusesAreNeverClientWritable:
         # (confirmation, dispositions, payment) is already the session's; validity
         # is judged by RE-DERIVING the evidence, never by trusting the record
         ("POST", "/api/case-sessions/{case_id}/release"),
+        # THE DELIVERY-vs-SKIP FORK (client 2026-07-27) — this allowlist's doctrine
+        # extended once more, and the reason is worth stating: {"decision": "skip"}
+        # says what the operator DID with the Adjust stage, never what any site IS.
+        # It moves no rung, opens and closes no stage (flow reachability never reads
+        # it — skip does not block navigating to Adjust), and the ladder stays
+        # server-derived. The body carries no field a claimed fit-outcome could ride
+        # in on, which is why "skip" is admissible where "ready" never will be.
+        ("POST", "/api/case-sessions/{case_id}/adjust-decision"),
     }
     STATUS_SHAPED = {"status", "state", "verdict", "gate", "flagged", "ready",
                      "confirmed"}

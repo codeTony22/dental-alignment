@@ -2185,6 +2185,57 @@ a.workflow-rail__step {
   border-radius: var(--radius-md);
 }
 
+/* ---- Declare's move-forward footer (client 2026-07-27 #2 + #3) ---- */
+
+/* The advance block stops being a right-aligned single button: it is a SUMMARY the
+   operator reads, then a fork. Left-aligned and stacked, because reading comes
+   first and a set of facts hugging the right edge reads as decoration. */
+.panel__actions--advance {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+/* One line per site, monospace-ish rhythm from the tabular separator (·) alone —
+   the words are the BFF's facts and must not be styled into a verdict. */
+.attestation-summary {
+  list-style: none;
+  margin: 0;
+  padding: 10px 12px;
+  background: #f7f8f8;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.attestation-summary__line {
+  font-size: 12px;
+  color: var(--color-text);
+}
+
+/* A site still owed reads amber — the same tone the switch ceremony uses for "a
+   consequence to face", never the danger red: nothing has failed. */
+.attestation-summary__line--owed {
+  color: var(--color-amber);
+  font-weight: 600;
+}
+
+/* The two acts side by side and equal-width: the fork is a CHOICE, so neither door
+   may look like the incidental one. Tone (primary/secondary) carries the
+   recommendation; geometry stays symmetric. */
+.declare-fork {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.declare-fork > .button {
+  flex: 1 1 200px;
+}
+
 /* ---- Declare's work column ---- */
 
 /* The switch ceremony: amber — a consequence to consent to, not an error. */

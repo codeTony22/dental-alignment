@@ -19,25 +19,28 @@
  * every site is reviewed (domain/flow.ts).
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
+  postAdjustDecision,
   postRun,
   putDeclaration,
   putSystem,
+  type AdjustDecisionView,
   type CaseSessionDetail,
 } from "../api/client";
 import {
   blockedReason,
   factsFromCaseSession,
-  isComplete,
   isReachable,
 } from "../domain/flow";
 import {
   activeSiteFrom,
+  attestationSummary,
   declaredLabel,
   resetCount,
   runKeyFor,
   shouldAutoRun,
+  skipConsequenceWords,
   switchWords,
   systemCards,
   variantShelves,
@@ -54,6 +57,10 @@ export type DeclareSaving = "idle" | "system" | "declaration";
  * whole run inside the request, so "firing" IS the progress state — the persisted
  * queued|running states only surface to OTHER readers (the worklist) meanwhile. */
 export type RunPhase = "idle" | "firing";
+
+/** The fork's own in-flight state (client 2026-07-27 #3): the decision POSTs, and
+ * only a landed decision navigates — a recorded choice must not race the route. */
+export type ForkSaving = "idle" | "skip" | "adjust";
 
 interface SystemBarProps {
   readonly detail: CaseSessionDetail;
@@ -225,6 +232,13 @@ export interface DeclareStageViewProps {
   /** A run POST that never reached an outcome (transport/409) — stated with retry. */
   readonly runError?: string | null;
   readonly onRetryRun?: () => void;
+  /** The Delivery-vs-Skip fork (client 2026-07-27 #3): which decision is in flight,
+   * the BFF's refusal if one came back, and the two acts. Defaulted so the View
+   * stays statically renderable. */
+  readonly forkSaving?: ForkSaving;
+  readonly forkError?: string | null;
+  readonly onSkipAdjustments?: () => void;
+  readonly onAdjustFits?: () => void;
   readonly onSelectSite: (tooth: number) => void;
   readonly onAskSwitch: (model: string) => void;
   readonly onConfirmSwitch: () => void;
@@ -245,6 +259,10 @@ export function DeclareStageView({
   runPhase = "idle",
   runError = null,
   onRetryRun,
+  forkSaving = "idle",
+  forkError = null,
+  onSkipAdjustments = () => undefined,
+  onAdjustFits = () => undefined,
   onSelectSite,
   onAskSwitch,
   onConfirmSwitch,
@@ -255,8 +273,13 @@ export function DeclareStageView({
   const facts = factsFromCaseSession(detail);
   const active = activeSiteFrom(detail.sites, activeTooth);
   const shelves = variantShelves(detail);
-  const adjustOpen = isReachable("adjust", facts);
+  // THE FORK'S ONE PRECONDITION, and it is exactly Deliver's reachability: a done
+  // run whose verdicts cover every site (the BFF's own 422 for the decision route).
+  // Adjust's reachability is deliberately NOT the gate here — a refused run opens
+  // Adjust while offering nothing to decide about.
   const deliverOpen = isReachable("deliver", facts);
+  const summary = attestationSummary(detail.sites);
+  const decided: AdjustDecisionView | null = detail.session.adjust_decision;
   // THE RUN'S PROGRESS SURFACE (5c): in flight client-side, or persisted as
   // queued|running (another tab/operator fired it — AM-3's states render either way)
   const runInFlight =
@@ -385,34 +408,96 @@ export function DeclareStageView({
             </p>
           </div>
         ) : null}
-        {/* Continue per flow.ts: Deliver directly when Adjust has nothing to
-            offer (plan §4 — skippable Adjust), else Adjust over its flagged
-            queue, else the honest blocked sentence. A done run lights these. */}
-        <div className="panel__actions panel__actions--advance">
-          {deliverOpen && isComplete("adjust", facts) ? (
-            <Link
-              data-role="continue-on"
-              className="button button--primary"
-              to={`/case/${detail.case.id}/deliver`}
-            >
-              Continue to Deliver — nothing to adjust
-            </Link>
-          ) : adjustOpen ? (
-            <Link
-              data-role="continue-on"
-              className="button button--primary"
-              to={`/case/${detail.case.id}/adjust`}
-            >
-              Continue to Adjust
-            </Link>
+        {/* THE MOMENT OF MOVING FORWARD (client 2026-07-27 #2 + #3). Two things
+            happen here that the single Continue never did:
+
+            1. THE SET IS FACED. Once every site is attested the summary states, one
+               line per site, what each tick actually stood on — tooth, declared cap,
+               and the seat facts the preview produced. Short of that, the sites
+               still owed are NAMED (the blockedReason doctrine).
+            2. THE FORK IS EXPLICIT. "Skip adjustments — go to Deliver" and "Adjust
+               the fits" replace one button that silently chose for the operator.
+               Each RECORDS the decision (it rides into the evidence bundle) and then
+               navigates. Reachability is untouched: skipping never closes Adjust. */}
+        <div data-role="declare-advance" className="panel__actions panel__actions--advance">
+          {deliverOpen ? (
+            <>
+              <ul data-role="attestation-summary" className="attestation-summary">
+                {summary.map((line) => (
+                  <li
+                    key={line.tooth}
+                    data-role="attestation-line"
+                    data-tooth={line.tooth}
+                    data-attested={line.attested}
+                    className={
+                      line.attested
+                        ? "attestation-summary__line"
+                        : "attestation-summary__line attestation-summary__line--owed"
+                    }
+                  >
+                    {line.words}
+                  </li>
+                ))}
+              </ul>
+              <p data-role="skip-consequence" className="panel__hint">
+                {skipConsequenceWords(facts.siteFlagged)}
+              </p>
+              <div className="declare-fork">
+                <button
+                  type="button"
+                  data-role="fork-skip"
+                  className={`button ${
+                    facts.siteFlagged > 0 ? "button--secondary" : "button--primary"
+                  }`}
+                  disabled={forkSaving !== "idle"}
+                  onClick={onSkipAdjustments}
+                >
+                  Skip adjustments — go to Deliver
+                </button>
+                <button
+                  type="button"
+                  data-role="fork-adjust"
+                  className={`button ${
+                    facts.siteFlagged > 0 ? "button--primary" : "button--secondary"
+                  }`}
+                  disabled={forkSaving !== "idle"}
+                  onClick={onAdjustFits}
+                >
+                  Adjust the fits
+                </button>
+              </div>
+              {decided !== null && (
+                <p data-role="fork-recorded" className="panel__hint">
+                  Recorded: {decided.decision === "skip"
+                    ? "adjustments skipped"
+                    : "adjustments taken up"} at {decided.at}. This rides into the
+                  evidence the case is confirmed over — and a different choice here
+                  simply replaces it.
+                </p>
+              )}
+              {forkError !== null && (
+                <div data-role="fork-error" role="alert" className="panel__error">
+                  {forkError}
+                </div>
+              )}
+            </>
           ) : (
-            <span
-              data-role="continue-on"
-              aria-disabled="true"
-              className="button button--secondary button--blocked"
-            >
-              Continue — {blockedReason("adjust", facts)}
-            </span>
+            <>
+              <span
+                data-role="fork-skip"
+                aria-disabled="true"
+                className="button button--secondary button--blocked"
+              >
+                Skip adjustments — {blockedReason("deliver", facts)}
+              </span>
+              <span
+                data-role="fork-adjust"
+                aria-disabled="true"
+                className="button button--secondary button--blocked"
+              >
+                Adjust the fits — {blockedReason("deliver", facts)}
+              </span>
+            </>
           )}
         </div>
       </div>
@@ -454,6 +539,9 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
   const [error, setError] = useState<string | null>(null);
   const [runPhase, setRunPhase] = useState<RunPhase>("idle");
   const [runError, setRunError] = useState<string | null>(null);
+  const [forkSaving, setForkSaving] = useState<ForkSaving>("idle");
+  const [forkError, setForkError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     mountedRef.current = true;
@@ -501,6 +589,29 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
     // so the explicit act always fires exactly once
     fireRun(runKey ?? `retry-${Date.now()}`);
   }, [runKey, fireRun]);
+
+  /** THE FORK'S ONE HANDLER (client 2026-07-27 #3): record the decision, THEN
+   * navigate. Record-then-move, deliberately — a decision that never landed must not
+   * leave the operator on the next stage believing it did, so a refusal keeps them
+   * here with the BFF's words. The response is the whole new detail (optimism OFF),
+   * and reachability is untouched either way: this is evidence, never a gate. */
+  const fireFork = useCallback(
+    (decision: "skip" | "adjust", to: string) => {
+      setForkSaving(decision);
+      void postAdjustDecision(caseId, decision).then((result) => {
+        if (!mountedRef.current) return;
+        setForkSaving("idle");
+        if (result.kind === "ok") {
+          setForkError(null);
+          onDetail(result.data);
+          navigate(to);
+        } else {
+          setForkError(result.detail);
+        }
+      });
+    },
+    [caseId, onDetail, navigate],
+  );
 
   const fireSystem = useCallback(
     (model: string) => {
@@ -570,6 +681,10 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
       runPhase={runPhase}
       runError={runError}
       onRetryRun={handleRetryRun}
+      forkSaving={forkSaving}
+      forkError={forkError}
+      onSkipAdjustments={() => fireFork("skip", `/case/${caseId}/deliver`)}
+      onAdjustFits={() => fireFork("adjust", `/case/${caseId}/adjust`)}
       onSelectSite={setActiveTooth}
       onAskSwitch={handleAskSwitch}
       onConfirmSwitch={handleConfirmSwitch}

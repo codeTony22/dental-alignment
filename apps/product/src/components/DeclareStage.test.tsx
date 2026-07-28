@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StaticRouter } from "react-router-dom";
 import { DeclareStage, DeclareStageView } from "./DeclareStage";
+import type { CaseSessionDetail } from "../api/client";
 import {
   caseSessionDetail,
   catalogEntry,
@@ -174,38 +175,105 @@ describe("in-flight and refused states — optimism OFF", () => {
   });
 });
 
-describe("continue — per flow.ts, lit by the run (5c)", () => {
-  it("with no run, the continue affordance is inert and says why", () => {
+describe("the moment of moving forward — the set faced, the fork explicit", () => {
+  /** A done run whose sites all carry verdicts: exactly where the fork is offered. */
+  function forked(sites: CaseSessionDetail["sites"]): CaseSessionDetail {
+    return caseSessionDetail({
+      ...detail,
+      sites,
+      session: { ...detail.session, run_state: "done" },
+    });
+  }
+
+  const cleanRun = () =>
+    forked([
+      siteView({
+        tooth: 19,
+        status: "ready",
+        declared_variant: "5020",
+        seat_method: "rim-seat",
+        rim_agreement_mm: 0.07,
+      }),
+    ]);
+
+  const flaggedRun = () =>
+    forked([
+      siteView({ tooth: 19, status: "flagged", declared_variant: "5020" }),
+      siteView({
+        tooth: 30,
+        status: "ready",
+        declared_variant: "5020",
+        seat_method: "rim-seat",
+        rim_agreement_mm: 0.11,
+      }),
+    ]);
+
+  it("with no run, BOTH acts are inert and carry the flow's reason", () => {
+    // the single Continue is gone (client 2026-07-27 #3): a blocked fork shows
+    // both doors shut, each saying why, rather than one ambiguous button
     const html = view();
-    expect(html).toMatch(/data-role="continue-on"[^>]*aria-disabled="true"/);
-    expect(html).toContain("No run exists yet");
+    expect(html).toMatch(/data-role="fork-skip"[^>]*aria-disabled="true"/);
+    expect(html).toMatch(/data-role="fork-adjust"[^>]*aria-disabled="true"/);
+    expect(html).toContain("Sites are still awaiting review");
+    expect(html).not.toContain('data-role="continue-on"');
   });
 
-  it("a done run over a flagged site links to Adjust — its queue has work", () => {
-    const flagged = caseSessionDetail({
-      ...detail,
-      sites: [
-        siteView({ tooth: 19, status: "flagged", declared_variant: "5020" }),
-        siteView({ tooth: 30, status: "ready", declared_variant: "5020" }),
-      ],
-      session: { ...detail.session, run_state: "done" },
-    });
-    const html = view({ detail: flagged });
-    expect(html).toMatch(/data-role="continue-on"[^>]*href="\/case\/case-a\/adjust"/);
+  it("the summary states, per site, what each attestation stood on", () => {
+    // client 2026-07-27 #2: "maybe at the time to move forward to the next step"
+    const html = view({ detail: cleanRun() });
+    expect(html).toContain('data-role="attestation-summary"');
+    expect(html).toMatch(/data-role="attestation-line"[^>]*data-tooth="19"/);
+    expect(html).toContain("Tooth 19 · 5020 · rim-seat, rim 0.07 mm");
   });
 
-  it("a clean done run links straight to Deliver — skippable Adjust (plan §4)", () => {
-    // DELIBERATE change from 5a's interim behavior (Adjust won as next-in-order):
-    // with a completed run and nothing flagged, Adjust has nothing to offer and
-    // the client's directive is Deliver directly reachable when clean.
-    const resolved = caseSessionDetail({
-      ...detail,
-      sites: [siteView({ tooth: 19, status: "ready", declared_variant: "5020" })],
-      session: { ...detail.session, run_state: "done" },
+  it("an unattested site is NAMED in the summary instead of a line about a seat", () => {
+    const html = view({ detail: flaggedRun() });
+    expect(html).toMatch(/data-role="attestation-line"[^>]*data-attested="false"/);
+    expect(html).toContain("Tooth 19 · 5020 · not attested (flagged)");
+  });
+
+  it("both acts render; Adjust leads when anything is flagged, and the skip states its cost", () => {
+    const html = view({ detail: flaggedRun() });
+    expect(html).toMatch(/data-role="fork-adjust"[^>]*class="button button--primary"/);
+    expect(html).toMatch(/data-role="fork-skip"[^>]*class="button button--secondary"/);
+    expect(html).toContain("1 flagged site stays");
+    expect(html).toContain("own acknowledgment");
+  });
+
+  it("with nothing flagged the skip leads, and says there is nothing to rework", () => {
+    const html = view({ detail: cleanRun() });
+    expect(html).toMatch(/data-role="fork-skip"[^>]*class="button button--primary"/);
+    expect(html).toContain("Nothing is flagged");
+  });
+
+  it("a recorded decision is shown, with the note that it rides into the evidence", () => {
+    const decided = cleanRun();
+    const html = view({
+      detail: {
+        ...decided,
+        session: {
+          ...decided.session,
+          adjust_decision: {
+            decision: "skip",
+            at: "2026-07-28T09:00:00+00:00",
+            run_id: "20260728-090000-abc123",
+          },
+        },
+      },
     });
-    const html = view({ detail: resolved });
-    expect(html).toMatch(/data-role="continue-on"[^>]*href="\/case\/case-a\/deliver"/);
-    expect(html).toContain("nothing to adjust");
+    expect(html).toContain('data-role="fork-recorded"');
+    expect(html).toContain("adjustments skipped");
+    expect(html).toContain("2026-07-28T09:00:00+00:00");
+    expect(html).toContain("evidence the case is confirmed over");
+  });
+
+  it("a refused decision keeps the operator here, in the BFF's words", () => {
+    const html = view({
+      detail: cleanRun(),
+      forkError: "HTTP 422 — every site needs its verdict before the fork",
+    });
+    expect(html).toContain('data-role="fork-error"');
+    expect(html).toContain("every site needs its verdict");
   });
 });
 

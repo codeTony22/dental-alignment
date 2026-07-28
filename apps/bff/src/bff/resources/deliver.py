@@ -363,20 +363,32 @@ def _mutate_signing(store: SessionStore, case_id: str, mutate, act: str,
                                  f"over what is actually there now")
 
 
+def _adjustments_of(session: CaseSession) -> Optional[str]:
+    """The fork's decision WORD for the bundle (client 2026-07-27), or None where the
+    fork was never faced. The value alone — the record's ``at``/``run_id`` are
+    attribution, and re-deciding the same way describes the same case (the
+    SeatedSelection precedent: values only, so an identical re-act flips no
+    equality and costs nobody a re-confirmation)."""
+    return (session.adjust_decision.decision
+            if session.adjust_decision is not None else None)
+
+
 def _derive_evidence_sha(case: CaseRecord, session: CaseSession,
                          settings: Settings, run: RunSession) -> str:
     """The re-derivation both release and the artifact gate stand on (plan §4:
     validity is re-derivation, never trust in a record): the assurance projection
-    as it stands NOW plus the QC images' bytes as they are NOW, hashed by the same
-    canonical rule the confirmation sealed. A missing QC image counts as drift —
-    evidence that cannot be re-covered no longer matches anything."""
+    as it stands NOW, the QC images' bytes as they are NOW, and the adjust decision
+    as it stands NOW — hashed by the same canonical rule the confirmation sealed. A
+    missing QC image counts as drift — evidence that cannot be re-covered no longer
+    matches anything."""
     assurance = derive_assurance(case, session)
     try:
         hashes = qc_image_hashes(_run_dir(settings, case_id=case.id, run=run),
                                  _qc_image_names(run))
     except FileNotFoundError:
         return "evidence-incomplete"   # never equals a sha256 hex digest
-    return canonical_bundle(assurance.model_dump(mode="json"), hashes).sha256
+    return canonical_bundle(assurance.model_dump(mode="json"), hashes,
+                            _adjustments_of(session)).sha256
 
 
 def _summary_teeth(run: RunSession) -> List[int]:
@@ -463,7 +475,8 @@ def confirm_case(case_id: str, body: ConfirmIn,
             raise HTTPException(409, f"the confirmation is refused — the run's "
                                      f"package claims a QC image that is not on "
                                      f"disk to seal: {exc}")
-        bundle = canonical_bundle(assurance.model_dump(mode="json"), hashes)
+        bundle = canonical_bundle(assurance.model_dump(mode="json"), hashes,
+                                  _adjustments_of(session))
         try:
             write_bundle(run_dir, bundle)
         except OSError as exc:

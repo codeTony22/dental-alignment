@@ -72,6 +72,7 @@ describe("the case shell view", () => {
             session: {
               tenant_id: "local",
               adjust_visited: false,
+              adjust_decision: null,
               run_state: "done",
               run_refusal: null,
               confirmed: false,
@@ -106,6 +107,7 @@ describe("the case shell view", () => {
       session: {
         tenant_id: "local",
         adjust_visited: false,
+        adjust_decision: null,
         run_state: "done",
         run_refusal: null,
         confirmed: false,

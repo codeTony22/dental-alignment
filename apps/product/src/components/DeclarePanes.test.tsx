@@ -163,10 +163,14 @@ describe("the parity chrome (ledger row 9): HUDs on the glass, the demo's clothe
     expect(html).toMatch(/data-role="union-stats"[^>]*class="verify-colorbar__stats"/);
   });
 
-  it("the review tick wears the acknowledgment-bar language", () => {
+  it("the attestation wears the acknowledgment-bar language — text yields, the act does not", () => {
+    // the demo's decode-ack shape (VerifyDialog's footer): the sentence side is the
+    // flexible column, the act sits in the pinned actions block so no amount of
+    // wording can push it off the bar
     const html = view();
     expect(html).toContain('class="decode-ack"');
-    expect(html).toContain("decode-ack__check");
+    expect(html).toContain("decode-ack__disclaimer");
+    expect(html).toContain("decode-ack__actions");
   });
 });
 
@@ -231,12 +235,26 @@ describe("the pane chrome the demo's same surface carries (parity fix, ledger ro
   });
 });
 
-describe("the review tick — with the panes it attests (AM-8)", () => {
-  it("previewed: enabled and unticked; ready: ticked", () => {
-    expect(view()).toMatch(/data-role="review-tick"(?![^>]*disabled)[^>]*\/?>/);
+describe("the attestation — a button-weight act over the panes it attests (AM-8)", () => {
+  it("an unattested site offers the act, with the sentence naming what it covers", () => {
+    // client 2026-07-27 #2: "The reviewed over the panes check mark needs to be
+    // better confirmed" — the bare checkbox is gone; the act states its subject
+    const html = view();
+    expect(html).toMatch(/data-role="review-tick"(?![^>]*disabled)/);
+    expect(html).toContain("Attest this site");
+    expect(html).toContain('data-role="attestation-sentence"');
+    expect(html).toContain("tooth 19");
+    expect(html).toContain("the declared cap 5020");
+    expect(html).toContain("the three panes above");
+    expect(html).not.toContain('type="checkbox" data-role="review-tick"');
+  });
+
+  it("an attested site shows what WAS attested, and withdrawing is equally explicit", () => {
     const ready = siteView({ tooth: 19, status: "ready", declared_variant: "5020" });
     const html = view({ site: ready, tick: reviewTick(ready) });
-    expect(html).toMatch(/data-role="review-tick"[^>]*checked/);
+    expect(html).toMatch(/data-role="review-tick"[^>]*aria-pressed="true"/);
+    expect(html).toContain("Withdraw the attestation");
+    expect(html).toContain("Attested:");
   });
 
   it("anything short of a preview is inert WITH its reason", () => {
@@ -253,8 +271,10 @@ describe("the review tick — with the panes it attests (AM-8)", () => {
   });
 
   it("in-flight and refused states are stated — optimism OFF", () => {
-    expect(view({ reviewSaving: "ticking" })).toContain("Recording the review…");
-    expect(view({ reviewSaving: "unticking" })).toContain("Withdrawing the review…");
+    expect(view({ reviewSaving: "ticking" })).toContain("Recording the attestation…");
+    expect(view({ reviewSaving: "unticking" })).toContain(
+      "Withdrawing the attestation…",
+    );
     expect(
       view({ reviewError: "HTTP 422 — cannot review_ready a site that is 'declared'" }),
     ).toContain("cannot review_ready");

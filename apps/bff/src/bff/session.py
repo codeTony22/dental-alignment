@@ -227,6 +227,28 @@ class PaymentRecord(BaseModel):
     at: str
 
 
+class AdjustDecisionRecord(BaseModel):
+    """THE FORK, RECORDED (client 2026-07-27: "Skipping adjust should be optional we
+    should have two options one to skip and another to delivery — Delivery vs Skip
+    Adjustments").
+
+    Declare's single Continue hid a decision: with nothing flagged it walked past
+    Adjust silently, and the case's own record could never say whether the fits were
+    reworked or waved through. This is that decision made EXPLICIT and kept — an ACT
+    ("what the operator DID"), never a status claim: it moves no site, opens and
+    closes no stage (flow reachability is untouched — skip never blocks navigating
+    to Adjust), and a later decision simply REPLACES it (newest act wins).
+
+    Keyed to ``run_id`` because a decision is about THESE verdicts: the run boundary
+    clears it with the run pointer (``clear_current_run``), so a decision can never
+    outlive the evidence it was made over. The decision WORD rides into the evidence
+    bundle, so what a client confirms includes whether adjustments were skipped."""
+
+    decision: Literal["skip", "adjust"]
+    at: str
+    run_id: str
+
+
 class ReleaseRecord(BaseModel):
     """The disclosure act (plan §4: release = disclosure; grill AM-1): WHAT was
     released — over which run and which sealed evidence, and which teeth the
@@ -260,6 +282,9 @@ class CaseSession(BaseModel):
     choices: CaseChoices = Field(default_factory=CaseChoices)
     adjust_visited: bool = False
     run: Optional[RunSession] = None
+    # the Delivery-vs-Skip fork (client 2026-07-27), keyed to the current run and
+    # cleared with it by ``clear_current_run``; None = the fork was never faced
+    adjust_decision: Optional[AdjustDecisionRecord] = None
     confirmation: Optional[ConfirmationRecord] = None
     # fail-closed: only the payment stub route (slice 8) ever writes this record;
     # its absence IS "not authorized" (pre-8 documents persisted a bare
@@ -273,6 +298,18 @@ class CaseSession(BaseModel):
     def payment_authorized(self) -> bool:
         """Derived, fail-closed: authorized exactly when the stub record says so."""
         return self.payment is not None and self.payment.payment_authorized
+
+
+def clear_current_run(session: "CaseSession") -> None:
+    """THE RUN BOUNDARY'S ONE HOME (5c's rule, given a name when the adjust decision
+    joined it): every reset boundary — a choices change, a system switch, a
+    re-declaration — clears the CURRENT-run pointer so stale physics never
+    masquerades as current. The FORK falls with it: a decision to skip or rework
+    adjustments was made over THOSE verdicts, and verdicts that no longer describe
+    the case cannot carry a decision forward. One function, so a later fact keyed to
+    the run cannot be forgotten at one boundary and cleared at the other two."""
+    session.run = None
+    session.adjust_decision = None
 
 
 def released_teeth_of(dispositions: Dict[str, str]) -> List[int]:

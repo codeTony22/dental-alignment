@@ -37,8 +37,8 @@ class TestCanonicalization:
     def test_dict_order_does_not_change_the_bytes_or_the_hash(self):
         shuffled = {"run_id": ASSURANCE["run_id"], "sites": ASSURANCE["sites"],
                     "case_id": ASSURANCE["case_id"]}
-        a = canonical_bundle(ASSURANCE, QC_HASHES)
-        b = canonical_bundle(shuffled, dict(reversed(list(QC_HASHES.items()))))
+        a = canonical_bundle(ASSURANCE, QC_HASHES, None)
+        b = canonical_bundle(shuffled, dict(reversed(list(QC_HASHES.items()))), None)
         assert a.canonical == b.canonical
         assert a.sha256 == b.sha256
 
@@ -49,22 +49,41 @@ class TestCanonicalization:
         # over the same measurement
         noisy = {**ASSURANCE, "relief": {"applied_mm": 0.1 + 0.2}}
         clean = {**ASSURANCE, "relief": {"applied_mm": 0.3}}
-        assert canonical_bundle(noisy, QC_HASHES).sha256 == \
-            canonical_bundle(clean, QC_HASHES).sha256
+        assert canonical_bundle(noisy, QC_HASHES, None).sha256 == \
+            canonical_bundle(clean, QC_HASHES, None).sha256
 
     def test_a_changed_number_changes_the_hash(self):
         changed = json.loads(json.dumps(ASSURANCE))
         changed["sites"][0]["rim_agreement_mm"] = 0.08
-        assert canonical_bundle(changed, QC_HASHES).sha256 != \
-            canonical_bundle(ASSURANCE, QC_HASHES).sha256
+        assert canonical_bundle(changed, QC_HASHES, None).sha256 != \
+            canonical_bundle(ASSURANCE, QC_HASHES, None).sha256
 
     def test_a_changed_qc_hash_changes_the_bundle_hash(self):
         flipped = {**QC_HASHES, "neodent-gm-4-deviation.png": "c" * 64}
-        assert canonical_bundle(ASSURANCE, flipped).sha256 != \
-            canonical_bundle(ASSURANCE, QC_HASHES).sha256
+        assert canonical_bundle(ASSURANCE, flipped, None).sha256 != \
+            canonical_bundle(ASSURANCE, QC_HASHES, None).sha256
+
+    def test_the_adjust_decision_is_part_of_what_the_seal_covers(self):
+        """The fork rides in the bundle (client 2026-07-27: the two options are a
+        recorded choice, and the standing directive says an unsurfaced Adjust must
+        still be visible in the assurance). Three distinguishable answers — skipped,
+        reworked, never faced — so a confirmation can never be silent about it."""
+        skipped = canonical_bundle(ASSURANCE, QC_HASHES, "skip")
+        adjusted = canonical_bundle(ASSURANCE, QC_HASHES, "adjust")
+        unfaced = canonical_bundle(ASSURANCE, QC_HASHES, None)
+        assert len({skipped.sha256, adjusted.sha256, unfaced.sha256}) == 3
+        assert skipped.payload["adjustments"] == "skip"
+        assert unfaced.payload["adjustments"] is None
+
+    def test_the_same_decision_re_stated_hashes_identically(self):
+        # the VALUE rides, not the record: re-deciding the same way describes the
+        # same case, so it must not cost a re-confirmation (the SeatedSelection
+        # precedent — values only, no attribution)
+        assert canonical_bundle(ASSURANCE, QC_HASHES, "skip").sha256 == \
+            canonical_bundle(ASSURANCE, QC_HASHES, "skip").sha256
 
     def test_the_hash_is_the_sha256_of_the_canonical_bytes(self):
-        bundle = canonical_bundle(ASSURANCE, QC_HASHES)
+        bundle = canonical_bundle(ASSURANCE, QC_HASHES, None)
         assert bundle.sha256 == hashlib.sha256(bundle.canonical).hexdigest()
         # and the bytes parse back to the payload — the bundle is READABLE evidence,
         # never an opaque blob (a dispute reads the record, not a hex string)
@@ -75,7 +94,7 @@ class TestCanonicalization:
         # NaN has no canonical JSON encoding — a bundle carrying one could never be
         # re-verified byte-for-byte, so building it refuses instead of guessing
         with pytest.raises(ValueError):
-            canonical_bundle({**ASSURANCE, "bad": float("nan")}, QC_HASHES)
+            canonical_bundle({**ASSURANCE, "bad": float("nan")}, QC_HASHES, None)
 
 
 class TestQcImageHashes:
@@ -104,7 +123,7 @@ class TestQcImageHashes:
 
 class TestWriteBundle:
     def test_writes_content_addressed_under_evidence(self, tmp_path: Path):
-        bundle = canonical_bundle(ASSURANCE, QC_HASHES)
+        bundle = canonical_bundle(ASSURANCE, QC_HASHES, None)
         returned = write_bundle(tmp_path, bundle)
         assert returned == bundle.sha256
         path = tmp_path / "evidence" / f"{bundle.sha256}.json"
@@ -113,15 +132,15 @@ class TestWriteBundle:
         assert [p.name for p in (tmp_path / "evidence").iterdir()] == [path.name]
 
     def test_rewriting_the_same_bundle_is_idempotent(self, tmp_path: Path):
-        bundle = canonical_bundle(ASSURANCE, QC_HASHES)
+        bundle = canonical_bundle(ASSURANCE, QC_HASHES, None)
         write_bundle(tmp_path, bundle)
         write_bundle(tmp_path, bundle)
         path = tmp_path / "evidence" / f"{bundle.sha256}.json"
         assert path.read_bytes() == bundle.canonical
 
     def test_two_bundles_coexist_content_addressed(self, tmp_path: Path):
-        first = canonical_bundle(ASSURANCE, QC_HASHES)
-        second = canonical_bundle({**ASSURANCE, "run_id": "later"}, QC_HASHES)
+        first = canonical_bundle(ASSURANCE, QC_HASHES, None)
+        second = canonical_bundle({**ASSURANCE, "run_id": "later"}, QC_HASHES, None)
         write_bundle(tmp_path, first)
         write_bundle(tmp_path, second)
         names = sorted(p.name for p in (tmp_path / "evidence").iterdir())

@@ -403,6 +403,36 @@ class TestConfirmThenChangeThenRelease:
         assert res.status_code == 409
         assert "changed since it was confirmed" in res.json()["detail"]
 
+    def test_changing_the_adjust_decision_blocks_release(
+            self, settings, product_root):
+        """THE FORK IS EVIDENCE (client 2026-07-27): the decision word is part of
+        the sealed bundle, so confirm → decide differently → release travels the
+        SAME re-derivation path as a moved number. Whoever confirmed said "these
+        fits, skipped"; a later "adjusted" is a different statement about the same
+        case, and the seal must stop covering it."""
+        client = deliverable_client(settings, product_root)
+        assert client.post("/api/case-sessions/neodent-gm/adjust-decision",
+                           json={"decision": "skip"}).status_code == 200
+        assert confirm(client).status_code == 200
+        assert pay(client).status_code == 200
+        assert client.post("/api/case-sessions/neodent-gm/adjust-decision",
+                           json={"decision": "adjust"}).status_code == 200
+        res = release(client)
+        assert res.status_code == 409
+        assert "changed since it was confirmed" in res.json()["detail"]
+
+    def test_the_bundle_on_disk_states_what_happened_to_the_adjustments(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        client.post("/api/case-sessions/neodent-gm/adjust-decision",
+                    json={"decision": "skip"})
+        assert confirm(client).status_code == 200
+        record = SessionStore(product_root).load("neodent-gm").confirmation
+        bundle = json.loads(
+            (product_root / "neodent-gm" / "runs" / record.run_id / "evidence"
+             / f"{record.evidence_sha256}.json").read_bytes())
+        assert bundle["adjustments"] == "skip"
+
     def test_re_confirming_over_the_current_evidence_unblocks_release(
             self, settings, product_root):
         client = confirmed_paid_client(settings, product_root)
