@@ -195,6 +195,37 @@ class TestAssuranceProjection:
         assert store.load("neodent-gm").version == version_before
 
 
+# --- the fork, on the document the operator reads ---------------------------------------
+
+class TestTheAssuranceShowsTheFork:
+    """THE STANDING DIRECTIVE, kept where it was promised: when Adjust is not
+    surfaced the ASSURANCE must still show what was done (bff/evidence.py cites it
+    as the reason the decision joined the seal). Sealing the word is not showing it
+    — a hash is unreadable — so the projection the operator reads before confirming
+    carries the decision too. Same document both ways: what the operator saw is
+    what the seal covers, and Deliver's report can state it without a second fetch.
+    """
+
+    def test_before_the_fork_is_faced_the_assurance_says_nothing_happened(
+            self, settings, product_root):
+        client = landed_client(settings, product_root, [row(4), row(13)])
+        body = client.get("/api/case-sessions/neodent-gm/assurance").json()
+        assert body["adjustments"] is None
+
+    def test_the_recorded_decision_shows_on_the_assurance(
+            self, settings, product_root):
+        client = landed_client(settings, product_root, [row(4), row(13)])
+        assert client.post("/api/case-sessions/neodent-gm/adjust-decision",
+                           json={"decision": "skip"}).status_code == 200
+        assert client.get("/api/case-sessions/neodent-gm/assurance").json()[
+            "adjustments"] == "skip"
+        # newest act wins here too — the projection is derived, never cached
+        assert client.post("/api/case-sessions/neodent-gm/adjust-decision",
+                           json={"decision": "adjust"}).status_code == 200
+        assert client.get("/api/case-sessions/neodent-gm/assurance").json()[
+            "adjustments"] == "adjust"
+
+
 # --- the qc image endpoint -------------------------------------------------------------
 
 class TestQcImages:

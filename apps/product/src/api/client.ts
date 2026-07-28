@@ -676,6 +676,13 @@ export interface AssuranceView {
   case_id: string;
   run_id: string;
   relief: Record<string, unknown> | null;
+  /**
+   * The Delivery-vs-Skip fork as it stands: "skip" | "adjust", or null where the
+   * fork was never faced. It rides on THIS document because sealing the word is
+   * not showing it — the BFF folds it into the evidence hash, and a hash tells the
+   * operator nothing about whether the fits were reworked before they sign.
+   */
+  adjustments: string | null;
   sites: AssuranceSite[];
 }
 

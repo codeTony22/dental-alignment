@@ -175,6 +175,30 @@ export function evidenceSummary(assurance: AssuranceView): readonly EvidenceLine
   }));
 }
 
+/**
+ * THE FORK, IN WORDS, WHERE THE CONFIRM IS (review 2026-07-28). The BFF folds the
+ * Delivery-vs-Skip decision into the evidence hash, so a confirmation already covers
+ * whether the fits were reworked or waved through — but a hash shows nobody
+ * anything, and Deliver rendered the word nowhere. An operator opening the report to
+ * decide whether to sign could not see the very fact their signature was about to
+ * seal.
+ *
+ * The word is the BFF's (assurance.adjustments); the sentence is display. Declare's
+ * own vocabulary is kept — "adjustments skipped" / "adjustments taken up" — so the
+ * stage that recorded the act and the stage that seals it read the same. An unfaced
+ * fork says exactly that: null is an answer, never a decision to be implied.
+ */
+export function adjustmentsWords(assurance: AssuranceView): string {
+  const seal = "This is part of what confirming seals.";
+  if (assurance.adjustments === "skip") {
+    return `Adjustments skipped — the fits stand as the run produced them. ${seal}`;
+  }
+  if (assurance.adjustments === "adjust") {
+    return `Adjustments taken up in Adjust. ${seal}`;
+  }
+  return `The Delivery-vs-Skip fork was never faced. ${seal}`;
+}
+
 // --- the delivery progression (client 2026-07-27 #6) ----------------------------------
 
 export type StepState = "done" | "current" | "waiting";

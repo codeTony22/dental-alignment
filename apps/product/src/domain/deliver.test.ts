@@ -11,6 +11,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ackRequired,
+  adjustmentsWords,
   confirmBlockers,
   confirmWireBody,
   effectiveDisposition,
@@ -183,6 +184,31 @@ describe("evidenceSummary — the stage's compact read (client #5)", () => {
     });
     expect(evidenceSummary(view)[0]!.words).toContain("seat not recorded");
     expect(evidenceSummary(view)[0]!.words).toContain("rim —");
+  });
+});
+
+describe("adjustmentsWords — the fork, readable beside the confirm", () => {
+  it("says which way the fork went, in the words Declare used", () => {
+    expect(adjustmentsWords(assuranceView({ adjustments: "skip" }))).toContain(
+      "Adjustments skipped",
+    );
+    expect(adjustmentsWords(assuranceView({ adjustments: "adjust" }))).toContain(
+      "Adjustments taken up",
+    );
+  });
+
+  it("an unfaced fork says nothing happened — never an implied decision", () => {
+    const words = adjustmentsWords(assuranceView({ adjustments: null }));
+    expect(words).toContain("never faced");
+    expect(words).not.toContain("skipped");
+  });
+
+  it("every answer says the decision is part of what confirming seals", () => {
+    for (const decision of ["skip", "adjust", null]) {
+      expect(adjustmentsWords(assuranceView({ adjustments: decision }))).toContain(
+        "part of what confirming seals",
+      );
+    }
   });
 });
 

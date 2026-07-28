@@ -75,6 +75,37 @@ class TestCanonicalization:
         assert skipped.payload["adjustments"] == "skip"
         assert unfaced.payload["adjustments"] is None
 
+    def test_the_operators_dispositions_stay_OUT_of_the_seal(self):
+        """The invariant that makes ``release_matches_confirmation`` load-bearing
+        (bff/session.py), asserted where the bytes are built rather than only
+        downstream: dispositions are the operator's ACTS, not the run's facts, so a
+        re-confirm that withholds a site moves NO hash — which is precisely why the
+        artifact gate compares the RECORDS themselves. Let a disposition into these
+        bytes and that comparison becomes dead code, while a withhold after release
+        would start 409-ing as "the case changed", blaming the run for an act."""
+        bundle = canonical_bundle(ASSURANCE, QC_HASHES, "skip")
+        assert set(bundle.payload) == {"assurance", "qc_sha256", "adjustments"}
+        text = bundle.canonical.decode("ascii")
+        assert "dispositions" not in text
+        assert "withhold" not in text
+
+    def test_the_decision_is_stated_once_beside_the_runs_facts(self):
+        """The fork's word is an ACT and sits at the top level, next to the run's
+        facts — never inside the ``assurance`` projection. The served assurance
+        DOES carry it (so the operator reads the decision on the document they
+        confirm over), and the confirm route drops it from the projection it hands
+        here for exactly this reason: one statement in the canonical bytes means a
+        dispute reads one answer, and two copies could never be argued apart."""
+        served = {**ASSURANCE, "adjustments": "skip"}
+        bundle = canonical_bundle({k: v for k, v in served.items()
+                                   if k != "adjustments"}, QC_HASHES, "skip")
+        assert "adjustments" not in bundle.payload["assurance"]
+        assert bundle.payload["adjustments"] == "skip"
+        # and the projection minus the word is byte-identical to the shape sealed
+        # before the assurance ever served it — no bundle on disk went stale
+        assert bundle.sha256 == canonical_bundle(ASSURANCE, QC_HASHES,
+                                                 "skip").sha256
+
     def test_the_same_decision_re_stated_hashes_identically(self):
         # the VALUE rides, not the record: re-deciding the same way describes the
         # same case, so it must not cost a re-confirmation (the SeatedSelection

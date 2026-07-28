@@ -459,6 +459,14 @@ class TestConfirmThenChangeThenRelease:
             (product_root / "neodent-gm" / "runs" / record.run_id / "evidence"
              / f"{record.evidence_sha256}.json").read_bytes())
         assert bundle["adjustments"] == "skip"
+        # ONCE, and beside the run's facts rather than inside them: the served
+        # assurance now carries the word for the READER's sake (a hash shows
+        # nobody anything), and the confirm route drops it from the projection it
+        # seals so the canonical bytes still state the act exactly once
+        assert "adjustments" not in bundle["assurance"]
+        # the record says what it sealed, in the open — the display half reads
+        # this to notice a fork clicked after the fact
+        assert record.adjustments == "skip"
 
     def test_re_confirming_over_the_current_evidence_unblocks_release(
             self, settings, product_root):
@@ -731,6 +739,109 @@ class TestAReconfirmRetiresTheRelease:
         confirm(client, confirm_body({"4": "release", "13": "withhold"}))
         (row_,) = client.get("/api/case-sessions").json()
         assert row_["released"] is False
+
+
+# --- the fork is the OTHER newest-act-wins path ----------------------------------------
+
+class TestAPostReleaseForkClickRetiresTheRelease:
+    """Declare stays reachable after release and its fork is one click away, so
+    "adjustments were skipped" can be re-answered over a case that has already
+    shipped. The gate always closed on it — the word is in the evidence hash, so
+    the artifact endpoints re-derive and 409 — but the DISPLAY half compared only
+    records and kept saying "Released ✓" beside the error box.
+
+    Two ways to retire a release, and both must LOOK retired: a disposition change
+    (records, compared by ``release_matches_confirmation``) and a fork click (the
+    evidence, whose cheap re-derivable half is the decision word the confirmation
+    now records). The expensive half — the QC bytes — stays where it was, at the
+    artifact endpoints; this is the part that costs no disk read."""
+
+    def decided(self, client, decision):
+        return client.post("/api/case-sessions/neodent-gm/adjust-decision",
+                           json={"decision": decision})
+
+    def released_after_fork(self, settings, product_root, first, second):
+        client = deliverable_client(settings, product_root)
+        assert self.decided(client, first).status_code == 200
+        assert confirm(client).status_code == 200
+        assert pay(client).status_code == 200
+        assert release(client).status_code == 200
+        assert client.get("/api/case-sessions/neodent-gm").json()[
+            "session"]["released"] is True
+        res = self.decided(client, second)
+        assert res.status_code == 200
+        return client, res.json()["session"]
+
+    def test_changing_the_decision_after_release_unticks_released(
+            self, settings, product_root):
+        client, session = self.released_after_fork(
+            settings, product_root, "skip", "adjust")
+        assert session["released"] is False
+        listing = client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts")
+        assert listing.status_code == 409
+        # the display half and the gate now agree — no "Released ✓" over an error
+        assert "evidence changed after release" in listing.json()["detail"]
+
+    def test_re_stating_the_same_decision_keeps_the_release_current(
+            self, settings, product_root):
+        # values only (the SeatedSelection precedent): saying "skip" twice
+        # describes the same case and must cost nobody their release
+        client, session = self.released_after_fork(
+            settings, product_root, "skip", "skip")
+        assert session["released"] is True
+        assert client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts").status_code == 200
+
+    def test_a_case_that_never_faced_the_fork_stays_released(
+            self, settings, product_root):
+        # None is an answer, not a missing one: a release sealed with the fork
+        # unfaced is not retired by the absence continuing
+        client = confirmed_paid_client(settings, product_root)
+        assert release(client).status_code == 200
+        assert client.get("/api/case-sessions/neodent-gm").json()[
+            "session"]["released"] is True
+
+    def test_the_worklist_released_chip_unticks_with_it(
+            self, settings, product_root):
+        client, _ = self.released_after_fork(
+            settings, product_root, "skip", "adjust")
+        (row_,) = client.get("/api/case-sessions").json()
+        assert row_["released"] is False
+
+    def test_a_confirmation_sealed_before_the_word_was_recorded_reads_as_drift(
+            self, settings, product_root):
+        """The one-slice window, answered the way bff/evidence.py answers its own
+        shape change. A confirmation that never recorded the fork cannot be checked
+        against one, so the display half says not-released and the honest path is a
+        re-confirm. UNDER-claiming is the safe direction and the gate is untouched —
+        the bundle's bytes did not move, so what was disclosed stays disclosable."""
+        client, _ = self.released_after_fork(
+            settings, product_root, "skip", "skip")
+        store = SessionStore(product_root)
+        session = store.load("neodent-gm")
+        session.confirmation.adjustments = None      # a pre-field record, as loaded
+        store.save(session)
+        assert client.get("/api/case-sessions/neodent-gm").json()[
+            "session"]["released"] is False
+        # the gate never depended on the record's copy: it re-derives the bundle
+        assert client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts").status_code == 200
+        # and one re-confirm restores the display half to the truth
+        assert confirm(client).status_code == 200
+        assert client.get("/api/case-sessions/neodent-gm").json()[
+            "session"]["released"] is True
+
+    def test_a_re_release_over_the_new_decision_re_opens_disclosure(
+            self, settings, product_root):
+        # the honest path back: re-confirm over what is there NOW, then re-release
+        client, _ = self.released_after_fork(
+            settings, product_root, "skip", "adjust")
+        assert release(client).status_code == 409
+        assert confirm(client).status_code == 200
+        assert release(client).status_code == 200
+        assert client.get("/api/case-sessions/neodent-gm").json()[
+            "session"]["released"] is True
 
 
 # --- signing acts are one-winner -------------------------------------------------------

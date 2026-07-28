@@ -19,7 +19,11 @@
  *
  * ONE derived blocker list (domain/deliver.confirmBlockers) feeds both places the
  * surface offers to confirm from — the stage and the modal footer — so there can
- * never be two answers about whether this case is confirmable.
+ * never be two answers about whether this case is confirmable. The FORK'S DECISION
+ * (review 2026-07-28) travels the same way: the BFF folds "skipped" or "taken up"
+ * into the evidence hash a confirmation covers, so the word is stated in words
+ * beside each of those two places — a hash the operator cannot read is not a thing
+ * they can be said to have seen.
  *
  * Direction of trust (AM-4): optimism is OFF. Every POST's response is the whole new
  * detail, replacing the payload verbatim (onDetail); refusals render in the backend's
@@ -43,6 +47,7 @@ import {
 } from "../api/client";
 import {
   ackRequired,
+  adjustmentsWords,
   confirmBlockers,
   confirmWireBody,
   effectiveDisposition,
@@ -93,6 +98,18 @@ function ConfirmBlockers({ blockers }: { readonly blockers: readonly string[] })
         <li key={piece}>{piece}</li>
       ))}
     </ul>
+  );
+}
+
+/** THE FORK, STATED WHEREVER THE CONFIRM IS (review 2026-07-28). Same discipline as
+ * the blocker list: one derivation, one renderer, beside each of the two places the
+ * surface offers to sign — the decision is inside the hash the signature covers, so
+ * it must be legible before the signature, not only after a dispute. */
+function AdjustmentsNote({ words }: { readonly words: string }) {
+  return (
+    <p data-role="adjustments-note" className="panel__hint">
+      {words}
+    </p>
   );
 }
 
@@ -364,6 +381,8 @@ export function DeliverStageView({
       ? confirmBlockers(assurance.data, dispositions, acknowledged)
       : [];
   const confirmable = assurance.kind === "ok" && blockers.length === 0 && phase === "idle";
+  // ONE reading of the fork too — the stage's copy and the modal's are the same string
+  const forkWords = assurance.kind === "ok" ? adjustmentsWords(assurance.data) : null;
   const steps = releaseSteps(session);
   const disclosure = releaseDisclosureWords(session.release_preview);
   const statusOf = (tooth: number): string =>
@@ -427,11 +446,19 @@ export function DeliverStageView({
                   <span className="release-step__detail">{step.detail}</span>
 
                   {step.id === "confirmed" && step.state === "current" && (
-                    <div className="release-step__actions">
-                      {confirmButton("step-confirm")}
-                    </div>
+                    <>
+                      {/* what the signature is about to seal, before it is given */}
+                      {forkWords !== null && <AdjustmentsNote words={forkWords} />}
+                      <div className="release-step__actions">
+                        {confirmButton("step-confirm")}
+                      </div>
+                      {/* the demand belongs WITH the act (review 2026-07-28): under a
+                          done ✓ step the button is gone, and a list of what is missing
+                          with nothing to press is a dead end — the modal footer is
+                          where a confirmed case re-confirms from */}
+                      <ConfirmBlockers blockers={blockers} />
+                    </>
                   )}
-                  {step.id === "confirmed" && <ConfirmBlockers blockers={blockers} />}
 
                   {step.id === "paid" && step.state === "current" && (
                     <div className="release-step__actions">
@@ -731,6 +758,9 @@ export function DeliverStageView({
                     re-derives all of it and refuses on any change.
                   </p>
                 )}
+                {/* the fork rides in that seal, so it is legible beside the act —
+                    the table shows the run's facts, this shows what was DONE */}
+                <AdjustmentsNote words={adjustmentsWords(assurance.data)} />
                 <ConfirmBlockers blockers={blockers} />
               </div>
               <div className="decode-ack__actions">

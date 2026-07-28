@@ -205,6 +205,45 @@ describe("one blocker list, both places the confirm is offered (#5)", () => {
     expect(stage).toContain('data-role="open-report"');
     expect((stage.match(/data-role="confirm"/g) ?? []).length).toBe(1);
   });
+
+  it("a DONE Confirmed step carries no demand — a blocker with no button is a dead end", () => {
+    // review 2026-07-28: un-ticking an acknowledgment after confirming printed the
+    // demand under a "done ✓" step whose button had already gone. The list belongs
+    // where the act is offered; the modal footer still carries both.
+    const stage = view({ detail: deliverableDetail(CONFIRMED) });
+    expect(stage).toMatch(/data-step="confirmed"[^>]*data-state="done"/);
+    expect(stage).not.toContain('data-role="confirm-blockers"');
+    const open = view({ detail: deliverableDetail(CONFIRMED), reportOpen: true });
+    expect((open.match(/data-role="confirm-blockers"/g) ?? []).length).toBe(1);
+    expect((open.match(/data-role="confirm"/g) ?? []).length).toBe(1);
+  });
+});
+
+describe("the fork's decision, shown where the confirm is (review 2026-07-28)", () => {
+  it("the sealed decision is READABLE — on the stage and in the report alike", () => {
+    const html = view({
+      reportOpen: true,
+      assurance: { kind: "ok", data: assuranceView({ adjustments: "skip" }) },
+    });
+    const lines = html.match(/data-role="adjustments-note"/g) ?? [];
+    expect(lines.length).toBe(2); // beside each place the confirm is offered
+    expect(html).toContain("Adjustments skipped");
+    expect(html).toContain("part of what confirming seals");
+  });
+
+  it("the other fork reads as the other fork", () => {
+    const html = view({
+      assurance: { kind: "ok", data: assuranceView({ adjustments: "adjust" }) },
+    });
+    expect(html).toContain("Adjustments taken up");
+    expect(html).not.toContain("Adjustments skipped");
+  });
+
+  it("an unfaced fork says so — the operator is never told a decision that was not made", () => {
+    const html = view();
+    expect(html).toContain('data-role="adjustments-note"');
+    expect(html).toContain("never faced");
+  });
 });
 
 describe("the delivery progression — Confirmed, Paid, Released (#6)", () => {

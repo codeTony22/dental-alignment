@@ -206,13 +206,30 @@ class ConfirmationRecord(BaseModel):
     confirm and release 409s by construction). ``dispositions`` are the operator's
     per-site ACTS (release | withhold, keyed by tooth-as-string — JSON object keys);
     ``acknowledged_flags`` are the flagged teeth the operator acknowledged ROW BY ROW
-    (AM-12: a flag is never confirmed in bulk)."""
+    (AM-12: a flag is never confirmed in bulk).
+
+    ``adjustments`` is the fork's word AS SEALED — restated in the open beside the
+    hash it is folded into. The hash alone cannot be compared against anything
+    without re-reading the run's QC bytes off disk, and the display half deliberately
+    does not: it kept saying "Released ✓" while the artifact gate 409'd a case whose
+    fork had been re-clicked after release. This field is that comparison made cheap
+    (``confirmation_covers_fork``), never a second source of truth — the confirm
+    route writes it from the same read that builds the bundle. ``None`` is an
+    unfaced fork.
+
+    A CONFIRMATION SEALED BEFORE THIS FIELD EXISTED therefore reads as "the fork was
+    never faced", and a case that HAD faced it shows as not-released until it is
+    re-confirmed. Deliberate, and the same answer bff/evidence.py gives about its
+    own shape change: under-claiming a release is the safe direction, the artifact
+    gate is unaffected (the bundle's bytes did not move), and a re-confirm over what
+    is there now is the honest path every other drift already takes."""
 
     at: str
     run_id: str
     evidence_sha256: str
     dispositions: Dict[str, str] = Field(default_factory=dict)
     acknowledged_flags: List[int] = Field(default_factory=list)
+    adjustments: Optional[str] = None
 
 
 class PaymentRecord(BaseModel):
@@ -378,6 +395,39 @@ def released_teeth_of(dispositions: Dict[str, str]) -> List[int]:
     the record), the artifact gate and the display half: the same map must never
     imply two different sets in two places."""
     return sorted(int(t) for t, act in dispositions.items() if act == "release")
+
+
+def adjustments_of(session: "CaseSession") -> Optional[str]:
+    """The fork's decision WORD as it stands now — "skip", "adjust", or None when
+    the fork was never faced. The VALUE alone, never the record: the ``at``/``run_id``
+    are attribution, and re-deciding the same way describes the same case (the
+    SeatedSelection precedent — an identical re-act must flip no equality and cost
+    nobody a re-confirmation).
+
+    Lives HERE beside the file-split rules for the same reason they moved: the
+    assurance projection, the evidence bundle and the display half all need this one
+    answer, and three readings of "what did the operator decide?" would be three
+    answers waiting to disagree."""
+    return (session.adjust_decision.decision
+            if session.adjust_decision is not None else None)
+
+
+def confirmation_covers_fork(session: "CaseSession") -> bool:
+    """Whether the standing confirmation still covers the fork as it stands NOW.
+
+    The CHEAP half of "the evidence has not moved". The decision word rides inside
+    the evidence hash, so a fork clicked after a release retires that release — the
+    artifact endpoints have always caught it by re-deriving the whole bundle, QC
+    bytes and all. But re-deriving costs a disk read per request, so the display
+    half never did it, and the surface kept reading "Released ✓" beside the gate's
+    own refusal. The decision is a pure SESSION fact, so this much of the
+    re-derivation is free, and the two halves now agree about the fork.
+
+    Everything else in the bundle — the projection's numbers, the QC bytes — stays
+    where it was: judged at the gate, on the read that actually discloses."""
+    confirmation = session.confirmation
+    return (confirmation is not None
+            and confirmation.adjustments == adjustments_of(session))
 
 
 def release_matches_confirmation(session: "CaseSession") -> bool:

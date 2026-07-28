@@ -37,8 +37,9 @@ from ..config import Settings
 from ..evidence import canonical_bundle, qc_image_hashes, write_bundle
 from ..session import (CaseSession, ConfirmationRecord, PaymentRecord,
                        ReleaseRecord, RunSession, SessionConflict, SessionStore,
-                       release_matches_confirmation, released_teeth_of,
-                       split_released_files, summary_teeth_of, tooth_of_file)
+                       adjustments_of, release_matches_confirmation,
+                       released_teeth_of, split_released_files, summary_teeth_of,
+                       tooth_of_file)
 from .case_sessions import (CaseSessionDetail, _case_or_404, _context, _detail,
                             _mutate_session)
 
@@ -106,7 +107,21 @@ class AssuranceView(BaseModel):
     # the case-level relief outcome verbatim (requested/applied/clamped) — part of
     # what the evidence bundle must cover, so it is part of what the operator sees
     relief: Optional[dict] = None
+    # THE FORK'S WORD ("skip" | "adjust" | None), on the document the operator reads
+    # before confirming. The standing directive evidence.py cites — when Adjust is
+    # not surfaced the assurance must still show what was done — is not satisfied by
+    # sealing the word: a hash shows nobody anything. It rides here so Deliver's
+    # report can state it, and it is dropped from the projection the bundle seals
+    # (the bundle states the ACT as its own top-level key, beside the run's FACTS)
+    # so the canonical bytes carry one statement, not two.
+    adjustments: Optional[str] = None
     sites: List[AssuranceSite]
+
+    def sealed_facts(self) -> dict:
+        """The run's facts as the bundle seals them: this document minus the act.
+        One method, so the confirm route and the release re-derivation cannot drop
+        different fields."""
+        return self.model_dump(mode="json", exclude={"adjustments"})
 
 
 # --- the projection ---------------------------------------------------------------------
@@ -217,6 +232,7 @@ def derive_assurance(case: CaseRecord, session: CaseSession) -> AssuranceView:
         case_id=case.id,
         run_id=run.run_id or run.job_id,
         relief=summary.get("gingival_relief"),
+        adjustments=adjustments_of(session),
         sites=_sort_worst_first(sites),
     )
 
@@ -373,16 +389,6 @@ def _mutate_signing(store: SessionStore, case_id: str, mutate, act: str,
                                  f"over what is actually there now")
 
 
-def _adjustments_of(session: CaseSession) -> Optional[str]:
-    """The fork's decision WORD for the bundle (client 2026-07-27), or None where the
-    fork was never faced. The value alone — the record's ``at``/``run_id`` are
-    attribution, and re-deciding the same way describes the same case (the
-    SeatedSelection precedent: values only, so an identical re-act flips no
-    equality and costs nobody a re-confirmation)."""
-    return (session.adjust_decision.decision
-            if session.adjust_decision is not None else None)
-
-
 def _derive_evidence_sha(case: CaseRecord, session: CaseSession,
                          settings: Settings, run: RunSession) -> str:
     """The re-derivation both release and the artifact gate stand on (plan §4:
@@ -397,8 +403,10 @@ def _derive_evidence_sha(case: CaseRecord, session: CaseSession,
                                  _qc_image_names(run))
     except FileNotFoundError:
         return "evidence-incomplete"   # never equals a sha256 hex digest
-    return canonical_bundle(assurance.model_dump(mode="json"), hashes,
-                            _adjustments_of(session)).sha256
+    # ONE read of the fork: the projection served it, and the bundle's own key
+    # restates that same value — the two can never describe different decisions
+    return canonical_bundle(assurance.sealed_facts(), hashes,
+                            assurance.adjustments).sha256
 
 
 # the two file-attribution rules live in bff/session.py now: the Deliver surface
@@ -417,10 +425,13 @@ def confirm_case(case_id: str, body: ConfirmIn,
                  request: Request) -> CaseSessionDetail:
     """Seal the confirmation over the evidence as it stands NOW.
 
-    Refuses unless: a done current run; EVERY site carries a disposition (each
-    missing one named); every FLAGGED site dispositioned ``release`` appears in
-    ``acknowledged_flags`` (AM-12 — row by row, never in bulk; an acknowledgment of
-    an unflagged site is refused too, a claim about nothing). On success, INSIDE
+    Refuses unless: a done current run; every FLAGGED site headed for release
+    appears in ``acknowledged_flags`` (AM-12 — row by row, never in bulk; an
+    acknowledgment of an unflagged site is refused too, a claim about nothing).
+    A MISSING DISPOSITION IS NO LONGER A REFUSAL (client 2026-07-27 #4: "What is
+    disposition release vs withhold") — every unnamed site defaults to release,
+    resolved once below, so the flag acknowledgment is the only thing this route
+    can be short of. On success, INSIDE
     the CAS mutation: re-derive the assurance, hash the QC images' bytes, build and
     WRITE the evidence bundle — a failed write REFUSES the whole confirmation
     (AM-10's transactional half; the content-addressed write is idempotent, so the
@@ -476,8 +487,8 @@ def confirm_case(case_id: str, body: ConfirmIn,
             raise HTTPException(409, f"the confirmation is refused — the run's "
                                      f"package claims a QC image that is not on "
                                      f"disk to seal: {exc}")
-        bundle = canonical_bundle(assurance.model_dump(mode="json"), hashes,
-                                  _adjustments_of(session))
+        bundle = canonical_bundle(assurance.sealed_facts(), hashes,
+                                  assurance.adjustments)
         try:
             write_bundle(run_dir, bundle)
         except OSError as exc:
@@ -492,6 +503,10 @@ def confirm_case(case_id: str, body: ConfirmIn,
             evidence_sha256=bundle.sha256,
             dispositions=dispositions,
             acknowledged_flags=list(body.acknowledged_flags),
+            # the sealed word restated in the open, from the SAME read the bundle
+            # used — so the display half can notice a fork re-clicked after
+            # release without re-hashing the run's QC bytes to find out
+            adjustments=assurance.adjustments,
         )
 
     session = _mutate_signing(store, case_id, apply, "confirmation",

@@ -340,6 +340,7 @@ export function assuranceView(overrides: Partial<AssuranceView> = {}): Assurance
       gingival_offset_applied_mm: 0.2,
       clamped: false,
     },
+    adjustments: null,
     sites: [flaggedAssuranceSite(), assuranceSite()],
     ...overrides,
   };

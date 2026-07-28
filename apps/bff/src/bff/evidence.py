@@ -21,10 +21,13 @@ CANONICAL ENCODING, stated in full (a dispute re-implements this from the text):
   - Non-finite numbers REFUSE (``allow_nan=False``): NaN has no canonical JSON, and
     a bundle that cannot be re-encoded byte-for-byte is no evidence at all.
 
-The bundle's payload shape is ``{"assurance": <projection>, "qc_sha256":
-{filename: hex}, "adjustments": <"skip" | "adjust" | null>}`` — the projection is
-the SAME dict the assurance endpoint serves (one derivation, two readers), so what
-the operator saw and what the seal covers can never be two different documents.
+The bundle's payload shape is ``{"assurance": <the run's FACTS>, "qc_sha256":
+{filename: hex}, "adjustments": <"skip" | "adjust" | null>}``. The projection is the
+assurance endpoint's own dict (one derivation, two readers), so what the operator saw
+and what the seal covers can never be two different documents — minus its
+``adjustments`` field, which the ACT key beside it already states. ``AssuranceView``
+drops exactly that one field through ``sealed_facts()``, so the split is facts inside
+``assurance``, the operator's act next to it, and one statement of each in the bytes.
 
 ``adjustments`` JOINED THE SHAPE (client 2026-07-27's Delivery-vs-Skip fork): the
 standing directive is that when Adjust is not surfaced the assurance must still show
@@ -34,6 +37,11 @@ same re-derivation that catches a moved number. The VALUE alone rides, not the
 record: the fork's ``at``/``run_id`` are attribution, and re-deciding the same way
 describes the same case (the SeatedSelection precedent — values only, so an
 identical re-act flips no equality).
+
+THE ASSURANCE LATER STARTED SERVING THE WORD TOO (review 2026-07-28: sealing a fact
+is not showing it, and Deliver rendered it nowhere). That changed no bytes here —
+the field is dropped from the projection on the way in — so nothing on disk went
+stale a second time.
 
 THAT MAKES BUNDLES WRITTEN BEFORE THIS CHANGE STALE — their canonical bytes lack the
 key and hash differently. Harmless by construction: a bundle is per-RUN and always

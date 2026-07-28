@@ -57,7 +57,7 @@ from ..ports.worker import JobState, WorkerPort
 from ..session import (AdjustDecisionRecord, CaseChoices, CaseSession,
                        DetectedProposal, DetectionRecord, RunSession,
                        SeatedSelection, SessionConflict, SessionStore, SiteSession,
-                       SiteStatus, clear_current_run,
+                       SiteStatus, clear_current_run, confirmation_covers_fork,
                        release_matches_confirmation, released_teeth_of,
                        split_released_files, summary_teeth_of)
 
@@ -458,17 +458,29 @@ def _run_state(session: CaseSession) -> str:
 
 
 def _released(session: CaseSession) -> bool:
-    """Released is a CURRENT-run, CURRENT-confirmation fact: the record must name
-    the run that is still current and done AND still cover the current confirmation
-    (``release_matches_confirmation`` — a re-confirm that changes a disposition
-    retires the release, because dispositions are acts outside the evidence hash).
-    The artifact endpoints additionally re-verify the evidence bytes — this is the
-    cheap display half, and the rail's deliver tick reads it."""
+    """Released is a CURRENT-run, CURRENT-confirmation, CURRENT-fork fact: the
+    record must name the run that is still current and done, still cover the
+    current confirmation (``release_matches_confirmation`` — a re-confirm that
+    changes a disposition retires the release, because dispositions are acts
+    outside the evidence hash), and stand on the fork the confirmation sealed
+    (``confirmation_covers_fork``).
+
+    THE FORK JOINED THIS TEST because Declare stays reachable after a release and
+    its two buttons are one click away: clicking "Adjust the fits" over a shipped
+    case changed the evidence, the artifact endpoints refused on the re-derived
+    hash — and this display half went on reporting "Released ✓" beside the refusal,
+    since the release and confirmation records still agreed with each other. Two
+    ways to retire a release, only one of them visible, is the divergence.
+
+    The artifact endpoints still re-verify the evidence BYTES; this stays the cheap
+    half — every clause here is a session fact, no disk read — and the rail's
+    deliver tick reads it."""
     return (session.release is not None
             and session.run is not None
             and session.run.state == "done"
             and session.release.run_id == (session.run.run_id or session.run.job_id)
-            and release_matches_confirmation(session))
+            and release_matches_confirmation(session)
+            and confirmation_covers_fork(session))
 
 
 def _release_preview(session: CaseSession) -> Optional[ReleasePreviewView]:
@@ -504,8 +516,13 @@ def _session_view(session: CaseSession) -> SessionView:
         run_refusal=(session.run.refusal if session.run is not None else None),
         confirmed=session.confirmation is not None,
         payment_authorized=session.payment_authorized,
-        confirmation=(ConfirmationView(**session.confirmation.model_dump())
-                      if session.confirmation is not None else None),
+        # the record's sealed ``adjustments`` is dropped DELIBERATELY, not by a
+        # model's leniency: the ASSURANCE is where the operator reads the fork, and
+        # a second copy on the session would invite comparing a sealed word against
+        # a current one and calling the difference a decision
+        confirmation=(ConfirmationView(**session.confirmation.model_dump(
+            exclude={"adjustments"}))
+            if session.confirmation is not None else None),
         payment=(PaymentView(provider=session.payment.provider,
                              at=session.payment.at)
                  if session.payment is not None else None),
@@ -1358,10 +1375,12 @@ def post_adjust_decision(case_id: str, body: AdjustDecisionIn,
         reads it, so recording "skip" does NOT close Adjust — the operator may walk
         straight back into it, and a later decision REPLACES this one (newest act
         wins, the slice-8 rule).
-      - it is EVIDENCE: the decision word rides into the confirmation's bundle
-        (bff/evidence.py), so what a client confirms includes whether adjustments
-        were skipped — the standing directive that when Adjust is not surfaced the
-        assurance must still show what was done.
+      - it is EVIDENCE, and it is SHOWN: the decision word rides into the
+        confirmation's bundle (bff/evidence.py) AND onto the assurance projection
+        the operator reads before signing (``AssuranceView.adjustments``). Sealing
+        it satisfies only half the standing directive — that when Adjust is not
+        surfaced the assurance must still show what was done — because a hash shows
+        nobody anything.
 
     Refuses 422 unless there is something to decide ABOUT: a done current run, and
     every site carrying a verdict (ready or flagged) — a site still climbing has no
