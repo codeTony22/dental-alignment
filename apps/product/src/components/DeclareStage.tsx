@@ -270,9 +270,10 @@ export function DeclareStageView({
       : null;
   return (
     // Two regions for the workbench grid (display: contents on the root): the WORK
-    // column carries system/queue/variants; the STAGE carries the arch AND the three
-    // panes — the panes dominate it (see styles.css's --split arithmetic: ≥45% of
-    // the stage height at 1600x1000).
+    // column carries system/queue/variants; the STAGE is the three panes' — they
+    // are the SUBJECT here (client 2026-07-27: "those 3 panels need to be bigger"),
+    // ≥55% of the stage height guaranteed by construction (see styles.css's
+    // --split arithmetic), while the arch shrinks to a collapsible context strip.
     <div data-role="declare-stage" className="stage-contents">
       <div className="workbench__work">
         <section className="panel">
@@ -416,12 +417,20 @@ export function DeclareStageView({
         </div>
       </div>
       <div className="workbench__stage workbench__stage--split">
-        <MainStage
-          caseId={detail.case.id}
-          scanFilename={detail.case.scan_filename}
-          sites={detail.sites}
-          activeTooth={active?.tooth ?? null}
-        />
+        {/* The arch is CONTEXT on this stage, not the subject — a strip, and a
+            <details> so the operator can fold it away entirely when the panes
+            deserve every pixel. Open by default: the strip still orients. */}
+        <details data-role="arch-fold" className="stage-arch-fold" open>
+          <summary className="stage-arch-fold__summary">
+            Arch context — the whole scan with its sites
+          </summary>
+          <MainStage
+            caseId={detail.case.id}
+            scanFilename={detail.case.scan_filename}
+            sites={detail.sites}
+            activeTooth={active?.tooth ?? null}
+          />
+        </details>
         {panesSlot}
       </div>
     </div>

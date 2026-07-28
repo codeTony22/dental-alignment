@@ -2119,18 +2119,63 @@ a.workflow-rail__step {
   pointer-events: auto;
 }
 
-/* ---- the Declare stage split: arch on top, the three panes DOMINATE below ----
-   Arithmetic at 1600x1000: header ≈51px + case-header ≈38px + workbench padding 32px
-   leaves the stage ≈879px; the panes' 62% basis of (879 − 10px gap) ≈ 539px ≈ 61% of
-   the stage — comfortably over the ≥45% floor; each pane keeps ≥220px of 3D at 1280x800
-   (stage ≈679px → panes ≈415px − ~36px pane header). */
-.workbench__stage--split .main-stage {
-  flex: 1 1 38%;
-  min-height: 200px;
+/* ---- the Declare stage split: the three panes ARE the stage (client 2026-07-27:
+   "those 3 panels need to be bigger"); the arch shrinks to a collapsible context strip ----
+
+   THE ARITHMETIC (the ≥55% floor, stated for both target sizes; the shell is 100vh
+   overflow:hidden above 1180px wide, so neither size can grow a page scroll):
+
+   at 1600x1000 — header ≈51px (14px×2 padding + ≈23px line) + case-header ≈38px
+     (14px top padding + ≈24px title line) + workbench padding 32px (16px×2)
+     → stage column ≈ 1000 − 121 = 879px
+     → panes row = 879 − 190px arch strip − 10px column gap = 679px ≈ 77% of the
+       stage (floor: ≥55%); inside it, toolbar ≈34px + review strip ≈40px + pane
+       header ≈40px + panel padding/gap ≈22px leave each pane stage ≈543px.
+
+   at 1280x800 — the same 121px of chrome
+     → stage column ≈ 800 − 121 = 679px
+     → panes row = 679 − 190 − 10 = 479px ≈ 71% of the stage (≥55% holds); each
+       pane stage ≈343px — still clear of .verify-panel__stage's 220px min-height
+       floor, which stays the last line of defence on shorter windows. */
+.workbench__stage--split .stage-arch-fold {
+  flex: 0 0 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 4px 8px 8px;
+  background: #ffffff;
+}
+
+/* Open, the strip is a FIXED 190px (≈22px summary + ≈156px canvas): the panes'
+   share is guaranteed by construction, not by a percentage race. Folded, only the
+   summary line remains and the panes take everything. */
+.workbench__stage--split .stage-arch-fold[open] {
+  flex: 0 0 190px;
+}
+
+.stage-arch-fold__summary {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+/* The copied stage rules assume the arch is the SUBJECT (240px canvas floors);
+   inside the strip it is context, so the floors yield to the fixed strip height. */
+.workbench__stage--split .stage-arch-fold .main-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.workbench__stage--split .main-stage__canvas,
+.workbench__stage--split .main-stage__canvas .viewer3d {
+  min-height: 120px;
 }
 
 .workbench__stage--split .verify-panels {
-  flex: 1 1 62%;
+  flex: 1 1 auto;
   min-height: 0;
 }
 
@@ -2437,6 +2482,12 @@ button.package-files__link:hover {
 
   .verify-panel__stage {
     height: 380px;
+    flex: 0 0 auto;
+  }
+
+  /* Stacked, the page scrolls by design — the arch fold gives up its fixed strip
+     and the 420px canvas rule above sizes it like every other stacked viewer. */
+  .workbench__stage--split .stage-arch-fold[open] {
     flex: 0 0 auto;
   }
 }
