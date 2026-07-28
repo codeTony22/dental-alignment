@@ -77,26 +77,32 @@ interface CaseShellViewProps {
 
 const IGNORE_DETAIL = () => undefined;
 
-/** The presentational shell — pure payload → markup, testable without a fetch. */
+/** The presentational shell — pure payload → markup, testable without a fetch.
+ *
+ * Parity slice: the shell IS the demo's workbench — rail | work column | 3D-dominant
+ * stage (the copied .workbench grid: 208px rail, minmax(320px,400px) work, 1fr stage).
+ * Each built stage emits exactly two regions (.workbench__work + .workbench__stage);
+ * the stage-body wrapper is `display: contents` so those regions sit as the grid's own
+ * children without changing the tested DOM roles. */
 export function CaseShellView({ detail, stage, onDetail }: CaseShellViewProps) {
   const states = stageStates(factsFromCaseSession(detail));
   return (
-    <section data-role="case-shell">
-      <header
-        style={{ display: "flex", alignItems: "baseline", gap: "1rem", flexWrap: "wrap" }}
-      >
-        <h2 style={{ margin: 0 }}>
+    <section data-role="case-shell" className="case-shell">
+      <header className="case-header">
+        <h2 className="case-header__title">
           Case {detail.case.id} — {detail.case.doctor}
         </h2>
-        <span data-role="case-jaw">{detail.case.jaw}</span>
+        <span data-role="case-jaw" className="chip chip--gate">
+          {detail.case.jaw}
+        </span>
         {/* AM-7's loop: the worklist is home, and "next case" returns there. */}
-        <Link to="/" data-role="next-case">
+        <Link to="/" data-role="next-case" className="case-header__link">
           Next case — back to the worklist
         </Link>
       </header>
-      <div style={{ display: "flex", gap: "2rem", marginTop: "1rem" }}>
+      <div className="workbench">
         <StageRail states={states} current={stage} caseId={detail.case.id} />
-        <section data-role="stage-body" style={{ flex: 1 }}>
+        <section data-role="stage-body" className="stage-contents">
           {stage === "intake" ? (
             <IntakeStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
           ) : stage === "declare" ? (
@@ -104,7 +110,11 @@ export function CaseShellView({ detail, stage, onDetail }: CaseShellViewProps) {
           ) : stage === "deliver" ? (
             <DeliverStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
           ) : (
-            <p>{STAGE_BODY[stage]}</p>
+            <div className="workbench__work">
+              <section className="panel">
+                <p className="panel__copy">{STAGE_BODY[stage]}</p>
+              </section>
+            </div>
           )}
         </section>
       </div>
@@ -135,10 +145,20 @@ export function CaseShell() {
     return <Navigate to="/" replace />;
   }
   if (state.kind === "loading") {
-    return <p data-role="case-loading">Loading case {id}…</p>;
+    return (
+      <div className="page">
+        <p data-role="case-loading" className="panel__hint">
+          Loading case {id}…
+        </p>
+      </div>
+    );
   }
   if (state.kind === "error") {
-    return <CaseLoadError id={id} error={state} />;
+    return (
+      <div className="page">
+        <CaseLoadError id={id} error={state} />
+      </div>
+    );
   }
 
   const resolution = resolveStagePath(stage, factsFromCaseSession(state.data));

@@ -16,6 +16,7 @@ row moves to Retired.
 | 6 | Detection + capture assembly (propose orchestration; crowns-frame capture context; centre+radius precedence; per-proposal + curated-site capture blocks) | server.py:733-853 (`_capture_context`, `_capture_block`, `_site_capture_inputs`, `_with_capture`, `_run_sites_capture`, `POST /propose`; 856+ is `_append_run_history`, NOT lifted) | case_prep/application/detection.py | 120 | slice 4 | demo retirement |
 | 7 | Pre-run preview: the deviation payload builder + the one-site preview seat | server.py:1038 (`_DEVIATION_ROUND`), 1068-1156 (`_deviation_payload`), 1176-1257 (`_PREVIEW_DIRNAME` + `preview_site_alignment`) | case_prep/application/preview.py | 170 | slice 5b | demo retirement |
 | 8 | The full run: explicit-selection gate + run orchestration (everything on: product, QC, confidence, package emission) | server.py:893-916 (`_required_selection`), 933-1011 (`POST /run`) | case_prep/application/run.py | 150 | slice 5c | demo retirement |
+| 9 | THE DESIGN SYSTEM (parity slice, client correction 2026-07-27: "we lost the good UI/UX"): the demo stylesheet copied as the product's base, plus the presentational JSX patterns the parity surfaces re-wear (see row 9 record) | apps/web/src/styles.css (3,967 lines) + named components' presentational markup | apps/product/src/styles.css + product components | 1,872 CSS verbatim (+~540 product-own below the PRODUCT ADDITIONS marker) | parity-i/ii/iii (this slice) | demo retirement |
 
 Rules:
 - A new copy lands ONLY with a row here, in the same commit.
@@ -177,6 +178,43 @@ Row 8 record (slice 5c, 2026-07-27) — divergences, per the rules above:
   its queued receipt whenever no verdict can land (submit raised, worker FAILED, or
   the landing lost its CAS twice) — an abandoned queued receipt wedged the case with
   no recovery route (the slice-5c verification's refuted claim).
+
+Row 9 record (parity slice, 2026-07-28) — the earlier "reimplement-small, don't copy demo
+JSX" constraint was LIFTED for visual chrome by the client's correction; this row is where
+that copying is named. All measured by the port script (scratch `port_styles.py`):
+- STYLESHEET: apps/web/src/styles.css (3,967 lines, frozen 8125cbf) → the base of
+  apps/product/src/styles.css. 1,872 lines KEPT VERBATIM (tokens, reset, shell/header,
+  workbench grid, panels, buttons, the whole chip vocabulary that survives — gate/
+  confidence/seat/capture/band/relief-clamped/agreement-auto — busy-state, capture-banner,
+  results-table + rotation-verdict, agreement, package-files, workflow-rail, viewer3d,
+  view-orient (+active/disabled states), library-badge base + suggested/superseded/legacy,
+  viewer-controls-hint, toast, verification-panel, decode section/system/variant/archive/
+  select/jaw/offset(+ceiling+warning), relief-clamp, run-refusal, decode-stepper,
+  verify-panels/panel/HUD/layer/colorbar, decode-ack). 2,095 lines DELETED — the
+  demo-only surfaces the product lacks: library button+browser/tabs/cards, case cards,
+  seed/patch/mark chips + chip__remove, confirm-table, brush-banner, stale-banner +
+  results-block, proposal-list, rotation-dial/nudge, best-fit, guidance-panel,
+  flags-alerts, viewer-controls, viewer-legend, part-annotator/feature/correspondence,
+  part-preview-chip, app-footer, decode-dialog chrome + decode-info + selection-line +
+  review-state + blockers, tooth-chart, pose-transfer, stage-drawer, align-actions,
+  fit-points, selection-summary, stage-split/compare-pane, and the demo's media blocks
+  (re-scoped versions live in the additions). Everything below the file's PRODUCT
+  ADDITIONS marker (~540 lines) is product-own chrome, not a copy.
+- DIVERGENCES inside the copied sheet's use: `.viewer3d` background overridden to the
+  verify panes' light blue (#d8e8f2) — the product's scene clears light (verify-UI
+  directive), the demo's cleared dark; rail steps are LINKS (routes are navigation
+  state), so `a.workflow-rail__step` + `--blocked` span rules were added; the demo's
+  1180/960px media rules were re-written scoped to surviving selectors only.
+- PRESENTATIONAL JSX PATTERNS copied near-verbatim (all against product data/handlers,
+  no flow logic): Header markup → pages/Shell.tsx (wordmark/sublabel/context, no library
+  button); WorkflowRail markup → components/StageRail.tsx (marker/text/label/detail
+  structure + class set); ViewOrientationBar's subject row → components/MainStage.tsx
+  (the dark-pill overlay + --active pattern; supersedes row 3's "reimplemented ~40
+  lines" note for the toggle's LOOK — the vocabulary/behaviour remain the product's);
+  ControlsHint's sentence + chip → MainStage; CaptureChip/CaptureBanner class language
+  → IntakeStage; VerifyPanels' HUD/layer/colorbar markup → components/DeclarePanes.tsx
+  (parity-ii); results-table/VerificationPanel/ReliefClampNotice class language →
+  components/DeliverStage.tsx (parity-iii). Retires with the demo, alongside row 3.
 
 Carried-forward minors (grill of slices 0b/1, 2026-07-26):
 - Tie `bff/session.py` RunSession.state to `ports/worker.py` JobState (one test or derive the

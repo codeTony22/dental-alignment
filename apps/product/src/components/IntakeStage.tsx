@@ -45,24 +45,25 @@ interface CaptureBannerProps {
   readonly detail: CaseSessionDetail;
 }
 
-/** The chair-side moment: rescan-grade verdicts, surfaced before any work. */
+/** The chair-side moment: rescan-grade verdicts, surfaced before any work — in the
+ * demo's red capture-banner language (a refused capture, not merely stale results). */
 function CaptureBanner({ detail }: CaptureBannerProps) {
   const notices = rescanNotices(detail);
   if (notices.length === 0) return null;
   return (
-    <div data-role="capture-banner" role="alert">
-      <strong>
+    <div data-role="capture-banner" role="alert" className="capture-banner">
+      <p className="capture-banner__title">
         Rescan recommended — the capture gate found problems before any work was
         invested.
-      </strong>{" "}
-      <span>
+      </p>
+      <p className="capture-banner__item">
         If the patient is still in the chair, rescanning now costs minutes; marks placed
         on this capture would be wasted.
-      </span>
-      <ul>
+      </p>
+      <ul className="capture-banner__list">
         {notices.map((notice, index) => (
-          <li key={index}>
-            {notice.label}: {notice.message}
+          <li key={index} className="capture-banner__item">
+            <strong>{notice.label}:</strong> {notice.message}
           </li>
         ))}
       </ul>
@@ -74,20 +75,32 @@ interface SiteListProps {
   readonly detail: CaseSessionDetail;
 }
 
-/** The site queue's Intake face: tooth, status, capture chip. */
+/** The chip's demo clothes: pass/marginal/rescan traffic-light tones, muted "none". */
+function captureChipClass(verdict: string | null): string {
+  return verdict === null
+    ? "chip chip--capture-none"
+    : `chip chip--capture-${verdict}`;
+}
+
+/** The site queue's Intake face: tooth, status, capture chip — the demo's stepper
+ * list language, read-only on this stage. */
 function SiteList({ detail }: SiteListProps) {
   const unassigned =
     detail.detection?.proposals.filter((p) => p.tooth_guess === null).length ?? 0;
   return (
-    <section data-role="intake-sites">
-      <h3>Sites</h3>
-      <ul>
+    <section data-role="intake-sites" className="panel">
+      <h3 className="panel__title">Sites</h3>
+      <ul className="decode-stepper__overview">
         {detail.sites.map((site) => (
-          <li key={site.tooth}>
-            Tooth {site.tooth} — {site.status}{" "}
+          <li key={site.tooth} className="decode-stepper__item">
+            <span className="decode-stepper__position">
+              Tooth {site.tooth}{" "}
+              <span className="decode-stepper__tooth">{site.status}</span>
+            </span>
             <span
               data-role="capture-chip"
               data-verdict={site.capture?.verdict ?? "none"}
+              className={captureChipClass(site.capture?.verdict ?? null)}
               title={site.capture?.checks.map((c) => c.message).join(" ") ?? undefined}
             >
               {captureChipLabel(site.capture)}
@@ -96,7 +109,7 @@ function SiteList({ detail }: SiteListProps) {
         ))}
       </ul>
       {unassigned > 0 && (
-        <p data-role="unassigned-proposals">
+        <p data-role="unassigned-proposals" className="panel__hint">
           {unassigned} detected site{unassigned === 1 ? "" : "s"} without a curated
           tooth yet — Declare assigns teeth.
         </p>
@@ -113,7 +126,9 @@ export interface ChoicesPanelProps {
 }
 
 /** The case-level choices — rendered from the PERSISTED choices (pre-fills shown where
- * nothing is chosen yet), PUT whole on every change. */
+ * nothing is chosen yet), PUT whole on every change. Parity slice: the demo's
+ * selection-card language — the decode select, the Upper/Lower pair, the relief input
+ * beside its measured ceilings with the amber over-ceiling tone. */
 export function ChoicesPanel({ detail, saving, error, onChoice }: ChoicesPanelProps) {
   const chosen = detail.choices;
   const construction =
@@ -121,64 +136,86 @@ export function ChoicesPanel({ detail, saving, error, onChoice }: ChoicesPanelPr
   const jaw = chosen.jaw ?? detail.case.jaw;
   const relief = chosen.gingival_offset_mm ?? chosen.gingival_offset_default_mm;
   return (
-    <section data-role="intake-choices">
-      <h3>Case-level choices</h3>
-      <label>
-        Construction part{" "}
-        <select
-          data-role="choice-construction"
-          value={construction}
-          onChange={(event) =>
-            onChoice({ construction_path: event.target.value || null })
-          }
-        >
-          <option value="">choose a construction part…</option>
-          {constructionOptions(detail).map((option) => (
-            <option key={option.path_id} value={option.path_id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div data-role="choice-jaw" role="group" aria-label="Jaw">
-        {JAW_CHOICES.map((candidate) => (
-          <button
-            key={candidate}
-            type="button"
-            aria-pressed={candidate === jaw}
-            onClick={() => onChoice({ jaw: candidate })}
+    <section data-role="intake-choices" className="panel">
+      <h3 className="panel__title">Case-level choices</h3>
+      <div className="decode-column">
+        <div>
+          <h4 className="decode-section__title">Construction part</h4>
+          <select
+            data-role="choice-construction"
+            className={`decode-select${construction === "" ? " decode-select--needs" : ""}`}
+            value={construction}
+            onChange={(event) =>
+              onChoice({ construction_path: event.target.value || null })
+            }
           >
-            {candidate}
-          </button>
-        ))}
+            <option value="">choose a construction part…</option>
+            {constructionOptions(detail).map((option) => (
+              <option key={option.path_id} value={option.path_id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <h4 className="decode-section__title">Jaw</h4>
+          <div data-role="choice-jaw" className="decode-jaw" role="group" aria-label="Jaw">
+            {JAW_CHOICES.map((candidate) => (
+              <button
+                key={candidate}
+                type="button"
+                aria-pressed={candidate === jaw}
+                className={`decode-jaw__option${
+                  candidate === jaw ? " decode-jaw__option--selected" : ""
+                }`}
+                onClick={() => onChoice({ jaw: candidate })}
+              >
+                {candidate}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <h4 className="decode-section__title">Gingival relief</h4>
+          <label className="decode-offset">
+            <input
+              data-role="choice-relief"
+              className="decode-offset__input"
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={relief}
+              onChange={(event) => {
+                const parsed = Number(event.target.value);
+                onChoice({
+                  gingival_offset_mm: Number.isFinite(parsed) ? parsed : null,
+                });
+              }}
+            />
+            <span className="decode-offset__unit">mm</span>
+          </label>
+          <ul data-role="relief-ceilings" className="relief-ceilings">
+            {ceilingReadouts(detail, chosen.gingival_offset_mm).map((readout) => (
+              <li
+                key={readout.variant}
+                data-exceeded={readout.exceeded}
+                className="relief-ceilings__item"
+              >
+                {readout.line}
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
-      <label>
-        Gingival relief (mm){" "}
-        <input
-          data-role="choice-relief"
-          type="number"
-          min={0}
-          max={1}
-          step={0.05}
-          value={relief}
-          onChange={(event) => {
-            const parsed = Number(event.target.value);
-            onChoice({
-              gingival_offset_mm: Number.isFinite(parsed) ? parsed : null,
-            });
-          }}
-        />
-      </label>
-      <ul data-role="relief-ceilings">
-        {ceilingReadouts(detail, chosen.gingival_offset_mm).map((readout) => (
-          <li key={readout.variant} data-exceeded={readout.exceeded}>
-            {readout.line}
-          </li>
-        ))}
-      </ul>
-      {saving && <p data-role="choices-saving">Saving choices…</p>}
+      {saving && (
+        <div data-role="choices-saving" className="busy-state" role="status">
+          <span className="busy-state__spinner" aria-hidden="true" />
+          <span>Saving choices…</span>
+        </div>
+      )}
       {error !== null && (
-        <div data-role="choices-error" role="alert">
+        <div data-role="choices-error" role="alert" className="panel__error">
           {error}
         </div>
       )}
@@ -207,41 +244,67 @@ export function IntakeStageView({
   const facts = factsFromCaseSession(detail);
   const declareOpen = isReachable("declare", facts);
   return (
-    <div data-role="intake-stage">
-      <CaptureBanner detail={detail} />
-      {detectPhase.kind === "detecting" && (
-        <p data-role="detect-busy">Detecting caps…</p>
-      )}
-      {detectPhase.kind === "failed" && (
-        <div data-role="detect-error" role="alert">
-          <strong>Detection refused.</strong> <span>{detectPhase.detail}</span>{" "}
-          <button type="button" onClick={onRetryDetect}>
-            Try again
-          </button>
+    // Two regions for the workbench grid (display: contents on the root): the WORK
+    // column carries the panels, the STAGE keeps the 3D big — the demo's proportions.
+    <div data-role="intake-stage" className="stage-contents">
+      <div className="workbench__work">
+        <CaptureBanner detail={detail} />
+        {detectPhase.kind === "detecting" && (
+          <div data-role="detect-busy" className="busy-state" role="status">
+            <span className="busy-state__spinner" aria-hidden="true" />
+            <span>Detecting caps…</span>
+          </div>
+        )}
+        {detectPhase.kind === "failed" && (
+          <div data-role="detect-error" role="alert" className="run-refusal">
+            <strong className="run-refusal__title">Detection refused.</strong>
+            <p className="run-refusal__detail">{detectPhase.detail}</p>
+            <p className="run-refusal__next">
+              <button
+                type="button"
+                className="button button--ghost button--small"
+                onClick={onRetryDetect}
+              >
+                Try again
+              </button>
+            </p>
+          </div>
+        )}
+        <SiteList detail={detail} />
+        <ChoicesPanel
+          detail={detail}
+          saving={savingChoices}
+          error={choicesError}
+          onChoice={onChoice}
+        />
+        <div className="panel__actions panel__actions--advance">
+          {declareOpen ? (
+            <Link
+              data-role="continue-declare"
+              className="button button--primary"
+              to={`/case/${detail.case.id}/declare`}
+            >
+              Continue to Declare
+            </Link>
+          ) : (
+            <span
+              data-role="continue-declare"
+              aria-disabled="true"
+              className="button button--secondary button--blocked"
+            >
+              Continue to Declare — {blockedReason("declare", facts)}
+            </span>
+          )}
         </div>
-      )}
-      <MainStage
-        caseId={detail.case.id}
-        scanFilename={detail.case.scan_filename}
-        sites={detail.sites}
-        markers={detectionMarkers(detail)}
-      />
-      <SiteList detail={detail} />
-      <ChoicesPanel
-        detail={detail}
-        saving={savingChoices}
-        error={choicesError}
-        onChoice={onChoice}
-      />
-      {declareOpen ? (
-        <Link data-role="continue-declare" to={`/case/${detail.case.id}/declare`}>
-          Continue to Declare
-        </Link>
-      ) : (
-        <span data-role="continue-declare" aria-disabled="true">
-          Continue to Declare — {blockedReason("declare", facts)}
-        </span>
-      )}
+      </div>
+      <div className="workbench__stage">
+        <MainStage
+          caseId={detail.case.id}
+          scanFilename={detail.case.scan_filename}
+          sites={detail.sites}
+          markers={detectionMarkers(detail)}
+        />
+      </div>
     </div>
   );
 }

@@ -79,23 +79,35 @@ function SubjectToggle({ subject, siteAvailable, onSelect }: SubjectToggleProps)
     },
   ];
   return (
-    <div data-role="stage-subject" role="group" aria-label="What the view is framed on">
-      {choices.map((choice) => (
-        <button
-          key={choice.id}
-          type="button"
-          aria-pressed={choice.id === subject}
-          disabled={choice.id === "site" && !siteAvailable}
-          title={
-            choice.id === "site" && !siteAvailable
-              ? "No site with a usable centre yet — there is nothing to frame."
-              : choice.title
-          }
-          onClick={() => onSelect(choice.id)}
-        >
-          {choice.label}
-        </button>
-      ))}
+    // Parity slice: the demo's dark pill overlay (.view-orient), floated ON the glass
+    // top-left, instead of a bare row under the canvas.
+    <div className="view-orient">
+      <div
+        data-role="stage-subject"
+        className="view-orient__row"
+        role="group"
+        aria-label="What the view is framed on"
+      >
+        {choices.map((choice) => (
+          <button
+            key={choice.id}
+            type="button"
+            aria-pressed={choice.id === subject}
+            className={`view-orient__button${
+              choice.id === subject ? " view-orient__button--active" : ""
+            }`}
+            disabled={choice.id === "site" && !siteAvailable}
+            title={
+              choice.id === "site" && !siteAvailable
+                ? "No site with a usable centre yet — there is nothing to frame."
+                : choice.title
+            }
+            onClick={() => onSelect(choice.id)}
+          >
+            {choice.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -122,22 +134,41 @@ export function MainStageView({
   viewerSlot,
 }: MainStageViewProps) {
   return (
-    <div data-role="main-stage">
-      <div data-role="main-stage-canvas" style={{ minHeight: "24rem", position: "relative" }}>
+    // The stage IS the glass (verify-UI directive): every word of chrome floats on the
+    // canvas — the subject pill top-left, the drag hint bottom-right, and the honest
+    // status/error strips along the bottom — so the 3D keeps every pixel of its box.
+    <div data-role="main-stage" className="main-stage viewer3d-wrap">
+      <div data-role="main-stage-canvas" className="main-stage__canvas">
         {viewerSlot}
-      </div>
-      <SubjectToggle subject={subject} siteAvailable={siteAvailable} onSelect={onSelectSubject} />
-      {scanState.kind === "loading" && (
-        <p data-role="stage-status">Loading {scanFilename}…</p>
-      )}
-      {scanState.kind === "error" && (
-        <div data-role="stage-error" role="alert">
-          <strong>{scanErrorHeadline(scanState.detail)}</strong> <span>{scanState.detail}</span>
+        <SubjectToggle
+          subject={subject}
+          siteAvailable={siteAvailable}
+          onSelect={onSelectSubject}
+        />
+        <div className="viewer-controls-hint" aria-hidden="true">
+          drag rotate · shift+drag / right-drag pan · scroll zoom
         </div>
-      )}
-      {scanState.kind === "ready" && subject === "site" && activeTooth !== null && (
-        <p data-role="stage-status">Framed on tooth {activeTooth} — front view.</p>
-      )}
+        {scanState.kind === "loading" && (
+          <p data-role="stage-status" className="main-stage__notice">
+            Loading {scanFilename}…
+          </p>
+        )}
+        {scanState.kind === "error" && (
+          <div
+            data-role="stage-error"
+            role="alert"
+            className="main-stage__notice main-stage__notice--error"
+          >
+            <strong>{scanErrorHeadline(scanState.detail)}</strong>{" "}
+            <span>{scanState.detail}</span>
+          </div>
+        )}
+        {scanState.kind === "ready" && subject === "site" && activeTooth !== null && (
+          <p data-role="stage-status" className="main-stage__notice">
+            Framed on tooth {activeTooth} — front view.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

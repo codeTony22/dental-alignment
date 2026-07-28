@@ -15,20 +15,15 @@ interface ErrorBannerProps {
 }
 
 export function ErrorBanner({ detail, headline, children }: ErrorBannerProps) {
+  // The demo's refusal language (.run-refusal): red, persistent, laid out as what
+  // happened / the words verbatim / what to do next.
   return (
-    <div
-      role="alert"
-      data-role="bff-error"
-      style={{
-        border: "1px solid #b3261e",
-        borderRadius: "6px",
-        padding: "0.75rem 1rem",
-        maxWidth: "40rem",
-      }}
-    >
-      <strong>{headline ?? "The case service is unreachable."}</strong>
-      <p style={{ margin: "0.5rem 0 0" }}>{detail}</p>
-      <p style={{ margin: "0.5rem 0 0" }}>
+    <div role="alert" data-role="bff-error" className="run-refusal">
+      <strong className="run-refusal__title">
+        {headline ?? "The case service is unreachable."}
+      </strong>
+      <p className="run-refusal__detail">{detail}</p>
+      <p className="run-refusal__next">
         {children ?? (
           <>Nothing was loaded. Start the BFF on :8001 (or check the dev proxy) and reload.</>
         )}

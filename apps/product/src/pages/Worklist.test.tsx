@@ -31,7 +31,13 @@ describe("a worklist row", () => {
     const html = screenHtml({ kind: "ok", data: [row] });
     expect(html).toContain("Dr. Rivera");
     expect(html).toContain("lower");
-    expect(html).toContain("3 declared / 2 ready / 1 flagged");
+    // Parity slice: the one-string "3 declared / 2 ready / 1 flagged" became three
+    // CHIPS in the demo's band tones (the 20-scan morning scans colours, not a
+    // sentence) — same numbers, same rollup, asserted per chip.
+    expect(html).toContain("3 declared");
+    expect(html).toContain("2 ready");
+    expect(html).toContain("1 flagged");
+    expect(html).toMatch(/chip--band-review[^>]*>1 flagged/); // flagged wears amber
     expect(html).toContain("done");
     expect(html).toContain("unconfirmed");
   });
