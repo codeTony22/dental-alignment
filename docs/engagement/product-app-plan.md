@@ -216,3 +216,33 @@ AM-12 exception-first assurance. **Rejected by the synthesis** (recorded so they
 re-proposed): repointing `server.OUT`/`CASES` at BFF startup (executes frozen module state);
 deferred emission with a design-rules dry-run (contradicts how Adjust and the QC evidence
 actually work — more new worker surface than `emit_from_poses`).
+
+---
+
+## 10. Queued after slice 6 (client direction, 2026-07-28)
+
+**A. The agreement moves to payment (client: "This can be at the time of payment … as a Terms
+and Conditions or more explicit saying someone reviewed the alignment changes and they agree to
+proceed").** The formal language was scattered across per-site ticks mid-workflow; legal weight
+belongs at the commercial moment, once.
+
+- Declare's per-site control becomes lightweight: "Reviewed" — a workflow state meaning the
+  operator looked at that site's panes. It still gates the run (the run-authorization doctrine
+  is unchanged); it simply stops wearing agreement clothes.
+- The PAYMENT step gains the agreement: the terms, an explicit acceptance, recorded with its
+  timestamp and the evidence hash it was given over. Payment (and therefore release) is gated
+  on it. The acceptance rides into the evidence bundle like the fork decision does, so
+  re-derivation at release catches a case that changed after it was agreed.
+- THE TERMS TEXT IS THE CLIENT'S. Placeholder until they supply it, marked as such in the UI
+  and in the record: "I have reviewed the alignment for all N sites in this case, including the
+  assurance report and its QC images. I accept the alignment as shown and authorize release of
+  the deliverables." One string to swap.
+- Open, still theirs (plan §8): whether release requires a second actor. Unchanged by this.
+
+**B. Manual cap marking at Intake (client, 2026-07-28).** The product has no marking flow: a cap
+the detector misses cannot be added, and detection MISSES 2 of 10 sites on this fleet
+(cap7020-zimmer-4.5, zimmer-4.5 t7) — those cases are unworkable in the product today. Also the
+marker on screen is the demo's PROPOSAL vocabulary (orange, guess-radius), not the operator
+CENTRE MARK the client remembers (red, 0.6mm, with blue for the rim). Brings across: confirm or
+dismiss a proposal, add a site by clicking its centre, the centre+rim pair (carrying the
+re-click pair-integrity rule — moving the centre clears a standing rim mark), per-site removal.
