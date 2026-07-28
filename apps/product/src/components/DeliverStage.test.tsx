@@ -174,11 +174,13 @@ describe("dispositions default to release; only a flag can be withheld (#4)", ()
 });
 
 describe("one blocker list, both places the confirm is offered (#5)", () => {
-  it("the same list renders on the stage and in the modal footer", () => {
+  it("the same list renders in the two places the confirm is offered — and only there", () => {
     const html = view({ reportOpen: true });
     const lists = html.match(/data-role="confirm-blockers"/g) ?? [];
-    expect(lists.length).toBe(3); // the step, the stage and the modal footer
-    // and every one of them says the SAME thing — one derivation
+    const buttons = html.match(/data-role="confirm"/g) ?? [];
+    expect(lists.length).toBe(2); // the progression's Confirmed step, the modal footer
+    expect(buttons.length).toBe(2); // one beside each list, never a third
+    // and both say the SAME thing — one derivation, stated twice
     const occurrences =
       html.match(/tooth 30 is flagged — releasing it needs its own acknowledgment/g) ?? [];
     expect(occurrences.length).toBe(lists.length);
@@ -191,11 +193,17 @@ describe("one blocker list, both places the confirm is offered (#5)", () => {
     expect(armed).not.toContain('data-role="confirm-blockers"');
   });
 
-  it("the modal footer carries the confirm too — read and act in one place", () => {
+  it("the modal footer carries the confirm — read and act in one place", () => {
     const html = view({ reportOpen: true, acknowledged: [30] });
     expect(html).toContain("decode-ack__actions");
     const footer = html.slice(html.indexOf("<footer"));
     expect(footer).toContain('data-role="confirm"');
+  });
+
+  it("the evidence panel offers the REPORT, not a third confirm button", () => {
+    const stage = view({ acknowledged: [30] });
+    expect(stage).toContain('data-role="open-report"');
+    expect((stage.match(/data-role="confirm"/g) ?? []).length).toBe(1);
   });
 });
 

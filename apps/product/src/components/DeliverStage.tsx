@@ -636,11 +636,12 @@ export function DeliverStageView({
                 >
                   Open the full report
                 </button>
-                {/* reachable from the stage too, once nothing is outstanding —
-                    the same act, the same one blocker list beneath it */}
-                {!session.confirmed && confirmButton("stage-confirm")}
               </div>
-              <ConfirmBlockers blockers={blockers} />
+              {/* the confirm itself lives in TWO places and only two: the modal's
+                  footer bar (read and act in one place) and the progression's
+                  Confirmed step in the work column (reachable without reopening the
+                  report). Both read the same `blockers` array, and the list renders
+                  beside each — one truth about confirmability, stated twice. */}
             </>
           )}
         </section>
