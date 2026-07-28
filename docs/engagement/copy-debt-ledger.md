@@ -16,7 +16,7 @@ row moves to Retired.
 | 6 | Detection + capture assembly (propose orchestration; crowns-frame capture context; centre+radius precedence; per-proposal + curated-site capture blocks) | server.py:733-853 (`_capture_context`, `_capture_block`, `_site_capture_inputs`, `_with_capture`, `_run_sites_capture`, `POST /propose`; 856+ is `_append_run_history`, NOT lifted) | case_prep/application/detection.py | 120 | slice 4 | demo retirement |
 | 7 | Pre-run preview: the deviation payload builder + the one-site preview seat | server.py:1038 (`_DEVIATION_ROUND`), 1068-1156 (`_deviation_payload`), 1176-1257 (`_PREVIEW_DIRNAME` + `preview_site_alignment`) | case_prep/application/preview.py | 170 | slice 5b | demo retirement |
 | 8 | The full run: explicit-selection gate + run orchestration (everything on: product, QC, confidence, package emission) | server.py:893-916 (`_required_selection`), 933-1011 (`POST /run`) | case_prep/application/run.py | 150 | slice 5c | demo retirement |
-| 9 | THE DESIGN SYSTEM (parity slice, client correction 2026-07-27: "we lost the good UI/UX"): the demo stylesheet copied as the product's base, plus the presentational JSX patterns the parity surfaces re-wear (see row 9 record) | apps/web/src/styles.css (3,967 lines) + named components' presentational markup | apps/product/src/styles.css + product components | 1,872 CSS verbatim (+~540 product-own below the PRODUCT ADDITIONS marker) | parity-i/ii/iii (this slice) | demo retirement |
+| 9 | THE DESIGN SYSTEM (parity slice, client correction 2026-07-27: "we lost the good UI/UX"): the demo stylesheet copied as the product's base, plus the presentational JSX patterns the parity surfaces re-wear (see row 9 record) | apps/web/src/styles.css (3,967 lines) + named components' presentational markup | apps/product/src/styles.css + product components | 1,873 CSS verbatim (+561 product-own below the PRODUCT ADDITIONS marker; file total 2,448) | parity-i/ii/iii + parity fix (this slice) | demo retirement |
 
 Rules:
 - A new copy lands ONLY with a row here, in the same commit.
@@ -183,7 +183,7 @@ Row 9 record (parity slice, 2026-07-28) — the earlier "reimplement-small, don'
 JSX" constraint was LIFTED for visual chrome by the client's correction; this row is where
 that copying is named. All measured by the port script (scratch `port_styles.py`):
 - STYLESHEET: apps/web/src/styles.css (3,967 lines, frozen 8125cbf) → the base of
-  apps/product/src/styles.css. 1,872 lines KEPT VERBATIM (tokens, reset, shell/header,
+  apps/product/src/styles.css. 1,873 lines KEPT VERBATIM (tokens, reset, shell/header,
   workbench grid, panels, buttons, the whole chip vocabulary that survives — gate/
   confidence/seat/capture/band/relief-clamped/agreement-auto — busy-state, capture-banner,
   results-table + rotation-verdict, agreement, package-files, workflow-rail, viewer3d,
@@ -199,7 +199,7 @@ that copying is named. All measured by the port script (scratch `port_styles.py`
   review-state + blockers, tooth-chart, pose-transfer, stage-drawer, align-actions,
   fit-points, selection-summary, stage-split/compare-pane, and the demo's media blocks
   (re-scoped versions live in the additions). Everything below the file's PRODUCT
-  ADDITIONS marker (~540 lines) is product-own chrome, not a copy.
+  ADDITIONS marker (561 lines; file total 2,448) is product-own chrome, not a copy.
 - DIVERGENCES inside the copied sheet's use: `.viewer3d` background overridden to the
   verify panes' light blue (#d8e8f2) — the product's scene clears light (verify-UI
   directive), the demo's cleared dark; rail steps are LINKS (routes are navigation
@@ -214,7 +214,39 @@ that copying is named. All measured by the port script (scratch `port_styles.py`
   ControlsHint's sentence + chip → MainStage; CaptureChip/CaptureBanner class language
   → IntakeStage; VerifyPanels' HUD/layer/colorbar markup → components/DeclarePanes.tsx
   (parity-ii); results-table/VerificationPanel/ReliefClampNotice class language →
-  components/DeliverStage.tsx (parity-iii). Retires with the demo, alongside row 3.
+  components/DeliverStage.tsx (parity-iii); SelectionColumn's decode-system/decode-variant/
+  decode-jaw/decode-select markup → DeclareStage + IntakeStage; SiteStepper's decode-stepper
+  item language → DeclareStage's queue and IntakeStage's site list; RunRefusalNotice's
+  title/detail/next structure → DeclareStage, IntakeStage and ErrorBanner; BusyState's
+  spinner markup → every busy surface; PackageFileList's title/list/item/link structure →
+  DeliverStage's artifacts block (links become buttons — the operator-header gate means an
+  artifact is never a bare href). Parity fix (review findings 1/3): ViewOrientationBar's
+  DIRECTION row (Front/Left/Right/Top, titles verbatim) → MainStage's pill; VerifyPanels'
+  toolbar (link-orbits toggle + "show all three"), per-pane maximize (heading + --maximized
+  grid, others UNMOUNT), the two-scale ScaleSelector (SCALE_CHOICES verbatim; the union mesh
+  follows the bar through the copied buildScaleColors) and the legend-and-stats fold (with
+  the unmeasured swatch) → DeclarePanes; CaptureChip's exact labels ("capture ✓" /
+  "capture marginal" / "RESCAN" — the shout is design) → domain/intake.captureChipLabel.
+  Retires with the demo, alongside row 3.
+- KEPT DELIBERATELY UNWORN (so an unrecorded copy never reads as drift): the copied sheet
+  retains rule groups no product surface wears YET; each is held for the surface named or
+  else retired with the demo. rotation-dial + rotation-verdict cumulative/source +
+  verify-panel__hud--rotate (the adjust/rotate HUD — slice 6); chip--confidence-* (the
+  assurance confidence chip when Deliver surfaces pose confidence); relief-clamp NOTICE
+  block beyond the worn chip (title/why/reason/sites/numbers/--compact — run-clamp notices
+  when runs surface clamps); verification-panel's acceptance-numbers table half (table/
+  table-scroll/value/ref/group/header/context/note/note-input/confirm — the product carries
+  references inline as results-table__candidates; the table returns if a QC numbers grid
+  lands); decode-offset achieved/ceiling/warning family (the achieved-vs-asked readout
+  after runs; Intake wears its own relief-ceilings block); toast family (transient errors);
+  decode-ack sites-block/title/disclaimer/sites/actions/complete (the demo dialog's fuller
+  ack bar; the product's ack is one strip); run-refusal head/next-label/status;
+  decode-stepper control/state/item--reviewed (the demo's glyph ladder — replaced by the
+  product's chip--status chips); decode-section scope/hint; decode-variant__badges +
+  library-badge--superseded/--legacy (the archived fold replaces per-card badges);
+  panel__hint--recompute; busy-state__elapsed; results-table__cap-surface; agreement--ok/
+  --warn (superseded by Deliver's chip agreement language). Measured by scratch
+  dead_css.py: 64 class names as of the parity fix.
 
 Carried-forward minors (grill of slices 0b/1, 2026-07-26):
 - Tie `bff/session.py` RunSession.state to `ports/worker.py` JobState (one test or derive the

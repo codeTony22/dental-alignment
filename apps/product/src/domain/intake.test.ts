@@ -102,8 +102,14 @@ describe("rescanNotices — the chair-side banner's contents", () => {
 });
 
 describe("captureChipLabel", () => {
-  it("shows the verdict, or the honest not-assessed", () => {
-    expect(captureChipLabel(captureAssessment())).toBe("pass");
+  // Parity fix (review finding 4): the demo's exact words — "RESCAN" shouts by design
+  // (the one verdict where continuing wastes marks), pass/marginal stay chip-quiet.
+  it("wears the demo's words per verdict, and the honest not-assessed", () => {
+    expect(captureChipLabel(captureAssessment())).toBe("capture ✓");
+    expect(captureChipLabel(captureAssessment({ verdict: "marginal" }))).toBe(
+      "capture marginal",
+    );
+    expect(captureChipLabel(captureAssessment({ verdict: "rescan" }))).toBe("RESCAN");
     expect(captureChipLabel(null)).toBe("not assessed");
   });
 });

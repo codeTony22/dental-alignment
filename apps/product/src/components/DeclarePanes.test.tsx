@@ -170,6 +170,67 @@ describe("the parity chrome (ledger row 9): HUDs on the glass, the demo's clothe
   });
 });
 
+describe("the pane chrome the demo's same surface carries (parity fix, ledger row 9)", () => {
+  it("the toolbar offers the link-orbits toggle, honest about its state", () => {
+    const off = view({ linked: false, onToggleLinked: () => undefined });
+    expect(off).toContain("verify-panels__toolbar");
+    expect(off).toMatch(/aria-pressed="false"[^>]*>[^<]*link views/);
+    const on = view({ linked: true, onToggleLinked: () => undefined });
+    expect(on).toMatch(/aria-pressed="true"[^>]*>[^<]*views linked/);
+    expect(on).toContain("button--active");
+  });
+
+  it("every pane header carries the maximize control", () => {
+    const html = view({ maximizedId: null, onToggleMaximized: () => undefined });
+    expect(html).toContain("verify-panel__heading");
+    expect((html.match(/verify-panel__maximize/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect(html).toContain('aria-label="Maximise 3 · Union — coloured by deviation"');
+  });
+
+  it("maximised: one pane fills the stage, the others UNMOUNT, the way back is stated", () => {
+    const html = view({
+      maximizedId: "union",
+      onToggleMaximized: () => undefined,
+      linked: false,
+      onToggleLinked: () => undefined,
+    });
+    expect(html).toContain("verify-panels__grid--maximized");
+    expect(html).toContain('data-role="pane-union"');
+    expect(html).not.toContain('data-role="pane-library"');
+    expect(html).not.toContain('data-role="pane-scan"');
+    expect(html).toContain("show all three");
+    // linking needs more than one panel on screen — the toggle goes down, not away
+    expect(html).toMatch(/disabled[^>]*>[^<]*link views/);
+  });
+
+  it("the union pane offers both scales; signed is the default and says so", () => {
+    const html = view({ scaleId: "signed", onSelectScale: () => undefined });
+    expect(html).toContain('role="radiogroup"');
+    expect(html).toMatch(/aria-checked="true"[^>]*>[^<]*Signed ±0\.50 mm/);
+    expect(html).toMatch(/aria-checked="false"[^>]*>[^<]*Contacts 0\.00–0\.60 mm/);
+  });
+
+  it("the Contacts scale swaps bar, ticks and aria to the absolute rainbow", () => {
+    const html = view({ scaleId: "contacts", onSelectScale: () => undefined });
+    expect(html).toContain("absolute distance");
+    expect(html).toContain("0.15"); // the contacts quartile ticks at 0.6 max
+    expect(html).toContain("0.60");
+    expect(html).not.toContain("−0.50"); // the signed ticks left with their scale
+  });
+
+  it("the legend-and-stats fold keeps the convention, the unmeasured swatch and the source", () => {
+    const html = view();
+    expect(html).toContain("verify-colorbar__detail");
+    expect(html).toContain("legend &amp; stats");
+    expect(html).toContain("+ = scan outside the cap surface"); // the payload's OWN convention
+    expect(html).toContain("verify-colorbar__unmeasured");
+    expect(html).toContain("not measured");
+    expect(html).toContain("area-uniform surface samples"); // the stats' stated source
+    // the tested promise survives the fold: the stats line keeps its data-role
+    expect(html).toMatch(/data-role="union-stats"[^>]*class="verify-colorbar__stats"/);
+  });
+});
+
 describe("the review tick — with the panes it attests (AM-8)", () => {
   it("previewed: enabled and unticked; ready: ticked", () => {
     expect(view()).toMatch(/data-role="review-tick"(?![^>]*disabled)[^>]*\/?>/);

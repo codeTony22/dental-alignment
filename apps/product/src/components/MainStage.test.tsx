@@ -22,11 +22,29 @@ function view(overrides: Partial<Parameters<typeof MainStageView>[0]> = {}) {
       siteAvailable={true}
       activeTooth={19}
       onSelectSubject={() => undefined}
+      onSelectView={() => undefined}
       viewerSlot={stubViewer}
       {...overrides}
     />,
   );
 }
+
+describe("the direction presets — the demo's one-click named views (parity fix, ledger row 9)", () => {
+  it("offers Front / Left / Right / Top on the same pill, above the subject row", () => {
+    const html = view();
+    expect(html).toContain('aria-label="Anatomical view presets"');
+    expect(html).toMatch(/view-orient__button[^>]*>Front</);
+    expect(html).toMatch(/view-orient__button[^>]*>Left</);
+    expect(html).toMatch(/view-orient__button[^>]*>Right</);
+    expect(html).toMatch(/view-orient__button[^>]*>Top</);
+  });
+
+  it("keeps the demo's own titles — Top is the occlusal view, Left/Right are screen-relative", () => {
+    const html = view();
+    expect(html).toContain("occlusal view");
+    expect(html).toContain("left of the front view");
+  });
+});
 
 describe("the subject toggle — the demo stage's two-button control, reimplemented", () => {
   it("offers this-site and whole-arch, with the current subject pressed", () => {
@@ -91,6 +109,7 @@ describe("the MainStage container, statically (effects do not run)", () => {
     expect(html).toContain("3D viewer of the doctor&#x27;s scan"); // the package's Viewer3D div
     expect(html).toContain("Loading upper_jaw.stl");
     expect(html).toMatch(/aria-pressed="true"[^>]*>[^<]*This site/); // site is the opening subject
+    expect(html).toMatch(/view-orient__button[^>]*>Front</); // the direction presets ride along
   });
 
   it("with no usable site centre the site subject is honestly unavailable", () => {

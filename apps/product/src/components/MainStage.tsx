@@ -26,6 +26,7 @@ import {
   Viewer3D,
   resolveRouteTarget,
   routeSignature,
+  type AnatomyViewId,
   type MarkerSpec,
   type StageSubject,
   type Vec3,
@@ -50,18 +51,40 @@ export function scanErrorHeadline(detail: string): string {
     : "The scan did not load.";
 }
 
-interface SubjectToggleProps {
+/**
+ * The demo's anatomical view presets (ViewOrientationBar's DIRECTION row, ported —
+ * parity fix, ledger row 9; client ask 2026-07-14: make finding the right face easy).
+ * One click = one named camera view derived from the scan's own geometry — no orbiting
+ * hunt back to a face once the operator has dragged the camera somewhere strange.
+ * "Left"/"Right" are screen-relative to the Front view (the copied AnatomyViewId's
+ * doc says why they are not labeled by patient side); clicks are a safe no-op before
+ * an anatomy frame exists (the controller's own rule).
+ */
+const VIEWS: readonly {
+  readonly id: AnatomyViewId;
+  readonly label: string;
+  readonly title: string;
+}[] = [
+  { id: "front", label: "Front", title: "Face the front of the mouth" },
+  { id: "left", label: "Left", title: "View from the left of the front view" },
+  { id: "right", label: "Right", title: "View from the right of the front view" },
+  { id: "occlusal", label: "Top", title: "Look straight down at the crowns (occlusal view)" },
+];
+
+interface OrientationBarProps {
   readonly subject: StageSubject;
   readonly siteAvailable: boolean;
   readonly onSelect: (subject: StageSubject) => void;
+  readonly onSelectView: (view: AnatomyViewId) => void;
 }
 
 /**
- * WHAT THE STAGE IS FRAMED ON — the demo stage's two-subject control, reimplemented.
- * "This site" keeps the camera on the active cap's neighbourhood; "Whole arch" is the
- * operator's way home and it stays put once chosen.
+ * The stage's camera pill — the demo's ViewOrientationBar shape: the DIRECTION row
+ * (Front/Left/Right/Top) over the SUBJECT row, and the two compose — "This site" then
+ * "Top" is looking straight down at the cap. "Whole arch" is the operator's way home
+ * and it stays put once chosen.
  */
-function SubjectToggle({ subject, siteAvailable, onSelect }: SubjectToggleProps) {
+function OrientationBar({ subject, siteAvailable, onSelect, onSelectView }: OrientationBarProps) {
   const choices: readonly {
     readonly id: StageSubject;
     readonly label: string;
@@ -81,7 +104,20 @@ function SubjectToggle({ subject, siteAvailable, onSelect }: SubjectToggleProps)
   return (
     // Parity slice: the demo's dark pill overlay (.view-orient), floated ON the glass
     // top-left, instead of a bare row under the canvas.
-    <div className="view-orient">
+    <div className="view-orient" role="group" aria-label="Camera views">
+      <div className="view-orient__row" role="group" aria-label="Anatomical view presets">
+        {VIEWS.map((view) => (
+          <button
+            key={view.id}
+            type="button"
+            className="view-orient__button"
+            title={view.title}
+            onClick={() => onSelectView(view.id)}
+          >
+            {view.label}
+          </button>
+        ))}
+      </div>
       <div
         data-role="stage-subject"
         className="view-orient__row"
@@ -119,6 +155,8 @@ export interface MainStageViewProps {
   readonly siteAvailable: boolean;
   readonly activeTooth: number | null;
   readonly onSelectSubject: (subject: StageSubject) => void;
+  /** One click = one named camera view (the direction presets — parity fix). */
+  readonly onSelectView: (view: AnatomyViewId) => void;
   /** The 3D surface itself — the container passes Viewer3D; tests pass a stub. */
   readonly viewerSlot: ReactNode;
 }
@@ -131,6 +169,7 @@ export function MainStageView({
   siteAvailable,
   activeTooth,
   onSelectSubject,
+  onSelectView,
   viewerSlot,
 }: MainStageViewProps) {
   return (
@@ -140,10 +179,11 @@ export function MainStageView({
     <div data-role="main-stage" className="main-stage viewer3d-wrap">
       <div data-role="main-stage-canvas" className="main-stage__canvas">
         {viewerSlot}
-        <SubjectToggle
+        <OrientationBar
           subject={subject}
           siteAvailable={siteAvailable}
           onSelect={onSelectSubject}
+          onSelectView={onSelectView}
         />
         <div className="viewer-controls-hint" aria-hidden="true">
           drag rotate · shift+drag / right-drag pan · scroll zoom
@@ -285,6 +325,12 @@ export function MainStage({
     if (next === "arch") viewerRef.current?.frameLoadedContent();
   }, []);
 
+  /** A direction preset re-places the camera at the last remembered framing — the
+   *  controller's own contract; a click before any anatomy frame exists is a no-op. */
+  const handleSelectView = useCallback((view: AnatomyViewId) => {
+    viewerRef.current?.setAnatomyView(view);
+  }, []);
+
   return (
     <MainStageView
       scanState={scanState}
@@ -293,6 +339,7 @@ export function MainStage({
       siteAvailable={siteCenter !== null}
       activeTooth={activeSite?.tooth ?? null}
       onSelectSubject={handleSelectSubject}
+      onSelectView={handleSelectView}
       viewerSlot={<Viewer3D ref={viewerRef} ariaLabel="3D viewer of the doctor's scan" />}
     />
   );

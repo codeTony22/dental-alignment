@@ -84,7 +84,8 @@ describe("the site list with capture chips", () => {
         ],
       }),
     });
-    expect(html).toMatch(/data-verdict="marginal"[^>]*>marginal/);
+    // Parity fix (review finding 4): the chip speaks the demo's words, not the bare verdict.
+    expect(html).toMatch(/data-verdict="marginal"[^>]*>capture marginal/);
     expect(html).toContain("not assessed");
   });
 

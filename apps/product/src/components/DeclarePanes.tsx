@@ -40,13 +40,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   CAP_REGION_RADIUS_MM,
+  CONTACTS_MAX_MM,
   OrbitLinkGroup,
   PALETTE,
+  UNMEASURED_COLOR_HEX,
   VerifyViewer,
-  buildDeviationColors,
+  buildScaleColors,
   clampNoteFor,
   computeAnatomyFrame,
   computePartFrame,
+  contactsGradientCss,
+  contactsTickLabels,
   cropTrianglesNear,
   deviationGradientCss,
   deviationTickLabels,
@@ -54,6 +58,7 @@ import {
   paletteHex,
   scanPositionsFor,
   triangleCount,
+  type DeviationScaleId,
   type Vec3,
   type VerifyLayerGeometry,
 } from "viewer";
@@ -157,37 +162,127 @@ function LayerHud({ pane, layers, onToggleLayer, onChangeOpacity }: LayerHudProp
   );
 }
 
-/** The union pane's bottom-strip colorbar HUD: the SAME signed ramp the mesh wears
- * (one source — the copied deviationColormap), its ticks, the clamp note, and the
- * payload's PUBLISHED RMS/p90 (data-role="union-stats", the tested promise). */
-function ColorbarHud({ payload }: { readonly payload: SitePreviewPayload }) {
-  const clampMm = payload.scale.clamp_mm;
-  const clampNote = clampNoteFor(
-    payload.scale.data_min_mm,
-    payload.scale.data_max_mm,
-    clampMm,
+/** The two scales the union pane offers, with the one-line difference stated on each —
+ * the demo's SCALE_CHOICES verbatim: the selector is only honest if it says what
+ * changes, since both bars look plausible on a cap. */
+const SCALE_CHOICES: readonly {
+  readonly id: DeviationScaleId;
+  readonly label: string;
+  readonly hint: string;
+}[] = [
+  {
+    id: "signed",
+    label: "Signed ±0.50 mm",
+    hint:
+      "Ours (RdBu, the same convention the deviation PNG prints): shows DIRECTION — red = the " +
+      "scan sits proud of the cap, blue = it sinks into it.",
+  },
+  {
+    id: "contacts",
+    label: `Contacts 0.00–${CONTACTS_MAX_MM.toFixed(2)} mm`,
+    hint:
+      "RealGUIDE's absolute rainbow: magnitude only, no direction — blue at 0.00 (agreement) " +
+      "through to red at the top of the bar. Use the signed scale to tell proud from sunk.",
+  },
+];
+
+function ScaleSelector({
+  scaleId,
+  onSelectScale,
+}: {
+  readonly scaleId: DeviationScaleId;
+  readonly onSelectScale: (id: DeviationScaleId) => void;
+}) {
+  return (
+    <div className="verify-colorbar__scales" role="radiogroup" aria-label="Deviation colour scale">
+      {SCALE_CHOICES.map((choice) => (
+        <button
+          key={choice.id}
+          type="button"
+          role="radio"
+          aria-checked={choice.id === scaleId}
+          className={`verify-colorbar__scale${choice.id === scaleId ? " verify-colorbar__scale--selected" : ""}`}
+          title={choice.hint}
+          onClick={() => onSelectScale(choice.id)}
+        >
+          {choice.label}
+        </button>
+      ))}
+    </div>
   );
+}
+
+/** The union pane's bottom-strip colorbar HUD: the SAME ramp the mesh wears (one
+ * source — the copied deviationColormap, keyed by the shared scaleId so bar and
+ * surface never disagree), its ticks, and the payload's PUBLISHED RMS/p90
+ * (data-role="union-stats", the tested promise). The convention, the unmeasured
+ * swatch, the clamp note and the stats' source live in the demo's legend-and-stats
+ * FOLD — occasionally-needed small print must not cost the pane permanent 3D height. */
+function ColorbarHud({
+  payload,
+  scaleId = "signed",
+  onSelectScale,
+}: {
+  readonly payload: SitePreviewPayload;
+  readonly scaleId?: DeviationScaleId;
+  readonly onSelectScale?: (id: DeviationScaleId) => void;
+}) {
+  const clampMm = payload.scale.clamp_mm;
+  const contacts = scaleId === "contacts";
+  const clampNote = contacts
+    ? null
+    : clampNoteFor(payload.scale.data_min_mm, payload.scale.data_max_mm, clampMm);
+  const ticks = contacts ? contactsTickLabels(CONTACTS_MAX_MM) : deviationTickLabels(clampMm);
   return (
     <div className="verify-panel__hud verify-panel__hud--scale">
       <div className="verify-colorbar">
+        {onSelectScale !== undefined && (
+          <ScaleSelector scaleId={scaleId} onSelectScale={onSelectScale} />
+        )}
         <div
           className="verify-colorbar__bar"
-          style={{ background: deviationGradientCss() }}
+          style={{ background: contacts ? contactsGradientCss() : deviationGradientCss() }}
           role="img"
-          aria-label={`Deviation scale from -${clampMm} to +${clampMm} millimetres`}
+          aria-label={
+            contacts
+              ? `Contacts scale from 0 to ${CONTACTS_MAX_MM} millimetres, absolute distance`
+              : `Deviation scale from -${clampMm} to +${clampMm} millimetres`
+          }
         />
         <div className="verify-colorbar__ticks">
-          {deviationTickLabels(clampMm).map((label) => (
+          {ticks.map((label) => (
             <span key={label}>{label}</span>
           ))}
         </div>
-        <p data-role="union-stats" className="verify-colorbar__stats">
-          RMS{" "}
-          {payload.stats.rms_mm !== null ? `${payload.stats.rms_mm.toFixed(3)} mm` : "—"}
-          {" · "}p90{" "}
-          {payload.stats.p90_mm !== null ? `${payload.stats.p90_mm.toFixed(3)} mm` : "—"}
-        </p>
-        {clampNote !== null && <p className="verify-colorbar__clamp">{clampNote}</p>}
+        {/* THE WORDS, FOLDED — the demo's rule kept with its markup: the convention,
+            the unmeasured swatch, the clamp note and the published stats are small
+            print a QC read needs OCCASIONALLY; a <details> keeps every word in the
+            document (and the accessibility tree) while the pane keeps its 3D height. */}
+        <details className="verify-colorbar__detail">
+          <summary className="verify-colorbar__summary">legend &amp; stats</summary>
+          <p className="verify-colorbar__legend">
+            <span className="verify-colorbar__convention">
+              {contacts
+                ? "absolute distance — no direction; switch to the signed scale to see proud vs sunk"
+                : payload.scale.sign_convention}
+            </span>
+            <span className="verify-colorbar__unmeasured">
+              <span
+                className="verify-colorbar__swatch"
+                style={{ background: UNMEASURED_COLOR_HEX }}
+              />
+              no scan surface under the vertex — not measured
+            </span>
+          </p>
+          {clampNote !== null && <p className="verify-colorbar__clamp">{clampNote}</p>}
+          <p data-role="union-stats" className="verify-colorbar__stats">
+            Deviation over the footprint: RMS{" "}
+            {payload.stats.rms_mm !== null ? `${payload.stats.rms_mm.toFixed(3)} mm` : "—"}
+            {" · "}p90{" "}
+            {payload.stats.p90_mm !== null ? `${payload.stats.p90_mm.toFixed(3)} mm` : "—"}{" "}
+            <span className="verify-colorbar__source">({payload.stats.source})</span>
+          </p>
+        </details>
       </div>
     </div>
   );
@@ -205,6 +300,10 @@ interface PaneShellProps {
   readonly hud?: ReactNode;
   /** A clickable bottom strip (the union pane's preview retry) — the invite tone. */
   readonly invite?: ReactNode;
+  /** The demo's per-pane maximize (parity fix): true while this pane IS the stage. */
+  readonly maximized?: boolean;
+  /** Omitted (static tests that predate it), the heading renders without the control. */
+  readonly onToggleMaximized?: (() => void) | null;
 }
 
 /** One pane in the demo's verify-panel clothes: header (title + one-line caption),
@@ -219,11 +318,35 @@ function PaneShell({
   viewer,
   hud,
   invite,
+  maximized = false,
+  onToggleMaximized = null,
 }: PaneShellProps) {
   return (
     <section data-role={role} aria-label={title} className="verify-panel">
       <header className="verify-panel__header">
-        <h4 className="verify-panel__title">{title}</h4>
+        <div className="verify-panel__heading">
+          <h4 className="verify-panel__title">{title}</h4>
+          {onToggleMaximized !== null && (
+            <button
+              type="button"
+              className="verify-panel__maximize"
+              aria-pressed={maximized}
+              aria-label={
+                maximized
+                  ? `Restore ${title} to the three-panel view`
+                  : `Maximise ${title}`
+              }
+              title={
+                maximized
+                  ? "Back to all three panels"
+                  : "Expand this panel to the whole stage"
+              }
+              onClick={onToggleMaximized}
+            >
+              {maximized ? "⤡" : "⤢"}
+            </button>
+          )}
+        </div>
         {caption !== null && (
           <p data-role="pane-caption" className="verify-panel__caption" title={caption}>
             {caption}
@@ -276,6 +399,21 @@ export interface DeclarePanesViewProps {
   readonly layers?: PaneLayers;
   readonly onToggleLayer?: (pane: PaneId, layerId: string) => void;
   readonly onChangeOpacity?: (pane: PaneId, layerId: string, opacity: number) => void;
+  /** The demo toolbar's link-orbits toggle (parity fix): panes orbit independently by
+   * default and are LINKED on demand. Omitted, the toolbar does not render. */
+  readonly linked?: boolean;
+  readonly onToggleLinked?: () => void;
+  /** The pane expanded to the whole stage, or null while all three share it — the
+   * demo's per-pane maximize. The other two UNMOUNT (their viewer slots are simply
+   * not rendered): three live WebGL contexts is the cost this control exists to
+   * spend elsewhere. Handler omitted, the controls do not render. */
+  readonly maximizedId?: PaneId | null;
+  readonly onToggleMaximized?: (pane: PaneId) => void;
+  /** WHICH colouring the union mesh is wearing (the demo's two-scale offer): the
+   * container colours the mesh by the same id, so bar and surface never disagree.
+   * Handler omitted, the selector does not render and the signed bar stands. */
+  readonly scaleId?: DeviationScaleId;
+  readonly onSelectScale?: (id: DeviationScaleId) => void;
 }
 
 /** The panes' whole surface, pure payload → markup — statically testable (the
@@ -300,6 +438,12 @@ export function DeclarePanesView({
   layers,
   onToggleLayer = () => undefined,
   onChangeOpacity = () => undefined,
+  linked = false,
+  onToggleLinked,
+  maximizedId = null,
+  onToggleMaximized,
+  scaleId = "signed",
+  onSelectScale,
 }: DeclarePanesViewProps) {
   const seat = payload?.seat ?? null;
   const unionCaption = (() => {
@@ -322,62 +466,115 @@ export function DeclarePanesView({
         onChangeOpacity={onChangeOpacity}
       />
     ) : null;
+  /** Maximised, the other two panes are UNMOUNTED, not hidden (the demo's rule). */
+  const showPane = (pane: PaneId): boolean => maximizedId === null || maximizedId === pane;
+  const maximizeFor = (pane: PaneId): (() => void) | null =>
+    onToggleMaximized !== undefined ? () => onToggleMaximized(pane) : null;
   return (
     <div data-role="declare-panes" className="verify-panels">
-      <div className="verify-panels__grid">
-        <PaneShell
-          role="pane-library"
-          title="1 · Library part"
-          caption={variantLabel}
-          notice={notices.part}
-          busy={partBusy}
-          busyMessage="Loading the library part…"
-          viewer={libraryViewer}
-          hud={hudFor("library")}
-        />
-        <PaneShell
-          role="pane-scan"
-          title="2 · Scanned cap"
-          caption={scanCaption}
-          notice={notices.scan}
-          busy={scanBusy}
-          busyMessage="Loading the scan…"
-          viewer={scanViewer}
-          hud={hudFor("scan")}
-        />
-        <PaneShell
-          role="pane-union"
-          title="3 · Union — coloured by deviation"
-          caption={unionCaption}
-          notice={notices.union}
-          busy={previewPhase === "computing" || scanBusy}
-          busyMessage={
-            previewPhase === "computing"
-              ? "seating this selection on the scan — preview, nothing is being processed…"
-              : null
-          }
-          viewer={unionViewer}
-          hud={
-            <>
-              {hudFor("union")}
-              {payload !== null && <ColorbarHud payload={payload} />}
-            </>
-          }
-          invite={
-            previewPhase === "error" ? (
-              <div className="verify-panel__overlay verify-panel__overlay--invite">
-                <button
-                  type="button"
-                  data-role="preview-retry"
-                  className="button button--ghost button--small"
-                  onClick={onRetryPreview}
-                >
-                  Try the preview again
-                </button>
-              </div>
-            ) : null
-          }
-        />
+      {onToggleLinked !== undefined && (
+        <div className="verify-panels__toolbar">
+          {maximizedId !== null && onToggleMaximized !== undefined && (
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              onClick={() => onToggleMaximized(maximizedId)}
+            >
+              ⤡ show all three
+            </button>
+          )}
+          <button
+            type="button"
+            className={`button button--ghost button--small${linked ? " button--active" : ""}`}
+            aria-pressed={linked}
+            disabled={maximizedId !== null}
+            onClick={onToggleLinked}
+            title={
+              maximizedId !== null
+                ? "Linking needs more than one panel on screen"
+                : "Rotate all three panels together (same angles and zoom, each around its own content)"
+            }
+          >
+            {linked ? "⛓ views linked" : "⛓ link views"}
+          </button>
+        </div>
+      )}
+      <div
+        className={`verify-panels__grid${
+          maximizedId !== null ? " verify-panels__grid--maximized" : ""
+        }`}
+      >
+        {showPane("library") && (
+          <PaneShell
+            role="pane-library"
+            title="1 · Library part"
+            caption={variantLabel}
+            notice={notices.part}
+            busy={partBusy}
+            busyMessage="Loading the library part…"
+            viewer={libraryViewer}
+            hud={hudFor("library")}
+            maximized={maximizedId === "library"}
+            onToggleMaximized={maximizeFor("library")}
+          />
+        )}
+        {showPane("scan") && (
+          <PaneShell
+            role="pane-scan"
+            title="2 · Scanned cap"
+            caption={scanCaption}
+            notice={notices.scan}
+            busy={scanBusy}
+            busyMessage="Loading the scan…"
+            viewer={scanViewer}
+            hud={hudFor("scan")}
+            maximized={maximizedId === "scan"}
+            onToggleMaximized={maximizeFor("scan")}
+          />
+        )}
+        {showPane("union") && (
+          <PaneShell
+            role="pane-union"
+            title="3 · Union — coloured by deviation"
+            caption={unionCaption}
+            notice={notices.union}
+            busy={previewPhase === "computing" || scanBusy}
+            busyMessage={
+              previewPhase === "computing"
+                ? "seating this selection on the scan — preview, nothing is being processed…"
+                : null
+            }
+            viewer={unionViewer}
+            hud={
+              <>
+                {hudFor("union")}
+                {payload !== null && (
+                  <ColorbarHud
+                    payload={payload}
+                    scaleId={scaleId}
+                    onSelectScale={onSelectScale}
+                  />
+                )}
+              </>
+            }
+            invite={
+              previewPhase === "error" ? (
+                <div className="verify-panel__overlay verify-panel__overlay--invite">
+                  <button
+                    type="button"
+                    data-role="preview-retry"
+                    className="button button--ghost button--small"
+                    onClick={onRetryPreview}
+                  >
+                    Try the preview again
+                  </button>
+                </div>
+              ) : null
+            }
+            maximized={maximizedId === "union"}
+            onToggleMaximized={maximizeFor("union")}
+          />
+        )}
       </div>
       {/* The acknowledgment strip, under the panes it attests — the demo's
           decode-ack bar language. */}
@@ -465,6 +662,20 @@ export function DeclarePanes({
   const [previews, setPreviews] = useState<PreviewSlots>({});
   const [reviewSaving, setReviewSaving] = useState<ReviewSaving>("idle");
   const [reviewError, setReviewError] = useState<string | null>(null);
+
+  // The demo toolbar's pane chrome (parity fix, ledger row 9) — all presentational,
+  // container-local: orbit linking OFF by default (the demo's opening state), no pane
+  // maximised, the signed scale on the union mesh and its bar alike.
+  const [linked, setLinked] = useState(false);
+  const [maximizedId, setMaximizedId] = useState<PaneId | null>(null);
+  const [scaleId, setScaleId] = useState<DeviationScaleId>("signed");
+  useEffect(() => {
+    linkGroupRef.current.setEnabled(linked);
+  }, [linked]);
+  const handleToggleLinked = useCallback(() => setLinked((now) => !now), []);
+  const handleToggleMaximized = useCallback((pane: PaneId) => {
+    setMaximizedId((now) => (now === pane ? null : pane));
+  }, []);
 
   // The HUD's layer state (presentational only): visibility/opacity per pane:layer,
   // seeded from the demo's defaults (union scan at 0.45).
@@ -647,14 +858,16 @@ export function DeclarePanes({
     [partPositions],
   );
 
+  // Coloured by WHICHEVER scale the bar is showing (buildScaleColors is the one entry
+  // point for both ramps — the demo's rule: mesh and colorbar can never disagree).
   const deviationGeometry: VerifyLayerGeometry | null = useMemo(() => {
     if (payload === null) return null;
     return {
       positions: positionsFrom(payload.points),
       indices: indicesFrom(payload.faces),
-      colors: buildDeviationColors(payload.deviation_mm, payload.scale.clamp_mm),
+      colors: buildScaleColors(scaleId, payload.deviation_mm, payload.scale.clamp_mm),
     };
-  }, [payload]);
+  }, [payload, scaleId]);
 
   // Pane 1: down the part's own file axis (+z), up +x — the canonical frame's
   // reference direction, the same one the seated pose's x_axis is, so pane 1 and
@@ -770,6 +983,12 @@ export function DeclarePanes({
       layers={layers}
       onToggleLayer={handleToggleLayer}
       onChangeOpacity={handleChangeOpacity}
+      linked={linked}
+      onToggleLinked={handleToggleLinked}
+      maximizedId={maximizedId}
+      onToggleMaximized={handleToggleMaximized}
+      scaleId={scaleId}
+      onSelectScale={setScaleId}
       libraryViewer={
         <VerifyViewer
           layers={[

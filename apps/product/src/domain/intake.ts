@@ -75,9 +75,20 @@ export function rescanNotices(detail: CaseSessionDetail): readonly RescanNotice[
   return notices;
 }
 
-/** The chip's words for one site — the verdict, or the honest "not assessed yet". */
+/** The chip's words per verdict — the demo's exact labels (parity fix, review finding 4):
+ * "RESCAN" shouts by design (CaptureChip's rule: the one verdict where continuing wastes
+ * marks must be prominent), pass/marginal stay chip-quiet. Unknown wire words fall back to
+ * the verdict itself rather than a lie. */
+const CAPTURE_CHIP_LABEL: Readonly<Record<string, string>> = {
+  pass: "capture ✓",
+  marginal: "capture marginal",
+  rescan: "RESCAN",
+};
+
+/** The chip's words for one site — the verdict's label, or the honest "not assessed yet". */
 export function captureChipLabel(capture: CaptureAssessmentView | null): string {
-  return capture === null ? "not assessed" : capture.verdict;
+  if (capture === null) return "not assessed";
+  return CAPTURE_CHIP_LABEL[capture.verdict] ?? capture.verdict;
 }
 
 /**
