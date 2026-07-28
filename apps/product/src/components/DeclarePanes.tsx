@@ -18,10 +18,19 @@
  *            from the payload's OWN stats — the published acceptance numbers, never
  *            a client-side re-derivation.
  *
+ * PARITY SLICE: the panes wear the demo's verify-panel clothes (copy-debt ledger
+ * row 9 — VerifyPanels' presentational markup, re-worn against product state): the
+ * stage fills the pane's height, the LAYER controls float as the top-left on-glass
+ * HUD (eye + opacity slider), the deviation COLORBAR is the union pane's bottom-strip
+ * HUD (the same ramp the mesh wears — deviationGradientCss — with the signed ticks
+ * and the payload's RMS/p90), and the honest words are overlay strips, never a
+ * stacked paragraph stealing pane height.
+ *
  * THE REVIEW TICK sits here, with the panes it attests (AM-8: "reviewed over panels,
- * not a checkbox"): enabled only once the site is previewed; tick = POST review,
- * untick = DELETE — the BFF's status machine judges both, this surface only offers
- * what the server would accept and renders what came back (optimism OFF, AM-4).
+ * not a checkbox"), in the demo's acknowledgment-bar language: enabled only once the
+ * site is previewed; tick = POST review, untick = DELETE — the BFF's status machine
+ * judges both, this surface only offers what the server would accept and renders
+ * what came back (optimism OFF, AM-4).
  *
  * The preview AUTO-FIRES per site (domain/declare.previewKeyFor + shouldAutoPreview —
  * keyed on server facts, one request per distinct declaration+choices) and is
@@ -35,10 +44,14 @@ import {
   PALETTE,
   VerifyViewer,
   buildDeviationColors,
+  clampNoteFor,
   computeAnatomyFrame,
   computePartFrame,
   cropTrianglesNear,
+  deviationGradientCss,
+  deviationTickLabels,
   loadStlPositions,
+  paletteHex,
   scanPositionsFor,
   triangleCount,
   type Vec3,
@@ -79,6 +92,107 @@ export type { PreviewSlot, PreviewSlots } from "../domain/declare";
 /** What the review wiring is doing, named — the surface states it (optimism OFF). */
 export type ReviewSaving = "idle" | "ticking" | "unticking";
 
+/** The pane ids — pane 1/2/3 in the module doc's order. */
+export type PaneId = "library" | "scan" | "union";
+
+/** One controllable layer inside a pane — the demo dialog's eye + opacity slider.
+ * `swatch` is the layer's 3D colour (null = the deviation ramp, which has the
+ * colorbar instead); `available` is false while the geometry has not arrived. */
+export interface PaneLayerControl {
+  readonly id: string;
+  readonly label: string;
+  readonly swatch: string | null;
+  readonly visible: boolean;
+  readonly opacity: number;
+  readonly available: boolean;
+}
+
+export type PaneLayers = Readonly<Record<PaneId, readonly PaneLayerControl[]>>;
+
+interface LayerHudProps {
+  readonly pane: PaneId;
+  readonly layers: readonly PaneLayerControl[];
+  readonly onToggleLayer: (pane: PaneId, layerId: string) => void;
+  readonly onChangeOpacity: (pane: PaneId, layerId: string, opacity: number) => void;
+}
+
+/** The top-left on-glass layer HUD — the demo's verify-layer rows, verbatim clothes. */
+function LayerHud({ pane, layers, onToggleLayer, onChangeOpacity }: LayerHudProps) {
+  return (
+    <div className="verify-panel__hud verify-panel__hud--layers">
+      {layers.map((layer) => (
+        <div key={layer.id} className="verify-layer">
+          <button
+            type="button"
+            className={`verify-layer__eye${layer.visible ? " verify-layer__eye--on" : ""}`}
+            aria-pressed={layer.visible}
+            aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.label}`}
+            disabled={!layer.available}
+            onClick={() => onToggleLayer(pane, layer.id)}
+          >
+            {layer.visible ? "👁" : "🚫"}
+          </button>
+          {layer.swatch !== null && (
+            <span className="verify-layer__swatch" style={{ background: layer.swatch }} />
+          )}
+          <span className="verify-layer__label">{layer.label}</span>
+          <label className="sr-only" htmlFor={`opacity-${pane}-${layer.id}`}>
+            {layer.label} opacity
+          </label>
+          <input
+            id={`opacity-${pane}-${layer.id}`}
+            className="verify-layer__slider"
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={layer.opacity}
+            disabled={!layer.available || !layer.visible}
+            onChange={(e) => onChangeOpacity(pane, layer.id, Number(e.target.value))}
+          />
+          <span className="verify-layer__percent">{Math.round(layer.opacity * 100)}%</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The union pane's bottom-strip colorbar HUD: the SAME signed ramp the mesh wears
+ * (one source — the copied deviationColormap), its ticks, the clamp note, and the
+ * payload's PUBLISHED RMS/p90 (data-role="union-stats", the tested promise). */
+function ColorbarHud({ payload }: { readonly payload: SitePreviewPayload }) {
+  const clampMm = payload.scale.clamp_mm;
+  const clampNote = clampNoteFor(
+    payload.scale.data_min_mm,
+    payload.scale.data_max_mm,
+    clampMm,
+  );
+  return (
+    <div className="verify-panel__hud verify-panel__hud--scale">
+      <div className="verify-colorbar">
+        <div
+          className="verify-colorbar__bar"
+          style={{ background: deviationGradientCss() }}
+          role="img"
+          aria-label={`Deviation scale from -${clampMm} to +${clampMm} millimetres`}
+        />
+        <div className="verify-colorbar__ticks">
+          {deviationTickLabels(clampMm).map((label) => (
+            <span key={label}>{label}</span>
+          ))}
+        </div>
+        <p data-role="union-stats" className="verify-colorbar__stats">
+          RMS{" "}
+          {payload.stats.rms_mm !== null ? `${payload.stats.rms_mm.toFixed(3)} mm` : "—"}
+          {" · "}p90{" "}
+          {payload.stats.p90_mm !== null ? `${payload.stats.p90_mm.toFixed(3)} mm` : "—"}
+        </p>
+        {clampNote !== null && <p className="verify-colorbar__clamp">{clampNote}</p>}
+      </div>
+    </div>
+  );
+}
+
 interface PaneShellProps {
   readonly role: string;
   readonly title: string;
@@ -87,10 +201,14 @@ interface PaneShellProps {
   readonly busy: boolean;
   readonly busyMessage: string | null;
   readonly viewer: ReactNode;
-  readonly children?: ReactNode;
+  /** The on-glass chrome (layer HUD, colorbar) — floats ON the stage. */
+  readonly hud?: ReactNode;
+  /** A clickable bottom strip (the union pane's preview retry) — the invite tone. */
+  readonly invite?: ReactNode;
 }
 
-/** One pane's chrome: title, live canvas slot, the honest notice, the busy words. */
+/** One pane in the demo's verify-panel clothes: header (title + one-line caption),
+ * then THE STAGE — the only thing with height; every word floats on it. */
 function PaneShell({
   role,
   title,
@@ -99,22 +217,38 @@ function PaneShell({
   busy,
   busyMessage,
   viewer,
-  children,
+  hud,
+  invite,
 }: PaneShellProps) {
   return (
-    <section data-role={role} aria-label={title}>
-      <h4>{title}</h4>
-      <div style={{ position: "relative", minHeight: "14rem" }}>{viewer}</div>
-      {caption !== null && <p data-role="pane-caption">{caption}</p>}
-      {busy && (
-        <p data-role="pane-busy">{busyMessage ?? "Loading…"}</p>
-      )}
-      {notice !== null && (
-        <p data-role="pane-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {children}
+    <section data-role={role} aria-label={title} className="verify-panel">
+      <header className="verify-panel__header">
+        <h4 className="verify-panel__title">{title}</h4>
+        {caption !== null && (
+          <p data-role="pane-caption" className="verify-panel__caption" title={caption}>
+            {caption}
+          </p>
+        )}
+      </header>
+      <div className="verify-panel__stage">
+        {viewer}
+        {hud}
+        {busy && (
+          <div className="verify-panel__overlay" role="status" aria-live="polite">
+            <span className="busy-state__spinner" aria-hidden="true" />
+            <span data-role="pane-busy">{busyMessage ?? "Loading…"}</span>
+          </div>
+        )}
+        {!busy && notice !== null && (
+          <div
+            className="verify-panel__overlay verify-panel__overlay--notice"
+            role="status"
+          >
+            <span data-role="pane-notice">{notice}</span>
+          </div>
+        )}
+        {invite}
+      </div>
     </section>
   );
 }
@@ -137,6 +271,11 @@ export interface DeclarePanesViewProps {
   readonly libraryViewer: ReactNode;
   readonly scanViewer: ReactNode;
   readonly unionViewer: ReactNode;
+  /** The on-glass layer controls (parity slice). Omitted (static tests that predate
+   * them), the panes render without the HUD — the container always passes them. */
+  readonly layers?: PaneLayers;
+  readonly onToggleLayer?: (pane: PaneId, layerId: string) => void;
+  readonly onChangeOpacity?: (pane: PaneId, layerId: string, opacity: number) => void;
 }
 
 /** The panes' whole surface, pure payload → markup — statically testable (the
@@ -158,6 +297,9 @@ export function DeclarePanesView({
   libraryViewer,
   scanViewer,
   unionViewer,
+  layers,
+  onToggleLayer = () => undefined,
+  onChangeOpacity = () => undefined,
 }: DeclarePanesViewProps) {
   const seat = payload?.seat ?? null;
   const unionCaption = (() => {
@@ -171,78 +313,105 @@ export function DeclarePanesView({
     // the caption states WHOSE colouring this is (the demo's honesty, kept)
     return `preview — this selection seated now (${seated}${rim}); nothing processed yet`;
   })();
+  const hudFor = (pane: PaneId): ReactNode =>
+    layers !== undefined && layers[pane].length > 0 ? (
+      <LayerHud
+        pane={pane}
+        layers={layers[pane]}
+        onToggleLayer={onToggleLayer}
+        onChangeOpacity={onChangeOpacity}
+      />
+    ) : null;
   return (
-    <div data-role="declare-panes">
-      <PaneShell
-        role="pane-library"
-        title="1 · Library part"
-        caption={variantLabel}
-        notice={notices.part}
-        busy={partBusy}
-        busyMessage="Loading the library part…"
-        viewer={libraryViewer}
-      />
-      <PaneShell
-        role="pane-scan"
-        title="2 · Scanned cap"
-        caption={scanCaption}
-        notice={notices.scan}
-        busy={scanBusy}
-        busyMessage="Loading the scan…"
-        viewer={scanViewer}
-      />
-      <PaneShell
-        role="pane-union"
-        title="3 · Union — coloured by deviation"
-        caption={unionCaption}
-        notice={notices.union}
-        busy={previewPhase === "computing" || scanBusy}
-        busyMessage={
-          previewPhase === "computing"
-            ? "seating this selection on the scan — preview, nothing is being processed…"
-            : null
-        }
-        viewer={unionViewer}
-      >
-        {payload !== null && (
-          <p data-role="union-stats">
-            RMS{" "}
-            {payload.stats.rms_mm !== null ? `${payload.stats.rms_mm.toFixed(3)} mm` : "—"}
-            {" · "}p90{" "}
-            {payload.stats.p90_mm !== null ? `${payload.stats.p90_mm.toFixed(3)} mm` : "—"}
-          </p>
-        )}
-        {previewPhase === "error" && (
-          <button type="button" data-role="preview-retry" onClick={onRetryPreview}>
-            Try the preview again
-          </button>
-        )}
-      </PaneShell>
-      <div data-role="review-tick-row">
-        <label>
-          <input
-            type="checkbox"
-            data-role="review-tick"
-            checked={tick.ticked}
-            disabled={!tick.enabled || reviewSaving !== "idle"}
-            onChange={(event) => onToggleReview(event.target.checked)}
-          />{" "}
-          Reviewed over the panes
-          {site !== null ? ` — tooth ${site.tooth}` : ""}
-        </label>
-        {tick.reason !== null && (
-          <span data-role="review-tick-reason">{tick.reason}</span>
-        )}
-        {reviewSaving !== "idle" && (
-          <span data-role="review-saving">
-            {reviewSaving === "ticking" ? "Recording the review…" : "Withdrawing the review…"}
-          </span>
-        )}
-        {reviewError !== null && (
-          <span data-role="review-error" role="alert">
-            {reviewError}
-          </span>
-        )}
+    <div data-role="declare-panes" className="verify-panels">
+      <div className="verify-panels__grid">
+        <PaneShell
+          role="pane-library"
+          title="1 · Library part"
+          caption={variantLabel}
+          notice={notices.part}
+          busy={partBusy}
+          busyMessage="Loading the library part…"
+          viewer={libraryViewer}
+          hud={hudFor("library")}
+        />
+        <PaneShell
+          role="pane-scan"
+          title="2 · Scanned cap"
+          caption={scanCaption}
+          notice={notices.scan}
+          busy={scanBusy}
+          busyMessage="Loading the scan…"
+          viewer={scanViewer}
+          hud={hudFor("scan")}
+        />
+        <PaneShell
+          role="pane-union"
+          title="3 · Union — coloured by deviation"
+          caption={unionCaption}
+          notice={notices.union}
+          busy={previewPhase === "computing" || scanBusy}
+          busyMessage={
+            previewPhase === "computing"
+              ? "seating this selection on the scan — preview, nothing is being processed…"
+              : null
+          }
+          viewer={unionViewer}
+          hud={
+            <>
+              {hudFor("union")}
+              {payload !== null && <ColorbarHud payload={payload} />}
+            </>
+          }
+          invite={
+            previewPhase === "error" ? (
+              <div className="verify-panel__overlay verify-panel__overlay--invite">
+                <button
+                  type="button"
+                  data-role="preview-retry"
+                  className="button button--ghost button--small"
+                  onClick={onRetryPreview}
+                >
+                  Try the preview again
+                </button>
+              </div>
+            ) : null
+          }
+        />
+      </div>
+      {/* The acknowledgment strip, under the panes it attests — the demo's
+          decode-ack bar language. */}
+      <div data-role="review-tick-row" className="decode-ack">
+        <div className="decode-ack__text">
+          <label className="decode-ack__check">
+            <input
+              type="checkbox"
+              data-role="review-tick"
+              checked={tick.ticked}
+              disabled={!tick.enabled || reviewSaving !== "idle"}
+              onChange={(event) => onToggleReview(event.target.checked)}
+            />{" "}
+            Reviewed over the panes
+            {site !== null ? ` — tooth ${site.tooth}` : ""}
+          </label>
+          {tick.reason !== null && (
+            <span data-role="review-tick-reason" className="decode-ack__summary">
+              {tick.reason}
+            </span>
+          )}
+          {reviewSaving !== "idle" && (
+            <span data-role="review-saving" className="decode-ack__summary">
+              {reviewSaving === "ticking"
+                ? "Recording the review…"
+                : "Withdrawing the review…"}
+            </span>
+          )}
+          {reviewError !== null && (
+            <span data-role="review-error" role="alert" className="decode-ack__blockers">
+              {reviewError}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -258,8 +427,22 @@ export interface DeclarePanesProps {
   readonly postPreview?: PostPreviewFn;
 }
 
+/** One layer's presentational state (the HUD's) — the geometry itself stays memoed. */
+interface LayerToggle {
+  readonly visible: boolean;
+  readonly opacity: number;
+}
+
+/** The union pane's scan opacity default: the client's own 0.45, kept from the demo. */
+const LAYER_DEFAULTS: Readonly<Record<string, LayerToggle>> = {
+  "library:part": { visible: true, opacity: 1 },
+  "scan:scan": { visible: true, opacity: 1 },
+  "union:scan": { visible: true, opacity: 0.45 },
+  "union:deviation": { visible: true, opacity: 1 },
+};
+
 /** The container: scan + part meshes, the auto-fired preview slots, the tick's two
- * requests, and the three VerifyViewers with their frames. */
+ * requests, the HUD's layer state, and the three VerifyViewers with their frames. */
 export function DeclarePanes({
   detail,
   site,
@@ -282,6 +465,31 @@ export function DeclarePanes({
   const [previews, setPreviews] = useState<PreviewSlots>({});
   const [reviewSaving, setReviewSaving] = useState<ReviewSaving>("idle");
   const [reviewError, setReviewError] = useState<string | null>(null);
+
+  // The HUD's layer state (presentational only): visibility/opacity per pane:layer,
+  // seeded from the demo's defaults (union scan at 0.45).
+  const [layerToggles, setLayerToggles] =
+    useState<Readonly<Record<string, LayerToggle>>>(LAYER_DEFAULTS);
+  const toggleOf = (pane: PaneId, layerId: string): LayerToggle =>
+    layerToggles[`${pane}:${layerId}`] ??
+    LAYER_DEFAULTS[`${pane}:${layerId}`] ?? { visible: true, opacity: 1 };
+  const handleToggleLayer = useCallback((pane: PaneId, layerId: string) => {
+    setLayerToggles((current) => {
+      const key = `${pane}:${layerId}`;
+      const now = current[key] ?? LAYER_DEFAULTS[key] ?? { visible: true, opacity: 1 };
+      return { ...current, [key]: { ...now, visible: !now.visible } };
+    });
+  }, []);
+  const handleChangeOpacity = useCallback(
+    (pane: PaneId, layerId: string, opacity: number) => {
+      setLayerToggles((current) => {
+        const key = `${pane}:${layerId}`;
+        const now = current[key] ?? LAYER_DEFAULTS[key] ?? { visible: true, opacity: 1 };
+        return { ...current, [key]: { ...now, opacity } };
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -500,6 +708,45 @@ export function DeclarePanes({
     previewError: slot?.state === "error" ? (slot.error ?? null) : null,
   });
 
+  // The HUD's control rows: swatches ARE the 3D colours (paletteHex — the list and
+  // the model must read as the same thing); the deviation layer has the ramp instead.
+  const layers: PaneLayers = {
+    library: [
+      {
+        id: "part",
+        label: "library part",
+        swatch: paletteHex("cap"),
+        ...toggleOf("library", "part"),
+        available: partGeometry !== null,
+      },
+    ],
+    scan: [
+      {
+        id: "scan",
+        label: "scanned cap",
+        swatch: paletteHex("arch"),
+        ...toggleOf("scan", "scan"),
+        available: scanGeometry !== null,
+      },
+    ],
+    union: [
+      {
+        id: "scan",
+        label: "scan",
+        swatch: paletteHex("arch"),
+        ...toggleOf("union", "scan"),
+        available: scanGeometry !== null,
+      },
+      {
+        id: "deviation",
+        label: "preview deviation",
+        swatch: null,
+        ...toggleOf("union", "deviation"),
+        available: deviationGeometry !== null,
+      },
+    ],
+  };
+
   const linkGroup = linkGroupRef.current;
   return (
     <DeclarePanesView
@@ -520,9 +767,19 @@ export function DeclarePanes({
       reviewError={reviewError}
       onToggleReview={handleToggleReview}
       onRetryPreview={handleRetryPreview}
+      layers={layers}
+      onToggleLayer={handleToggleLayer}
+      onChangeOpacity={handleChangeOpacity}
       libraryViewer={
         <VerifyViewer
-          layers={[{ id: "part", geometry: partGeometry, visible: true, opacity: 1 }]}
+          layers={[
+            {
+              id: "part",
+              geometry: partGeometry,
+              visible: toggleOf("library", "part").visible,
+              opacity: toggleOf("library", "part").opacity,
+            },
+          ]}
           frame={partFrame}
           linkGroup={linkGroup}
           ariaLabel="The declared library part"
@@ -530,7 +787,14 @@ export function DeclarePanes({
       }
       scanViewer={
         <VerifyViewer
-          layers={[{ id: "scan", geometry: scanGeometry, visible: true, opacity: 1 }]}
+          layers={[
+            {
+              id: "scan",
+              geometry: scanGeometry,
+              visible: toggleOf("scan", "scan").visible,
+              opacity: toggleOf("scan", "scan").opacity,
+            },
+          ]}
           frame={siteFrame}
           linkGroup={linkGroup}
           ariaLabel="The scanned cap region"
@@ -541,8 +805,18 @@ export function DeclarePanes({
           layers={[
             // the client's own defaults, kept: the scan half-transparent so the
             // coloured cap reads through it
-            { id: "scan", geometry: scanGeometry, visible: true, opacity: 0.45 },
-            { id: "deviation", geometry: deviationGeometry, visible: true, opacity: 1 },
+            {
+              id: "scan",
+              geometry: scanGeometry,
+              visible: toggleOf("union", "scan").visible,
+              opacity: toggleOf("union", "scan").opacity,
+            },
+            {
+              id: "deviation",
+              geometry: deviationGeometry,
+              visible: toggleOf("union", "deviation").visible,
+              opacity: toggleOf("union", "deviation").opacity,
+            },
           ]}
           frame={siteFrame}
           linkGroup={linkGroup}

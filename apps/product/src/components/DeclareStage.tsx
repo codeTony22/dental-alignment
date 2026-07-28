@@ -60,23 +60,39 @@ interface SystemBarProps {
   readonly onAskSwitch: (model: string) => void;
 }
 
+/** The demo's system cards (.decode-system): name, part count, the server-attributed
+ * suggested badge; the effective card wears the selected tone. */
 function SystemBar({ detail, onAskSwitch }: SystemBarProps) {
   return (
     <div data-role="system-bar" role="group" aria-label="Implant system">
-      {systemCards(detail).map((card) => (
-        <button
-          key={card.model}
-          type="button"
-          data-role="system-card"
-          aria-pressed={card.effective}
-          data-model={card.model}
-          onClick={() => onAskSwitch(card.model)}
-        >
-          {card.model}{" "}
-          <span data-role="system-variant-count">{card.variantCount} parts</span>
-          {card.suggested && <span data-role="suggested-tag"> suggested</span>}
-        </button>
-      ))}
+      <ul className="decode-system-list">
+        {systemCards(detail).map((card) => (
+          <li key={card.model}>
+            <button
+              type="button"
+              data-role="system-card"
+              aria-pressed={card.effective}
+              data-model={card.model}
+              className={`decode-system${card.effective ? " decode-system--selected" : ""}`}
+              onClick={() => onAskSwitch(card.model)}
+            >
+              <span className="decode-system__name">{card.model}</span>{" "}
+              <span data-role="system-variant-count" className="decode-system__count">
+                {card.variantCount} parts
+              </span>
+              {card.suggested && (
+                <span
+                  data-role="suggested-tag"
+                  className="library-badge library-badge--suggested"
+                >
+                  {" "}
+                  suggested
+                </span>
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -88,17 +104,22 @@ interface SwitchConfirmProps {
   readonly onCancel: () => void;
 }
 
-/** The visible-reset moment: the words carry the count, the PUT waits for consent. */
+/** The visible-reset moment: the words carry the count, the PUT waits for consent —
+ * amber (a consequence to consent to), never the danger red. */
 function SwitchConfirm({ detail, pendingSwitch, onConfirm, onCancel }: SwitchConfirmProps) {
   return (
-    <div data-role="system-switch-confirm" role="alert">
-      <p>{switchWords(pendingSwitch, resetCount(detail))}</p>
-      <button type="button" onClick={onConfirm}>
-        Switch system
-      </button>
-      <button type="button" onClick={onCancel}>
-        Keep {detail.system.effective_model ?? "the current system"}
-      </button>
+    <div data-role="system-switch-confirm" role="alert" className="switch-confirm">
+      <p className="switch-confirm__words">
+        {switchWords(pendingSwitch, resetCount(detail))}
+      </p>
+      <div className="switch-confirm__actions">
+        <button type="button" className="button button--primary button--small" onClick={onConfirm}>
+          Switch system
+        </button>
+        <button type="button" className="button button--secondary button--small" onClick={onCancel}>
+          Keep {detail.system.effective_model ?? "the current system"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -109,12 +130,14 @@ interface SiteQueueProps {
   readonly onSelectSite: (tooth: number) => void;
 }
 
-/** The LEFT rail of Declare: every site, its server facts, one click = active. */
+/** The site queue: every site, its server facts, one click = active — the demo's
+ * stepper-list clothes (.decode-stepper__item), status/capture as chips. */
 function SiteQueue({ detail, activeTooth, onSelectSite }: SiteQueueProps) {
   const active = activeSiteFrom(detail.sites, activeTooth);
   return (
-    <aside data-role="declare-queue" aria-label="Site queue">
-      <ul>
+    <aside data-role="declare-queue" aria-label="Site queue" className="panel">
+      <h3 className="panel__title">Site queue</h3>
+      <ul className="decode-stepper__overview">
         {detail.sites.map((site) => (
           <li key={site.tooth}>
             <button
@@ -122,25 +145,43 @@ function SiteQueue({ detail, activeTooth, onSelectSite }: SiteQueueProps) {
               data-role="queue-site"
               aria-pressed={active?.tooth === site.tooth}
               data-tooth={site.tooth}
+              className={`decode-stepper__item${
+                active?.tooth === site.tooth ? " decode-stepper__item--active" : ""
+              }`}
               onClick={() => onSelectSite(site.tooth)}
             >
-              Tooth {site.tooth}{" "}
-              <span data-role="status-chip" data-status={site.status}>
-                {site.status}
-              </span>{" "}
-              <span
-                data-role="capture-chip"
-                data-verdict={site.capture?.verdict ?? "none"}
-              >
-                {captureChipLabel(site.capture)}
-              </span>{" "}
-              <span data-role="declared-variant">{declaredLabel(site)}</span>
+              <span className="decode-stepper__position">Tooth {site.tooth}</span>
+              <span className="decode-stepper__chips">
+                <span
+                  data-role="status-chip"
+                  data-status={site.status}
+                  className="chip chip--status"
+                >
+                  {site.status}
+                </span>{" "}
+                <span
+                  data-role="capture-chip"
+                  data-verdict={site.capture?.verdict ?? "none"}
+                  className={
+                    site.capture === null
+                      ? "chip chip--capture-none"
+                      : `chip chip--capture-${site.capture.verdict}`
+                  }
+                >
+                  {captureChipLabel(site.capture)}
+                </span>{" "}
+                <span data-role="declared-variant" className="decode-stepper__declared">
+                  {declaredLabel(site)}
+                </span>
+              </span>
             </button>
           </li>
         ))}
       </ul>
       {detail.sites.length === 0 && (
-        <p data-role="declare-empty">No sites to declare on this case yet.</p>
+        <p data-role="declare-empty" className="panel__hint">
+          No sites to declare on this case yet.
+        </p>
       )}
     </aside>
   );
@@ -149,19 +190,25 @@ function SiteQueue({ detail, activeTooth, onSelectSite }: SiteQueueProps) {
 interface VariantCardButtonProps {
   readonly card: VariantCard;
   readonly declared: boolean;
+  /** True on the superseded shelf — the card wears the archived tone. */
+  readonly archived?: boolean;
   readonly onDeclare: (variantId: string) => void;
 }
 
-function VariantCardButton({ card, declared, onDeclare }: VariantCardButtonProps) {
+function VariantCardButton({ card, declared, archived, onDeclare }: VariantCardButtonProps) {
   return (
     <button
       type="button"
       data-role="variant-card"
       data-variant={card.id}
       aria-pressed={declared}
+      className={`decode-variant${declared ? " decode-variant--selected" : ""}${
+        archived ? " decode-variant--archived" : ""
+      }`}
       onClick={() => onDeclare(card.id)}
     >
-      <strong>{card.label}</strong> <span>{card.dims}</span>
+      <span className="decode-variant__name">{card.label}</span>{" "}
+      <span className="decode-variant__dims">{card.dims}</span>
     </button>
   );
 }
@@ -222,36 +269,36 @@ export function DeclareStageView({
         "The run was refused — the worker recorded no words.")
       : null;
   return (
-    <div data-role="declare-stage">
-      <SystemBar detail={detail} onAskSwitch={onAskSwitch} />
-      {pendingSwitch !== null && (
-        <SwitchConfirm
-          detail={detail}
-          pendingSwitch={pendingSwitch}
-          onConfirm={onConfirmSwitch}
-          onCancel={onCancelSwitch}
-        />
-      )}
-      <div style={{ display: "flex", gap: "1.5rem", marginTop: "1rem" }}>
+    // Two regions for the workbench grid (display: contents on the root): the WORK
+    // column carries system/queue/variants; the STAGE carries the arch AND the three
+    // panes — the panes dominate it (see styles.css's --split arithmetic: ≥45% of
+    // the stage height at 1600x1000).
+    <div data-role="declare-stage" className="stage-contents">
+      <div className="workbench__work">
+        <section className="panel">
+          <h3 className="panel__title">Implant system</h3>
+          <SystemBar detail={detail} onAskSwitch={onAskSwitch} />
+          {pendingSwitch !== null && (
+            <SwitchConfirm
+              detail={detail}
+              pendingSwitch={pendingSwitch}
+              onConfirm={onConfirmSwitch}
+              onCancel={onCancelSwitch}
+            />
+          )}
+        </section>
         <SiteQueue
           detail={detail}
           activeTooth={activeTooth}
           onSelectSite={onSelectSite}
         />
-        <div style={{ flex: 1 }}>
-          <MainStage
-            caseId={detail.case.id}
-            scanFilename={detail.case.scan_filename}
-            sites={detail.sites}
-            activeTooth={active?.tooth ?? null}
-          />
-          {panesSlot}
-          <section data-role="variant-cards" aria-label="Variant cards">
-            <h3>
-              {active !== null
-                ? `Variants for tooth ${active.tooth}`
-                : "Variants"}
-            </h3>
+        <section data-role="variant-cards" aria-label="Variant cards" className="panel">
+          <h3 className="panel__title">
+            {active !== null
+              ? `Variants for tooth ${active.tooth}`
+              : "Variants"}
+          </h3>
+          <div className="decode-variant-list">
             {shelves.current.map((card) => (
               <VariantCardButton
                 key={card.id}
@@ -260,73 +307,122 @@ export function DeclareStageView({
                 onDeclare={onDeclare}
               />
             ))}
-            {shelves.superseded.length > 0 && (
-              <details data-role="superseded-fold">
-                <summary>
-                  Superseded shelf — {shelves.superseded.length} archived part
-                  {shelves.superseded.length === 1 ? "" : "s"}
-                </summary>
+          </div>
+          {shelves.superseded.length > 0 && (
+            <details data-role="superseded-fold" className="decode-archive">
+              <summary className="decode-archive__title">
+                Superseded shelf — {shelves.superseded.length} archived part
+                {shelves.superseded.length === 1 ? "" : "s"}
+              </summary>
+              <p className="decode-archive__note">
+                Kept apart from the current shelf, never mixed into it.
+              </p>
+              <div className="decode-variant-list">
                 {shelves.superseded.map((card) => (
                   <VariantCardButton
                     key={card.id}
                     card={card}
                     declared={active?.declared_variant === card.id}
+                    archived
                     onDeclare={onDeclare}
                   />
                 ))}
-              </details>
-            )}
-          </section>
-          {saving !== "idle" && (
-            <p data-role="declare-saving">
-              {saving === "system" ? "Switching system…" : "Declaring variant…"}
-            </p>
+              </div>
+            </details>
           )}
-          {error !== null && (
-            <div data-role="declare-error" role="alert">
-              {error}
-            </div>
-          )}
-          {/* THE RUN FOOTER (5c, plan §1.2 compute-early): the auto-fired run's
-              progress in honest words — a refusal renders VERBATIM with the
-              explicit retry (like an errored preview slot, it never auto-refires). */}
-          {runInFlight ? (
-            <p data-role="run-progress">
+        </section>
+        {saving !== "idle" && (
+          <div data-role="declare-saving" className="busy-state" role="status">
+            <span className="busy-state__spinner" aria-hidden="true" />
+            <span>{saving === "system" ? "Switching system…" : "Declaring variant…"}</span>
+          </div>
+        )}
+        {error !== null && (
+          <div data-role="declare-error" role="alert" className="panel__error">
+            {error}
+          </div>
+        )}
+        {/* THE RUN FOOTER (5c, plan §1.2 compute-early): the auto-fired run's
+            progress in honest words — a refusal renders VERBATIM with the
+            explicit retry (like an errored preview slot, it never auto-refires). */}
+        {runInFlight ? (
+          <div data-role="run-progress" className="busy-state" role="status">
+            <span className="busy-state__spinner" aria-hidden="true" />
+            <span>
               Aligning {facts.siteTotal} site{facts.siteTotal === 1 ? "" : "s"} —
               30–60 s; the case stays open and the panes stay live.
-            </p>
-          ) : runRefusal !== null ? (
-            <div data-role="run-refused" role="alert">
-              <p>{runRefusal}</p>
-              <button type="button" data-role="run-retry" onClick={onRetryRun}>
+            </span>
+          </div>
+        ) : runRefusal !== null ? (
+          <div data-role="run-refused" role="alert" className="run-refusal">
+            <strong className="run-refusal__title">The run was refused.</strong>
+            <p className="run-refusal__detail">{runRefusal}</p>
+            <p className="run-refusal__next">
+              <button
+                type="button"
+                data-role="run-retry"
+                className="button button--ghost button--small"
+                onClick={onRetryRun}
+              >
                 Run again
               </button>
-            </div>
-          ) : runError !== null ? (
-            <div data-role="run-error" role="alert">
-              <p>{runError}</p>
-              <button type="button" data-role="run-retry" onClick={onRetryRun}>
+            </p>
+          </div>
+        ) : runError !== null ? (
+          <div data-role="run-error" role="alert" className="run-refusal">
+            <strong className="run-refusal__title">The run did not reach an outcome.</strong>
+            <p className="run-refusal__detail">{runError}</p>
+            <p className="run-refusal__next">
+              <button
+                type="button"
+                data-role="run-retry"
+                className="button button--ghost button--small"
+                onClick={onRetryRun}
+              >
                 Try the run again
               </button>
-            </div>
-          ) : null}
-          {/* Continue per flow.ts: Deliver directly when Adjust has nothing to
-              offer (plan §4 — skippable Adjust), else Adjust over its flagged
-              queue, else the honest blocked sentence. A done run lights these. */}
+            </p>
+          </div>
+        ) : null}
+        {/* Continue per flow.ts: Deliver directly when Adjust has nothing to
+            offer (plan §4 — skippable Adjust), else Adjust over its flagged
+            queue, else the honest blocked sentence. A done run lights these. */}
+        <div className="panel__actions panel__actions--advance">
           {deliverOpen && isComplete("adjust", facts) ? (
-            <Link data-role="continue-on" to={`/case/${detail.case.id}/deliver`}>
+            <Link
+              data-role="continue-on"
+              className="button button--primary"
+              to={`/case/${detail.case.id}/deliver`}
+            >
               Continue to Deliver — nothing to adjust
             </Link>
           ) : adjustOpen ? (
-            <Link data-role="continue-on" to={`/case/${detail.case.id}/adjust`}>
+            <Link
+              data-role="continue-on"
+              className="button button--primary"
+              to={`/case/${detail.case.id}/adjust`}
+            >
               Continue to Adjust
             </Link>
           ) : (
-            <span data-role="continue-on" aria-disabled="true">
+            <span
+              data-role="continue-on"
+              aria-disabled="true"
+              className="button button--secondary button--blocked"
+            >
               Continue — {blockedReason("adjust", facts)}
             </span>
           )}
         </div>
+      </div>
+      <div className="workbench__stage workbench__stage--split">
+        <MainStage
+          caseId={detail.case.id}
+          scanFilename={detail.case.scan_filename}
+          sites={detail.sites}
+          activeTooth={active?.tooth ?? null}
+        />
+        {panesSlot}
       </div>
     </div>
   );

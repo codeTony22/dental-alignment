@@ -125,6 +125,51 @@ describe("honest words over empty panes — never a blank canvas", () => {
   });
 });
 
+describe("the parity chrome (ledger row 9): HUDs on the glass, the demo's clothes", () => {
+  const layers = {
+    library: [
+      { id: "part", label: "library part", swatch: "#2fa75f", visible: true, opacity: 1, available: true },
+    ],
+    scan: [
+      { id: "scan", label: "scanned cap", swatch: "#f2e3a6", visible: true, opacity: 1, available: true },
+    ],
+    union: [
+      { id: "scan", label: "scan", swatch: "#f2e3a6", visible: true, opacity: 0.45, available: true },
+      { id: "deviation", label: "preview deviation", swatch: null, visible: false, opacity: 1, available: true },
+    ],
+  } as const;
+
+  it("panes wear the verify-panel clothes and the words float as overlays", () => {
+    const html = view();
+    expect(html).toContain('class="verify-panels"');
+    expect(html).toMatch(/data-role="pane-library"[^>]*class="verify-panel"/);
+    expect(html).toContain("verify-panel__stage");
+  });
+
+  it("the layer HUD renders eyes + opacity per layer, on the glass", () => {
+    const html = view({ layers });
+    expect(html).toContain("verify-panel__hud--layers");
+    expect(html).toContain("scanned cap");
+    expect(html).toContain("preview deviation");
+    expect(html).toContain("45%"); // the union scan's kept 0.45 default
+    expect(html).toMatch(/aria-pressed="false"[^>]*aria-label="Show preview deviation"/);
+  });
+
+  it("the union colorbar HUD carries the signed ramp, its ticks and the stats line", () => {
+    const html = view();
+    expect(html).toContain("verify-panel__hud--scale");
+    expect(html).toContain("linear-gradient"); // deviationGradientCss — the mesh's own ramp
+    expect(html).toContain("−0.50"); // the signed scale's leftmost tick at clamp 0.5 (true minus)
+    expect(html).toMatch(/data-role="union-stats"[^>]*class="verify-colorbar__stats"/);
+  });
+
+  it("the review tick wears the acknowledgment-bar language", () => {
+    const html = view();
+    expect(html).toContain('class="decode-ack"');
+    expect(html).toContain("decode-ack__check");
+  });
+});
+
 describe("the review tick — with the panes it attests (AM-8)", () => {
   it("previewed: enabled and unticked; ready: ticked", () => {
     expect(view()).toMatch(/data-role="review-tick"(?![^>]*disabled)[^>]*\/?>/);
