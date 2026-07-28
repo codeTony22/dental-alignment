@@ -329,6 +329,27 @@ def clear_current_run(session: "CaseSession") -> None:
     session.adjust_decision = None
 
 
+def clear_confirmation(session: "CaseSession") -> None:
+    """THE EVIDENCE BOUNDARY (slice 6): the run's CURRENT deliverables for a site
+    changed under the operator's own hand, so nothing signed over the old ones stands.
+
+    Distinct from ``clear_current_run`` on purpose. That boundary fires when the run
+    POINTER stops describing the case, and a confirmation is inert without a current
+    run anyway (every gate stands on ``_require_done_run``). An ADJUSTMENT is the other
+    shape: the run stays current — the tools rewrite the site record, the cap STL and
+    the manifest INSIDE that run directory — so the confirmation would keep looking
+    valid while the re-derived evidence had already moved. The artifact gate would
+    catch it on the next disclosure; the display half would go on reading
+    "Released ✓" until then. That divergence was already paid for once (the fork's
+    2026-07-28 fix), so an adjustment retires both records HERE rather than leaving
+    the cheap half to lie.
+
+    The PAYMENT record deliberately survives: money is not evidence, and the honest
+    path after a rework is re-confirm + re-release, not re-charge."""
+    session.confirmation = None
+    session.release = None
+
+
 _QC_SUFFIX = ".png"
 
 

@@ -246,3 +246,25 @@ marker on screen is the demo's PROPOSAL vocabulary (orange, guess-radius), not t
 CENTRE MARK the client remembers (red, 0.6mm, with blue for the rim). Brings across: confirm or
 dismiss a proposal, add a site by clicking its centre, the centre+rim pair (carrying the
 re-click pair-integrity rule — moving the centre clears a standing rim mark), per-site removal.
+
+**C. Gingival relief moves out of Intake (client, 2026-07-28: "Gingival relief should be in the
+adjustment section not in the intake").** They are right, and the reason is stronger than
+placement: relief does not touch the ALIGNMENT at all — it shapes the EMITTED part — and its
+ceiling is a property of (construction part × declared variant). At Intake no variant is
+declared yet, so the ceiling shown there is derived from the SUGGESTION and can be wrong for
+what the operator actually declares. The screenshot shows it: "6020: ceiling 0.43mm" quoted
+before 6020 was declared.
+
+Design consequence to face, not paper over: relief feeds the run. Moving it to Adjust makes the
+loop honest — the first run uses the standing default (clamped as the wall rule requires), the
+operator sees the produced result, and changing relief there RE-EMITS (it never re-aligns; the
+pose is untouched). That is precisely what an adjustment is.
+
+Open, and worth deciding when it is built: relief is case-level today while its ceiling is
+per-site. On a two-variant case (neodent-gm: 6020 and 5020) one number carries two different
+ceilings — which is why the run clamps per site. In Adjust it should become PER SITE, with the
+per-site ceiling beside it. That is more correct than what the demo did, not merely relocated.
+
+**D. Intake badge collision (client, 2026-07-28).** The SUGGESTED / DEFAULT badges sit flush
+against their labels with no gap and no wrap allowance. Cosmetic, product-only; the label row
+needs to be a flex line with a gap and wrapping.

@@ -50,7 +50,11 @@ _EDGES: Dict[str, Tuple[frozenset, SiteStatus]] = {
     "review_ready": (frozenset({_S.PREVIEWED, _S.ADJUSTED}), _S.READY),
     "withdraw_review": (frozenset({_S.READY}), _S.PREVIEWED),
     "flag": (frozenset({_S.PREVIEWED, _S.READY}), _S.FLAGGED),
-    "adjust": (frozenset({_S.FLAGGED}), _S.ADJUSTED),
+    # slice 6 WIDENED the adjust edge, deliberately — see ``adjust``'s docstring:
+    # a clean site may be reworked (the queue offers it, visibly optional), a
+    # reworked one may be reworked again, and either way READY falls because the
+    # pose the review attested has moved.
+    "adjust": (frozenset({_S.FLAGGED, _S.READY, _S.ADJUSTED}), _S.ADJUSTED),
 }
 
 # ``preview`` needs per-rung landings a single-target edge cannot draw (see the
@@ -168,5 +172,16 @@ def flag(current: SiteStatus) -> SiteStatus:
 
 
 def adjust(current: SiteStatus) -> SiteStatus:
-    """An adjust tool reworked the flagged site (slice 6)."""
+    """An adjust tool reworked the site — the FIRST legitimate writer of this rung
+    (slice 6). Legal from FLAGGED (the stage's reason for existing), from READY (the
+    stage is a rework surface, not a penalty box: the plan's queue lists clean sites
+    below the flagged ones, visibly optional, and the client asked for tools they can
+    reach) and from ADJUSTED (a second tool on the same site — an operator refits,
+    then nudges).
+
+    READY FALLING IS THE POINT, not a side effect. A tool that lands moves the pose
+    the review attested, so the attestation cannot stand: the site drops to ADJUSTED
+    and the operator re-confirms over the NEW panes (``review_ready`` is legal from
+    here — the ladder already drew that edge). Same doctrine as ``reseat_preview``:
+    changed physics costs the tick visibly, and never repaints under it."""
     return _step("adjust", current)
