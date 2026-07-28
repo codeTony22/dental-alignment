@@ -208,6 +208,16 @@ export interface ReleaseView {
   released_teeth: number[];
 }
 
+/** WHAT A RELEASE WOULD DISCLOSE, before the act (client 2026-07-27 #6): counts and
+ * the operator's own teeth, derived server-side through the artifact gate's own file
+ * split. No file names — names are the disclosure this describes. */
+export interface ReleasePreviewView {
+  file_count: number;
+  teeth: number[];
+  withheld_teeth: number[];
+  withheld_case_file_count: number;
+}
+
 /** The Delivery-vs-Skip fork as recorded (client 2026-07-27): what was decided,
  * when, over which run. A record of an ACT — nothing in flow.ts reads it. */
 export interface AdjustDecisionView {
@@ -231,6 +241,9 @@ export interface SessionView {
   confirmation: ConfirmationView | null;
   payment: PaymentView | null;
   release: ReleaseView | null;
+  /** Present exactly while a confirmation covers the current done run — the release
+   * step names its consequence from this, before the act. */
+  release_preview: ReleasePreviewView | null;
   /** True only while the release record names the CURRENT done run — the rail's
    * deliver tick reads this, never the release record's bare existence. */
   released: boolean;
@@ -738,9 +751,19 @@ export async function postRelease(
  * `withheld_case_files` are the case-wide files (overlay, manifest, jaw scan —
  * anything not attributable to a single released tooth) the BFF held back
  * BECAUSE sites are withheld; empty on a full release. */
+/** One released deliverable: its name, its size on disk (null when the package
+ * claims a file the run directory no longer holds — an honest gap, never a 0), and
+ * the site it belongs to (null = case-wide). The BFF attributes it with the artifact
+ * gate's own anchored rule; this app never re-parses a filename. */
+export interface ArtifactFile {
+  name: string;
+  size_bytes: number | null;
+  tooth: number | null;
+}
+
 export interface ArtifactsView {
   run_id: string;
-  files: string[];
+  files: ArtifactFile[];
   withheld_teeth: number[];
   withheld_case_files: string[];
 }

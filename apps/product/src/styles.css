@@ -1777,6 +1777,83 @@ body {
   opacity: 0.8;
 }
 
+/* ---- dialog chrome (RE-COPIED for the report modal — ledger row 9) ---- */
+
+/* These rules were deleted during the parity slice ("the demo's decode-dialog chrome the
+   product lacks") and are back VERBATIM because the client asked for the reports in a modal
+   (2026-07-27 #5). Only what the report needs came back: backdrop, card, header, body. The
+   selection-column half (__identity, __header-right, __progress, __column, __main, __top)
+   stays deleted — the product's report has no selection column. */
+
+/* FULL VIEWPORT (client, 2026-07-26: "the three STL panels are currently small thumbnails in a
+   crowded dialog … they must dominate"). The backdrop no longer scrolls a card down the page —
+   the dialog IS the screen, and its three regions (header / body / acknowledgment bar) share the
+   height so the panels can take what is left. */
+.decode-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(14, 22, 19, 0.55);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 6px;
+  overflow: hidden;
+}
+
+.decode-dialog {
+  background: var(--color-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.32);
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.decode-dialog__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.decode-dialog__title {
+  margin: 0;
+  font-size: 17px;
+}
+
+.decode-dialog__subject {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.decode-dialog__body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+/* Collapsed: the panels take the column's width too. */
+.decode-dialog__body--column-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* PRODUCT DIVERGENCE (recorded, ledger row 9): the report's body is a table, not panes, so it
+   scrolls INSIDE the dialog — the operator reads rows without the page moving underneath. */
+.decode-dialog__body .results-table-scroll {
+  min-height: 0;
+  overflow: auto;
+}
+
 /* ---- acknowledgment ---- */
 
 /* THE ACKNOWLEDGMENT BAR: one strip along the bottom, always visible, never the tall block that
@@ -2473,6 +2550,169 @@ button.package-files__link:hover {
   font-size: 11px;
   color: var(--color-text);
   overflow-wrap: anywhere;
+}
+
+/* ---- Deliver's surface (client 2026-07-27 #4/#5/#6) ---- */
+
+/* A clean row's disposition: stated, not asked. Muted on purpose — this is the
+   quiet default, and a control-shaped thing here would re-pose the question the
+   client asked us to stop asking. */
+.disposition-default {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* THE STAGE'S COMPACT EVIDENCE: one line per site, scannable, worst first (the
+   BFF's order, rendered verbatim). Flagged lines carry the amber left rule so the
+   exception is findable without reading a word. */
+.evidence-summary {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.evidence-summary__line {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.evidence-summary__line--flagged {
+  border-left-color: var(--color-amber);
+  background: var(--color-amber-bg);
+}
+
+.evidence-summary__site {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.evidence-summary__words {
+  overflow-wrap: anywhere;
+}
+
+/* THE DELIVERY PROGRESSION: three steps down the work column, each a marker plus a
+   body. Numbered while pending, ticked when done — the shape says "you are here"
+   before any word is read. */
+.release-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.release-step {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.release-step__marker {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  color: var(--color-text-muted);
+}
+
+.release-step--done .release-step__marker {
+  background: var(--color-accent-green);
+  border-color: var(--color-accent-green-dark);
+  color: #ffffff;
+}
+
+.release-step--current .release-step__marker {
+  border-color: var(--color-accent-green-dark);
+  color: var(--color-accent-green-dark);
+}
+
+.release-step__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.release-step__title {
+  font-size: 13px;
+}
+
+/* A waiting step is dimmed but never hidden: it still says what it waits for. */
+.release-step--waiting .release-step__title,
+.release-step--waiting .release-step__detail {
+  color: var(--color-text-muted);
+}
+
+.release-step__detail {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.release-step__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+/* What a release will disclose, stated before the act — amber like every other
+   "consequence to consent to" in this app, never the danger red. */
+.disclosure-note {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--color-amber-bg);
+  border: 1px solid var(--color-amber-border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.disclosure-note__line {
+  margin: 0;
+}
+
+/* Artifacts, grouped by site: a heading per bucket with its count and total size. */
+.artifact-group {
+  margin-top: 12px;
+}
+
+.artifact-group__title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.artifact-group__meta {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
+
+.artifact-group__size {
+  font-size: 11px;
+  color: var(--color-text-muted);
 }
 
 /* ---- the stacked layout (the demo's responsive rules, re-scoped to the product's

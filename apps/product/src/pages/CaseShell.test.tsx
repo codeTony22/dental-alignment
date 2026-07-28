@@ -80,6 +80,7 @@ describe("the case shell view", () => {
               confirmation: null,
               payment: null,
               release: null,
+              release_preview: null,
               released: false,
             },
           })}
@@ -115,6 +116,7 @@ describe("the case shell view", () => {
         confirmation: null,
         payment: null,
         release: null,
+        release_preview: null,
         released: false,
       },
     });

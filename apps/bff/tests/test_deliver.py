@@ -167,13 +167,26 @@ class TestConfirmRefusals:
         assert res.status_code == 409
         assert "no completed current run" in res.json()["detail"]
 
-    def test_every_site_needs_a_disposition_each_missing_one_named(
+    def test_an_omitted_disposition_means_RELEASE_never_a_refusal(
+            self, settings, product_root):
+        """Client 2026-07-27: "What is disposition release vs withhold" — on a
+        single-site case (7 of the 9 real ones) the question was friction with one
+        sane answer. A case that reached Deliver is a case being delivered; the
+        default is release and only a WITHHOLD must be said. The record still
+        carries a complete map — the default is resolved once, server-side."""
+        client = deliverable_client(settings, product_root)
+        assert confirm(client, confirm_body({"4": "release"})).status_code == 200
+        record = SessionStore(product_root).load("neodent-gm").confirmation
+        assert record.dispositions == {"4": "release", "13": "release"}
+
+    def test_an_empty_body_confirms_a_clean_case_entirely(
             self, settings, product_root):
         client = deliverable_client(settings, product_root)
-        res = confirm(client, confirm_body({"4": "release"}))
-        assert res.status_code == 422
-        detail = res.json()["detail"]
-        assert "tooth 13" in detail and "disposition" in detail
+        assert client.post("/api/case-sessions/neodent-gm/confirm",
+                           json={}).status_code == 200
+        assert SessionStore(product_root).load(
+            "neodent-gm").confirmation.dispositions == {"4": "release",
+                                                        "13": "release"}
 
     def test_a_disposition_for_a_tooth_the_run_does_not_carry_is_refused(
             self, settings, product_root):
@@ -220,6 +233,20 @@ class TestFlagsAcknowledgeRowByRow:
             self, settings, product_root):
         client = self._flagged_client(settings, product_root)
         assert confirm(client, confirm_body(acknowledged=[4, 13])).status_code == 200
+
+    def test_the_refusal_names_ONLY_acknowledgments_never_a_disposition(
+            self, settings, product_root):
+        """The 422's words follow the relaxation (client 2026-07-27): a flagged
+        site released BY DEFAULT still needs its row acknowledgment, and that is the
+        only thing the refusal may ask for — never a disposition the operator was
+        not obliged to give."""
+        client = self._flagged_client(settings, product_root)
+        res = client.post("/api/case-sessions/neodent-gm/confirm", json={})
+        assert res.status_code == 422
+        detail = res.json()["detail"]
+        assert "acknowledgment" in detail
+        assert "tooth 4" in detail and "tooth 13" in detail
+        assert "disposition" not in detail
 
     def test_a_withheld_flagged_site_needs_no_acknowledgment(
             self, settings, product_root):
@@ -505,15 +532,42 @@ class TestArtifactsDisclose:
         client = self._released(settings, product_root)
         body = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts").json()
         assert body["run_id"]
-        assert body["files"] == ["neodent-gm-4-healingcap-aligned.stl",
-                                 "neodent-gm-13-healingcap-aligned.stl",
-                                 "neodent-gm-upper-overlay.stl",
-                                 "neodent-gm-manifest.json",
-                                 "neodent-gm-upper.stl",
-                                 "view.html"]
+        assert [f["name"] for f in body["files"]] == [
+            "neodent-gm-4-healingcap-aligned.stl",
+            "neodent-gm-13-healingcap-aligned.stl",
+            "neodent-gm-upper-overlay.stl",
+            "neodent-gm-manifest.json",
+            "neodent-gm-upper.stl",
+            "view.html"]
         assert body["withheld_teeth"] == []
         # a full release ships the case-wide files: nothing withheld, nothing held
         assert body["withheld_case_files"] == []
+
+    def test_each_listed_file_carries_its_size_and_its_site(
+            self, settings, product_root):
+        """Client 2026-07-27 #6 ("good UI for ... release of information /
+        artifacts"): the surface groups deliverables BY SITE with sizes, so the
+        listing must carry both — attributed by the gate's own anchored rule, never
+        by the surface re-parsing filenames."""
+        client = self._released(settings, product_root)
+        files = {f["name"]: f for f in client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts").json()["files"]}
+        cap = files["neodent-gm-4-healingcap-aligned.stl"]
+        assert cap["tooth"] == 4
+        assert cap["size_bytes"] == len(b"STL:neodent-gm-4-healingcap-aligned.stl")
+        # case-wide files belong to no site and say so
+        assert files["neodent-gm-manifest.json"]["tooth"] is None
+
+    def test_a_file_the_package_claims_but_disk_lost_reports_no_size(
+            self, settings, product_root):
+        # an honest gap beats a zero: the operator sees that something is missing
+        client = self._released(settings, product_root)
+        run_id = SessionStore(product_root).load("neodent-gm").run.run_id
+        (product_root / "neodent-gm" / "runs" / run_id /
+         "view.html").unlink()
+        files = {f["name"]: f for f in client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts").json()["files"]}
+        assert files["view.html"]["size_bytes"] is None
 
     def test_withholding_a_site_withholds_every_case_wide_file_too(
             self, settings, product_root):
@@ -524,7 +578,8 @@ class TestArtifactsDisclose:
         client = self._released(settings, product_root,
                                 {"4": "release", "13": "withhold"})
         body = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts").json()
-        assert body["files"] == ["neodent-gm-4-healingcap-aligned.stl"]
+        assert [f["name"] for f in body["files"]] == [
+            "neodent-gm-4-healingcap-aligned.stl"]
         assert body["withheld_teeth"] == [13]
         assert body["withheld_case_files"] == ["neodent-gm-upper-overlay.stl",
                                                "neodent-gm-manifest.json",
@@ -595,20 +650,20 @@ class TestToothAttribution:
     luck: a case id ending in ``-4`` claimed every other tooth's file."""
 
     def test_anchoring_beats_the_ascending_order_substring_scan(self):
-        from bff.resources.deliver import _tooth_of_file
+        from bff.session import tooth_of_file as _tooth_of_file
         name = "smith-4-13-healingcap-aligned.stl"
         assert _tooth_of_file(name, "smith-4", [4, 13]) == 13
         assert _tooth_of_file(name, "smith-4", [13, 4]) == 13   # order-independent
 
     def test_a_case_id_ending_in_a_tooth_number_claims_no_case_wide_file(self):
-        from bff.resources.deliver import _tooth_of_file
+        from bff.session import tooth_of_file as _tooth_of_file
         assert _tooth_of_file("smith-4-upper.stl", "smith-4", [4, 13]) is None
         assert _tooth_of_file("smith-4-upper-overlay.stl", "smith-4",
                               [4, 13]) is None
         assert _tooth_of_file("smith-4-manifest.json", "smith-4", [4, 13]) is None
 
     def test_worker_shaped_names_attribute_exactly(self):
-        from bff.resources.deliver import _tooth_of_file
+        from bff.session import tooth_of_file as _tooth_of_file
         assert _tooth_of_file("neodent-gm-4-healingcap-aligned.stl",
                               "neodent-gm", [4, 13]) == 4
         assert _tooth_of_file("neodent-gm-13-clockview.png",
@@ -636,7 +691,7 @@ class TestAReconfirmRetiresTheRelease:
         # the display half flips with the record: the rail tick is rail truth
         assert res.json()["session"]["released"] is False
         listing = client.get(
-            "/api/case-sessions/neodent-gm/runs/current/artifacts",)
+            "/api/case-sessions/neodent-gm/runs/current/artifacts")
         assert listing.status_code == 409
         assert "confirmation changed after release" in listing.json()["detail"]
         assert "re-release" in listing.json()["detail"]
@@ -652,9 +707,10 @@ class TestAReconfirmRetiresTheRelease:
         confirm(client, confirm_body({"4": "release", "13": "withhold"}))
         assert release(client).status_code == 200
         body = client.get(
-            "/api/case-sessions/neodent-gm/runs/current/artifacts",).json()
+            "/api/case-sessions/neodent-gm/runs/current/artifacts").json()
         assert body["withheld_teeth"] == [13]
-        assert "neodent-gm-13-healingcap-aligned.stl" not in body["files"]
+        assert "neodent-gm-13-healingcap-aligned.stl" not in [
+            f["name"] for f in body["files"]]
 
     def test_an_identical_re_confirm_keeps_the_release_current(
             self, settings, product_root):
@@ -666,7 +722,7 @@ class TestAReconfirmRetiresTheRelease:
         assert res.status_code == 200
         assert res.json()["session"]["released"] is True
         assert client.get(
-            "/api/case-sessions/neodent-gm/runs/current/artifacts",).status_code == 200
+            "/api/case-sessions/neodent-gm/runs/current/artifacts").status_code == 200
 
     def test_the_worklist_released_chip_unticks_with_the_retired_release(
             self, settings, product_root):
@@ -790,3 +846,58 @@ class TestTheViewsCarryTheChain:
         detail = client.get("/api/case-sessions/neodent-gm").json()
         # the record survives as history, but "released" is a CURRENT-run verdict
         assert detail["session"]["released"] is False
+
+
+# --- what a release WOULD disclose, said before the act --------------------------------
+
+class TestTheReleasePreview:
+    """Client 2026-07-27 #6: the release step must name what will be disclosed
+    BEFORE the act. Derived from the standing confirmation through the artifact
+    gate's own split (session.split_released_files), so the promise and the
+    disclosure are one derivation — and counts only, because names ARE the
+    disclosure being described."""
+
+    def test_absent_until_a_confirmation_covers_the_current_run(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        assert client.get("/api/case-sessions/neodent-gm").json()[
+            "session"]["release_preview"] is None
+
+    def test_a_full_release_promises_every_deliverable_and_no_withholding(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        preview = client.get("/api/case-sessions/neodent-gm").json()[
+            "session"]["release_preview"]
+        assert preview == {"file_count": 6, "teeth": [4, 13],
+                           "withheld_teeth": [], "withheld_case_file_count": 0}
+
+    def test_a_withhold_shows_in_the_promise_before_anything_is_disclosed(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        assert confirm(client, confirm_body(
+            {"4": "release", "13": "withhold"})).status_code == 200
+        preview = client.get("/api/case-sessions/neodent-gm").json()[
+            "session"]["release_preview"]
+        assert preview["teeth"] == [4]
+        assert preview["withheld_teeth"] == [13]
+        assert preview["file_count"] == 1
+        # the case-wide files ride back with the withheld site — counted, so the
+        # step can say so without naming them
+        assert preview["withheld_case_file_count"] == 4
+
+    def test_the_promise_matches_what_the_gate_actually_discloses(
+            self, settings, product_root):
+        # ONE derivation, asserted as one: whatever the preview promised is exactly
+        # what the artifact list hands over
+        client = confirmed_paid_client(settings, product_root,
+                                       {"4": "release", "13": "withhold"})
+        preview = client.get("/api/case-sessions/neodent-gm").json()[
+            "session"]["release_preview"]
+        assert release(client).status_code == 200
+        body = client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts").json()
+        assert len(body["files"]) == preview["file_count"]
+        assert body["withheld_teeth"] == preview["withheld_teeth"]
+        assert len(body["withheld_case_files"]) == preview[
+            "withheld_case_file_count"]

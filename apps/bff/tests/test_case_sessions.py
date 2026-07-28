@@ -179,6 +179,10 @@ class TestCaseSessionDetail:
             "confirmation": None,
             "payment": None,
             "release": None,
+            # what a release WOULD disclose (client 2026-07-27 #6) — absent until a
+            # confirmation covers the current done run: there is no honest promise
+            # to make about a case nobody has confirmed
+            "release_preview": None,
             "released": False,
         }
 

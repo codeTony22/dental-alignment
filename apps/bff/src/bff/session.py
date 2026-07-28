@@ -36,7 +36,7 @@ import os
 import threading
 import uuid
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -310,6 +310,66 @@ def clear_current_run(session: "CaseSession") -> None:
     the run cannot be forgotten at one boundary and cleared at the other two."""
     session.run = None
     session.adjust_decision = None
+
+
+_QC_SUFFIX = ".png"
+
+
+def tooth_of_file(name: str, case_id: str, teeth: List[int]) -> Optional[int]:
+    """File→site attribution, ANCHORED to the pipeline's own construction: every
+    per-tooth file the worker emits is ``f"{case_id}-{tooth}-…"`` (adapters/
+    output_package.py — caps, scan bodies, sidecars, QC renders alike), so a file
+    belongs to tooth ``t`` exactly when it starts with ``f"{case_id}-{t}-"``. At most
+    one tooth can match (tooth numbers carry no dash), so the answer cannot depend on
+    the order ``teeth`` arrives in. The previous anywhere-substring scan attributed by
+    ascending-tooth luck: an operator-typed case id ending in ``-4`` claimed every
+    other tooth's file for tooth 4 — a disclosure hazard at the artifact gate (AM-1),
+    not a cosmetic one. Anything unanchored is case-wide, and case-wide files ship
+    only when NO site is withheld (``split_released_files``).
+
+    Lives HERE, not in the deliver resource, since the Deliver surface needed the
+    same split BEFORE release (to say what a release would disclose) as after it:
+    two derivations of "what ships" would be two answers waiting to disagree."""
+    for tooth in teeth:
+        if name.startswith(f"{case_id}-{tooth}-"):
+            return tooth
+    return None
+
+
+def split_released_files(package_files: List[str], summary_teeth: List[int],
+                         released_teeth: List[int],
+                         case_id: str) -> Tuple[List[str], List[str]]:
+    """The released set and the case-wide files held back, package order kept.
+
+    A file attributed to a tooth ships iff that tooth is released. A file attributed
+    to NO tooth is case-wide, and case-wide files ship only when no site is withheld
+    — fail-closed by construction: the worker's own notes say the overlay merges ALL
+    aligned components and the manifest carries every site's row and file hashes
+    (adapters/output_package.py), and any case-wide file this rule has never heard of
+    gets the same benefit of NO doubt. A partial release ships exactly the released
+    sites' own files (AM-1: release = disclosure, and a withheld site's geometry must
+    not ride out inside an aggregate).
+
+    Takes the released TEETH rather than a release record so the same function can
+    answer "what would this confirmation disclose?" before any release exists."""
+    withheld = set(summary_teeth) - set(released_teeth)
+    files: List[str] = []
+    held_case_files: List[str] = []
+    for name in package_files:
+        if name.endswith(_QC_SUFFIX):
+            continue   # EVIDENCE class — never an artifact
+        tooth = tooth_of_file(name, case_id, summary_teeth)
+        if tooth is None and withheld:
+            held_case_files.append(name)
+        elif tooth not in withheld:
+            files.append(name)
+    return files, held_case_files
+
+
+def summary_teeth_of(run: "RunSession") -> List[int]:
+    """The teeth the run's summary carries, in its own order."""
+    summary = run.summary or {}
+    return [int(r.get("tooth")) for r in (summary.get("sites") or [])]
 
 
 def released_teeth_of(dispositions: Dict[str, str]) -> List[int]:

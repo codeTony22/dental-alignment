@@ -1,13 +1,18 @@
 /**
- * Deliver's surface (plan §4 Deliver; AM-1/AM-12), statically rendered per
- * the repo convention: the assurance table in the BFF's worst-first order (flags
- * pinned — the order is SERVED, never re-sorted here), row-expand QC images via
- * the ungated evidence endpoint, the disposition + per-flag acknowledgment
- * controls, the confirm button inert with each missing piece NAMED, the sealed
- * state, the payment button labelled AS a stub, release, the gated artifact list
- * with withheld sites shown open, and the 409 re-confirm flow. The pure rules
- * (blockers, ack-per-flag, wire body, drift detection) are domain/deliver.test.ts's;
- * the header/endpoint wiring is api/client.test.ts's.
+ * Deliver's surface (plan §4 Deliver; AM-1/AM-12), statically rendered per the repo
+ * convention, around the client's 2026-07-27 corrections:
+ *
+ *  - #4 dispositions default to RELEASE: only a flagged row offers the withhold
+ *    control; a clean row says "released" and asks nothing.
+ *  - #5 the report is a MODAL: the stage carries the compact summary and one way in;
+ *    the full table, the QC images and the row acts live behind it, with the confirm
+ *    in its footer AND on the stage — one blocker list feeding both.
+ *  - #6 delivery is one visible progression: Confirmed → Paid → Released, the payment
+ *    stub labelled in words, the release naming what it will disclose BEFORE the act,
+ *    and the artifacts grouped by site with sizes.
+ *
+ * The pure rules (blockers, steps, grouping, disclosure words) are
+ * domain/deliver.test.ts's; the endpoint wiring is api/client.test.ts's.
  */
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -41,11 +46,27 @@ const CONFIRMED = {
     dispositions: { "30": "release", "19": "release" },
     acknowledged_flags: [30],
   },
+  release_preview: {
+    file_count: 4,
+    teeth: [19, 30],
+    withheld_teeth: [],
+    withheld_case_file_count: 0,
+  },
 };
 
 const PAID = {
   payment_authorized: true,
   payment: { provider: "stub", at: "2026-07-27T12:01:00+00:00" },
+};
+
+const RELEASED = {
+  released: true,
+  release: {
+    at: "2026-07-27T12:02:00+00:00",
+    run_id: "20260727-120000-abc123",
+    evidence_sha256: "c0ffee".padEnd(64, "0"),
+    released_teeth: [19],
+  },
 };
 
 function view(overrides: Partial<Parameters<typeof DeliverStageView>[0]> = {}) {
@@ -71,46 +92,52 @@ function view(overrides: Partial<Parameters<typeof DeliverStageView>[0]> = {}) {
   );
 }
 
-describe("the assurance table — worst-first as SERVED, flags pinned (AM-12)", () => {
-  it("renders rows in the payload's order and marks the flagged one", () => {
+describe("the stage's compact evidence, and the report behind a modal (#5)", () => {
+  it("the stage summarizes each site in the SERVED order, with its gate chip", () => {
     const html = view();
-    const first = html.indexOf('data-tooth="30"');
-    const second = html.indexOf('data-tooth="19"');
+    expect(html).toContain('data-role="evidence-summary"');
+    const first = html.indexOf('data-role="evidence-line" data-tooth="30"');
+    const second = html.indexOf('data-role="evidence-line" data-tooth="19"');
     expect(first).toBeGreaterThan(-1);
-    expect(second).toBeGreaterThan(first); // the served order, verbatim
-    expect(html).toContain('data-role="assurance-row" data-tooth="30" data-status="flagged"');
+    expect(second).toBeGreaterThan(first); // worst-first, verbatim
+    expect(html).toContain("rim 0.07 mm");
+    expect(html).toContain("RMS 0.43 mm / p90 0.71 mm");
   });
 
-  it("a row carries the evidence: numbers, gate words, clamp, rotation honesty", () => {
+  it("the full table is NOT on the stage until the report is opened", () => {
     const html = view();
-    expect(html).toContain("0.07"); // rim agreement
-    expect(html).toContain("0.43"); // deviation RMS
-    expect(html).toContain("0.71"); // deviation p90
-    expect(html).toContain("rim-seat");
-    expect(html).toContain("ROTATION could not be verified"); // the gate's words
-    expect(html).toContain("rotation unverified"); // the honesty badge
-    expect(html).toContain("declared 5020"); // identity: declared vs identified
-    expect(html).toContain("measured 5020");
+    expect(html).toContain('data-role="open-report"');
+    expect(html).not.toContain('data-role="assurance-table"');
+    expect(html).not.toContain('data-role="report-dialog"');
   });
 
-  it("each numeric's industry reference renders beside it, verbatim", () => {
-    expect(view()).toContain("scan-body agreement literature");
+  it("open, the modal holds the whole table in the demo's dialog chrome", () => {
+    const html = view({ reportOpen: true });
+    expect(html).toContain('data-role="report-backdrop"');
+    expect(html).toContain("decode-dialog-backdrop");
+    expect(html).toMatch(/data-role="report-dialog"[^>]*class="decode-dialog"/);
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain("decode-dialog__header");
+    expect(html).toContain("decode-dialog__body");
+    expect(html).toContain('data-role="report-close"');
+    // the table, with every column, inside its own internal scroll
+    expect(html).toMatch(/data-role="assurance-table"[^>]*class="results-table"/);
+    expect(html).toContain("results-table-scroll");
+    expect(html).toContain("scan-body agreement literature"); // industry references
   });
 
-  it("row-expand shows the site's QC images lazily via the evidence endpoint", () => {
-    const collapsed = view();
+  it("a row's QC images live in the modal, behind the row expand", () => {
+    const collapsed = view({ reportOpen: true });
     expect(collapsed).not.toContain("case-a-30-clockview.png");
-    const html = view({ expanded: [30] });
+    const html = view({ reportOpen: true, expanded: [30] });
     expect(html).toContain(
       'src="/api/case-sessions/case-a/runs/current/qc/case-a-30-clockview.png"',
-    );
-    expect(html).toContain(
-      'src="/api/case-sessions/case-a/runs/current/qc/case-a-30-deviation.png"',
     );
     expect(html).toContain('loading="lazy"');
   });
 
-  it("an assurance fetch error states itself instead of an empty table", () => {
+  it("an assurance fetch error states itself instead of an empty summary", () => {
     const html = view({
       assurance: { kind: "error", detail: "HTTP 404 — no completed current run" },
     });
@@ -119,204 +146,220 @@ describe("the assurance table — worst-first as SERVED, flags pinned (AM-12)", 
   });
 });
 
-describe("dispositions and the per-flag acknowledgment (AM-12)", () => {
-  it("every row carries release/withhold controls; only flagged rows the ack tick", () => {
-    const html = view();
-    expect(html.match(/data-role="disposition-release"/g)).toHaveLength(2);
-    expect(html.match(/data-role="disposition-withhold"/g)).toHaveLength(2);
+describe("dispositions default to release; only a flag can be withheld (#4)", () => {
+  it("a clean row shows NO control and says it is released", () => {
+    const html = view({ reportOpen: true });
+    // two sites, one flagged: exactly one withhold control
+    expect(html.match(/data-role="disposition-withhold"/g)).toHaveLength(1);
+    expect(html.match(/data-role="disposition-default"/g)).toHaveLength(1);
+    expect(html).toContain("released");
+  });
+
+  it("the flagged row still demands its own acknowledgment (the assurance rule)", () => {
+    const html = view({ reportOpen: true });
     expect(html.match(/data-role="acknowledge-flag"/g)).toHaveLength(1);
-  });
-
-  it("withholding the flagged row retires its acknowledgment tick", () => {
-    const html = view({ dispositions: { 30: "withhold" } });
-    expect(html).not.toContain('data-role="acknowledge-flag"');
-  });
-});
-
-describe("the confirm button — inert until complete, each missing piece named", () => {
-  it("disabled with the blockers listed under it", () => {
-    const html = view();
-    expect(html).toContain('data-role="confirm"');
-    expect(html).toContain("disabled");
-    expect(html).toContain('data-role="confirm-blockers"');
-    expect(html).toContain("tooth 30 needs a disposition");
-    expect(html).toContain("tooth 19 needs a disposition");
     expect(html).toContain("tooth 30 is flagged — releasing it needs its own acknowledgment");
   });
 
-  it("asks for no operator name anywhere — the field and its blocker are GONE", () => {
-    // client 2026-07-27: "WE dont need operator name the checkmark is sufficient".
-    // Pinned as an absence so the panel is never restored as a missing-field fix
-    const html = view();
-    expect(html).not.toContain('data-role="operator-field"');
-    expect(html).not.toContain('data-role="operator-name"');
-    expect(html).not.toContain("names its actor");
-  });
-
-  it("armed once every piece is present — no blockers named", () => {
-    const html = view({
-      dispositions: { 30: "release", 19: "release" },
-      acknowledged: [30],
-    });
+  it("withholding the flagged row retires its acknowledgment demand entirely", () => {
+    const html = view({ reportOpen: true, dispositions: { 30: "withhold" } });
+    expect(html).not.toContain('data-role="acknowledge-flag"');
     expect(html).not.toContain('data-role="confirm-blockers"');
   });
-});
 
-describe("the sealed state after confirmation", () => {
-  it("shows WHEN it was confirmed and the evidence hash — no actor to show", () => {
-    const html = view({ detail: deliverableDetail(CONFIRMED) });
-    expect(html).toContain('data-role="sealed-confirmation"');
-    expect(html).toContain("Confirmed at 2026-07-27T12:00:00+00:00");
-    expect(html).toContain("c0ffee".padEnd(64, "0"));
+  it("NO row is ever blocked for want of a disposition", () => {
+    // the deleted blocker, pinned as an absence (client 2026-07-27 #4)
+    expect(view()).not.toContain("needs a disposition");
   });
 });
 
-describe("the payment stub — labelled AS a stub (AM-11)", () => {
-  it("the button says stub and waits for the confirmation", () => {
+describe("one blocker list, both places the confirm is offered (#5)", () => {
+  it("the same list renders on the stage and in the modal footer", () => {
+    const html = view({ reportOpen: true });
+    const lists = html.match(/data-role="confirm-blockers"/g) ?? [];
+    expect(lists.length).toBe(3); // the step, the stage and the modal footer
+    // and every one of them says the SAME thing — one derivation
+    const occurrences =
+      html.match(/tooth 30 is flagged — releasing it needs its own acknowledgment/g) ?? [];
+    expect(occurrences.length).toBe(lists.length);
+  });
+
+  it("the confirm is inert while anything is outstanding, armed once nothing is", () => {
+    expect(view()).toMatch(/data-role="confirm"[^>]*disabled/);
+    const armed = view({ acknowledged: [30] });
+    expect(armed).toMatch(/data-role="confirm"(?![^>]*disabled)/);
+    expect(armed).not.toContain('data-role="confirm-blockers"');
+  });
+
+  it("the modal footer carries the confirm too — read and act in one place", () => {
+    const html = view({ reportOpen: true, acknowledged: [30] });
+    expect(html).toContain("decode-ack__actions");
+    const footer = html.slice(html.indexOf("<footer"));
+    expect(footer).toContain('data-role="confirm"');
+  });
+});
+
+describe("the delivery progression — Confirmed, Paid, Released (#6)", () => {
+  it("three steps, exactly one current, each saying what it is or waits for", () => {
     const html = view();
+    expect(html).toContain('data-role="release-steps"');
+    expect(html).toMatch(/data-step="confirmed"[^>]*data-state="current"/);
+    expect(html).toMatch(/data-step="paid"[^>]*data-state="waiting"/);
+    expect(html).toMatch(/data-step="released"[^>]*data-state="waiting"/);
+    expect(html).toContain("Waiting for the confirmation.");
+  });
+
+  it("a confirmed case shows the seal's time and moves the current step on", () => {
+    const html = view({ detail: deliverableDetail(CONFIRMED) });
+    expect(html).toMatch(/data-step="confirmed"[^>]*data-state="done"/);
+    expect(html).toContain("Sealed at 2026-07-27T12:00:00+00:00");
+    expect(html).toMatch(/data-step="paid"[^>]*data-state="current"/);
+  });
+
+  it("the payment control names the case, the site count AND its stub nature", () => {
+    const html = view({ detail: deliverableDetail(CONFIRMED) });
     expect(html).toContain('data-role="payment-stub"');
-    expect(html).toContain("Authorize payment (stub)");
-    expect(html).toContain("disabled"); // unconfirmed: the chain has an order
+    expect(html).toContain("Authorize payment (stub) — 2 sites on case case-a");
+    expect(html).toContain('data-role="payment-stub-note"');
+    expect(html).toContain("no provider is contacted and no money moves");
   });
 
-  it("once paid, the stub's record renders — provider named, actor absent", () => {
+  it("once paid, the record's provider and time show, and release becomes current", () => {
     const html = view({ detail: deliverableDetail({ ...CONFIRMED, ...PAID }) });
-    expect(html).toContain('data-role="payment-done"');
-    expect(html).toContain("Payment authorized (stub) at 2026-07-27T12:01:00+00:00");
-  });
-});
-
-describe("release — the disclosure act", () => {
-  it("inert until the chain is complete, the remaining steps named", () => {
-    const html = view({ detail: deliverableDetail(CONFIRMED) });
-    expect(html).toContain('data-role="release"');
-    expect(html).toContain("the payment authorization (stub)");
+    expect(html).toContain("Authorized at 2026-07-27T12:01:00+00:00 (stub)");
+    expect(html).toMatch(/data-step="released"[^>]*data-state="current"/);
   });
 
-  it("after release the record renders and the artifacts section takes over", () => {
+  it("the release step NAMES what will be disclosed before the act", () => {
     const html = view({
       detail: deliverableDetail({
         ...CONFIRMED,
         ...PAID,
-        released: true,
-        release: {
-          at: "2026-07-27T12:02:00+00:00",
-          run_id: "20260727-120000-abc123",
-          evidence_sha256: "c0ffee".padEnd(64, "0"),
-          released_teeth: [19],
-        },
-      }),
-      artifacts: {
-        kind: "ok",
-        data: {
-          run_id: "20260727-120000-abc123",
-          files: ["case-a-19-healingcap-aligned.stl"],
+        release_preview: {
+          file_count: 1,
+          teeth: [19],
           withheld_teeth: [30],
-          withheld_case_files: ["case-a-upper-overlay.stl", "case-a-manifest.json"],
-        },
-      },
-    });
-    expect(html).toContain('data-role="released"');
-    expect(html).toContain('data-role="artifact-download" data-file="case-a-19-healingcap-aligned.stl"');
-    // the withheld site is SHOWN as withheld, with its open status beside it
-    expect(html).toContain('data-role="withheld-site"');
-    expect(html).toContain("Tooth 30");
-    expect(html).toContain("withheld");
-    expect(html).toContain("flagged"); // its open status, from the detail's sites
-    // the case-wide files the BFF held back are SHOWN held back, by name — the
-    // surface never pretends a partial release shipped the whole package
-    expect(html).toContain('data-role="withheld-case-files"');
-    expect(html).toContain("case-a-upper-overlay.stl");
-    expect(html).toContain("case-a-manifest.json");
-    // and nothing offers to download what was not released
-    expect(html).not.toContain('data-file="case-a-upper-overlay.stl"');
-  });
-
-  it("a full release lists no held-back case files and says nothing about them", () => {
-    const html = view({
-      detail: deliverableDetail({
-        ...CONFIRMED,
-        ...PAID,
-        released: true,
-        release: {
-          at: "2026-07-27T12:02:00+00:00",
-          run_id: "20260727-120000-abc123",
-          evidence_sha256: "c0ffee".padEnd(64, "0"),
-          released_teeth: [19, 30],
+          withheld_case_file_count: 4,
         },
       }),
-      artifacts: {
-        kind: "ok",
-        data: {
-          run_id: "20260727-120000-abc123",
-          files: ["case-a-19-healingcap-aligned.stl", "case-a-upper-overlay.stl"],
-          withheld_teeth: [],
-          withheld_case_files: [],
-        },
-      },
     });
-    expect(html).toContain('data-file="case-a-upper-overlay.stl"');
-    expect(html).not.toContain('data-role="withheld-case-files"');
-  });
-});
-
-describe("the parity chrome (ledger row 9): the demo's results-table language", () => {
-  it("the table wears the demo's clothes inside its own scroll wrapper", () => {
-    const html = view();
-    expect(html).toMatch(/data-role="assurance-table"[^>]*class="results-table"/);
-    expect(html).toContain("results-table-scroll");
-  });
-
-  it("dispositions are a segmented control; withhold wears its own tone class", () => {
-    const html = view();
-    expect(html).toMatch(/data-role="disposition-release"[^>]*class="segmented__option"/);
-    expect(html).toMatch(
-      /data-role="disposition-withhold"[^>]*segmented__option--withhold/,
+    expect(html).toContain('data-role="release-disclosure"');
+    expect(html).toContain("Releasing discloses 1 file for tooth 19.");
+    expect(html).toContain("Tooth 30 is withheld — its files stay back and the site stays open.");
+    expect(html).toContain("4 case-wide files stay back too");
+    // and it is said BEFORE the act, above the button that performs it
+    expect(html.indexOf('data-role="release-disclosure"')).toBeLessThan(
+      html.indexOf('data-role="release"'),
     );
   });
+});
 
-  it("the flagged row is toned; gate level and status render as chips", () => {
-    const html = view();
-    expect(html).toContain("assurance-row--flagged");
-    expect(html).toMatch(/data-role="gate-level"[^>]*class="chip chip--gate/);
-    expect(html).toMatch(/data-role="status-chip"[^>]*class="chip chip--status"/);
+describe("the artifacts — grouped by site, with names and sizes (#6)", () => {
+  const releasedDetail = () =>
+    deliverableDetail({ ...CONFIRMED, ...PAID, ...RELEASED });
+
+  const artifacts = {
+    kind: "ok" as const,
+    data: {
+      run_id: "20260727-120000-abc123",
+      files: [
+        { name: "case-a-19-healingcap-aligned.stl", size_bytes: 2048, tooth: 19 },
+        { name: "case-a-19-scanbody.stl", size_bytes: 1024, tooth: 19 },
+        { name: "case-a-manifest.json", size_bytes: 512, tooth: null },
+      ],
+      withheld_teeth: [30],
+      withheld_case_files: ["case-a-upper-overlay.stl"],
+    },
+  };
+
+  it("files bucket by site, case-wide last, each with a readable size", () => {
+    const html = view({ detail: releasedDetail(), artifacts });
+    expect(html).toMatch(/data-role="artifact-group"[^>]*data-tooth="19"/);
+    expect(html).toMatch(/data-role="artifact-group"[^>]*data-tooth="case-wide"/);
+    expect(html.indexOf('data-tooth="19"')).toBeLessThan(
+      html.indexOf('data-tooth="case-wide"'),
+    );
+    expect(html).toContain("2 files · 3.0 KB");
+    expect(html).toContain("2.0 KB");
+    expect(html).toContain("512 B");
   });
 
-  it("the sealed confirmation is the quiet block with the hash in mono", () => {
-    const html = view({ detail: deliverableDetail(CONFIRMED) });
-    expect(html).toMatch(/data-role="sealed-confirmation"[^>]*class="sealed-note"/);
+  it("every file is a fetch button — the endpoint is gated, so never a bare href", () => {
+    const html = view({ detail: releasedDetail(), artifacts });
+    expect(html).toMatch(
+      /data-role="artifact-download" data-file="case-a-19-healingcap-aligned.stl"/,
+    );
+    expect(html).not.toContain('href="/api/case-sessions/case-a/runs/current/artifacts');
+    expect(html).toContain('data-role="download-all"');
+    expect(html).toContain("Download all 3 files");
+  });
+
+  it("a withheld site is shown withheld, with its OPEN status and the case-wide hold", () => {
+    const html = view({ detail: releasedDetail(), artifacts });
+    expect(html).toContain('data-role="withheld-site"');
+    expect(html).toContain("Tooth 30");
+    expect(html).toContain("the site stays open (flagged)");
+    expect(html).toContain('data-role="withheld-case-files"');
+    expect(html).toContain("case-a-upper-overlay.stl");
+  });
+
+  it("a listing refusal renders in the backend's words", () => {
+    const html = view({
+      detail: releasedDetail(),
+      artifacts: { kind: "error", detail: "HTTP 409 — the confirmation changed after release" },
+    });
+    expect(html).toContain('data-role="artifacts-error"');
+    expect(html).toContain("confirmation changed after release");
   });
 });
 
-describe("the 409 re-confirm flow", () => {
-  it("renders the BFF's words and the reload affordance", () => {
+describe("the 409 re-confirm flow, phases and errors", () => {
+  it("the drift 409 renders the BFF's words and the reload affordance", () => {
     const html = view({
       detail: deliverableDetail(CONFIRMED),
       staleWords:
         "HTTP 409 — the case changed since it was confirmed — re-confirm over the current evidence",
-      dispositions: { 30: "release", 19: "release" },
       acknowledged: [30],
     });
     expect(html).toContain('data-role="reconfirm"');
     expect(html).toContain("changed since it was confirmed");
     expect(html).toContain("Reload the evidence");
   });
-});
 
-describe("phases and errors state themselves", () => {
   it("a confirming phase names the work", () => {
-    expect(
-      view({
-        phase: "confirming",
-        dispositions: { 30: "release", 19: "release" },
-        acknowledged: [30],
-      }),
-    ).toContain("Sealing the confirmation…");
+    expect(view({ phase: "confirming", acknowledged: [30] })).toContain(
+      "Sealing the confirmation…",
+    );
   });
 
   it("an action refusal renders in the backend's words", () => {
-    const html = view({ actionError: "HTTP 422 — releasing a flagged site requires its own acknowledgment" });
+    const html = view({
+      actionError: "HTTP 422 — releasing a flagged site requires its own acknowledgment",
+    });
     expect(html).toContain('data-role="deliver-error"');
     expect(html).toContain("requires its own acknowledgment");
+  });
+});
+
+describe("the parity chrome (ledger row 9): the demo's results-table language", () => {
+  it("the table keeps its clothes inside the dialog", () => {
+    const html = view({ reportOpen: true });
+    expect(html).toMatch(/data-role="assurance-table"[^>]*class="results-table"/);
+    expect(html).toContain("assurance-row--flagged");
+    expect(html).toMatch(/data-role="gate-level"[^>]*class="chip chip--gate/);
+    expect(html).toMatch(/data-role="status-chip"[^>]*class="chip chip--status"/);
+  });
+
+  it("the sealed confirmation is the quiet block with the hash in mono", () => {
+    const html = view({ reportOpen: true, detail: deliverableDetail(CONFIRMED) });
+    expect(html).toMatch(/data-role="sealed-confirmation"[^>]*class="sealed-note"/);
+    expect(html).toContain("Confirmed at 2026-07-27T12:00:00+00:00");
+  });
+
+  it("the modal footer wears the acknowledgment bar", () => {
+    const html = view({ reportOpen: true });
+    expect(html).toContain('class="decode-ack"');
+    expect(html).toContain("decode-ack__text");
+    expect(html).toContain("decode-ack__actions");
   });
 });

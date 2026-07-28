@@ -13,8 +13,15 @@ import {
   ackRequired,
   confirmBlockers,
   confirmWireBody,
+  effectiveDisposition,
+  evidenceSummary,
+  formatBytes,
+  groupArtifacts,
   isEvidenceDrift409,
   releaseBlockers,
+  releaseDisclosureWords,
+  releaseSteps,
+  withholdOffered,
 } from "./deliver";
 import {
   assuranceSite,
@@ -26,15 +33,16 @@ import {
 const TWO_SITES = assuranceView(); // flagged tooth 30 pinned first, ready tooth 19
 
 describe("confirmBlockers — inert until complete, each missing piece named", () => {
-  it("names every undispositioned site and nothing else — NO name is ever asked for", () => {
+  it("names ONLY the flagged rows still unacknowledged — nothing else is outstanding", () => {
+    // TWO blockers were deleted, both deliberately (client 2026-07-27): the actor's
+    // name (#1) and the per-row disposition (#4 — every site defaults to release).
+    // Pinned as absences so neither returns as a "missing validation" fix
     const blockers = confirmBlockers(TWO_SITES, {}, []);
     expect(blockers).toEqual([
-      "tooth 30 needs a disposition — release or withhold",
-      "tooth 19 needs a disposition — release or withhold",
       "tooth 30 is flagged — releasing it needs its own acknowledgment",
     ]);
-    // the removed blocker, pinned as an absence (client 2026-07-27)
     expect(blockers.join(" ")).not.toContain("name");
+    expect(blockers.join(" ")).not.toContain("disposition");
   });
 
   it("a flagged site dispositioned RELEASE needs its own acknowledgment", () => {
@@ -140,5 +148,146 @@ describe("the operator name store, DELETED (client 2026-07-27)", () => {
     const module = await import("./deliver");
     expect(Object.keys(module)).not.toContain("loadOperator");
     expect(Object.keys(module)).not.toContain("saveOperator");
+  });
+});
+
+describe("withholdOffered — only a flag can be held back (client #4)", () => {
+  it("a flagged row offers the control; a clean row does not", () => {
+    expect(withholdOffered(flaggedAssuranceSite())).toBe(true);
+    expect(withholdOffered(assuranceSite())).toBe(false);
+  });
+
+  it("an untouched row IS released — the server's default, resolved here too", () => {
+    expect(effectiveDisposition(assuranceSite(), {})).toBe("release");
+    expect(effectiveDisposition(flaggedAssuranceSite(), { 30: "withhold" })).toBe(
+      "withhold",
+    );
+  });
+});
+
+describe("evidenceSummary — the stage's compact read (client #5)", () => {
+  it("one line per site in the SERVED order, carrying the three scanned numbers", () => {
+    const lines = evidenceSummary(TWO_SITES);
+    expect(lines.map((l) => l.tooth)).toEqual([30, 19]); // worst-first, verbatim
+    expect(lines[0]).toMatchObject({ gate: "attention", flagged: true });
+    expect(lines[1]!.words).toBe(
+      "5020 · rim-seat, rim 0.07 mm · RMS 0.43 mm / p90 0.71 mm",
+    );
+  });
+
+  it("a site missing a number says so rather than printing a bare dash", () => {
+    const view = assuranceView({
+      sites: [
+        assuranceSite({ seat_method: null, rim_agreement_mm: null, deviation_rms_mm: null }),
+      ],
+    });
+    expect(evidenceSummary(view)[0]!.words).toContain("seat not recorded");
+    expect(evidenceSummary(view)[0]!.words).toContain("rim —");
+  });
+});
+
+describe("releaseSteps — one progression, exactly one current step (client #6)", () => {
+  const session = (over: Record<string, unknown> = {}) => ({
+    ...caseSessionDetail().session,
+    ...over,
+  });
+
+  it("nothing done: confirm is current, the rest wait and say what for", () => {
+    const steps = releaseSteps(session());
+    expect(steps.map((s) => s.state)).toEqual(["current", "waiting", "waiting"]);
+    expect(steps[1]!.detail).toContain("Waiting for the confirmation");
+    expect(steps[2]!.detail).toContain("confirmation and the payment");
+  });
+
+  it("a done step carries its timestamp, never a bare tick", () => {
+    const steps = releaseSteps(
+      session({
+        confirmed: true,
+        confirmation: {
+          at: "2026-07-27T12:00:00+00:00",
+          run_id: "r",
+          evidence_sha256: "x",
+          dispositions: {},
+          acknowledged_flags: [],
+        },
+      }),
+    );
+    expect(steps[0]).toMatchObject({ state: "done" });
+    expect(steps[0]!.detail).toContain("2026-07-27T12:00:00+00:00");
+    expect(steps[1]!.state).toBe("current");
+  });
+
+  it("paid and released each become done in turn, with their own records", () => {
+    const steps = releaseSteps(
+      session({
+        confirmed: true,
+        confirmation: {
+          at: "t1", run_id: "r", evidence_sha256: "x",
+          dispositions: {}, acknowledged_flags: [],
+        },
+        payment_authorized: true,
+        payment: { provider: "stub", at: "t2" },
+        released: true,
+        release: {
+          at: "t3", run_id: "r", evidence_sha256: "x", released_teeth: [19],
+        },
+      }),
+    );
+    expect(steps.map((s) => s.state)).toEqual(["done", "done", "done"]);
+    expect(steps[1]!.detail).toContain("stub");
+    expect(steps[2]!.detail).toContain("t3");
+  });
+});
+
+describe("releaseDisclosureWords — what the act will disclose, said first (client #6)", () => {
+  it("no preview, no promise — never an invented one", () => {
+    expect(releaseDisclosureWords(null)).toEqual([]);
+  });
+
+  it("a full release names the count and the sites", () => {
+    const words = releaseDisclosureWords({
+      file_count: 6, teeth: [4, 13], withheld_teeth: [], withheld_case_file_count: 0,
+    });
+    expect(words).toEqual(["Releasing discloses 6 files for tooth 4, tooth 13."]);
+  });
+
+  it("a withheld site is named AS staying open, and the case-wide hold counted", () => {
+    const words = releaseDisclosureWords({
+      file_count: 1, teeth: [4], withheld_teeth: [13], withheld_case_file_count: 4,
+    });
+    expect(words[0]).toBe("Releasing discloses 1 file for tooth 4.");
+    expect(words[1]).toContain("Tooth 13 is withheld");
+    expect(words[1]).toContain("the site stays open");
+    expect(words[2]).toContain("4 case-wide files stay back");
+  });
+});
+
+describe("the artifacts, grouped and sized (client #6)", () => {
+  it("buckets by site in package order, case-wide LAST, with totals", () => {
+    const groups = groupArtifacts([
+      { name: "case-a-manifest.json", size_bytes: 512, tooth: null },
+      { name: "case-a-19-cap.stl", size_bytes: 2048, tooth: 19 },
+      { name: "case-a-30-cap.stl", size_bytes: 1024, tooth: 30 },
+      { name: "case-a-19-scanbody.stl", size_bytes: 1024, tooth: 19 },
+    ]);
+    expect(groups.map((g) => g.tooth)).toEqual([19, 30, null]);
+    expect(groups[0]!.title).toBe("Tooth 19");
+    expect(groups[0]!.files.map((f) => f.name)).toEqual([
+      "case-a-19-cap.stl",
+      "case-a-19-scanbody.stl",
+    ]);
+    expect(groups[0]!.totalBytes).toBe(3072);
+    expect(groups[2]!.title).toBe("Case-wide files");
+  });
+
+  it("an empty list groups into nothing, never a phantom bucket", () => {
+    expect(groupArtifacts([])).toEqual([]);
+  });
+
+  it("sizes read as people read them; a missing size stays UNKNOWN, not zero", () => {
+    expect(formatBytes(512)).toBe("512 B");
+    expect(formatBytes(2048)).toBe("2.0 KB");
+    expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
+    expect(formatBytes(null)).toContain("size unknown");
   });
 });

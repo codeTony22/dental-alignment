@@ -58,7 +58,8 @@ from ..session import (AdjustDecisionRecord, CaseChoices, CaseSession,
                        DetectedProposal, DetectionRecord, RunSession,
                        SeatedSelection, SessionConflict, SessionStore, SiteSession,
                        SiteStatus, clear_current_run,
-                       release_matches_confirmation)
+                       release_matches_confirmation, released_teeth_of,
+                       split_released_files, summary_teeth_of)
 
 router = APIRouter(prefix="/api/case-sessions", tags=["case-sessions"])
 
@@ -236,6 +237,24 @@ class ReleaseView(BaseModel):
     released_teeth: List[int]
 
 
+class ReleasePreviewView(BaseModel):
+    """WHAT A RELEASE WOULD DISCLOSE, said BEFORE the act (client 2026-07-27 #6:
+    "Make sure we have good UI for payment and release of information / artifacts" —
+    an operator should never learn what left the building by reading the list
+    afterwards).
+
+    Derived from the CURRENT confirmation's dispositions through the same
+    ``split_released_files`` the artifact gate itself uses (session.py's one home),
+    so the promise here and the disclosure there cannot disagree. Counts and the
+    operator's own teeth only — no file NAMES, because names are the disclosure this
+    is describing, and describing is not disclosing."""
+
+    file_count: int
+    teeth: List[int]
+    withheld_teeth: List[int]
+    withheld_case_file_count: int
+
+
 class AdjustDecisionView(BaseModel):
     """The Delivery-vs-Skip fork as recorded (client 2026-07-27) — the record
     verbatim, so a surface can SAY what was decided and when, over which run."""
@@ -261,6 +280,10 @@ class SessionView(BaseModel):
     confirmation: Optional[ConfirmationView] = None
     payment: Optional[PaymentView] = None
     release: Optional[ReleaseView] = None
+    # what a release WOULD disclose (client 2026-07-27 #6) — present exactly while a
+    # confirmation covers the current done run, so the release step can name the
+    # consequence before the act rather than after it
+    release_preview: Optional[ReleasePreviewView] = None
     # ``released`` is a CURRENT-run verdict, not a record's existence: true only
     # while the release record still names the current done run — the rail's
     # deliver tick reads THIS (a stale release is history, not a state)
@@ -448,6 +471,29 @@ def _released(session: CaseSession) -> bool:
             and release_matches_confirmation(session))
 
 
+def _release_preview(session: CaseSession) -> Optional[ReleasePreviewView]:
+    """What releasing WOULD disclose, from the confirmation that is standing now
+    (client 2026-07-27 #6). Present only while a confirmation covers the current
+    DONE run — before that there is no fixed answer, and inventing one would be a
+    promise about a case that has not been confirmed. The split is
+    ``session.split_released_files``: the artifact gate's own rule, so this
+    description and that disclosure are one derivation."""
+    run, confirmation = session.run, session.confirmation
+    if (run is None or run.state != "done" or confirmation is None
+            or confirmation.run_id != (run.run_id or run.job_id)):
+        return None
+    teeth = summary_teeth_of(run)
+    released = released_teeth_of(confirmation.dispositions)
+    files, held_case_files = split_released_files(
+        run.package_files, teeth, released, session.case_id)
+    return ReleasePreviewView(
+        file_count=len(files),
+        teeth=released,
+        withheld_teeth=sorted(set(teeth) - set(released)),
+        withheld_case_file_count=len(held_case_files),
+    )
+
+
 def _session_view(session: CaseSession) -> SessionView:
     return SessionView(
         tenant_id=session.tenant_id,
@@ -465,6 +511,7 @@ def _session_view(session: CaseSession) -> SessionView:
                  if session.payment is not None else None),
         release=(ReleaseView(**session.release.model_dump())
                  if session.release is not None else None),
+        release_preview=_release_preview(session),
         released=_released(session),
     )
 

@@ -157,6 +157,7 @@ export function caseSessionDetail(
       confirmation: null,
       payment: null,
       release: null,
+      release_preview: null,
       released: false,
     },
     ...overrides,

@@ -16,7 +16,7 @@ row moves to Retired.
 | 6 | Detection + capture assembly (propose orchestration; crowns-frame capture context; centre+radius precedence; per-proposal + curated-site capture blocks) | server.py:733-853 (`_capture_context`, `_capture_block`, `_site_capture_inputs`, `_with_capture`, `_run_sites_capture`, `POST /propose`; 856+ is `_append_run_history`, NOT lifted) | case_prep/application/detection.py | 120 | slice 4 | demo retirement |
 | 7 | Pre-run preview: the deviation payload builder + the one-site preview seat | server.py:1038 (`_DEVIATION_ROUND`), 1068-1156 (`_deviation_payload`), 1176-1257 (`_PREVIEW_DIRNAME` + `preview_site_alignment`) | case_prep/application/preview.py | 170 | slice 5b | demo retirement |
 | 8 | The full run: explicit-selection gate + run orchestration (everything on: product, QC, confidence, package emission) | server.py:893-916 (`_required_selection`), 933-1011 (`POST /run`) | case_prep/application/run.py | 150 | slice 5c | demo retirement |
-| 9 | THE DESIGN SYSTEM (parity slice, client correction 2026-07-27: "we lost the good UI/UX"): the demo stylesheet copied as the product's base, plus the presentational JSX patterns the parity surfaces re-wear (see row 9 record) | apps/web/src/styles.css (3,967 lines) + named components' presentational markup | apps/product/src/styles.css + product components | 1,873 CSS verbatim (+561 product-own below the PRODUCT ADDITIONS marker; file total 2,448) | parity-i/ii/iii + parity fix (this slice) | demo retirement |
+| 9 | THE DESIGN SYSTEM (parity slice, client correction 2026-07-27: "we lost the good UI/UX"): the demo stylesheet copied as the product's base, plus the presentational JSX patterns the parity surfaces re-wear (see row 9 record) | apps/web/src/styles.css (3,967 lines) + named components' presentational markup | apps/product/src/styles.css + product components | 1,950 CSS verbatim (+814 product-own below the PRODUCT ADDITIONS marker; file total 2,773) | parity-i/ii/iii + parity fix + the report-modal re-copy (2026-07-28) | demo retirement |
 
 Rules:
 - A new copy lands ONLY with a row here, in the same commit.
@@ -247,6 +247,32 @@ that copying is named. All measured by the port script (scratch `port_styles.py`
   panel__hint--recompute; busy-state__elapsed; results-table__cap-surface; agreement--ok/
   --warn (superseded by Deliver's chip agreement language). Measured by scratch
   dead_css.py: 64 class names as of the parity fix.
+
+Row 9 UPDATE (the client-corrections slice, 2026-07-28) — one re-copy, one deletion,
+and the counts re-measured:
+- RE-COPIED, VERBATIM, from the frozen sheet (apps/web/src/styles.css 2042-2123): the
+  dialog chrome the parity slice had deleted as "demo-only" — `.decode-dialog-backdrop`,
+  `.decode-dialog`, `.decode-dialog__header/__title/__subject/__body/__body--column-
+  collapsed`. It came back because the client asked for the assurance report IN A MODAL
+  (2026-07-27 #5: "The reports can be shown in a modal"), which is exactly the surface
+  those rules dress. What stayed deleted, because the product's report has no selection
+  column: `__identity`, `__header-right`, `__progress`, `__column`, `__main`, `__top`.
+  ONE DIVERGENCE, recorded: `.decode-dialog__body .results-table-scroll` (product-own,
+  4 lines) makes the body's table scroll INSIDE the dialog — the demo's body held panes,
+  which size themselves; a table does not.
+- DELETED (product-own, so no frozen counterpart): `.operator-field`,
+  `.operator-field__input`, `.operator-field__input:focus` — the panel they dressed is
+  gone with the operator name (client 2026-07-27 #1), and dead product-own CSS is drift,
+  not a spare part.
+- NEW product-own chrome below the marker, for the corrected Deliver and Declare
+  surfaces (not copies — no demo counterpart exists): `.attestation-summary(+__line,
+  --owed)`, `.declare-fork`, `.evidence-summary(+__line, --flagged, __site, __words)`,
+  `.release-steps`, `.release-step(+--done/--current/--waiting, __marker, __body,
+  __title, __detail, __actions)`, `.disclosure-note(+__line)`, `.artifact-group(+__title,
+  __meta, __size)`, `.disposition-default`.
+- COUNTS re-measured this slice (the parity fix's 1,873/561/2,448 had drifted with the
+  panes/arch work as well as this one): 1,950 copied lines above the PRODUCT ADDITIONS
+  marker, 814 product-own from the marker to EOF, file total 2,773.
 
 Carried-forward minors (grill of slices 0b/1, 2026-07-26):
 - Tie `bff/session.py` RunSession.state to `ports/worker.py` JobState (one test or derive the

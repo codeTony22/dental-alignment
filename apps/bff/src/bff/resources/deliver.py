@@ -1,4 +1,4 @@
-"""THE DELIVER RESOURCE (plan §4 Deliver, §6; grill AM-1/AM-10/AM-11/AM-12): the
+"""THE DELIVER RESOURCE (plan §4 Deliver, §6; grill AM-1/AM-10/AM-12): the
 disclosure edge — the one place the BFF decides what leaves the building.
 
 TWO CLASSES OF DISCLOSURE (AM-1, the plan's corrected FATAL), stated here because this
@@ -37,7 +37,8 @@ from ..config import Settings
 from ..evidence import canonical_bundle, qc_image_hashes, write_bundle
 from ..session import (CaseSession, ConfirmationRecord, PaymentRecord,
                        ReleaseRecord, RunSession, SessionConflict, SessionStore,
-                       release_matches_confirmation, released_teeth_of)
+                       release_matches_confirmation, released_teeth_of,
+                       split_released_files, summary_teeth_of, tooth_of_file)
 from .case_sessions import (CaseSessionDetail, _case_or_404, _context, _detail,
                             _mutate_session)
 
@@ -294,11 +295,20 @@ class ConfirmIn(BaseModel):
     no-status-fields doctrine (test_case_sessions' allowlist carries the comment): a
     disposition says what the operator DOES with a site, never what the site IS; the
     site's status, gate and evidence all stay server-derived, and the server refuses
-    any disposition set that does not match the evidence it derived itself."""
+    any disposition set that does not match the evidence it derived itself.
+
+    DISPOSITIONS ARE OPTIONAL, AND OMISSION MEANS RELEASE (client 2026-07-27:
+    "What is disposition release vs withhold" — on a single-site case, 7 of the 9
+    real cases, the question was friction with one sane answer). A case that reached
+    Deliver is a case being delivered; withholding is the exceptional act, and the
+    only one that must be SAID. What is NOT relaxed: a flagged site that is released
+    still needs its own row acknowledgment (AM-12 — the client's own assurance
+    rule), which is exactly what the refusals now name."""
 
     model_config = ConfigDict(extra="forbid")
 
-    dispositions: Dict[str, Literal["release", "withhold"]]
+    dispositions: Dict[str, Literal["release", "withhold"]] = Field(
+        default_factory=dict)
     acknowledged_flags: List[int] = Field(default_factory=list)
 
 
@@ -391,27 +401,13 @@ def _derive_evidence_sha(case: CaseRecord, session: CaseSession,
                             _adjustments_of(session)).sha256
 
 
-def _summary_teeth(run: RunSession) -> List[int]:
-    summary = run.summary or {}
-    return [int(r.get("tooth")) for r in (summary.get("sites") or [])]
-
-
-def _tooth_of_file(name: str, case_id: str, teeth: List[int]) -> Optional[int]:
-    """File→site attribution, ANCHORED to the pipeline's own construction: every
-    per-tooth file the worker emits is ``f"{case_id}-{tooth}-…"`` (adapters/
-    output_package.py — caps, scan bodies, sidecars, QC renders alike), so a file
-    belongs to tooth ``t`` exactly when it starts with ``f"{case_id}-{t}-"``. At
-    most one tooth can match (tooth numbers carry no dash), so the answer cannot
-    depend on the order ``teeth`` arrives in. The previous anywhere-substring scan
-    attributed by ascending-tooth luck: an operator-typed case id ending in
-    ``-4`` claimed every other tooth's file for tooth 4 — a disclosure hazard at
-    the artifact gate (AM-1), not a cosmetic one. Anything unanchored is
-    case-wide, and case-wide files ship only when NO site is withheld
-    (``_split_released_files``)."""
-    for tooth in teeth:
-        if name.startswith(f"{case_id}-{tooth}-"):
-            return tooth
-    return None
+# the two file-attribution rules live in bff/session.py now: the Deliver surface
+# must say what a release WOULD disclose (before it exists) with the same rule that
+# decides what it DOES disclose, and two derivations of "what ships" would be two
+# answers waiting to disagree. Re-exported under this module's private names so the
+# gate below reads as it always did.
+_summary_teeth = summary_teeth_of
+_tooth_of_file = tooth_of_file
 
 
 # --- the confirmation (plan §6, grill AM-10/AM-12) --------------------------------------
@@ -438,25 +434,30 @@ def confirm_case(case_id: str, body: ConfirmIn,
         assurance = derive_assurance(case, session)
         teeth = [site.tooth for site in assurance.sites]
         known = {str(t) for t in teeth}
-        missing = [t for t in teeth if str(t) not in body.dispositions]
-        if missing:
-            raise HTTPException(422, "every site needs a disposition — release or "
-                                     "withhold, per row; still missing: "
-                                     + ", ".join(f"tooth {t}" for t in missing))
         unknown = sorted(k for k in body.dispositions if k not in known)
         if unknown:
             raise HTTPException(422, "dispositions name sites this run does not "
                                      "carry: "
                                      + ", ".join(f"tooth {k}" for k in unknown))
+        # EVERY SITE DEFAULTS TO RELEASE (client 2026-07-27): the effective map is
+        # what gets recorded, so the record still states an act for every site and
+        # every reader downstream (released_teeth_of, the artifact gate, the display
+        # half) keeps reading one complete map — the default is resolved HERE, once,
+        # never re-guessed by each reader.
+        dispositions = {str(t): body.dispositions.get(str(t), "release")
+                        for t in teeth}
         flagged = {site.tooth for site in assurance.sites
                    if site.status == "flagged"}
         acknowledged = set(body.acknowledged_flags)
         unacknowledged = [t for t in sorted(flagged)
-                          if body.dispositions.get(str(t)) == "release"
+                          if dispositions.get(str(t)) == "release"
                           and t not in acknowledged]
         if unacknowledged:
             # AM-12: the flag is confirmed ROW BY ROW — each unacknowledged one
-            # is named; a bulk "yes to all flags" cannot exist on this wire
+            # is named; a bulk "yes to all flags" cannot exist on this wire.
+            # Since dispositions became optional this is the ONLY thing a refusal
+            # can be short of: it never asks for a disposition the operator was
+            # not obliged to give (client 2026-07-27's friction complaint).
             raise HTTPException(422, "releasing a flagged site requires its own "
                                      "acknowledgment — still unacknowledged: "
                                      + ", ".join(f"tooth {t}"
@@ -489,7 +490,7 @@ def confirm_case(case_id: str, body: ConfirmIn,
             at=_now(),
             run_id=run.run_id or run.job_id,
             evidence_sha256=bundle.sha256,
-            dispositions=dict(body.dispositions),
+            dispositions=dispositions,
             acknowledged_flags=list(body.acknowledged_flags),
         )
 
@@ -568,12 +569,25 @@ def release_case(case_id: str, request: Request) -> CaseSessionDetail:
 
 # --- the artifact endpoints (class 2: DELIVERABLES, gated) ------------------------------
 
+class ArtifactFile(BaseModel):
+    """One released deliverable as the delivery surface needs it (client 2026-07-27
+    #6: "Make sure we have good UI for payment and release of information /
+    artifacts") — the name, its SIZE on disk, and the site it belongs to so the
+    surface can group by site instead of showing one flat list of near-identical
+    filenames. ``size_bytes`` is None when the package claims a file the run
+    directory no longer holds: an honest gap the operator can see, never a 0."""
+
+    name: str
+    size_bytes: Optional[int] = None
+    tooth: Optional[int] = None   # None = case-wide (overlay, manifest, jaw scan)
+
+
 class ArtifactsView(BaseModel):
     run_id: str
     # the released deliverables, package order preserved; QC images are the
     # EVIDENCE class and never appear here, withheld sites' per-tooth files are
     # excluded (they stay open, not shipped)
-    files: List[str]
+    files: List[ArtifactFile]
     withheld_teeth: List[int]
     # the case-wide files held back BECAUSE sites are withheld (empty on a full
     # release) — the list tells the whole truth about what did not ship and why
@@ -615,36 +629,23 @@ def _require_valid_release(case: CaseRecord, session: CaseSession,
     return run, release
 
 
-def _split_released_files(run: RunSession, release: ReleaseRecord,
-                          case_id: str) -> Tuple[List[str], List[str]]:
-    """The released set and the case-wide files held back, package order kept.
-
-    A file attributed to a tooth ships iff that tooth is released. A file
-    attributed to NO tooth is case-wide, and case-wide files ship only when no
-    site is withheld — fail-closed by construction: the worker's own notes say
-    the overlay merges ALL aligned components and the manifest carries every
-    site's row and file hashes (adapters/output_package.py), and any case-wide
-    file this gate has never heard of gets the same benefit of NO doubt. A
-    partial release ships exactly the released sites' own files (AM-1: release
-    = disclosure, and a withheld site's geometry must not ride out inside an
-    aggregate)."""
-    teeth = _summary_teeth(run)
-    withheld = set(teeth) - set(release.released_teeth)
-    files: List[str] = []
-    held_case_files: List[str] = []
-    for name in run.package_files:
-        if name.endswith(_QC_SUFFIX):
-            continue   # EVIDENCE class — never an artifact
-        tooth = _tooth_of_file(name, case_id, teeth)
-        if tooth is None and withheld:
-            held_case_files.append(name)
-        elif tooth not in withheld:
-            files.append(name)
-    return files, held_case_files
-
-
 _ARTIFACT_MEDIA = {".stl": "model/stl", ".json": "application/json",
                    ".html": "text/html"}
+
+
+def _artifact_file(run_dir: Path, name: str, case_id: str,
+                   teeth: List[int]) -> ArtifactFile:
+    """One listed deliverable with the two facts the delivery surface needs beyond
+    its name: how big it is, and which site it belongs to. The size is read from the
+    run directory at list time (the run dir is immutable, so this is a stat, not a
+    derivation); a file the package claims but disk no longer holds reports None —
+    visible as a gap rather than smoothed into a zero."""
+    path = run_dir / name
+    return ArtifactFile(
+        name=name,
+        size_bytes=(path.stat().st_size if path.is_file() else None),
+        tooth=tooth_of_file(name, case_id, teeth),
+    )
 
 
 @router.get("/{case_id}/runs/current/artifacts", response_model=ArtifactsView)
@@ -655,10 +656,14 @@ def list_artifacts(case_id: str, request: Request) -> ArtifactsView:
     case = _case_or_404(settings, case_id)
     session = store.load(case_id)
     run, release = _require_valid_release(case, session, settings)
-    withheld = sorted(set(_summary_teeth(run)) - set(release.released_teeth))
-    files, held_case_files = _split_released_files(run, release, case.id)
+    teeth = _summary_teeth(run)
+    withheld = sorted(set(teeth) - set(release.released_teeth))
+    names, held_case_files = split_released_files(
+        run.package_files, teeth, release.released_teeth, case.id)
+    run_dir = _run_dir(settings, case.id, run)
     return ArtifactsView(run_id=run.run_id or run.job_id,
-                         files=files,
+                         files=[_artifact_file(run_dir, name, case.id, teeth)
+                                for name in names],
                          withheld_teeth=withheld,
                          withheld_case_files=held_case_files)
 
