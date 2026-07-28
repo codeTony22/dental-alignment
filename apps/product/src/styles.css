@@ -2868,3 +2868,30 @@ button.package-files__link:hover {
 .assurance-detail dd p {
   margin: 0 0 4px;
 }
+
+/* THE CONFIRMATION SENTENCE WRAPS (client, 2026-07-28: "the attested message has the three
+   dots and it is not wrapped on the box"). The ported .decode-ack__disclaimer ellipsises by
+   design — in the demo it sat in a one-line footer bar. Here it is the sentence the operator
+   is signing; truncating the thing being agreed to is the one place an ellipsis cannot go. */
+.declare-panes .decode-ack__disclaimer,
+.decode-ack .decode-ack__disclaimer {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.45;
+}
+
+/* THE FORK STAYS IN VIEW (client, 2026-07-28: "I have to scroll down to see the Skip
+   adjustments … and Adjust the fits buttons"). Declare's work column scrolls — the site
+   queue, the variant shelf and the summary are all taller than the viewport on a small
+   screen — so the decision that ENDS the stage sticks to its foot instead of hiding under
+   the fold. The recorded-decision note scrolls with the rest; the buttons do not. */
+.declare-fork {
+  position: sticky;
+  bottom: 0;
+  background: var(--color-bg);
+  border-top: 1px solid var(--color-border);
+  padding: 12px 0 4px;
+  margin-top: 8px;
+  z-index: 2;
+}

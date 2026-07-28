@@ -241,11 +241,11 @@ describe("the attestation — a button-weight act over the panes it attests (AM-
     // better confirmed" — the bare checkbox is gone; the act states its subject
     const html = view();
     expect(html).toMatch(/data-role="review-tick"(?![^>]*disabled)/);
-    expect(html).toContain("Attest this site");
+    expect(html).toContain("Confirm this site");
     expect(html).toContain('data-role="attestation-sentence"');
     expect(html).toContain("tooth 19");
     expect(html).toContain("the declared cap 5020");
-    expect(html).toContain("the three panes above");
+    expect(html).toContain("the panes above");
     expect(html).not.toContain('type="checkbox" data-role="review-tick"');
   });
 
@@ -253,8 +253,8 @@ describe("the attestation — a button-weight act over the panes it attests (AM-
     const ready = siteView({ tooth: 19, status: "ready", declared_variant: "5020" });
     const html = view({ site: ready, tick: reviewTick(ready) });
     expect(html).toMatch(/data-role="review-tick"[^>]*aria-pressed="true"/);
-    expect(html).toContain("Withdraw the attestation");
-    expect(html).toContain("Attested:");
+    expect(html).toContain("Undo this confirmation");
+    expect(html).toContain("You confirmed tooth");
   });
 
   it("anything short of a preview is inert WITH its reason", () => {
@@ -273,7 +273,7 @@ describe("the attestation — a button-weight act over the panes it attests (AM-
   it("in-flight and refused states are stated — optimism OFF", () => {
     expect(view({ reviewSaving: "ticking" })).toContain("Recording the attestation…");
     expect(view({ reviewSaving: "unticking" })).toContain(
-      "Withdrawing the attestation…",
+      "Undoing…",
     );
     expect(
       view({ reviewError: "HTTP 422 — cannot review_ready a site that is 'declared'" }),

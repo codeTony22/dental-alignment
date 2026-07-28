@@ -605,7 +605,7 @@ export function DeclarePanesView({
             <span data-role="review-saving" className="decode-ack__summary">
               {reviewSaving === "ticking"
                 ? "Recording the attestation…"
-                : "Withdrawing the attestation…"}
+                : "Undoing…"}
             </span>
           )}
           {reviewError !== null && (

@@ -482,15 +482,15 @@ describe("the attestation's sentence — what is actually being attested", () =>
     );
     expect(words).toContain("tooth 19");
     expect(words).toContain("the declared cap 5020");
-    expect(words).toContain("the three panes above");
-    expect(words).toContain("I acknowledge"); // the demo ack bar's voice
+    expect(words).toContain("the panes above");
+    expect(words).toContain("Confirm that"); // the demo ack bar's voice
   });
 
   it("an attested site states what WAS attested, in the past tense", () => {
     const words = attestationSentence(
       siteView({ tooth: 19, status: "ready", declared_variant: "5020" }),
     );
-    expect(words).toContain("Attested:");
+    expect(words).toContain("You confirmed tooth");
     expect(words).toContain("tooth 19");
     expect(words).toContain("5020");
   });
@@ -504,10 +504,10 @@ describe("the attestation's sentence — what is actually being attested", () =>
 
   it("the act's label says which way the act goes", () => {
     expect(attestationAction(siteView({ status: "previewed" }))).toBe(
-      "Attest this site",
+      "Confirm this site",
     );
     expect(attestationAction(siteView({ status: "ready" }))).toBe(
-      "Withdraw the attestation",
+      "Undo this confirmation",
     );
   });
 });

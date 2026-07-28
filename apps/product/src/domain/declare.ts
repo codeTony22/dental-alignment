@@ -592,14 +592,16 @@ export function attestationSentence(site: SiteView | null): string {
     site.declared_variant !== null
       ? `the declared cap ${site.declared_variant}`
       : "no cap declared yet";
+  // PLAIN WORDS (client, 2026-07-28: "What is withdraw attestation?"). "Attestation" is
+  // the audit term, not the operator's — they confirmed a site, and they can undo it.
   if (site.status === "ready") {
     return (
-      `Attested: the three panes above showed tooth ${site.tooth}'s scan with ` +
+      `You confirmed tooth ${site.tooth}: the panes showed its scan with ` +
       `${cap} seated on it, and they matched.`
     );
   }
   return (
-    `I acknowledge that the three panes above show tooth ${site.tooth}'s scan with ` +
+    `Confirm that the panes above show tooth ${site.tooth}'s scan with ` +
     `${cap} seated on it, and that they match.`
   );
 }
@@ -607,8 +609,8 @@ export function attestationSentence(site: SiteView | null): string {
 /** The attestation button's label — an act's weight, not a checkbox's. */
 export function attestationAction(site: SiteView | null): string {
   return site !== null && site.status === "ready"
-    ? "Withdraw the attestation"
-    : "Attest this site";
+    ? "Undo this confirmation"
+    : "Confirm this site";
 }
 
 /** One line of Declare's move-forward summary: a site and what its tick stands on. */
