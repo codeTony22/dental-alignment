@@ -16,6 +16,7 @@
 import type {
   ApiResult,
   CaseSessionDetail,
+  PreviewPose,
   SitePreviewPayload,
   SiteView,
 } from "../api/client";
@@ -369,6 +370,93 @@ export function indicesFrom(faces: readonly (readonly number[])[]): Uint32Array 
     out[i * 3 + 2] = f[2] ?? 0;
   });
   return out;
+}
+
+// --- the panes' camera frames (the demo's top-of-cap directive, 2026-07-26, restored
+// --- for the product 2026-07-27: the camera faces the top of the healing cap) --------
+
+/** A pane camera frame — exactly the viewer package's VerifyViewer `frame` prop
+ * shape, so the container passes it through whole (a dropped field here is the
+ * bug the frames component test exists to keep dead). */
+export interface PaneFrame {
+  readonly center: readonly [number, number, number];
+  readonly radiusMm: number;
+  readonly viewDirection: readonly [number, number, number] | null;
+  readonly up: readonly [number, number, number] | null;
+}
+
+/** The wire carries number[]; a malformed triple must never aim a camera. */
+const tripleOf = (
+  v: readonly number[] | null | undefined,
+): readonly [number, number, number] | null =>
+  v != null && v.length === 3 ? [v[0]!, v[1]!, v[2]!] : null;
+
+/**
+ * PANES 2/3's FRAME — the demo's exact semantics (VerifyStage.tsx 451-482, the
+ * seatedFrame/occlusal story), restored as one pure rule:
+ *
+ *  - a preview payload's POSE frames down its EXACT seated axis with up = the
+ *    pose's own x_axis (the 2026-07-26 lesson: verified 0.000°-0.054° against the
+ *    packaged implant.json; x_axis is what makes the three panes comparable — a
+ *    coded cutout reads at the same clock angle everywhere);
+ *  - BEFORE a preview exists, the jaw's OCCLUSAL direction aims the camera — the
+ *    honest proxy, named as one (6.2°-42.0° off the cap's real axis across the
+ *    fleet); up stays null, because only the measured pose earns a roll;
+ *  - with NEITHER, the frame still centres the site at its radius and leaves the
+ *    direction null — the viewer's default angle, never a guess dressed as a
+ *    measurement; and with no centre at all there is no frame (null).
+ *
+ * A pose whose axis triple is malformed falls back to the occlusal proxy AND
+ * drops the up-roll with it — up belongs to the axis it rolls around.
+ */
+export function siteFrameFor(
+  center: readonly number[] | null | undefined,
+  pose: PreviewPose | null,
+  occlusal: readonly number[] | null,
+  radiusMm: number,
+): PaneFrame | null {
+  const c = tripleOf(center);
+  if (c === null) return null;
+  const axis = pose !== null ? tripleOf(pose.axis) : null;
+  return {
+    center: c,
+    radiusMm,
+    viewDirection: axis ?? tripleOf(occlusal),
+    up: axis !== null ? tripleOf(pose!.x_axis) : null,
+  };
+}
+
+/** What pane 1's frame is computed FROM — the viewer's computePartFrame result,
+ * structurally (the fitted rim centre in canonical xy, the vertex centroid, the
+ * part's own p97 radius). */
+export interface PartFrameFit {
+  readonly rimCentre: readonly [number, number];
+  readonly centroid: readonly [number, number, number];
+  readonly rmaxMm: number;
+}
+
+/**
+ * PANE 1's FRAME: down the part's own FILE axis (+z) with up +x — the canonical
+ * frame's reference direction, the same one the seated pose's x_axis is, so pane 1
+ * and panes 2/3 agree where "zero degrees" sits. The target is the fitted rim
+ * centre (canonical xy + centroid) through the part's mid-height, at the part's
+ * OWN radius (a 6mm cap framed at the scan's 9mm region radius would sit in the
+ * pane as a small disc). null in = null out: a mesh that does not read as a
+ * revolute part falls back to the viewer's default framing rather than aiming the
+ * camera off noise.
+ */
+export function partCameraFrame(fit: PartFrameFit | null): PaneFrame | null {
+  if (fit === null) return null;
+  return {
+    center: [
+      fit.rimCentre[0] + fit.centroid[0],
+      fit.rimCentre[1] + fit.centroid[1],
+      fit.centroid[2],
+    ],
+    radiusMm: fit.rmaxMm * 1.6,
+    viewDirection: [0, 0, 1],
+    up: [1, 0, 0],
+  };
 }
 
 /** The preview fetch's lifecycle as the union pane sees it — "idle" covers both "not

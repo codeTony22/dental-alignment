@@ -76,10 +76,12 @@ import {
   createPreviewFirer,
   indicesFrom,
   paneNotices,
+  partCameraFrame,
   positionsFrom,
   previewKeyFor,
   reviewTick,
   shouldAutoPreview,
+  siteFrameFor,
   variantMeshUrl,
   type PaneNotices,
   type PostPreviewFn,
@@ -869,46 +871,26 @@ export function DeclarePanes({
     };
   }, [payload, scaleId]);
 
-  // Pane 1: down the part's own file axis (+z), up +x — the canonical frame's
-  // reference direction, the same one the seated pose's x_axis is, so pane 1 and
-  // panes 2/3 agree where "zero degrees" sits.
-  const partFrame = useMemo(() => {
-    if (partPositions === null) return null;
-    const pf = computePartFrame(partPositions);
-    if (!pf) return null; // not readably revolute — default framing beats aiming off noise
-    const center: Vec3 = [
-      pf.rimCentre[0] + pf.centroid[0],
-      pf.rimCentre[1] + pf.centroid[1],
-      pf.centroid[2],
-    ];
-    return {
-      center,
-      radiusMm: pf.rmaxMm * 1.6,
-      viewDirection: [0, 0, 1] as Vec3,
-      up: [1, 0, 0] as Vec3,
-    };
-  }, [partPositions]);
+  // Pane 1: down the part's own file axis (+z), up +x — partCameraFrame (the pure
+  // rule, unit-pinned in domain/declare.test.ts) over the viewer's fitted frame;
+  // an unreadably-revolute mesh yields null and the default framing wins.
+  const partFrame = useMemo(
+    () =>
+      partCameraFrame(
+        partPositions !== null ? computePartFrame(partPositions) : null,
+      ),
+    [partPositions],
+  );
 
-  // Panes 2/3: the preview pose's EXACT axis when one exists, else the jaw's
-  // occlusal proxy — the demo's exact honesty story (the proxy aims the camera,
-  // only ever the measured pose colours anything).
+  // Panes 2/3: siteFrameFor (the demo's seatedFrame/occlusal semantics as one pure,
+  // unit-pinned rule) — the preview pose's EXACT axis when one exists, else the
+  // jaw's occlusal proxy, computed ONCE per case's scan and memoized here.
   const occlusal = useMemo(() => {
     if (scanPositions === null) return null;
     return (computeAnatomyFrame(scanPositions)?.occlusal ?? null) as Vec3 | null;
   }, [scanPositions]);
   const pose = payload?.pose ?? null;
-  // the wire carries number[]; a malformed triple falls back to the occlusal proxy
-  // rather than aiming a camera off a short array
-  const vec3 = (v: readonly number[] | null | undefined): Vec3 | null =>
-    v != null && v.length === 3 ? [v[0]!, v[1]!, v[2]!] : null;
-  const siteFrame = siteCenter
-    ? {
-        center: siteCenter,
-        radiusMm: CAP_REGION_RADIUS_MM,
-        viewDirection: (pose ? vec3(pose.axis) : null) ?? occlusal,
-        up: pose ? vec3(pose.x_axis) : null,
-      }
-    : null;
+  const siteFrame = siteFrameFor(siteCenter, pose, occlusal, CAP_REGION_RADIUS_MM);
 
   const notices = paneNotices({
     site,

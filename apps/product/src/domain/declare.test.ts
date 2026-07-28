@@ -23,8 +23,10 @@ import {
   dimsLabel,
   indicesFrom,
   paneNotices,
+  partCameraFrame,
   positionsFrom,
   previewKeyFor,
+  siteFrameFor,
   resetCount,
   reviewTick,
   runKeyFor,
@@ -298,6 +300,78 @@ describe("shouldAutoPreview — keyed on facts, no render-loop refiring", () => 
     // computing, ready AND error slots all hold the key — an errored preview waits
     // for the operator's explicit retry, not a render loop
     expect(shouldAutoPreview({ key: "k1", slotKey: "k1" })).toBe(false);
+  });
+});
+
+describe("siteFrameFor — panes 2/3 face the top of the cap (the demo's semantics)", () => {
+  const pose = {
+    axis: [0, 0.6, 0.8],
+    x_axis: [1, 0, 0],
+    origin: [1, 2, 3],
+  };
+  const occlusal = [0, 0, 1] as const;
+
+  it("a preview pose frames down the EXACT seated axis with up = its x_axis", () => {
+    expect(siteFrameFor([1, 2, 3], pose, [...occlusal], 9)).toEqual({
+      center: [1, 2, 3],
+      radiusMm: 9,
+      viewDirection: [0, 0.6, 0.8],
+      up: [1, 0, 0],
+    });
+  });
+
+  it("without a pose the jaw's occlusal proxy aims the camera; up stays null", () => {
+    expect(siteFrameFor([1, 2, 3], null, [...occlusal], 9)).toEqual({
+      center: [1, 2, 3],
+      radiusMm: 9,
+      viewDirection: [0, 0, 1],
+      up: null,
+    });
+  });
+
+  it("a malformed pose axis falls back to the occlusal proxy — up falls with it", () => {
+    const broken = { ...pose, axis: [0, 1] };
+    expect(siteFrameFor([1, 2, 3], broken, [...occlusal], 9)).toEqual({
+      center: [1, 2, 3],
+      radiusMm: 9,
+      viewDirection: [0, 0, 1],
+      up: null,
+    });
+  });
+
+  it("with neither, the frame centres the site and leaves the direction to the viewer", () => {
+    expect(siteFrameFor([1, 2, 3], null, null, 9)).toEqual({
+      center: [1, 2, 3],
+      radiusMm: 9,
+      viewDirection: null,
+      up: null,
+    });
+  });
+
+  it("no centre (or a malformed one) means no frame at all", () => {
+    expect(siteFrameFor(null, pose, [...occlusal], 9)).toBeNull();
+    expect(siteFrameFor([1, 2], pose, [...occlusal], 9)).toBeNull();
+  });
+});
+
+describe("partCameraFrame — pane 1 top-down the part's file axis", () => {
+  it("frames down [0,0,1] with up [1,0,0], at the part's own radius", () => {
+    expect(
+      partCameraFrame({
+        rimCentre: [0.2, -0.1],
+        centroid: [10, 20, 5],
+        rmaxMm: 2.5,
+      }),
+    ).toEqual({
+      center: [10.2, 19.9, 5],
+      radiusMm: 4,
+      viewDirection: [0, 0, 1],
+      up: [1, 0, 0],
+    });
+  });
+
+  it("a mesh that does not read as revolute yields no frame — default framing wins", () => {
+    expect(partCameraFrame(null)).toBeNull();
   });
 });
 
