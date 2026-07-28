@@ -123,8 +123,21 @@ describe("the stage's compact evidence, and the report behind a modal (#5)", () 
     expect(html).toContain('data-role="report-close"');
     // the table, with every column, inside its own internal scroll
     expect(html).toMatch(/data-role="assurance-table"[^>]*class="results-table"/);
-    expect(html).toContain("results-table-scroll");
-    expect(html).toContain("scan-body agreement literature"); // industry references
+    // The scroll wrapper is GONE by design (client, 2026-07-27: "fit the modal view,
+    // no need for the horizontal scroll"). Five fixed-width columns replace it.
+    expect(html).not.toContain("results-table-scroll");
+    expect(html).toContain("assurance-table-fit");
+    // The industry sentences moved INTO the row expand (same client note): a reference
+    // is read deliberately, not skimmed across a cell that forced the scroll.
+    expect(html).not.toContain("scan-body agreement literature");
+  });
+
+  it("puts the industry references in the row expand, beside the images they explain", () => {
+    const collapsed = view({ reportOpen: true });
+    expect(collapsed).not.toContain("scan-body agreement literature");
+    const expanded = view({ reportOpen: true, expanded: [30] });
+    expect(expanded).toContain('data-role="row-detail"');
+    expect(expanded).toContain("scan-body agreement literature");
   });
 
   it("a row's QC images live in the modal, behind the row expand", () => {

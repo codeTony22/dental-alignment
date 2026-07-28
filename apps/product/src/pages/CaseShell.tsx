@@ -96,9 +96,10 @@ export function CaseShellView({ detail, stage, onDetail }: CaseShellViewProps) {
           {detail.case.jaw}
         </span>
         {/* AM-7's loop: the worklist is home, and "next case" returns there. */}
-        <Link to="/" data-role="next-case" className="case-header__link">
-          Next case — back to the worklist
-        </Link>
+        {/* The way back lives in the app header now ("← All cases", on every route). This
+            corner link said "Next case" first and went to the worklist — a label that
+            described an action it did not perform, which is why the client could not find
+            the way home (2026-07-27). One honest affordance beats two, one of them lying. */}
       </header>
       <div className="workbench">
         <StageRail states={states} current={stage} caseId={detail.case.id} />

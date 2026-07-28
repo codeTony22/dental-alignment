@@ -2771,3 +2771,100 @@ button.package-files__link:hover {
     height: 360px;
   }
 }
+
+/* THE WAY HOME (client, 2026-07-27: "There is no option to go back to home and see all
+   cases"). The brand is a link on every route, and the header carries an explicit
+   "All cases" beside the context line — the corner link that existed said "Next case"
+   first, which reads as an action about another case, not as a way back. */
+.app-header__brand {
+  text-decoration: none;
+  color: inherit;
+}
+
+.app-header__brand:hover .app-header__wordmark {
+  opacity: 0.85;
+}
+
+.app-header__worklist {
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.app-header__worklist:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+/* THE ASSURANCE TABLE FITS ITS MODAL (client, 2026-07-27: "fit the modal view, no need for
+   the horizontal scroll — it makes it harder to see"). Five columns, fixed layout so a long
+   variant id cannot widen a column past its share, and the reference sentences moved into the
+   row expand. No overflow-x anywhere: nothing to scroll sideways. */
+.assurance-table-fit {
+  width: 100%;
+}
+
+.assurance-table-fit .results-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.assurance-table-fit .results-table th:nth-child(1),
+.assurance-table-fit .results-table td:nth-child(1) { width: 13%; }
+.assurance-table-fit .results-table th:nth-child(2),
+.assurance-table-fit .results-table td:nth-child(2) { width: 17%; }
+.assurance-table-fit .results-table th:nth-child(3),
+.assurance-table-fit .results-table td:nth-child(3) { width: 30%; }
+.assurance-table-fit .results-table th:nth-child(4),
+.assurance-table-fit .results-table td:nth-child(4) { width: 20%; }
+.assurance-table-fit .results-table th:nth-child(5),
+.assurance-table-fit .results-table td:nth-child(5) { width: 20%; }
+
+.assurance-table-fit .results-table td {
+  vertical-align: top;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* The three alignment numbers stack: read down, not across. */
+.assurance-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.assurance-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.assurance-sub {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+/* The sentences, where they are read rather than skimmed. */
+.assurance-detail {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+
+.assurance-detail dt {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.assurance-detail dd {
+  margin: 0;
+}
+
+.assurance-detail dd p {
+  margin: 0 0 4px;
+}

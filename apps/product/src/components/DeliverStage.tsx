@@ -160,8 +160,10 @@ function AssuranceRow({
           </span>
         </td>
         <td data-role="cell-identity">
-          declared {site.declared_variant ?? "—"} / measured{" "}
-          {site.identified_variant ?? "—"}{" "}
+          <span className="assurance-num">{site.declared_variant ?? "—"}</span>
+          {site.identified_variant !== site.declared_variant && (
+            <span className="assurance-sub"> measured {site.identified_variant ?? "—"}</span>
+          )}{" "}
           <span
             data-role="identity-agreement"
             className={agreementChipClass(site.variant_agreement)}
@@ -169,74 +171,63 @@ function AssuranceRow({
             {site.variant_agreement ?? "unmeasured"}
           </span>
         </td>
-        <td data-role="cell-seat">
-          <span
-            className={`chip chip--seat ${
-              (site.seat_method ?? "").startsWith("rim") ? "chip--seat-rim" : "chip--seat-icp"
-            }`}
-          >
-            {site.seat_method ?? "—"}
-          </span>{" "}
-          rim {site.rim_agreement_mm ?? "—"}
-          {site.rim_agreement_mm !== null && " mm"}
-          {rimRef && (
-            <small data-role="industry-ref" className="results-table__candidates">
-              {" "}
-              vs {rimRef.industry_ref.value}
-            </small>
-          )}
-        </td>
-        <td data-role="cell-rotation">
-          <span className="rotation-verdict">
-            <span className="rotation-verdict__residual">
-              {rotation.deg !== null ? `${rotation.deg}°` : "no reading"} (
-              {rotation.evidence ?? "no evidence"})
-            </span>
-            {rotation.unverified && (
-              <em
-                data-role="rotation-unverified"
-                className="rotation-verdict__residual rotation-verdict__residual--review"
+        {/* SEAT + ROTATION + DEVIATION in one cell: three numbers an operator reads
+            together as "how did this align?". Their industry sentences live in the expand. */}
+        <td data-role="cell-alignment">
+          <div className="assurance-metrics">
+            <span data-role="cell-seat">
+              <span
+                className={`chip chip--seat ${
+                  (site.seat_method ?? "").startsWith("rim") ? "chip--seat-rim" : "chip--seat-icp"
+                }`}
               >
-                {" "}
-                rotation unverified
-              </em>
-            )}
-          </span>
+                {site.seat_method ?? "—"}
+              </span>{" "}
+              <span className="assurance-num">
+                {site.rim_agreement_mm ?? "—"}
+                {site.rim_agreement_mm !== null && " mm"}
+              </span>
+            </span>
+            <span data-role="cell-rotation" className="rotation-verdict">
+              <span className="rotation-verdict__residual">
+                {rotation.deg !== null ? `${rotation.deg}°` : "no reading"}
+              </span>
+              <span className="assurance-sub"> {rotation.evidence ?? "no evidence"}</span>
+              {rotation.unverified && (
+                <em
+                  data-role="rotation-unverified"
+                  className="rotation-verdict__residual rotation-verdict__residual--review"
+                >
+                  {" "}
+                  unverified
+                </em>
+              )}
+            </span>
+            <span data-role="cell-deviation">
+              <span className="assurance-sub">RMS </span>
+              <span className="assurance-num">{site.deviation_rms_mm ?? "—"}</span>
+              <span className="assurance-sub"> / p90 </span>
+              <span className="assurance-num">{site.deviation_p90_mm ?? "—"} mm</span>
+            </span>
+          </div>
         </td>
-        <td data-role="cell-deviation">
-          RMS {site.deviation_rms_mm ?? "—"} / p90 {site.deviation_p90_mm ?? "—"} mm
-          {rmsRef && (
-            <small data-role="industry-ref" className="results-table__candidates">
-              {" "}
-              vs {rmsRef.industry_ref.value}
-            </small>
-          )}
-        </td>
-        <td data-role="cell-gate">
+        {/* GATE + RELIEF: the two verdicts about whether this site may ship. The gate's
+            action words and the clamp's reason are sentences — they belong in the expand. */}
+        <td data-role="cell-verdict">
           <div className="results-table__gate-cell">
             <span data-role="gate-level" className={gateChipClass(site.gate.level)}>
               {site.gate.level}
             </span>
-            {site.gate.actions.map((words) => (
-              <p key={words} data-role="gate-words" className="results-table__candidates">
-                {words}
-              </p>
-            ))}
-          </div>
-        </td>
-        <td data-role="cell-clamp">
-          {site.clamp.clamped ? (
-            <>
-              <span className="chip chip--relief-clamped">
-                {site.clamp.requested_mm ?? "—"} → {site.clamp.applied_mm ?? "—"} mm
+            {site.clamp.clamped ? (
+              <span data-role="cell-clamp" className="chip chip--relief-clamped">
+                relief {site.clamp.requested_mm ?? "—"} → {site.clamp.applied_mm ?? "—"} mm
               </span>
-              <p className="results-table__candidates">
-                relief clamped — {site.clamp.reason ?? "no reason recorded"}
-              </p>
-            </>
-          ) : (
-            "relief as requested"
-          )}
+            ) : (
+              <span data-role="cell-clamp" className="assurance-sub">
+                relief as requested
+              </span>
+            )}
+          </div>
         </td>
         <td>
           <div className="assurance-controls">
@@ -293,8 +284,44 @@ function AssuranceRow({
       </tr>
       {expanded && (
         <tr data-role="qc-row" data-tooth={site.tooth} className="results-table__verification-row">
-          <td colSpan={8}>
+          <td colSpan={5}>
             <div className="verification-panel">
+              {/* THE SENTENCES LIVE HERE (client, 2026-07-27): industry references, the
+                  gate's own action words and the clamp's reason are read deliberately, in
+                  one place, beside the images they explain — not wrapped into table cells
+                  that forced a horizontal scroll across the whole report. */}
+              <dl data-role="row-detail" className="assurance-detail">
+                {rimRef && (
+                  <>
+                    <dt>Seat reference</dt>
+                    <dd data-role="industry-ref">vs {rimRef.industry_ref.value}</dd>
+                  </>
+                )}
+                {rmsRef && (
+                  <>
+                    <dt>Deviation reference</dt>
+                    <dd data-role="industry-ref">vs {rmsRef.industry_ref.value}</dd>
+                  </>
+                )}
+                {site.gate.actions.length > 0 && (
+                  <>
+                    <dt>Gate</dt>
+                    <dd>
+                      {site.gate.actions.map((words) => (
+                        <p key={words} data-role="gate-words">
+                          {words}
+                        </p>
+                      ))}
+                    </dd>
+                  </>
+                )}
+                {site.clamp.clamped && (
+                  <>
+                    <dt>Relief clamp</dt>
+                    <dd>{site.clamp.reason ?? "no reason recorded"}</dd>
+                  </>
+                )}
+              </dl>
               <div className="verification-panel__images">
                 {site.qc_images.map((name) => (
                   // lazy: six sites are 12 renders — the scroll must not fetch what
@@ -713,17 +740,20 @@ export function DeliverStageView({
               </button>
             </header>
             <div className="decode-dialog__body decode-dialog__body--column-collapsed">
-              <div className="results-table-scroll">
+              <div className="assurance-table-fit">
                 <table data-role="assurance-table" className="results-table">
                   <thead>
                     <tr>
+                      {/* FIVE COLUMNS, NO HORIZONTAL SCROLL (client, 2026-07-27: "this
+                          table can be consolidated … fit the modal view, no need for the
+                          horizontal scroll — it makes it harder to see"). Eight columns each
+                          carrying a reference SENTENCE could not fit any modal; the numbers
+                          are what a row is scanned for, so the sentences moved into the
+                          expand beside the QC images where they are read, not skimmed. */}
                       <th>Site</th>
-                      <th>Identity</th>
-                      <th>Seat</th>
-                      <th>Rotation</th>
-                      <th>Deviation</th>
-                      <th>Gate</th>
-                      <th>Relief</th>
+                      <th>Cap</th>
+                      <th>Alignment</th>
+                      <th>Verdict</th>
                       <th>Disposition</th>
                     </tr>
                   </thead>

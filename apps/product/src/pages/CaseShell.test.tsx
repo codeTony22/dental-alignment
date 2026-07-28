@@ -92,14 +92,19 @@ describe("the case shell view", () => {
     expect(adjust).toContain("slice 6 builds this");
   });
 
-  it("offers the next-case affordance back to the worklist (AM-7)", () => {
+  /* The way back MOVED to the app header (client, 2026-07-27: "There is no option to go back
+     to home and see all cases"). The corner link this test used to pin said "Next case" and
+     went to the worklist — a label describing an action it did not perform. The affordance is
+     now the header's brand + "All cases" on every route, pinned in Shell.test.tsx; the case
+     header keeps only the case's own identity. */
+  it("keeps the case header to the case's own identity", () => {
     const html = renderToStaticMarkup(
       <StaticRouter location="/case/case-a/intake">
         <CaseShellView detail={detail} stage="intake" />
       </StaticRouter>,
     );
-    expect(html).toContain('data-role="next-case"');
-    expect(html).toContain('href="/"');
+    expect(html).not.toContain('data-role="next-case"');
+    expect(html).toContain("case-header__title");
   });
 
   it("the rail reflects the payload's facts, not click history", () => {
