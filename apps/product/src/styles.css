@@ -963,6 +963,26 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--color-text-muted);
+  /* The source chip (SUGGESTED / DEFAULT) is a CHILD of this heading, and until
+     2026-07-28 its only separation from the label was a bare JSX space — which this
+     heading's own letter-spacing then ate, so "GINGIVAL RELIEF" and its badge ran
+     together (client report). A flex row with a real gap makes the separation a
+     layout fact rather than a character that can be squeezed; wrapping lets a long
+     label keep its chip on the next line instead of overlapping it in a narrow
+     column. `baseline` keeps the pill sitting on the label's line, not floating. */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+/* The chip carries its OWN typography: inside an uppercase, letter-spaced heading it
+   would otherwise inherit both and render as a stretched all-caps pill wider than the
+   word it holds — which is what pushed it into the label in the first place. */
+.decode-section__title .library-badge {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  flex: 0 0 auto;
 }
 
 .decode-section__scope {

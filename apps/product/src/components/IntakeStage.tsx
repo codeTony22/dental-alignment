@@ -143,7 +143,6 @@ function ChoiceSourceChip({
       data-choice={choice}
       className="library-badge library-badge--suggested"
     >
-      {" "}
       {source}
     </span>
   );
