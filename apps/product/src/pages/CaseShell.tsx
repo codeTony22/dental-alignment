@@ -28,22 +28,17 @@ import {
   stageStates,
   type StageId,
 } from "../domain/flow";
+import { AdjustStage } from "../components/AdjustStage";
 import { DeclareStage } from "../components/DeclareStage";
 import { DeliverStage } from "../components/DeliverStage";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { IntakeStage } from "../components/IntakeStage";
 import { StageRail } from "../components/StageRail";
 
-/**
- * Each unbuilt body names the slice that builds it, so the shell never pretends.
- * Intake (slice 4), Declare (slice 5a) and Deliver (slice 8) are BUILT; Adjust
- * stays a placeholder.
- */
-const STAGE_BODY: Readonly<
-  Record<Exclude<StageId, "intake" | "declare" | "deliver">, string>
-> = {
-  adjust: "Adjust — slice 6 builds this (flagged queue, the four tools; skippable by design).",
-};
+// Every stage now has a body: Intake (slice 4), Declare (5a/5b/5c), Adjust (slice 6 —
+// the client's 2026-07-28 "the adjust functionality is not build at all", answered) and
+// Deliver (slice 8). The placeholder map that named the slice still to come is gone
+// with the last placeholder: a shell that can only render real stages cannot pretend.
 
 interface CaseLoadErrorProps {
   readonly id: string;
@@ -108,14 +103,10 @@ export function CaseShellView({ detail, stage, onDetail }: CaseShellViewProps) {
             <IntakeStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
           ) : stage === "declare" ? (
             <DeclareStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
-          ) : stage === "deliver" ? (
-            <DeliverStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
+          ) : stage === "adjust" ? (
+            <AdjustStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
           ) : (
-            <div className="workbench__work">
-              <section className="panel">
-                <p className="panel__copy">{STAGE_BODY[stage]}</p>
-              </section>
-            </div>
+            <DeliverStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
           )}
         </section>
       </div>

@@ -25,14 +25,19 @@ describe("the case shell view", () => {
     expect(html).toContain("lower");
   });
 
-  it("renders the rail and, on an unbuilt stage, a body naming its building slice", () => {
+  it("renders the rail and Adjust's built stage — no placeholder line remains", () => {
+    // THE LAST PLACEHOLDER IS GONE (client 2026-07-28: "The adjust functionality is
+    // not build at all"). Every stage now mounts a real surface, so this test's
+    // subject flipped from "names its building slice" to "there is nothing left to
+    // name" — the shell can no longer express a promise it cannot keep.
     const html = renderToStaticMarkup(
       <StaticRouter location="/case/case-a/adjust">
         <CaseShellView detail={detail} stage="adjust" />
       </StaticRouter>,
     );
     expect(html).toContain('data-role="stage-rail"');
-    expect(html).toContain("slice 6 builds this");
+    expect(html).toContain('data-role="adjust-stage"');
+    expect(html).not.toContain("builds this");
   });
 
   it("Deliver mounts its built stage (slice 8) — no placeholder line remains", () => {
@@ -88,8 +93,12 @@ describe("the case shell view", () => {
         />
       </StaticRouter>,
     );
+    // Adjust mounts the THREE PANES, not the arch: the fit is the subject here, and
+    // the whole-arch context strip belongs to Declare's framing decision.
     expect(adjust).not.toContain('data-role="main-stage"');
-    expect(adjust).toContain("slice 6 builds this");
+    expect(adjust).toContain('data-role="adjust-queue"');
+    expect(adjust).toContain('data-role="adjust-toolbox"');
+    expect(adjust).toContain('data-role="pane-union"');
   });
 
   /* The way back MOVED to the app header (client, 2026-07-27: "There is no option to go back

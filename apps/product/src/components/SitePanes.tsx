@@ -48,6 +48,7 @@ import {
   type DeviationScaleId,
   type Vec3,
   type VerifyLayerGeometry,
+  type VerifyMarker,
 } from "viewer";
 import {
   scanUrlFor,
@@ -560,10 +561,22 @@ export interface SitePaneScene {
  * memo discipline is the demo's — derive once per input, so an unrelated re-render
  * never re-uploads a mesh to the GPU.
  */
+export type PanePick = (point: [number, number, number]) => void;
+
+/** What a stage may add ON TOP of the shared scene. Declare passes nothing; Adjust
+ * arms picking and draws the numbered marks the fit-by-points flow collects.
+ * `markers` must be a STABLE identity per content (the viewer diffs by reference) —
+ * the caller memoizes, exactly as it does for geometry. */
+export interface SitePaneSceneOptions {
+  readonly markers?: Partial<Record<PaneId, readonly VerifyMarker[]>>;
+  readonly onPick?: Partial<Record<PaneId, PanePick | null>>;
+}
+
 export function useSitePaneScene(
   detail: CaseSessionDetail,
   site: SiteView | null,
   payload: SitePreviewPayload | null,
+  options: SitePaneSceneOptions = {},
 ): SitePaneScene {
   const caseId = detail.case.id;
   const linkGroupRef = useRef(new OrbitLinkGroup());
@@ -784,6 +797,8 @@ export function useSitePaneScene(
         ]}
         frame={partFrame}
         linkGroup={linkGroup}
+        markers={options.markers?.library}
+        onPick={options.onPick?.library ?? null}
         ariaLabel="The declared library part"
       />
     ),
@@ -799,6 +814,8 @@ export function useSitePaneScene(
         ]}
         frame={siteFrame}
         linkGroup={linkGroup}
+        markers={options.markers?.scan}
+        onPick={options.onPick?.scan ?? null}
         ariaLabel="The scanned cap region"
       />
     ),
@@ -822,6 +839,8 @@ export function useSitePaneScene(
         ]}
         frame={siteFrame}
         linkGroup={linkGroup}
+        markers={options.markers?.union}
+        onPick={options.onPick?.union ?? null}
         ariaLabel="The scan and the previewed cap overlaid, coloured by deviation"
       />
     ),

@@ -2895,3 +2895,197 @@ button.package-files__link:hover {
   margin-top: 8px;
   z-index: 2;
 }
+
+/* --- ADJUST (slice 6): the rework surface's own chrome ------------------------------
+   Product-own: the frozen demo had no stage like this (its adjust tools lived inside
+   the verify dialog's align-actions/fit-points/rotation-dial blocks, which the parity
+   slice deleted as demo-only). The queue, the tool tabs, the pair list and — above all
+   — the PASS block are new. */
+
+.adjust-queue__reasons {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+/* The gate's own words, given the weight of a warning without the tone of a failure:
+   a flagged site is a site to look at, not a site that broke. */
+.adjust-queue__reason {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-amber);
+  background: var(--color-amber-bg);
+  border-left: 3px solid var(--color-amber-border);
+  padding: 4px 8px;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  text-align: left;
+}
+
+/* Clean sites stay in the list and stay quiet — "visibly optional" is a tone, not a
+   hidden row (plan §4 Adjust). */
+.adjust-queue__optional {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.decode-stepper__item--optional {
+  opacity: 0.82;
+}
+
+.adjust-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.adjust-tools__tab {
+  flex: 1 1 auto;
+  min-width: 96px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.adjust-tools__tab--active {
+  background: var(--color-accent-green);
+  border-color: var(--color-accent-green-dark);
+  color: #ffffff;
+}
+
+.adjust-tool {
+  display: grid;
+  gap: 8px;
+}
+
+.adjust-tool__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+/* The read-out sits ABOVE the controls it describes: the residual is what the operator
+   is steering toward, so it must never be something they scroll to find. */
+.adjust-tool__readout {
+  margin: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  background: #f6f7f6;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 6px 8px;
+}
+
+.adjust-tool__field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.adjust-tool__field input {
+  width: 88px;
+  padding: 4px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.adjust-pairs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.adjust-pairs__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.adjust-pairs__row[data-slot="complete"] {
+  border-color: var(--color-accent-green);
+}
+
+.adjust-pairs__words {
+  font-variant-numeric: tabular-nums;
+}
+
+/* THE PASS THAT WEARS A REFUSAL'S STATUS (client ask 2026-07-26). Green, deliberately:
+   the demo shipped "already optimal" in the refusal block's red once, and the operator
+   learned to read a correct answer as a failure. The tone is the requirement. */
+.adjust-pass {
+  border: 1px solid var(--color-accent-green);
+  background: #f0faf3;
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.adjust-pass__title {
+  color: var(--color-accent-green-dark);
+  font-size: 13px;
+}
+
+.adjust-pass__detail {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text);
+}
+
+.adjust-outcome {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.adjust-outcome__detail {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text);
+}
+
+.adjust-outcome__pairs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.adjust-outcome__pair {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+
+/* The re-confirm nudge: an applied tool moved the pose the review attested, and the
+   operator needs to know BEFORE they walk to Deliver and find it closed. */
+.adjust-outcome__note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-amber);
+}

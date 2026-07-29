@@ -319,8 +319,13 @@ export interface SitePreviewPayload {
   stats: PreviewStats;
   vertex_footprint_points: number;
   reporting_only: boolean;
+  /** TRUE when this colouring came from a pre-run PREVIEW seat, false when it
+   * describes a SHIPPED pose (Adjust's read). The two look identical on screen and
+   * mean different things, so the caption branches on it. */
   preview: boolean;
-  seat: PreviewSeat;
+  /** The seat facts ride along on the PREVIEW payload only — the shipped read has a
+   * run row for them, and inventing the key would claim a measurement twice. */
+  seat?: PreviewSeat | null;
 }
 
 /**
@@ -331,7 +336,22 @@ export interface SitePreviewPayload {
  */
 export type ApiResult<T> =
   | { kind: "ok"; data: T }
-  | { kind: "error"; detail: string; status?: number };
+  | {
+      kind: "error";
+      detail: string;
+      status?: number;
+      /**
+       * The refusal body's `detail` value RAW, when it was not a plain sentence.
+       * Almost every BFF refusal is one sentence and this stays undefined. The
+       * exception earns its keep: the best-fit's already-optimal outcome is a
+       * refusal that is really a PASS, and it carries machine-readable fields
+       * (`kind`, `matching_diameter_mm`, `suggested_diameter_mm`) so the surface can
+       * render it green with a one-click widen instead of the refusal tone the demo
+       * learned to regret. Kept as `unknown`: domain code narrows it, transport does
+       * not interpret it.
+       */
+      refusal?: unknown;
+    };
 
 /** What a fetching component holds: the result, or the honest in-between. */
 export type FetchState<T> = { kind: "loading" } | ApiResult<T>;
@@ -371,16 +391,19 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<ApiResult
     };
   }
   if (!response.ok) {
-    // FastAPI refusals carry {"detail": ...} — a sentence, or pydantic's error rows.
+    // FastAPI refusals carry {"detail": ...} — a sentence, pydantic's error rows, or
+    // (slice 6's one structured case) an object the domain layer narrows.
     let detail = `HTTP ${response.status}`;
+    let refusal: unknown;
     try {
       const body = (await response.json()) as { detail?: unknown };
+      refusal = body.detail;
       const stated = refusalDetail(body.detail);
       if (stated !== null) detail = `HTTP ${response.status} — ${stated}`;
     } catch {
       // a non-JSON error body still yields the status line above
     }
-    return { kind: "error", detail, status: response.status };
+    return { kind: "error", detail, status: response.status, refusal };
   }
   try {
     return { kind: "ok", data: (await response.json()) as T };
@@ -815,4 +838,111 @@ export async function fetchArtifactBlob(
     return { kind: "error", detail, status: response.status };
   }
   return { kind: "ok", data: await response.blob() };
+}
+
+// --- Adjust (slice 6): the four tools and the read the panes open on -------------------
+
+/**
+ * One correspondence on the wire. The PART half is a named feature OR a free
+ * canonical-frame click, exactly one. The SCAN half is one click — or, with
+ * `scan_point_end`, THE SPAN: both ENDS of the feature (client ask 2026-07-26, plan
+ * §5). The span's own bounds are the worker's; this app only carries the two points.
+ */
+export interface CorrespondencePairBody {
+  feature_id?: string;
+  part_point?: number[];
+  scan_point: number[];
+  scan_point_end?: number[];
+}
+
+/** What a tool produced — the application's own facts, passed through by the BFF.
+ * Tool-specific fields are null where they do not apply. */
+export interface AdjustOutcomeView {
+  tooth: number;
+  operation: string;
+  detail: string;
+  applied: boolean;
+  files: string[];
+  clocking: Record<string, unknown> | null;
+  nudge: Record<string, unknown> | null;
+  applied_delta_deg: number | null;
+  cumulative_deg: number | null;
+  stability_excess_mm: number | null;
+  best_fit: Record<string, unknown> | null;
+  /** ONE ROW PER OBSERVATION — a span contributes two (its midpoint and, when the
+   * span reads as radial, its direction), each with its own residual. */
+  pairs: Array<Record<string, unknown>>;
+  residual_rms_mm: number | null;
+  click_azimuth_deg: number | null;
+  matched_feature_azimuth_deg: number | null;
+}
+
+/** An applied (or measured) tool: what it did, the NEW pose as the panes render it,
+ * and the whole case detail — replaced verbatim, never patched locally (AM-4). */
+export interface AdjustResultView {
+  outcome: AdjustOutcomeView;
+  pane_payload: SitePreviewPayload | null;
+  case: CaseSessionDetail;
+}
+
+/** The site's SHIPPED pose as the three panes render it (GET .../sites/{tooth}/seated)
+ * — the same payload shape the preview serves, from the same builder, so a pose read
+ * before and after a rework is the same instrument on the same scale. */
+export async function fetchSeated(
+  caseId: string,
+  tooth: number,
+): Promise<ApiResult<SitePreviewPayload>> {
+  return fetchJson<SitePreviewPayload>(siteActionPath(caseId, tooth, "seated"));
+}
+
+function adjustTool(
+  caseId: string,
+  tooth: number,
+  action: string,
+  body: unknown,
+): Promise<ApiResult<AdjustResultView>> {
+  return fetchJson<AdjustResultView>(siteActionPath(caseId, tooth, action), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** THE ROTATION DIAL: a gated step about the seated part's own axis, or the reset that
+ * restores the pipeline's certified pose. The ±45° bound is the server's. */
+export async function postRotation(
+  caseId: string,
+  tooth: number,
+  body: { step_deg?: number; reset?: boolean },
+): Promise<ApiResult<AdjustResultView>> {
+  return adjustTool(caseId, tooth, "rotation", body);
+}
+
+/** MARK TRENCH: one click on the scan's coded cutout; the cap rotates so its nearest
+ * code feature lands there — through the same gates as every other rotation. */
+export async function postMarkTrench(
+  caseId: string,
+  tooth: number,
+  scanPoint: readonly number[],
+): Promise<ApiResult<AdjustResultView>> {
+  return adjustTool(caseId, tooth, "mark-trench", { scan_point: [...scanPoint] });
+}
+
+/** FIT BY POINTS: named correspondences, single-click or SPAN. */
+export async function postFitByPoints(
+  caseId: string,
+  tooth: number,
+  pairs: readonly CorrespondencePairBody[],
+): Promise<ApiResult<AdjustResultView>> {
+  return adjustTool(caseId, tooth, "fit-by-points", { pairs: [...pairs] });
+}
+
+/** BEST FIT at the operator's matching diameter. `apply: false` MEASURES ONLY — the
+ * refinement runs and the gates still judge it, but nothing is written. */
+export async function postBestFit(
+  caseId: string,
+  tooth: number,
+  body: { matching_diameter_mm: number; apply: boolean },
+): Promise<ApiResult<AdjustResultView>> {
+  return adjustTool(caseId, tooth, "best-fit", body);
 }

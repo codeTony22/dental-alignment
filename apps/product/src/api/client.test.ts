@@ -51,6 +51,10 @@ describe("the BFF client's error results", () => {
       kind: "error",
       status: 404,
       detail: "HTTP 404 — unknown case 'gone-case'",
+      // the raw `detail` rides along (slice 6): almost every refusal is a sentence and
+      // this is that sentence again, but the ONE structured refusal — the best-fit's
+      // already-optimal PASS — is only reachable through it
+      refusal: "unknown case 'gone-case'",
     });
   });
 
@@ -195,6 +199,14 @@ describe("the action requests (slice 4) — detect and choices", () => {
       kind: "error",
       status: 422,
       detail: "HTTP 422 — jaw must be one of upper, lower, got 'sideways'",
+      refusal: [
+        {
+          type: "value_error",
+          loc: ["body", "jaw"],
+          msg: "Value error, jaw must be one of upper, lower, got 'sideways'",
+          input: "sideways",
+        },
+      ],
     });
   });
 });

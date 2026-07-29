@@ -321,6 +321,33 @@ Row 5 record (slice 6, 2026-07-28) — divergences, per the rules above:
 - `confirm-alignment` (2247-2324) is deliberately NOT lifted: the product's confirmation
   is the sealed evidence bundle at Deliver (slice 8), not a per-site doctor note.
 
+Row 9 UPDATE (slice 6, 2026-07-28) — one MOVE, no new copying, and the counts
+re-measured with the rule stated so they stop drifting:
+- MOVED, not copied: the VerifyPanels chrome this row already records (PaneShell,
+  the layer HUD, the colorbar + its two scales and folded legend, per-pane maximize,
+  the link-orbits toggle) left `components/DeclarePanes.tsx` for the new
+  `components/SitePanes.tsx`. Adjust shows the SAME three panes as Declare (plan §4
+  Adjust says so in as many words), and a second copy would have been a second
+  geometry waiting to disagree. The copied bytes are unchanged; only their home is.
+  `DeclarePanes` keeps its exported names and its own half — the preview firing, the
+  preview caption, the attestation bar — so this row's subject did not move, just
+  its file. Retires with the demo, as before.
+- NEW, product-own, NOT a copy: Adjust's chrome (`.adjust-tools(+__tab, --active)`,
+  `.adjust-tool(+__row, __readout, __field)`, `.adjust-queue__reasons/__reason/
+  __optional`, `.adjust-pairs(+__row, __words)`, `.adjust-pass(+__title, __detail)`,
+  `.adjust-outcome(+__detail, __pairs, __pair, __note)`) plus one modifier on a
+  copied class, `.decode-stepper__item--optional` — the demo's stepper had no
+  "listed but optional" state because it had no stage where reworking a passing site
+  was offered. The demo's own adjust chrome (align-actions, fit-points,
+  rotation-dial, best-fit) was DELETED by the parity slice as demo-only and was NOT
+  brought back: it dressed a dialog's tool strip, and this is a stage.
+- COUNTS re-measured, with the RULE named so the next reader gets the same number:
+  copied = every line before the PRODUCT ADDITIONS marker block = lines 1-1958
+  (1,958); product-own = every line after it = lines 1966-3091 (1,126); file total
+  3,091. The earlier "1,950 / 814 / 2,773" counted the copied region WITHOUT the
+  file's own 8-line header and predated two later product-own additions; the copied
+  region itself has NOT drifted — verified byte-identical against `2e71b7a`.
+
 Carried-forward minors (grill of slices 0b/1, 2026-07-26):
 - Tie `bff/session.py` RunSession.state to `ports/worker.py` JobState (one test or derive the
   Literal) — due slice 5c. DONE (slice 5c, 2026-07-27): test_worker_port.TestStateTie
