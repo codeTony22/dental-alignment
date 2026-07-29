@@ -6,25 +6,45 @@ export PYTHONWARNINGS := ignore:::urllib3
 PY := .venv/bin/python
 PYTEST := .venv/bin/pytest
 
-.PHONY: test test-fast test-slow rehearse demo demo-fast booleans-demo workflow-real real-demo automation-demo auto serve run install
+# PARALLELISM IS THE DEFAULT (2026-07-28). The slow lane spent ~24 minutes putting 217
+# real-mesh tests through ONE core on an 18-core machine, and every agent and human paid
+# that toll on every certification. It lives HERE, in the flag, rather than in a habit
+# somebody has to remember: a lane that is only fast when you type the magic invocation
+# is a lane that will be run slowly.
+#
+# `--dist loadfile` is load-balanced BY FILE, not by test: six suites write into
+# `reports/` or chdir, and file-level affinity keeps a module's tests on one worker so
+# those two never interleave. Per-test distribution would be faster and would corrupt
+# them. `-n auto` uses the cores the machine actually has, so CI and laptops each get
+# what they have instead of a number hardcoded from tonight's box.
+PARALLEL := -n auto --dist loadfile
+
+.PHONY: test test-fast test-slow test-serial rehearse demo demo-fast booleans-demo workflow-real real-demo automation-demo auto serve run install
 
 install:
 	python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
-# THE CERTIFICATION GATE — everything, both lanes. Unchanged: adding markers did not
-# narrow what this runs, and nothing may ship on `test-fast` alone.
+# THE CERTIFICATION GATE — everything, both lanes. Unchanged in WHAT it runs: neither the
+# markers nor the parallelism narrowed it, and nothing may ship on `test-fast` alone.
 test:
-	$(PYTEST) -q
+	$(PYTEST) -q $(PARALLEL)
 
-# The inner-loop lane: every test NOT measured as slow. Runs in ~2 minutes instead of
-# ~24, so it is cheap enough to run between edits. It is a FILTER, not a subset anyone
-# curated — a new test is in this lane by default and leaves it only by measuring slow.
+# The inner-loop lane: every test NOT measured as slow. It is a FILTER, not a subset
+# anyone curated — a new test is in this lane by default and leaves it only by measuring
+# slow.
 test-fast:
-	$(PYTEST) -q -m "not slow"
+	$(PYTEST) -q -m "not slow" $(PARALLEL)
 
 # The other half, on its own — useful when a change is confined to the real-data path.
 test-slow:
-	$(PYTEST) -q -m slow
+	$(PYTEST) -q -m slow $(PARALLEL)
+
+# THE TIEBREAKER. When a parallel run fails and you suspect the parallelism rather than
+# the code, re-run the same tests single-file, single-process: if it passes here and
+# fails above, the test has a shared-state dependency that `--dist loadfile` did not
+# contain, and THAT is the bug — not a reason to go back to running everything serially.
+test-serial:
+	$(PYTEST) -q -p no:xdist
 
 # THE DEMO-READINESS GATE: every case down the UI's own path, compared against the known
 # baseline. Green = "the fleet behaves the way it behaved when we last looked"; red lists

@@ -15,7 +15,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "matplotlib>=3.7", "pytest-json-report>=1.5"]
+# pytest-xdist is NOT optional tooling: the Makefile's lanes pass `-n auto --dist
+# loadfile`, so a venv without it fails on an unknown flag rather than merely running
+# slowly. It is declared here so `make install` produces a venv the Makefile can drive.
+dev = ["pytest>=7.0", "matplotlib>=3.7", "pytest-json-report>=1.5", "pytest-xdist>=3.5"]
 
 [project.scripts]
 case-prep = "case_prep.cli:main"
