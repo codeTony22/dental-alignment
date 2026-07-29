@@ -18,7 +18,12 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StaticRouter } from "react-router-dom";
 import { DeliverStageView } from "./DeliverStage";
-import { assuranceView, caseSessionDetail, siteView } from "../testing/fixtures";
+import {
+  assuranceSite,
+  assuranceView,
+  caseSessionDetail,
+  siteView,
+} from "../testing/fixtures";
 import type { CaseSessionDetail } from "../api/client";
 
 /** A detail whose session stands where Deliver opens: a done run, sites resolved. */
@@ -398,6 +403,35 @@ describe("the 409 re-confirm flow, phases and errors", () => {
     });
     expect(html).toContain('data-role="deliver-error"');
     expect(html).toContain("requires its own acknowledgment");
+  });
+});
+
+describe("a reworked row says which of its numbers predate the rework (finding E)", () => {
+  it("the line rides in the ROW, not behind the expand — the signature covers it", () => {
+    const html = view({
+      reportOpen: true,
+      assurance: {
+        kind: "ok",
+        data: assuranceView({
+          sites: [
+            assuranceSite({
+              tooth: 19,
+              stale_metrics: ["rim_agreement_mm", "guidance"],
+            }),
+          ],
+        }),
+      },
+    });
+    expect(html).toContain('data-role="stale-metrics"');
+    expect(html).toContain("the rim agreement and the gate verdict");
+    expect(html).toContain("Confirming seals them as they stand");
+    // and the numbers themselves stay on the row: naming them is disclosure, not
+    // deletion — a hidden number leaves the doctor nothing to weigh
+    expect(html).toContain("0.07");
+  });
+
+  it("a row the run produced carries no such line at all", () => {
+    expect(view({ reportOpen: true })).not.toContain('data-role="stale-metrics"');
   });
 });
 

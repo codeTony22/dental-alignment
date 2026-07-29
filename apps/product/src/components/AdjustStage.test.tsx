@@ -128,6 +128,34 @@ describe("the toolbox", () => {
     expect(html).toContain("coded-cutout residual -1.8° · cumulative +6.0°");
   });
 
+  it("says what the act left stale on the run's report, where the act happened", () => {
+    // FINDING E's other half (review 2026-07-28): the operator meets these two numbers
+    // again on Deliver's table, under their own signature. Learning it there for the
+    // first time is learning it too late.
+    const html = view({
+      lastOutcome: {
+        applied: true,
+        detail: "rotated +5.0°",
+        pairs: [],
+        stale_metrics: ["rim_agreement_mm", "guidance"],
+      } as unknown as AdjustOutcomeView,
+    });
+    expect(html).toContain('data-role="rework-note"');
+    expect(html).toContain("the rim agreement and the gate verdict");
+  });
+
+  it("an outcome with nothing stale carries no such note", () => {
+    const html = view({
+      lastOutcome: {
+        applied: true,
+        detail: "restored the pipeline's certified pose",
+        pairs: [],
+        stale_metrics: [],
+      } as unknown as AdjustOutcomeView,
+    });
+    expect(html).not.toContain('data-role="rework-note"');
+  });
+
   it("best fit offers the dial, Measure only and Apply", () => {
     const html = view({ tool: "best-fit" });
     expect(html).toContain('data-role="diameter-input"');

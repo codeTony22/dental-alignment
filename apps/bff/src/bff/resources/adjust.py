@@ -218,6 +218,10 @@ class AdjustOutcomeView(BaseModel):
     applied: bool
     files: List[str] = Field(default_factory=list)
     clocking: Optional[dict] = None
+    # what this act re-derived over the new pose, and what it could not — the surface
+    # tells the operator both, because the second half is what they carry into Deliver
+    deviation: Optional[dict] = None
+    stale_metrics: List[str] = Field(default_factory=list)
     nudge: Optional[dict] = None
     applied_delta_deg: Optional[float] = None
     cumulative_deg: Optional[float] = None
@@ -284,9 +288,25 @@ def _summary_row(run: RunSession, tooth: int) -> Optional[dict]:
 
 
 def _fold_outcome(run: RunSession, tooth: int, outcome: AdjustOutcome) -> None:
-    """Fold the post-adjustment instrument reading into the run's summary row — the
-    demo's ``_update_run_row`` (server.py:1337-1375), re-homed: the demo rewrote its
-    cached run.json, the product's summary lives on the session receipt.
+    """Fold the post-adjustment reading into the run's summary row — the demo's
+    ``_update_run_row`` (server.py:1337-1375), re-homed: the demo rewrote its cached
+    run.json, the product's summary lives on the session receipt.
+
+    THE ROW MUST DESCRIBE THE POSE THAT SHIPPED (review 2026-07-28, finding E). It is
+    not a cache here as it was in the demo — the assurance projection reads it verbatim
+    and the CONFIRMATION SEALS it, so a row left describing the pre-rework fit puts
+    stale numbers under a freshly derived hash, which is worse than not re-hashing at
+    all. Three things keep that honest:
+
+      - the instrument readings the tool re-derived over the new pose land here
+        (``clocking``, and ``deviation``, whose scalars come off the very payload the
+        operator's panes are rendering);
+      - what could NOT be re-derived from the shipped record is NAMED
+        (``rework.stale_metrics``) so the sealed document says which of its numbers
+        predate the rework, instead of implying all of them are fresh;
+      - a RESET clears both markers and the best-fit block: the site is back on the
+        pipeline's own certified pose, so nothing predates anything and no block may go
+        on describing a fit that has been undone.
 
     ``nudge`` is written only when the tool ROTATED (the demo's 2026-07-25 rule kept
     verbatim: a manual best-fit is a 6-DoF move, not a clock nudge, and must not
@@ -299,10 +319,22 @@ def _fold_outcome(run: RunSession, tooth: int, outcome: AdjustOutcome) -> None:
         return
     if outcome.clocking:
         row["clocking"] = {**(row.get("clocking") or {}), **outcome.clocking}
+    if outcome.deviation:
+        # a re-derivation that came back EMPTY (too sparse a footprint at the new pose)
+        # writes None over the old numbers on purpose: "missing" is the honest reading
+        # of a pose nobody could measure, and the acceptance catalog already renders it
+        # that way. Keeping the pre-rework figures would be the stale-row bug again.
+        row.update(outcome.deviation)
+    if outcome.stale_metrics:
+        row["rework"] = {"stale_metrics": list(outcome.stale_metrics)}
+    else:
+        row.pop("rework", None)
     if outcome.nudge is not None and outcome.operation != "best-fit":
         row["nudge"] = outcome.nudge
     if outcome.best_fit is not None:
         row["best_fit"] = outcome.best_fit
+    elif outcome.operation == "rotation-reset":
+        row.pop("best_fit", None)
     for name in outcome.files:
         if name not in run.package_files:
             run.package_files.append(name)
@@ -348,7 +380,8 @@ def _result(case: CaseRecord, session: CaseSession, settings: Settings,
         outcome=AdjustOutcomeView(
             tooth=outcome.tooth, operation=outcome.operation, detail=outcome.detail,
             applied=outcome.applied, files=list(outcome.files),
-            clocking=outcome.clocking, nudge=outcome.nudge,
+            clocking=outcome.clocking, deviation=outcome.deviation,
+            stale_metrics=list(outcome.stale_metrics), nudge=outcome.nudge,
             applied_delta_deg=outcome.applied_delta_deg,
             cumulative_deg=outcome.cumulative_deg,
             stability_excess_mm=outcome.stability_excess_mm,

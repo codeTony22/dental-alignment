@@ -689,6 +689,12 @@ export interface AssuranceSite {
   deviation_p90_mm: number | null;
   gate: AssuranceGate;
   clamp: AssuranceClamp;
+  /** The numbers in this row that PREDATE an operator rework (the BFF's own list).
+   * Adjust re-derives the deviation scalars and the clocking over the new pose; the
+   * rim agreement and the guidance cannot be re-derived from the shipped record, so
+   * they are named here rather than left to look current. Empty on every row the run
+   * itself produced. */
+  stale_metrics: string[];
   qc_images: string[];
   references: Record<string, AssuranceReference>;
 }
@@ -864,6 +870,11 @@ export interface AdjustOutcomeView {
   applied: boolean;
   files: string[];
   clocking: Record<string, unknown> | null;
+  /** The run-row numbers this act RE-DERIVED over the new pose. */
+  deviation: Record<string, unknown> | null;
+  /** The run-row numbers it could NOT re-derive, named — what the operator carries
+   * into Deliver, where the confirmation seals them. */
+  stale_metrics: string[];
   nudge: Record<string, unknown> | null;
   applied_delta_deg: number | null;
   cumulative_deg: number | null;

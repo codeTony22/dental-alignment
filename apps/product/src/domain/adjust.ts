@@ -399,9 +399,19 @@ export function pairWords(draft: PairDraft, index: number): string {
 
 // --- reading what a tool produced -----------------------------------------------------------
 
-/** One observation row's line: WHICH reading it is (a single point, a span's midpoint,
- * a span's direction) and how far it missed by at its own lever arm. The span's whole
- * point is visible here — two rows carrying one label. */
+/**
+ * One observation row's line: WHICH reading it is (a single point, a span's midpoint,
+ * a span's direction), how far it missed by at the marked feature's own lever arm, and
+ * — when the worker attached one — the sentence the operator is owed about this
+ * reading.
+ *
+ * THE NOTE IS NOT DECORATION (suites 2026-07-28). A chordal span's direction is
+ * dropped, and the worker has always written down why; it went to the record on disk
+ * and the surface rendered one unexplained row. An operator who spends a second click
+ * to buy a rotational constraint and silently receives one observation has been given
+ * a no-op with a smile — the exact failure the "never a silent no-op" rule exists to
+ * prevent. The sentence is the worker's, passed through (AM-4).
+ */
 export function observationWords(row: Record<string, unknown>): string {
   const label = typeof row["feature_id"] === "string" ? row["feature_id"] : "mark";
   const kind = typeof row["observation"] === "string" ? row["observation"] : "point";
@@ -414,7 +424,10 @@ export function observationWords(row: Record<string, unknown>): string {
       : kind === "direction"
         ? "span direction"
         : "point";
-  return `${label} · ${named} — ${missed}`;
+  const note = typeof row["note"] === "string" && row["note"].length > 0
+    ? ` — ${row["note"]}`
+    : "";
+  return `${label} · ${named} — ${missed}${note}`;
 }
 
 /** The applied tool's headline, from the BFF's own facts. Never our arithmetic: every
@@ -429,4 +442,51 @@ export function outcomeWords(outcome: AdjustOutcomeView): string {
  * over the NEW panes before Deliver opens again. */
 export function needsReconfirm(status: SiteStatus): boolean {
   return status === "adjusted";
+}
+
+// --- what a rework leaves behind on the run's report (review 2026-07-28, finding E) ----
+
+/** The wire's metric keys in the reader's language. A key with no phrasing here is
+ * passed through rather than dropped: the BFF owns this list, and a name this app has
+ * not met yet is still a fact the operator must see. */
+const STALE_METRIC_NAMES: Readonly<Record<string, string>> = {
+  rim_agreement_mm: "the rim agreement",
+  guidance: "the gate verdict",
+  deviation_rms_mm: "the deviation RMS",
+  deviation_p90_mm: "the deviation p90",
+};
+
+/**
+ * The run-row numbers a rework could NOT re-derive, named and joined — the ONE
+ * vocabulary for this, shared with Deliver (which seals them) so the stage that causes
+ * the staleness and the stage that signs it name the same things the same way. Null
+ * when nothing is stale, so every caller renders nothing rather than an empty clause.
+ */
+export function staleMetricsPhrase(keys: readonly string[]): string | null {
+  // read defensively, like every other wire narrowing here (gateActions,
+  // alreadyOptimalFrom): a BFF that predates this field must render nothing, never
+  // throw inside the panel the operator is reading
+  if (!Array.isArray(keys) || keys.length === 0) return null;
+  const named = keys.map((key) => STALE_METRIC_NAMES[key] ?? key);
+  if (named.length === 1) return named[0]!;
+  return `${named.slice(0, -1).join(", ")} and ${named[named.length - 1]}`;
+}
+
+/**
+ * WHAT THE ACT JUST DID TO THE RUN'S REPORT, said at the moment it happens.
+ *
+ * The tool re-derives the deviation over the new pose; the rim agreement and the gate
+ * verdict it cannot, and those are what the operator will meet again on Deliver's
+ * table. Saying it here — beside the outcome, not two stages later — is the same rule
+ * as every refusal in this surface: the person acting learns the consequence from the
+ * act, not from discovering it downstream.
+ */
+export function reworkWords(outcome: AdjustOutcomeView): string | null {
+  if (!outcome.applied) return null;
+  const named = staleMetricsPhrase(outcome.stale_metrics);
+  if (named === null) return null;
+  return (
+    `The run's report still carries ${named} from before this change — Deliver ` +
+    `marks them as predating the rework, and the next full run re-measures them.`
+  );
 }

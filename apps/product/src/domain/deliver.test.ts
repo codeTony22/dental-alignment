@@ -22,6 +22,7 @@ import {
   releaseBlockers,
   releaseDisclosureWords,
   releaseSteps,
+  staleMetricsWords,
   withholdOffered,
 } from "./deliver";
 import {
@@ -184,6 +185,36 @@ describe("evidenceSummary — the stage's compact read (client #5)", () => {
     });
     expect(evidenceSummary(view)[0]!.words).toContain("seat not recorded");
     expect(evidenceSummary(view)[0]!.words).toContain("rim —");
+  });
+});
+
+describe("staleMetricsWords — what a reworked row's numbers still describe", () => {
+  it("a row the run produced claims nothing predates it", () => {
+    expect(staleMetricsWords(assuranceSite())).toBeNull();
+  });
+
+  it("names the stale numbers in the reader's language, not the wire's", () => {
+    const words = staleMetricsWords(
+      assuranceSite({ stale_metrics: ["rim_agreement_mm", "guidance"] }),
+    );
+    expect(words).toContain("the rim agreement");
+    expect(words).toContain("the gate verdict");
+    expect(words).not.toContain("rim_agreement_mm");
+  });
+
+  it("says what confirming does with them — the whole reason the line exists", () => {
+    // FINDING E (review 2026-07-28): the confirmation SEALS this document. A doctor
+    // signing a table must be able to see which of its numbers describe the fit that
+    // is on the site now and which describe the one the run produced.
+    const words = staleMetricsWords(assuranceSite({ stale_metrics: ["guidance"] }));
+    expect(words).toContain("Confirming seals");
+  });
+
+  it("passes an unknown key through rather than dropping it silently", () => {
+    // the BFF owns this list; a name this app has no phrasing for is still a fact the
+    // operator must see
+    expect(staleMetricsWords(assuranceSite({ stale_metrics: ["some_new_metric"] })))
+      .toContain("some_new_metric");
   });
 });
 

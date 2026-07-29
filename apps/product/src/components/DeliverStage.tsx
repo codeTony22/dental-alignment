@@ -57,6 +57,7 @@ import {
   isEvidenceDrift409,
   releaseDisclosureWords,
   releaseSteps,
+  staleMetricsWords,
   withholdOffered,
   type Disposition,
   type DispositionMap,
@@ -140,6 +141,11 @@ function AssuranceRow({
   const rimRef = site.references["rim_agreement_mm"];
   const rmsRef = site.references["deviation_rms_mm"];
   const rotation = site.rotation;
+  // WHAT THIS ROW'S NUMBERS STILL DESCRIBE after an operator rework. It rides in the
+  // ROW, not behind the expand: the confirmation seals this table, and a reader must
+  // not have to open a panel to learn that some of what they are signing predates the
+  // fit on the site (review 2026-07-28, finding E).
+  const stale = staleMetricsWords(site);
   return (
     <>
       <tr
@@ -225,6 +231,11 @@ function AssuranceRow({
             ) : (
               <span data-role="cell-clamp" className="assurance-sub">
                 relief as requested
+              </span>
+            )}
+            {stale !== null && (
+              <span data-role="stale-metrics" className="assurance-sub assurance-stale">
+                {stale}
               </span>
             )}
           </div>

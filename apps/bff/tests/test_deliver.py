@@ -470,10 +470,20 @@ class TestConfirmThenChangeThenRelease:
 
     def test_re_confirming_over_the_current_evidence_unblocks_release(
             self, settings, product_root):
+        """WITHDRAWING A REVIEW moves the evidence AND unresolves the site, so the
+        whole chain closes: release refuses on the drift, and the confirmation refuses
+        until the operator attests the site again (review 2026-07-28, finding F — that
+        second refusal used to live only in flow.ts, and a case could be re-confirmed
+        and released with a site standing on no verdict at all)."""
         client = confirmed_paid_client(settings, product_root)
         client.delete("/api/case-sessions/neodent-gm/sites/13/review")
         assert release(client).status_code == 409
-        # the operator re-reads the evidence as it now stands and re-confirms
+        refused = confirm(client)
+        assert refused.status_code == 422
+        assert "tooth 13 is previewed" in refused.json()["detail"]
+        # the operator re-reads the evidence as it now stands, re-attests, re-confirms
+        assert client.post(
+            "/api/case-sessions/neodent-gm/sites/13/review").status_code == 200
         assert confirm(client).status_code == 200
         assert release(client).status_code == 200
 

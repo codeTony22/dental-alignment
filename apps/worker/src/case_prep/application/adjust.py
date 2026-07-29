@@ -42,8 +42,11 @@ DIVERGENCES from the lifted region, recorded here and in ledger row 5 per its ru
     shipped record itself. The BFF adds nothing to it.
   - NO ``_update_run_row``. The demo folded the post-adjustment reading into its
     cached ``run.json`` on disk; the product's run summary lives in the case session,
-    so the reading RETURNS (``AdjustOutcome.clocking`` / ``.best_fit``) and the BFF
-    folds it into the session row inside its own CAS mutation.
+    so the reading RETURNS (``AdjustOutcome.clocking`` / ``.deviation`` / ``.best_fit``,
+    plus ``.stale_metrics`` — see ``STALE_AFTER_REWORK``) and the BFF folds it into the
+    session row inside its own CAS mutation. The demo's row was a CACHE; the product's
+    is sealed by the confirmation, which is why this module now says what it re-derived
+    and what it could not.
   - NO persisted part ANNOTATION. The demo let an operator re-mark the library part
     and stored the result; the product has no annotator yet, so the part's features
     are the machine's own reading (``auto_features``) — the demo's own auto-seed, with
@@ -53,6 +56,22 @@ DIVERGENCES from the lifted region, recorded here and in ledger row 5 per its ru
     the three panes from the pose that just passed the gates. The demo's UI reloaded
     the shipped STL instead. Same instrument, same scale as Declare's preview — one
     payload builder, so a pose read before and after an adjustment is comparable.
+
+DIVERGENCES ADDED BY THE ADVERSARIAL REVIEW OF 2026-07-28 (ledger row 5's addendum),
+all of them restrictive or corrective — nothing here loosens a bound:
+
+  - INVERSE-VARIANCE WEIGHTS on the correspondence mean (``observation_weight``), where
+    the demo weighted every pair equally. Equal weighting is this formula's own special
+    case at one shared lever arm — a coded cap's own geometry — so a feature fit
+    reproduces the demo exactly; a SPAN no longer hands its averaged midpoint's gain to
+    a reading several times noisier.
+  - THE SCAN-SIDE LEVER GUARD (``require_clock_lever``) extends the demo's part-side
+    ``MIN_LEVER_ARM_MM`` rule to the half it was never applied to.
+  - RESET REFUSES a site already on its certified pose (``reset_target``) and retires
+    the record's ``best_fit`` with the pose it described. The demo's reset was free;
+    this one costs the case its confirmation and release.
+  - EVERY best-fit refusal carries the demo's own dial prefix again
+    (``best_fit_refusal``) — the lift had kept it on one branch of four.
 
 Plain functions over ``case_prep.pipeline``/``domain``/``adapters`` — NO server import
 (test_application_boundaries' AST guard), no HTTP types.
@@ -155,15 +174,32 @@ _BEST_FIT_SEED = 23               # the OPERATOR path is deterministic; state re
 # lie along the radius through its azimuth, and the expected span direction on the
 # part IS that azimuth.
 #
-# WHERE THE MODEL BREAKS, AND HOW IT IS CAUGHT. A span ACROSS A HOLE is a diameter:
-# its direction is arbitrary and carries no clock angle at all, so feeding it into the
-# mean would inject a bias instead of averaging noise. The model is testable from the
-# clicks alone, because the disagreement between the two observations,
-# ``direction - midpoint_azimuth``, is INVARIANT under the rotation being solved for
-# (both rotate together). So a span whose direction departs from its own midpoint
-# azimuth by more than ``SPAN_RADIAL_TOLERANCE_DEG`` is read as chordal: its MIDPOINT
-# still counts (which is the whole value of a hole span — the averaged centre) and its
-# direction is dropped WITH THE REASON STATED, never silently.
+# WHERE THE MODEL BREAKS, AND HOW IT IS CAUGHT — TWO WAYS, because one is not enough.
+#
+#  (1) A CHORD ACROSS AN OFF-AXIS FEATURE is a span whose direction is arbitrary while
+#      its midpoint is still a perfectly good averaged click. It is testable from the
+#      clicks alone, because the disagreement between the two observations,
+#      ``direction - midpoint_azimuth``, is INVARIANT under the rotation being solved
+#      for (both rotate together). Past ``SPAN_RADIAL_TOLERANCE_DEG`` the span reads as
+#      chordal: its MIDPOINT still counts (the averaged centre, which is the whole
+#      value of spanning a hole out on the part) and its direction is dropped WITH THE
+#      REASON STATED — and the reason rides on the observation row the operator reads,
+#      not only into the record on disk (review 2026-07-28).
+#
+#  (2) A SPAN ACROSS THE SCREW ACCESS is the case (1) cannot see, and it is the one an
+#      operator is most likely to click, because the access is the biggest thing on the
+#      cap. The access is centred ON the part axis, so a diametral span's midpoint
+#      lands on the rim centre itself: ``azimuth_deg`` degenerates to atan2(0, 0) and
+#      the radial offset reads a PERFECT 0° — the radiality gate reports the most
+#      radial span it will ever see and passes the direction through (measured: 33% of
+#      hole spans, with the midpoint azimuth essentially uniform over the full circle).
+#      The discriminator is the MIDPOINT'S OWN LEVER ARM, and the rule is the domain's
+#      existing one, applied to the half it had never been applied to: inside
+#      ``MIN_LEVER_ARM_MM`` of the measured rim centre a mark names the AXIS, not a
+#      clock angle. See ``require_clock_lever``.
+#
+# WHAT EACH OBSERVATION IS WORTH. Two readings of one quantity are combined by INVERSE
+# VARIANCE or the better one is thrown away by the worse — see ``observation_weight``.
 
 # A span shorter than the operator's own click scatter has no direction to read — the
 # two ends are one point plus noise. The fleet's measured click-scatter p90 is 0.61mm,
@@ -195,11 +231,22 @@ class SpanReadings:
     ``direction_deg`` is the span's own bearing in the canonical xy plane, folded to
     a half-turn because a span is UNDIRECTED: clicking A→B and B→A must read the same.
     ``radial_offset_deg`` is the rotation-invariant departure from the radial model —
-    the number the radiality gate judges."""
+    the number the radiality gate judges. ``midpoint_lever_mm`` is how far that
+    averaged click sits from the measured rim centre: the arm that turns click noise
+    into an angle, and the ONE reading that tells an axis-centred span apart from a
+    radial one (the radial offset cannot — see the module's note (2)).
+
+    ``baseline_mm`` is the span's length IN THIS PLANE, which is shorter than the two
+    clicks' 3-D separation whenever the span runs down the cap's wall. It is the
+    baseline ``direction_deg`` was actually read over, so it — not the 3-D distance —
+    is what the direction's weight divides by. A span with almost no baseline in plane
+    carries almost no clock direction, and the weight says so on its own."""
 
     midpoint_azimuth_deg: float
     direction_deg: float
     radial_offset_deg: float
+    midpoint_lever_mm: float
+    baseline_mm: float
 
 
 def _fold_half_turn(deg: float) -> float:
@@ -227,7 +274,112 @@ def span_readings(a_xy: Sequence[float], b_xy: Sequence[float],
         midpoint_azimuth_deg=midpoint_az,
         direction_deg=direction,
         radial_offset_deg=_fold_half_turn(direction - midpoint_az),
+        midpoint_lever_mm=float(np.linalg.norm(mid - np.asarray(centre_xy, float))),
+        baseline_mm=float(np.linalg.norm(delta)),
     )
+
+
+def require_clock_lever(radius_mm: float, label: str, *, span: bool) -> float:
+    """THE SCAN-SIDE LEVER-ARM RULE (review 2026-07-28, finding A) — the domain's own
+    ``MIN_LEVER_ARM_MM`` statement applied to the half it had never been applied to.
+
+    A mark inside ``MIN_LEVER_ARM_MM`` of the measured rim centre names the part's
+    AXIS, and an axis carries no clock angle: its azimuth is whatever the click noise
+    made it. The part half has refused such a landmark since the annotator landed
+    (``PartFeature.defines_rotation``, ``_part_half`` below); the scan half did not,
+    and the screw access — the biggest, most clickable feature on a healing cap — sits
+    exactly there.
+
+    Guarding BOTH halves is deliberate, not symmetry for its own sake: a guard on the
+    span alone would be theatre, because the same operator could send the same useless
+    spot as a single centre click and get the same garbage rotation through.
+
+    Returns the arm (mm) so callers can go straight on to weighting by it."""
+    radius = float(radius_mm)
+    if radius >= MIN_LEVER_ARM_MM:
+        return radius
+    if span:
+        raise AdjustInvalid(
+            f"the span for {label!r} has its midpoint {radius:.2f}mm from the cap's "
+            f"measured rim centre — a span across the SCREW ACCESS is a diameter "
+            f"through the part axis, so its midpoint names the axis, not a clock "
+            f"angle, and its direction is the arbitrary bearing of a diameter; "
+            f"inside {MIN_LEVER_ARM_MM}mm neither end of it can anchor a rotation. "
+            f"Span a coded trench along its own radius instead")
+    raise AdjustInvalid(
+        f"the scan mark for {label!r} sits {radius:.2f}mm from the cap's measured rim "
+        f"centre — inside {MIN_LEVER_ARM_MM}mm it names the axis, not a clock angle, "
+        f"and cannot anchor a rotation; click the coded trench out on the cap's face")
+
+
+# --- WHAT EACH OBSERVATION IS WORTH (review 2026-07-28, finding B) ------------------------
+
+# Every observation estimates the SAME rotation, so the least-squares combination is
+# their weighted circular mean with w = 1/variance. The variances follow from ONE
+# assumption — iid click noise with per-axis sigma s — and s CANCELS out of the ratio,
+# so these weights need no calibration and no fleet constant:
+#
+#   a single click at lever arm R : angular sigma  s / R            -> w = R^2
+#   a span MIDPOINT at lever arm R: averaging two clicks halves the
+#                                   positional variance             -> w = 2 R^2
+#   a span DIRECTION over baseline L: differencing two clicks doubles
+#                                   it, spread over the baseline L  -> w = L^2 / 2
+#
+# L is the span's IN-PLANE baseline (``SpanReadings.baseline_mm``), not the two clicks'
+# 3-D separation: the direction is read in the canonical xy plane, so a span running
+# down the cap's wall has a shorter baseline than its click distance suggests and must
+# not be weighted as though it were long.
+#
+# The direction earns the midpoint's weight exactly at L = 2R and not before. Weighting
+# the two EQUALLY (as the lift first shipped) hands the noisier reading the same say as
+# the averaged one. Measured, 20,000 trials at sigma = 0.3mm, rotation RMS in degrees:
+#
+#   trench          one click   midpoint alone   direction alone   EQUAL   INVERSE-VAR
+#   1.5 -> 2.5mm      8.68          6.14              26.55        13.66      5.99
+#   1.8 -> 2.9mm      7.40          5.17              24.20        12.38      5.06
+#   1.0 -> 3.0mm      8.79          6.09              12.47         6.95      5.48
+#
+# Equal weighting was WORSE than one plain centre click on two of the three; inverse
+# variance beats the midpoint alone on all three. That ordering is not luck — it is the
+# defining property of the weights (see ``test_a_second_reading_can_never_make_the_
+# answer_worse``): the combined variance 1/(w1+w2) is never worse than either reading's
+# own, so a second click is a gain at best and free at worst, never a regression.
+#
+# DIVERGENCE FROM THE LIFTED REGION, recorded (ledger row 5): the demo weighted every
+# correspondence equally. That is this formula's own special case whenever the pairs
+# share one lever arm — which is what a coded cap gives, since its trenches sit in one
+# band — so a fit over named features reproduces the demo's rotation exactly. A fit
+# mixing FREE points at different radii now weights the longer arm more, because it is
+# the more precise reading and always was.
+#
+# The lever the weight uses is the PART half's: it is exact (the template's own
+# geometry) where the scan-side radius is itself a noisy click, and the two agree by
+# construction whenever the fit is anywhere near right.
+
+# how much MORE precise than a single click each lever-arm reading is (1 / its variance
+# ratio): a midpoint averages two clicks, so its weight is twice a lone click's.
+_OBSERVATION_WEIGHT_GAIN = {"point": 1.0, "midpoint": 2.0}
+
+
+def observation_weight(kind: str, lever_mm: float,
+                       span_length_mm: Optional[float] = None) -> float:
+    """One observation's inverse-variance weight (see the derivation above).
+
+    The lever-arm readings are strictly positive by construction —
+    ``require_clock_lever`` floors the arm at ``MIN_LEVER_ARM_MM``. A DIRECTION's weight
+    is floored by nothing and is not meant to be: a span running down the cap's wall has
+    almost no in-plane baseline, so its bearing names almost no clock angle, and a weight
+    that falls toward zero is the estimator saying exactly that. It cannot reach zero
+    while the midpoint carries the pair (``circular_mean_deg`` still has a positive sum).
+
+    An unknown ``kind`` raises rather than defaulting: a new observation type without a
+    variance is a programming error, and silently giving it weight 1 would be exactly
+    the equal-weighting bug this function exists to end."""
+    if kind == "direction":
+        if span_length_mm is None:
+            raise ValueError("a direction observation is weighted by its span length")
+        return float(span_length_mm) ** 2 / 2.0
+    return _OBSERVATION_WEIGHT_GAIN[kind] * float(lever_mm) ** 2
 
 
 def direction_delta(direction_deg: float, part_azimuth_deg: float,
@@ -248,13 +400,27 @@ def direction_delta(direction_deg: float, part_azimuth_deg: float,
     return float(wrap_deg(base))
 
 
-def circular_mean_deg(deltas: Sequence[float]) -> float:
+def circular_mean_deg(deltas: Sequence[float],
+                      weights: Optional[Sequence[float]] = None) -> float:
     """The least-squares rotation over angular observations — atan2 of the summed
-    unit vectors (server.py:1944-1946, verbatim). A plain arithmetic mean would get
-    this wrong across the ±180 seam, which is the whole reason the demo used it."""
+    unit vectors (server.py:1944-1946), now with a WEIGHT per observation.
+
+    A plain arithmetic mean would get this wrong across the ±180 seam, which is the
+    whole reason the demo used the circular form. ``weights=None`` is the demo's
+    equal-weight sum, byte-for-byte; a weight vector is the inverse-variance
+    combination ``observation_weight`` derives. Equal weights and None agree exactly
+    (pinned by test), so the lifted behaviour is a special case rather than a rewrite.
+    """
     rad = np.radians(np.asarray(list(deltas), float))
-    return float(np.degrees(np.arctan2(float(np.sin(rad).sum()),
-                                       float(np.cos(rad).sum()))))
+    if weights is None:
+        w = np.ones(rad.shape)
+    else:
+        w = np.asarray(list(weights), float)
+        if w.shape != rad.shape:
+            raise ValueError(f"every observation needs its own weight — got "
+                             f"{w.size} for {rad.size} observation(s)")
+    return float(np.degrees(np.arctan2(float((w * np.sin(rad)).sum()),
+                                       float((w * np.cos(rad)).sum()))))
 
 
 def validate_span(a: Sequence[float], b: Sequence[float], label: str,
@@ -569,6 +735,59 @@ def seated_payload(case: CaseRecord, run_dir: Path, tooth: int) -> dict:
     return _seated_payload(load_site(case, run_dir, tooth))
 
 
+# --- WHAT AN ADJUSTMENT RE-DERIVES, AND WHAT IT CANNOT (review 2026-07-28, finding E) ----
+#
+# The run's summary row describes A POSE. When a tool moves that pose, every
+# pose-dependent number in the row describes a cap that is no longer on the site — and
+# the product's confirmation SEALS that row (bff/resources/deliver.py's assurance
+# projection reads its deviation, its rim agreement and its guidance verbatim). Sealing
+# stale numbers under a freshly derived hash is worse than not re-hashing: the hash
+# proves the bytes changed, never that they are true.
+#
+# The split below is exactly what CAN be recomputed here and what cannot:
+#
+#   RE-DERIVED. The deviation scalars are a pure function of (scan, pose, template),
+#   and the panes' payload already publishes them from ``site_deviation_stats`` — the
+#   very function that wrote the run row. So they are not recomputed by a second
+#   transcription; they are READ OFF the same instrument the operator is looking at,
+#   which is why the row and the pane cannot drift apart again.
+#
+#   NOT RE-DERIVED, AND SAID SO. ``rim_agreement_mm`` was anchored on the scan's own
+#   fitted rim circle (auto_flow's rim_fit_circle / the doctor's rim marks) — run-time
+#   data the shipped record does not carry. Re-deriving it here on the posed rim centre
+#   instead would put a DIFFERENT NUMBER under the same name, which is the failure this
+#   whole fix is about. ``guidance`` is a pure function too, of a dozen run-time inputs
+#   the row does not carry (top-face p90, coverage, the diameter classification, the
+#   seed's provenance). Naming them is the honest half: the sealed document then states
+#   which of its numbers predate the rework, and the doctor signs knowing that.
+#
+# Both are re-derived for real by the next full run. This is a rework surface, not a
+# re-run.
+
+STALE_AFTER_REWORK = ("rim_agreement_mm", "guidance")
+
+
+def rederived_reading(pane_payload: dict) -> dict:
+    """The run-row numbers an adjustment re-derives, read off the panes' own payload.
+    A payload without scalars re-derives NOTHING rather than a comforting zero."""
+    stats = pane_payload.get("stats") or {}
+    return {"deviation_rms_mm": stats.get("rms_mm"),
+            "deviation_p90_mm": stats.get("p90_mm")}
+
+
+def _post_adjustment_reading(ctx: SiteContext,
+                             stale: bool = True) -> Tuple[dict, dict, List[str]]:
+    """The panes' read over the pose that just landed, the row numbers it re-derives,
+    and the row numbers it leaves behind.
+
+    ``stale=False`` is the RESET's case and it is not a shortcut: a reset puts the site
+    back on the pipeline's own certified pose, so the run's rim agreement and guidance
+    describe it correctly again. Nothing predates a rework that has been undone."""
+    payload = _seated_payload(ctx)
+    return (payload, rederived_reading(payload),
+            list(STALE_AFTER_REWORK) if stale else [])
+
+
 # --- the outcomes -------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -583,6 +802,11 @@ class AdjustOutcome:
     detail: str
     files: List[str] = field(default_factory=list)
     clocking: Optional[dict] = None
+    # the run-row numbers this act RE-DERIVED over the new pose, and the ones it could
+    # not (``STALE_AFTER_REWORK``) — the caller folds the first into its row and states
+    # the second on the document the operator signs
+    deviation: Optional[dict] = None
+    stale_metrics: List[str] = field(default_factory=list)
     nudge: Optional[dict] = None
     applied_delta_deg: Optional[float] = None
     cumulative_deg: Optional[float] = None
@@ -597,18 +821,18 @@ class AdjustOutcome:
 
 
 def _adopt_rotation(ctx: SiteContext, cand: np.ndarray, applied: float,
-                    cumulative: float, base_pose: np.ndarray, operation: str,
-                    detail: str, evidence: Optional[dict] = None) -> Tuple[dict, dict,
-                                                                          List[str]]:
-    """ADOPTED ROTATION: re-emit the site's shipped record, then re-read the
-    coded-cutout residual at the new pose (the codes are the arbiter the operator is
-    steering toward), and write the provenance + alignment proof. Returns
-    (clocking, nudge_fields, files)."""
+                    cumulative: float, operation: str, detail: str,
+                    evidence: Optional[dict] = None) -> Tuple[dict, dict, List[str]]:
+    """ADOPTED ROTATION: anchor the certified pose, re-emit the site's shipped record,
+    then re-read the coded-cutout residual at the new pose (the codes are the arbiter
+    the operator is steering toward), and write the provenance + alignment proof.
+    Returns (clocking, nudge_fields, files)."""
     t_now = ctx.pose_local
+    anchored = anchor_certified_pose(ctx.record)   # BEFORE the pose fields are rewritten
     cap_path = _reemit_site(ctx, cand)
     nudge_fields = {"operator_delta_deg": round(applied, 1),
                     "cumulative_deg": round(cumulative, 1)}
-    ctx.record["nudge"] = {**nudge_fields, "base_pose_matrix": base_pose.tolist()}
+    ctx.record["nudge"] = {**nudge_fields, "base_pose_matrix": anchored.tolist()}
     clocking = _clocking_fields(_read_clock_at(ctx.local_points, ctx.template,
                                                t_now, cand))
     files = _finish_adjustment(ctx, cand, cap_path, operation, detail, evidence)
@@ -617,11 +841,81 @@ def _adopt_rotation(ctx: SiteContext, cand: np.ndarray, applied: float,
 
 def _rotation_state(ctx: SiteContext) -> Tuple[np.ndarray, float]:
     """The site's rotation bookkeeping as it stands: the pipeline's own certified base
-    pose (world frame) and the cumulative operator rotation applied to it."""
+    pose (world frame) and the cumulative operator rotation applied to it.
+
+    A pure READ — its twin ``anchor_certified_pose`` is the CAPTURE, and the two are
+    deliberately separate: this one is called before a proposal is even judged (a
+    refusal must leave the record untouched), that one only once a pose is being
+    adopted."""
     nudge_state = ctx.record.get("nudge") or {}
     base_pose = np.asarray(nudge_state.get("base_pose_matrix")
                            or ctx.record["pose_matrix"], float)
     return base_pose, float(nudge_state.get("cumulative_deg") or 0.0)
+
+
+def anchor_certified_pose(record: dict) -> np.ndarray:
+    """CAPTURE — once — the pipeline's certified pose as this site's reset anchor.
+
+    Every operator act calls this BEFORE it overwrites ``record['pose_matrix']``. After
+    that write the certified pose is gone from the record, and an anchor taken then
+    would be the operator's OWN output: Reset would faithfully restore the very thing
+    it was asked to undo. Making the capture a named act rather than an incidental read
+    is what makes that ordering checkable.
+
+    Idempotent, which is the other half of the rule: the second act on a site must not
+    re-anchor to the first one's result."""
+    nudge = record.setdefault("nudge", {})
+    if not nudge.get("base_pose_matrix"):
+        nudge["base_pose_matrix"] = [[float(v) for v in row]
+                                     for row in record["pose_matrix"]]
+    return np.asarray(nudge["base_pose_matrix"], float)
+
+
+# a pose is "already the certified one" well below any movement an operator can make:
+# the measured no-op reset moved 1.8e-15mm, and the tightest real act moves ~1e-4mm.
+_RESET_NOOP_TOL_MM = 1e-9
+
+
+def reset_target(record: dict) -> dict:
+    """WHAT A RESET WOULD RESTORE — or a refusal, when the site is already standing on
+    it (review 2026-07-28, finding D).
+
+    Reset looked free because geometrically it can be: on an untouched site it moves
+    the pose by 1.8e-15mm. It is not free at all. It rewrites the cap STL, drops the
+    site to ADJUSTED, and retires the case's confirmation AND its release — so a stray
+    click on a delivered case cost the operator their signature to undo nothing.
+
+    The test reads the PHYSICS, not the bookkeeping: the anchor against the pose that
+    is actually on the record. That one comparison covers a site nobody has touched
+    (no anchor, so the anchor IS the current pose), a site whose acts were already
+    reset once, and a nudge block with no anchor to restore from — and it cannot be
+    fooled by a cumulative-degrees test, which would wave through the reset of a
+    best-fit (a 6-DoF move that books no rotation at all)."""
+    nudge = record.get("nudge") if isinstance(record.get("nudge"), dict) else {}
+    current = np.asarray(record["pose_matrix"], float)
+    base = np.asarray(nudge.get("base_pose_matrix") or record["pose_matrix"], float)
+    if np.allclose(base, current, atol=_RESET_NOOP_TOL_MM):
+        raise AdjustInvalid(
+            "this site already stands on the pipeline's certified pose — there is "
+            "nothing to reset. Reset undoes an operator's own rotation or best-fit; "
+            "applying it here would rewrite the shipped cap and retire the case's "
+            "confirmation to move nothing")
+    return nudge
+
+
+def reset_discards(record: dict, cumulative_deg: float) -> str:
+    """The parenthetical on a reset's own sentence: everything the act throws away, in
+    the acts' own words. It named the rotation only, while a reset after a best-fit
+    silently discarded a 6-DoF move as well (suites 2026-07-28)."""
+    parts: List[str] = []
+    if abs(float(cumulative_deg)) >= 0.05:
+        parts.append(f"{float(cumulative_deg):+.1f}° of operator rotation")
+    best = record.get("best_fit")
+    if isinstance(best, dict):
+        dial = best.get("matching_diameter_mm")
+        parts.append(f"a best-fit at Ø{float(dial):.2f}mm" if dial is not None
+                     else "a best-fit")
+    return " and ".join(parts) if parts else "an operator adjustment"
 
 
 # --- TOOL 3: the gated rotation step (server.py:1571-1608) -------------------------------
@@ -641,13 +935,18 @@ def rotate_site(case: CaseRecord, run_dir: Path, tooth: int, step_deg: float = 0
     base_pose, prior_cum = _rotation_state(ctx)
     excess: Optional[float] = None
     if reset:
+        reset_target(ctx.record)
         applied, cumulative = -prior_cum, 0.0
         cand = np.eye(4)
         cand[:3, :3] = ctx.frame.T @ base_pose[:3, :3]
         cand[:3, 3] = ctx.frame.T @ (base_pose[:3, 3] - ctx.origin)
-        detail = (f"restored the pipeline's certified pose "
-                  f"(undoing {prior_cum:+.1f}° of operator rotation)")
+        detail = (f"restored the pipeline's certified pose (undoing "
+                  f"{reset_discards(ctx.record, prior_cum)})")
         operation = "rotation-reset"
+        # the best-fit block described a pose this act has just undone; a record that
+        # keeps it would claim a fit that is no longer on the site (the same invariant
+        # the run row's re-derivation holds — a document describes what shipped)
+        ctx.record.pop("best_fit", None)
     else:
         applied = float(step_deg)
         cumulative = prior_cum + applied
@@ -657,13 +956,15 @@ def rotate_site(case: CaseRecord, run_dir: Path, tooth: int, step_deg: float = 0
                   f"(cumulative {cumulative:+.1f}°)")
         operation = "rotation"
     clocking, nudge_fields, files = _adopt_rotation(
-        ctx, cand, applied, cumulative, base_pose, operation, detail)
+        ctx, cand, applied, cumulative, operation, detail)
+    payload, deviation, stale = _post_adjustment_reading(ctx, stale=not reset)
     return AdjustOutcome(
         tooth=tooth, operation=operation, detail=detail, files=files,
-        clocking=clocking, nudge=nudge_fields,
+        clocking=clocking, deviation=deviation, stale_metrics=stale,
+        nudge=nudge_fields,
         applied_delta_deg=round(applied, 1), cumulative_deg=round(cumulative, 1),
         stability_excess_mm=(round(excess, 3) if excess is not None else None),
-        pane_payload=_seated_payload(ctx))
+        pane_payload=payload)
 
 
 # --- TOOL 4: mark the trench (server.py:1678-1742) ---------------------------------------
@@ -696,7 +997,7 @@ def align_to_mark(case: CaseRecord, run_dir: Path, tooth: int,
     # so delta = click_az - f (wrapped), minimized over the features.
     _absd, applied, matched = min(
         (abs(wrap_deg(click_az - f)), wrap_deg(click_az - f), f) for f in features)
-    base_pose, prior_cum = _rotation_state(ctx)
+    _base, prior_cum = _rotation_state(ctx)
     cumulative = prior_cum + applied
     cand, excess = judge_rotation(ctx.template, ctx.local_points, ctx.pose_local,
                                   applied)
@@ -707,15 +1008,17 @@ def align_to_mark(case: CaseRecord, run_dir: Path, tooth: int,
                 "click_azimuth_deg": round(click_az, 1),
                 "matched_feature_azimuth_deg": round(float(matched), 1)}
     clocking, nudge_fields, files = _adopt_rotation(
-        ctx, cand, applied, cumulative, base_pose, "mark-trench", detail, evidence)
+        ctx, cand, applied, cumulative, "mark-trench", detail, evidence)
+    payload, deviation, stale = _post_adjustment_reading(ctx)
     return AdjustOutcome(
         tooth=tooth, operation="mark-trench", detail=detail, files=files,
-        clocking=clocking, nudge=nudge_fields,
+        clocking=clocking, deviation=deviation, stale_metrics=stale,
+        nudge=nudge_fields,
         applied_delta_deg=round(applied, 1), cumulative_deg=round(cumulative, 1),
         stability_excess_mm=(round(excess, 3) if excess is not None else None),
         click_azimuth_deg=round(click_az, 1),
         matched_feature_azimuth_deg=round(float(matched), 1),
-        pane_payload=_seated_payload(ctx))
+        pane_payload=payload)
 
 
 # --- TOOL 1: fit by points, with the two-point SPAN (server.py:1854-1994 + plan §5) ------
@@ -742,7 +1045,18 @@ class Observation:
     """ONE angular observation of the rotation. A single-point pair yields exactly one
     (``kind="point"``); a SPAN yields two (``"midpoint"`` and, when the span reads as
     radial, ``"direction"``) — independent readings of the same quantity, which is
-    what makes a span worth two clicks."""
+    what makes a span worth two clicks.
+
+    ``lever_mm`` is the PART half's arm: the radius at which this observation's angular
+    disagreement becomes the millimetres an operator can judge. Every observation of a
+    pair reports at the same arm, because they all miss the same marked feature — the
+    direction was reported at its own half-length once, which made the noisiest reading
+    on the table look like the tidiest (review 2026-07-28, finding C).
+
+    ``weight`` is its inverse-variance share of the rotation (``observation_weight``).
+    ``note`` is a sentence the operator is owed about this reading — today, why a span's
+    direction did not count. It travels WITH the row: a reason written only to the
+    record on disk is a silent no-op as far as the person clicking is concerned."""
 
     label: str
     kind: str
@@ -750,6 +1064,8 @@ class Observation:
     observed_deg: float
     delta_deg: float
     lever_mm: float
+    weight: float
+    note: Optional[str] = None
 
 
 def _part_half(pair: Correspondence, ann: PartAnnotation, centre_xy: np.ndarray,
@@ -794,59 +1110,112 @@ def _part_half(pair: Correspondence, ann: PartAnnotation, centre_xy: np.ndarray,
             {"label": label, "part_point": [round(float(c), 3) for c in part_point]})
 
 
-def _observations_for(pair: Correspondence, label: str, part_azimuth: float,
-                      lever_mm: float, clicks: SiteClicks, max_span_mm: float,
-                      audit: dict) -> List[Observation]:
+def observations_for(pair: Correspondence, label: str, part_azimuth: float,
+                     lever_mm: float, clicks: SiteClicks, max_span_mm: float,
+                     audit: dict) -> List[Observation]:
     """One pair's angular observations, and the audit record that replays them.
 
-    A single point is the demo's math untouched: ``delta = click - part_azimuth``.
-    A SPAN adds its midpoint (identical math, at the averaged click) and — when the
-    span reads as RADIAL — its direction, disambiguated by that midpoint."""
+    A single point is the demo's math plus the scan-side lever guard:
+    ``delta = click - part_azimuth``. A SPAN adds its midpoint (identical math, at the
+    averaged click) and — when the span reads as RADIAL — its direction, disambiguated
+    by that midpoint. Every observation leaves here already carrying the weight it will
+    be combined under and the lever arm its residual will be read at."""
     if not pair.is_span:
-        click = clicks.azimuth_of(pair.scan_point)
+        click_xy = clicks.to_canon_xy(pair.scan_point)
+        require_clock_lever(
+            float(np.linalg.norm(click_xy - clicks.rim_centre_xy)), label, span=False)
+        click = azimuth_deg(click_xy, clicks.rim_centre_xy)
         audit["scan_point"] = [round(float(c), 3) for c in pair.scan_point]
         return [Observation(label=label, kind="point", part_azimuth_deg=part_azimuth,
                             observed_deg=click,
                             delta_deg=wrap_deg(click - part_azimuth),
-                            lever_mm=lever_mm)]
+                            lever_mm=lever_mm,
+                            weight=observation_weight("point", lever_mm))]
 
     length = validate_span(pair.scan_point, pair.scan_point_end, label, max_span_mm)
     a_xy = clicks.to_canon_xy(pair.scan_point)
     b_xy = clicks.to_canon_xy(pair.scan_point_end)
     readings = span_readings(a_xy, b_xy, clicks.rim_centre_xy)
+    # BEFORE the radiality read, because the radiality read cannot see this: a span
+    # across the axis-centred screw access reports a perfect 0° offset (module note 2).
+    require_clock_lever(readings.midpoint_lever_mm, label, span=True)
     midpoint_delta = wrap_deg(readings.midpoint_azimuth_deg - part_azimuth)
     audit["span"] = {
         "scan_point": [round(float(c), 3) for c in pair.scan_point],
         "scan_point_end": [round(float(c), 3) for c in pair.scan_point_end],
         "length_mm": round(length, 3),
+        # the in-plane baseline the direction was read over — shorter than length_mm
+        # for a span running down the cap's wall, and the one the weight uses
+        "baseline_mm": round(readings.baseline_mm, 3),
         "midpoint_azimuth_deg": round(readings.midpoint_azimuth_deg, 1),
+        "midpoint_lever_mm": round(readings.midpoint_lever_mm, 3),
         "direction_deg": round(readings.direction_deg, 1),
         "radial_offset_deg": round(readings.radial_offset_deg, 1),
     }
+    radial = abs(readings.radial_offset_deg) <= SPAN_RADIAL_TOLERANCE_DEG
+    audit["span"]["direction_used"] = radial
+    note: Optional[str] = None
+    if not radial:
+        # NOT SILENT (the doctrine): the operator is told which half of their span
+        # counted and why the other did not — and told it HERE, on the observation
+        # they get back, not only in the record on disk (review 2026-07-28).
+        note = (f"the span runs {abs(readings.radial_offset_deg):.0f}° off its own "
+                f"radius — a chord across the feature, not along it, so its direction "
+                f"names no clock angle (past {SPAN_RADIAL_TOLERANCE_DEG:.0f}°); the "
+                f"averaged midpoint still counts")
+        audit["span"]["direction_note"] = note
     observations = [Observation(label=label, kind="midpoint",
                                 part_azimuth_deg=part_azimuth,
                                 observed_deg=readings.midpoint_azimuth_deg,
-                                delta_deg=midpoint_delta, lever_mm=lever_mm)]
-    if abs(readings.radial_offset_deg) <= SPAN_RADIAL_TOLERANCE_DEG:
+                                delta_deg=midpoint_delta, lever_mm=lever_mm,
+                                weight=observation_weight("midpoint", lever_mm),
+                                note=note)]
+    if radial:
         observations.append(Observation(
             label=label, kind="direction", part_azimuth_deg=part_azimuth,
             observed_deg=readings.direction_deg,
             delta_deg=direction_delta(readings.direction_deg, part_azimuth,
                                       midpoint_delta),
-            # an angular error rotates the span's ENDS about its midpoint, so the
-            # half-length is the direction observation's own lever arm
-            lever_mm=length / 2.0))
-        audit["span"]["direction_used"] = True
-    else:
-        audit["span"]["direction_used"] = False
-        # NOT SILENT (the doctrine): the operator is told which half of their span
-        # counted and why the other did not.
-        audit["span"]["direction_note"] = (
-            f"the span runs {abs(readings.radial_offset_deg):.0f}° off its own radius "
-            f"— a chord across the feature, not along it, so its direction names no "
-            f"clock angle (past {SPAN_RADIAL_TOLERANCE_DEG:.0f}°); the averaged "
-            f"midpoint still counts")
+            # the residual reads at the PART's arm like every other observation of this
+            # pair (they all miss the same marked feature); the span's IN-PLANE
+            # baseline is what its noise rides on, and that goes into the weight
+            lever_mm=lever_mm,
+            weight=observation_weight("direction", lever_mm,
+                                      span_length_mm=readings.baseline_mm)))
     return observations
+
+
+def residual_rows(observations: Sequence[Observation],
+                  applied: float) -> Tuple[List[dict], float]:
+    """Each observation's disagreement with the adopted rotation, as the operator's QC
+    table reads it, plus their RMS in millimetres.
+
+    ONE ROW SHAPE for everything — a named feature, a free point, a span's midpoint,
+    a span's direction — so the surface renders one list. ``residual_mm`` is the arc the
+    MARKED FEATURE misses by at its own lever arm: the millimetres a person can judge,
+    and comparable across the rows precisely because every row uses the same arm."""
+    rows: List[dict] = []
+    for obs in observations:
+        res_deg = wrap_deg(obs.delta_deg - applied)
+        row = {
+            # a free point's and a span's label ride the same identity key as a
+            # feature id — one residual shape everywhere
+            "feature_id": obs.label,
+            "observation": obs.kind,
+            "feature_azimuth_deg": round(obs.part_azimuth_deg, 1),
+            "click_azimuth_deg": round(obs.observed_deg, 1),
+            "delta_deg": round(obs.delta_deg, 1),
+            "residual_deg": round(res_deg, 2),
+            "residual_mm": round(abs(np.radians(res_deg)) * obs.lever_mm, 3),
+            # the say this reading had in the answer (inverse variance) — the number
+            # that makes "why did my second click barely move it" answerable
+            "weight": round(float(obs.weight), 4),
+        }
+        if obs.note:
+            row["note"] = obs.note
+        rows.append(row)
+    rms = float(np.sqrt(np.mean([r["residual_mm"] ** 2 for r in rows])))
+    return rows, rms
 
 
 def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
@@ -909,33 +1278,21 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
                                     f"tooth {tooth}'s seated cap — click the feature "
                                     f"on the cap itself (within "
                                     f"{_MARK_MAX_DISTANCE_MM:.0f}mm)")
-        observations.extend(_observations_for(pair, label, part_azimuth, lever,
-                                              clicks, max_span_mm, audit))
+        observations.extend(observations_for(pair, label, part_azimuth, lever,
+                                             clicks, max_span_mm, audit))
         audit_pairs.append(audit)
 
     # Rotating the part CCW by delta carries a feature at canonical azimuth f to
     # f+delta in the scan's frame, so each observation asks for its own delta. With
     # one that IS the rotation; with several, the least-squares rotation over the
-    # angular residuals is their CIRCULAR MEAN.
-    applied = circular_mean_deg([o.delta_deg for o in observations])
-    residuals = []
-    for obs in observations:
-        res_deg = wrap_deg(obs.delta_deg - applied)
-        residuals.append({
-            # a free point's and a span's label ride the same identity key as a
-            # feature id — one residual shape everywhere
-            "feature_id": obs.label,
-            "observation": obs.kind,
-            "feature_azimuth_deg": round(obs.part_azimuth_deg, 1),
-            "click_azimuth_deg": round(obs.observed_deg, 1),
-            "delta_deg": round(obs.delta_deg, 1),
-            "residual_deg": round(res_deg, 2),
-            # the arc the mark misses by AT ITS OWN LEVER ARM — the millimetres the
-            # operator can judge, not an abstract angle
-            "residual_mm": round(abs(np.radians(res_deg)) * obs.lever_mm, 3)})
-    rms = float(np.sqrt(np.mean([r["residual_mm"] ** 2 for r in residuals])))
+    # angular residuals is their circular mean, WEIGHTED BY INVERSE VARIANCE — a span
+    # that averaged its click noise must not have that gain handed back to a reading
+    # several times noisier (``observation_weight``).
+    applied = circular_mean_deg([o.delta_deg for o in observations],
+                                [o.weight for o in observations])
+    residuals, rms = residual_rows(observations, applied)
 
-    base_pose, prior_cum = _rotation_state(ctx)
+    _base, prior_cum = _rotation_state(ctx)
     cumulative = prior_cum + applied
     cand, excess = judge_rotation(ctx.template, ctx.local_points, ctx.pose_local,
                                   applied)
@@ -943,16 +1300,18 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
               f"rotated {applied:+.1f}° (cumulative {cumulative:+.1f}°), marks agree "
               f"to {rms:.3f}mm RMS")
     clocking, nudge_fields, files = _adopt_rotation(
-        ctx, cand, applied, cumulative, base_pose, "fit-by-points", detail,
+        ctx, cand, applied, cumulative, "fit-by-points", detail,
         {"pairs": audit_pairs, "residuals": residuals,
          "residual_rms_mm": round(rms, 3)})
+    payload, deviation, stale = _post_adjustment_reading(ctx)
     return AdjustOutcome(
         tooth=tooth, operation="fit-by-points", detail=detail, files=files,
-        clocking=clocking, nudge=nudge_fields,
+        clocking=clocking, deviation=deviation, stale_metrics=stale,
+        nudge=nudge_fields,
         applied_delta_deg=round(applied, 1), cumulative_deg=round(cumulative, 1),
         stability_excess_mm=(round(excess, 3) if excess is not None else None),
         pairs=residuals, residual_rms_mm=round(rms, 3),
-        pane_payload=_seated_payload(ctx))
+        pane_payload=payload)
 
 
 # --- TOOL 2: the bounded best-fit (server.py:2117-2244) -----------------------------------
@@ -965,6 +1324,16 @@ def _pose_move(t_now: np.ndarray, cand: np.ndarray) -> dict:
     angle = float(np.degrees(np.arccos(np.clip((np.trace(rel) - 1.0) / 2.0, -1.0, 1.0))))
     return {"translation_mm": round(float(np.linalg.norm(cand[:3, 3] - t_now[:3, 3])), 4),
             "rotation_deg": round(angle, 3)}
+
+
+def best_fit_refusal(diameter_mm: float, reason: str) -> AdjustRefused:
+    """EVERY best-fit refusal names the dial it was refused at (server.py:2084-2090's
+    ``_refuse_best_fit``, whose prefix reached every branch). The lift kept the prefix
+    on the trust-region exit only, so a gate refusal arrived as a bare sentence with no
+    hint that widening or tightening the band was the lever — the operator's one
+    control went unnamed in the very message telling them to use it."""
+    return AdjustRefused(f"best-fit at a {diameter_mm:.2f}mm matching diameter "
+                         f"refused: {reason}")
 
 
 def _fit_residual(patch: np.ndarray, points: np.ndarray, cutoff: float) -> dict:
@@ -1014,8 +1383,8 @@ def best_fit_site(case: CaseRecord, run_dir: Path, tooth: int,
     patch = _cap_patch_roi(ctx.local_points, t_now[:2, 3],
                            rim_radius_mm=float(sig.rmax))
     if patch is None:
-        raise AdjustRefused("too little scan surface around the seated part to fit "
-                            "against")
+        raise best_fit_refusal(diameter, "too little scan surface around the seated "
+                                         "part to fit against")
     tv = np.asarray(ctx.template.vertices, float)
     if len(tv) > 4000:
         tv = tv[np.linspace(0, len(tv) - 1, 4000).astype(int)]
@@ -1041,11 +1410,10 @@ def best_fit_site(case: CaseRecord, run_dir: Path, tooth: int,
         # this band — so it refuses like every real refusal; a green "already optimal"
         # here would invite the wider search that makes the basin escape MORE likely.
         if "trust-region" in reject_reasons:
-            raise AdjustRefused(
-                f"best-fit at a {diameter:.2f}mm matching diameter refused: the "
-                f"refinement left the trust region (>1.2mm or >8° from the certified "
-                f"seat) — a different basin, not a refinement; try a TIGHTER matching "
-                f"diameter")
+            raise best_fit_refusal(
+                diameter, "the refinement left the trust region (>1.2mm or >8° from "
+                          "the certified seat) — a different basin, not a refinement; "
+                          "try a TIGHTER matching diameter")
         # A CONFIRMATION, NOT A FAILURE (client ask 2026-07-26): "no strict
         # improvement" at this cutoff means the certified pose already IS the best fit
         # in the band the operator asked about.
@@ -1066,8 +1434,12 @@ def best_fit_site(case: CaseRecord, run_dir: Path, tooth: int,
 
     move = _pose_move(t_now, cand)
     # THE GATES RUN EVEN FOR A PREVIEW: a candidate that cannot be adopted must not be
-    # shown to the operator as adoptable either.
-    _certification_gates(ctx.template, ctx.local_points, t_now, cand)
+    # shown to the operator as adoptable either. Their sentences arrive under the
+    # best-fit's own prefix (the demo's rule) — the gate said no to THIS dial setting.
+    try:
+        _certification_gates(ctx.template, ctx.local_points, t_now, cand)
+    except AdjustRefused as exc:
+        raise best_fit_refusal(diameter, str(exc)) from exc
 
     before, after = _fit_mean_mm(t_now), _fit_mean_mm(cand)
     fit = {"roi_mean_before_mm": round(before, 4), "roi_mean_after_mm": round(after, 4),
@@ -1091,23 +1463,23 @@ def best_fit_site(case: CaseRecord, run_dir: Path, tooth: int,
         return AdjustOutcome(tooth=tooth, operation="best-fit", detail=detail,
                              best_fit=fit, applied=False)
 
-    # THE BASE POSE — the pipeline's own certified output, captured before the pose
-    # fields are overwritten. A best-fit is NOT a clock nudge, so it adds no rotation
-    # bookkeeping of its own; it must still ANCHOR the base pose, or a later reset
-    # would "restore" the best-fitted pose it was meant to undo.
-    nudge_state = ctx.record.get("nudge") or {}
-    base_pose, _prior = _rotation_state(ctx)
+    # THE RESET ANCHOR, captured before ``_reemit_site`` overwrites the pose fields
+    # (``anchor_certified_pose`` — same call, same ordering, as every rotation tool). A
+    # best-fit is NOT a clock nudge, so it adds no rotation bookkeeping of its own; it
+    # must still anchor, or a later reset would "restore" the best-fitted pose it was
+    # meant to undo.
+    anchor_certified_pose(ctx.record)
     cap_path = _reemit_site(ctx, cand)
     ctx.record["best_fit"] = fit
-    ctx.record["nudge"] = {**nudge_state, "base_pose_matrix": base_pose.tolist()}
     clocking = _clocking_fields(_read_clock_at(ctx.local_points, ctx.template,
                                                t_now, cand))
     files = _finish_adjustment(ctx, cand, cap_path, "best-fit", detail,
                                {"best_fit": fit})
+    payload, deviation, stale = _post_adjustment_reading(ctx)
     return AdjustOutcome(
         tooth=tooth, operation="best-fit", detail=detail, files=files,
-        clocking=clocking,
+        clocking=clocking, deviation=deviation, stale_metrics=stale,
         # the site's rotation bookkeeping as it stands, unchanged by this pass
         nudge={k: v for k, v in ctx.record["nudge"].items()
                if k != "base_pose_matrix"} or None,
-        best_fit=fit, pane_payload=_seated_payload(ctx))
+        best_fit=fit, pane_payload=payload)

@@ -61,6 +61,7 @@ import {
   pairSlot,
   pairWords,
   queueSummary,
+  reworkWords,
   withPick,
   type AdjustQueueEntry,
   type AdjustToolId,
@@ -169,6 +170,7 @@ export function AdjustStageView({
   const applyBlocked = applyBlockedReason(drafts);
   const openDraft = drafts.find((d) => !isComplete(d)) ?? null;
   const toolInfo = ADJUST_TOOLS.find((t) => t.id === tool)!;
+  const reworkNote = lastOutcome !== null ? reworkWords(lastOutcome) : null;
   return (
     <div data-role="adjust-stage" className="stage-contents">
       <div className="workbench__work">
@@ -476,6 +478,11 @@ export function AdjustStageView({
                     describes it — confirm it again over the panes before Deliver.
                   </p>
                 )}
+              {reworkNote !== null && (
+                <p data-role="rework-note" className="adjust-outcome__note">
+                  {reworkNote}
+                </p>
+              )}
             </div>
           )}
         </section>

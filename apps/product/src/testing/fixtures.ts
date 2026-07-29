@@ -291,6 +291,7 @@ export function assuranceSite(overrides: Partial<AssuranceSite> = {}): Assurance
     deviation_p90_mm: 0.71,
     gate: { level: "ready", actions: [] },
     clamp: { requested_mm: 0.2, applied_mm: 0.2, clamped: false, reason: null },
+    stale_metrics: [],
     qc_images: ["case-a-19-clockview.png", "case-a-19-deviation.png"],
     references: {
       rim_agreement_mm: {

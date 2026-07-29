@@ -2847,6 +2847,19 @@ button.package-files__link:hover {
   font-size: 12px;
 }
 
+/* WHICH OF THIS ROW'S NUMBERS PREDATE A REWORK. Not muted-and-forgettable: the
+   confirmation seals this table, so the one line saying part of it describes an older
+   fit reads at the same weight as a gate warning. */
+.assurance-stale {
+  display: block;
+  max-width: 46ch;
+  margin-top: 4px;
+  color: var(--color-text);
+  border-left: 2px solid var(--color-amber-border);
+  padding-left: 8px;
+  line-height: 1.4;
+}
+
 /* The sentences, where they are read rather than skimmed. */
 .assurance-detail {
   display: grid;

@@ -321,6 +321,55 @@ Row 5 record (slice 6, 2026-07-28) — divergences, per the rules above:
 - `confirm-alignment` (2247-2324) is deliberately NOT lifted: the product's confirmation
   is the sealed evidence bundle at Deliver (slice 8), not a per-site doctor note.
 
+Row 5 record, ADDENDUM (adversarial review 2026-07-28) — four DIVERGENCES the fixes
+introduce, each recorded because each departs from the lifted region:
+- THE OBSERVATION WEIGHTS are now INVERSE-VARIANCE, where the demo's circular mean
+  (server.py:1944-1946) weighted every correspondence equally. The demo's behaviour is
+  this formula's own special case whenever the pairs share one lever arm — which is what
+  a coded cap gives, its trenches sitting in one band — so a fit over named features
+  reproduces the demo's rotation EXACTLY (pinned by test), as does any single-pair fit
+  (one observation's weight cancels inside the atan2). What changes is a fit mixing FREE
+  points at different radii, and a SPAN: equal weighting handed the noisier of a span's
+  two readings the same say as the averaged one, and measured over 20,000 trials at
+  σ 0.3mm on a 1.8→2.9mm trench it made the answer WORSE than a single centre click
+  (12.38° RMS vs 7.40°; the midpoint alone was 5.17° and inverse variance is 5.06°).
+  `circular_mean_deg(deltas)` with no weights is still the demo's sum, byte for byte.
+  The direction's weight divides by the span's IN-PLANE baseline, not the two clicks'
+  3-D separation — a span down the cap's wall covers click distance it does not cover in
+  clock arc. See `observation_weight` and `SpanReadings.baseline_mm`.
+- THE SCAN-SIDE LEVER GUARD (`require_clock_lever`) EXTENDS the demo's part-side rule
+  (`PartFeature.defines_rotation`, `MIN_LEVER_ARM_MM`) to the scan half, which the demo
+  never guarded. Same bound, same sentence, restrictive-only. It exists because the
+  radiality gate is structurally blind at the axis — a span across the screw access has
+  its midpoint ON the rim centre, where the offset reads a perfect 0° — and because
+  guarding the span alone would be theatre: the same useless spot could be sent as a
+  single centre click.
+- THE DIRECTION'S RESIDUAL now reports at the PART's lever arm like every other
+  observation of its pair, not at the span's own half-length. Not a demo divergence (the
+  demo has no spans) — a correction inside the new physics: reporting the noisiest
+  reading at the smallest arm made it read as the tidiest on the operator's QC table.
+- RESET NOW REFUSES a site already standing on its certified pose (`reset_target`), and
+  a reset RETIRES the record's `best_fit` block. The demo's reset was unconditional and
+  cost nothing; the product's costs the case its confirmation AND its release
+  (`session.clear_confirmation`), so a no-op reset was buying 1.8e-15mm of movement with
+  the operator's signature.
+
+Row 4 ADDITION (adversarial review 2026-07-28) — the run row must describe the pose that
+shipped, and the confirmation must not sign an unresolved case:
+- `_fold_outcome` now writes the RE-DERIVED deviation scalars over the new pose (read off
+  the panes' own payload, whose scalars come from `site_deviation_stats` — the run row's
+  own function, so the row and the pane cannot drift), and NAMES what could not be
+  re-derived from the shipped record (`rework.stale_metrics`: the rim agreement, anchored
+  on the scan's fitted rim circle, and the guidance, a function of run-time inputs the row
+  does not carry). The demo's `_update_run_row` had no such obligation — its row was a
+  cache; the product's is SEALED by the confirmation, and stale numbers under a freshly
+  derived hash are worse than no re-hash. `AssuranceSite.stale_metrics` carries the list
+  into the signed document; a reset clears it, because nothing predates a rework undone.
+- `_require_every_site_resolved` moves flow.ts's `allSitesResolved` onto `POST /confirm`.
+  It was unreachable before this slice — nothing wrote `adjusted` — and the Adjust tools
+  are that rung's first writer, so an adjusted site whose acceptance row read FAIL could
+  confirm, release and disclose through the API while the browser said Deliver was shut.
+
 Row 9 UPDATE (slice 6, 2026-07-28) — one MOVE, no new copying, and the counts
 re-measured with the rule stated so they stop drifting:
 - MOVED, not copied: the VerifyPanels chrome this row already records (PaneShell,

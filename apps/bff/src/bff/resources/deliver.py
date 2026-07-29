@@ -93,6 +93,14 @@ class AssuranceSite(BaseModel):
     deviation_p90_mm: Optional[float]
     gate: AssuranceGate
     clamp: AssuranceClamp
+    # THE NUMBERS IN THIS ROW THAT PREDATE AN OPERATOR REWORK (review 2026-07-28,
+    # finding E). Adjust re-derives what it can over the new pose — the deviation
+    # scalars and the clocking — and NAMES what it cannot: the rim agreement was
+    # anchored on the scan's own fitted rim circle and the guidance on a dozen
+    # run-time inputs, neither of which the shipped record carries. Sealing the row
+    # without saying so gave stale numbers a fresh signature; empty on every row the
+    # run itself produced, so a clean case reads exactly as it always did.
+    stale_metrics: List[str] = Field(default_factory=list)
     # this site's QC images, by run-relative name (the qc endpoint serves them)
     qc_images: List[str] = Field(default_factory=list)
     # the acceptance catalog's rows for the numerics this table serves, VERBATIM
@@ -138,6 +146,13 @@ _GATE_SEVERITY = {"ready": 0, "attention": 1, "action-needed": 2}
 
 _QC_SUFFIX = ".png"
 
+# THE RUNGS THAT CARRY A RESOLVED VERDICT. A confirmation is a signature over every
+# site's outcome, so every site must HAVE one: ready (the operator attested it) or
+# flagged (the run raised it and the operator acknowledges it row by row). ADJUSTED is
+# deliberately not here — a reworked site's pose has moved since anything was attested,
+# and the ladder already draws its way back (adjusted → review_ready → ready).
+_RESOLVED_RUNGS = ("ready", "flagged")
+
 
 def _require_done_run(session: CaseSession, case_id: str) -> RunSession:
     """Both evidence endpoints and every 8-ii gate stand on the same fact: a DONE
@@ -176,6 +191,7 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession,
     production = (row.get("production")
                   if isinstance(row.get("production"), dict) else {})
     variant = row.get("variant") if isinstance(row.get("variant"), dict) else {}
+    rework = row.get("rework") if isinstance(row.get("rework"), dict) else {}
     # the domain's evaluation — each numeric beside its industry reference, in the
     # backend's own words; a pure function of the row (no new physics)
     metrics = {m["key"]: m for m in evaluate_acceptance(row)["metrics"]}
@@ -204,6 +220,7 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession,
             clamped=bool(production.get("clamped")),
             reason=production.get("clamp_reason"),
         ),
+        stale_metrics=[str(m) for m in (rework.get("stale_metrics") or [])],
         qc_images=_site_qc_images(run, case_id, tooth),
         references={key: metrics[key] for key in _REFERENCE_KEYS if key in metrics},
     )
@@ -420,13 +437,40 @@ _tooth_of_file = tooth_of_file
 
 # --- the confirmation (plan §6, grill AM-10/AM-12) --------------------------------------
 
+def _require_every_site_resolved(assurance: AssuranceView) -> None:
+    """EVERY SITE CARRIES A VERDICT BEFORE ANYTHING IS SIGNED (review 2026-07-28,
+    finding F). This precondition lived only in ``flow.ts``'s reachability, which is a
+    screen order, not a control — and screen order in a presentational app has never
+    been one (AM-1's own rule, applied here).
+
+    It was unreachable before slice 6: nothing wrote ``adjusted``, so every post-run
+    site already stood on ready or flagged. The Adjust tools are that rung's first
+    writer, and they made it reachable — measured, an adjusted site whose acceptance
+    row read FAIL confirmed, released and disclosed eleven files straight through the
+    API. The refusal names the sites and the rung, so the operator knows the act
+    (re-review over the new panes), not just the wall."""
+    unresolved = [site for site in assurance.sites
+                  if (site.status or "detected") not in _RESOLVED_RUNGS]
+    if not unresolved:
+        return
+    raise HTTPException(
+        422, "every site needs a verdict before the case is confirmed — still "
+             "unresolved: "
+             + ", ".join(f"tooth {s.tooth} is {s.status or 'detected'}"
+                         for s in unresolved)
+             + ". A reworked site is re-reviewed over its new panes; the "
+               "confirmation signs the fits as they stand now")
+
+
 @router.post("/{case_id}/confirm", response_model=CaseSessionDetail)
 def confirm_case(case_id: str, body: ConfirmIn,
                  request: Request) -> CaseSessionDetail:
     """Seal the confirmation over the evidence as it stands NOW.
 
-    Refuses unless: a done current run; every FLAGGED site headed for release
-    appears in ``acknowledged_flags`` (AM-12 — row by row, never in bulk; an
+    Refuses unless: a done current run; EVERY SITE STANDS ON A VERDICT
+    (``_require_every_site_resolved`` — slice 6's ADJUSTED rung made flow.ts's
+    client-side rule reachable, so it lives here now); every FLAGGED site headed for
+    release appears in ``acknowledged_flags`` (AM-12 — row by row, never in bulk; an
     acknowledgment of an unflagged site is refused too, a claim about nothing).
     A MISSING DISPOSITION IS NO LONGER A REFUSAL (client 2026-07-27 #4: "What is
     disposition release vs withhold") — every unnamed site defaults to release,
@@ -443,6 +487,7 @@ def confirm_case(case_id: str, body: ConfirmIn,
     def apply(session: CaseSession) -> None:
         run = _require_done_run_for_act(session, case_id, "confirm")
         assurance = derive_assurance(case, session)
+        _require_every_site_resolved(assurance)
         teeth = [site.tooth for site in assurance.sites]
         known = {str(t) for t in teeth}
         unknown = sorted(k for k in body.dispositions if k not in known)

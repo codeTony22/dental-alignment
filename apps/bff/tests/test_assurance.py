@@ -172,6 +172,30 @@ class TestAssuranceProjection:
         body = client.get("/api/case-sessions/neodent-gm/assurance").json()
         assert [s["tooth"] for s in body["sites"]] == [13, 4]
 
+    def test_a_clean_row_claims_nothing_predates_it(self, settings, product_root):
+        client = landed_client(settings, product_root, [row(4), row(13)])
+        body = client.get("/api/case-sessions/neodent-gm/assurance").json()
+        assert all(s["stale_metrics"] == [] for s in body["sites"])
+
+    def test_a_reworked_rows_stale_numbers_are_named_on_the_document_itself(
+            self, settings, product_root):
+        """FINDING E (review 2026-07-28). Adjust re-derives the deviation scalars over
+        the new pose but CANNOT re-derive the rim agreement (anchored on the scan's own
+        fitted rim circle) or the guidance (a dozen run-time inputs the row does not
+        carry). The confirmation seals this document, so it has to say which of its
+        numbers predate the rework rather than let a fresh hash imply they are all
+        current."""
+        reworked = row(4, level="attention")
+        reworked["rework"] = {"stale_metrics": ["rim_agreement_mm", "guidance"]}
+        client = landed_client(settings, product_root, [reworked, row(13)])
+        body = client.get("/api/case-sessions/neodent-gm/assurance").json()
+        site = next(s for s in body["sites"] if s["tooth"] == 4)
+        assert site["stale_metrics"] == ["rim_agreement_mm", "guidance"]
+        # and the numbers themselves stay visible — naming them is disclosure, not
+        # deletion: hiding a stale number would leave the doctor with nothing to weigh
+        assert site["rim_agreement_mm"] == 0.07
+        assert site["gate"]["level"] == "attention"
+
     def test_each_site_names_its_own_qc_images(self, settings, product_root):
         client = landed_client(settings, product_root, [row(4), row(13)])
         body = client.get("/api/case-sessions/neodent-gm/assurance").json()

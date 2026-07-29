@@ -24,6 +24,8 @@ import {
   pairSlot,
   pairWords,
   queueSummary,
+  reworkWords,
+  staleMetricsPhrase,
   withPick,
   type AdjustQueueEntry,
 } from "./adjust";
@@ -306,6 +308,31 @@ describe("reading what a tool produced", () => {
     ).toBe("point-1 · point — misses by 0.200 mm");
   });
 
+  it("a dropped span direction says WHY, on the row the operator is reading", () => {
+    // The suites' 2026-07-28 finding: the worker wrote this sentence to the record on
+    // disk and the surface showed one unexplained row. The operator spends a second
+    // click specifically to buy the rotational constraint — silently handing back one
+    // observation is the no-op the whole tool is built not to do.
+    const note =
+      "the span runs 47° off its own radius — a chord across the feature, not " +
+      "along it, so its direction names no clock angle (past 30°); the averaged " +
+      "midpoint still counts";
+    expect(
+      observationWords({
+        feature_id: "point-1",
+        observation: "midpoint",
+        residual_mm: 0.041,
+        note,
+      }),
+    ).toBe(`point-1 · span midpoint — misses by 0.041 mm — ${note}`);
+  });
+
+  it("a row with nothing to explain carries no dangling dash", () => {
+    expect(
+      observationWords({ feature_id: "point-1", observation: "midpoint", residual_mm: 0.04 }),
+    ).toBe("point-1 · span midpoint — misses by 0.040 mm");
+  });
+
   it("a measured-only outcome says so — it did not move anything", () => {
     const measured = { applied: false, detail: "best-fit at a 0.30mm…" } as AdjustOutcomeView;
     expect(outcomeWords(measured)).toContain("Measured only");
@@ -315,6 +342,45 @@ describe("reading what a tool produced", () => {
     expect(needsReconfirm("adjusted")).toBe(true);
     expect(needsReconfirm("ready")).toBe(false);
     expect(needsReconfirm("flagged")).toBe(false);
+  });
+});
+
+describe("what a rework leaves behind on the run's report", () => {
+  it("joins the stale metrics in the reader's language, not the wire's", () => {
+    expect(staleMetricsPhrase(["rim_agreement_mm", "guidance"])).toBe(
+      "the rim agreement and the gate verdict",
+    );
+    expect(staleMetricsPhrase(["guidance"])).toBe("the gate verdict");
+  });
+
+  it("passes an unknown key through rather than dropping it silently", () => {
+    // the BFF owns this list; a name this app has no phrasing for is still a fact
+    expect(staleMetricsPhrase(["some_new_metric"])).toBe("some_new_metric");
+  });
+
+  it("nothing stale is null, so no caller renders an empty clause", () => {
+    expect(staleMetricsPhrase([])).toBeNull();
+  });
+
+  it("says it at the moment of the act, not two stages later", () => {
+    // FINDING E's other half: the operator learns the consequence from the act. The
+    // deviation was re-measured over the new pose; these two were not.
+    const applied = {
+      applied: true,
+      detail: "rotated +5.0°",
+      stale_metrics: ["rim_agreement_mm", "guidance"],
+    } as unknown as AdjustOutcomeView;
+    expect(reworkWords(applied)).toContain("the rim agreement and the gate verdict");
+    expect(reworkWords(applied)).toContain("re-measures");
+  });
+
+  it("a measure-only outcome changed nothing, so it left nothing behind", () => {
+    const measured = {
+      applied: false,
+      detail: "best-fit at a 0.30mm…",
+      stale_metrics: ["guidance"],
+    } as unknown as AdjustOutcomeView;
+    expect(reworkWords(measured)).toBeNull();
   });
 });
 

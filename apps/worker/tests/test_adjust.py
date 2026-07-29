@@ -33,13 +33,19 @@ import numpy as np
 import pytest
 
 from case_prep.application.adjust import (MIN_SPAN_MM, SPAN_RADIAL_TOLERANCE_DEG,
-                                          AdjustInvalid, AdjustRefused, AlreadyOptimal,
-                                          Correspondence, align_to_correspondence,
-                                          align_to_mark, azimuth_deg, best_fit_site,
-                                          circular_mean_deg, direction_delta,
-                                          load_site, rotate_site, seated_payload,
-                                          span_readings, validate_span)
+                                          STALE_AFTER_REWORK, AdjustInvalid,
+                                          AdjustRefused, AlreadyOptimal, Correspondence,
+                                          SiteClicks, align_to_correspondence,
+                                          align_to_mark, anchor_certified_pose,
+                                          azimuth_deg, best_fit_refusal, best_fit_site,
+                                          circular_mean_deg, direction_delta, load_site,
+                                          observation_weight, observations_for,
+                                          rederived_reading, require_clock_lever,
+                                          reset_discards, reset_target, residual_rows,
+                                          rotate_site, seated_payload, span_readings,
+                                          validate_span)
 from case_prep.application.cases import CaseRecord, discover_cases
+from case_prep.domain.part_features import MIN_LEVER_ARM_MM
 
 REAL = Path(__file__).resolve().parents[1] / "data" / "real"
 PRODUCT = Path(__file__).resolve().parents[1] / "reports" / "product"
@@ -161,6 +167,408 @@ class TestSpanValidation:
     def test_a_valid_span_returns_its_length(self):
         assert validate_span([0.0, 0.0, 0.0], [3.0, 4.0, 0.0], "t", 8.0) == \
             pytest.approx(5.0)
+
+
+# --- THE SCAN-SIDE LEVER ARM (review 2026-07-28, finding A) ------------------------------
+
+
+class TestScanSideLeverArm:
+    """The part half has refused an axis-hugging landmark since the annotator landed
+    (``PartFeature.defines_rotation``). The SCAN half did not — and the screw access,
+    the one feature an operator is most likely to span, sits ON the part axis."""
+
+    def test_a_scan_mark_inside_the_lever_arm_names_the_axis(self):
+        with pytest.raises(AdjustInvalid) as exc:
+            require_clock_lever(0.21, "point-1", span=False)
+        assert "names the axis, not a clock angle" in str(exc.value)
+        assert f"{MIN_LEVER_ARM_MM}mm" in str(exc.value)
+
+    def test_a_span_refusal_names_the_screw_access_and_what_to_span_instead(self):
+        with pytest.raises(AdjustInvalid) as exc:
+            require_clock_lever(0.08, "point-2", span=True)
+        assert "SCREW ACCESS" in str(exc.value)
+        assert "coded trench" in str(exc.value)
+
+    def test_a_mark_out_on_the_coded_band_passes_and_returns_its_arm(self):
+        assert require_clock_lever(2.0, "trench-01", span=False) == pytest.approx(2.0)
+
+    def test_the_radiality_gate_alone_is_blind_at_the_axis(self):
+        """WHY THE GUARD EXISTS AT ALL. A span across the axis-centred screw access is
+        a diameter through the rim centre: its midpoint lands ON that centre, where
+        ``azimuth_deg`` degenerates and the radial offset reads a perfect 0° — the
+        gate reports the most radial span it will ever see and hands the direction
+        through. Only the LEVER ARM tells the two apart."""
+        r = span_readings((-1.2, 0.0), (1.2, 0.0), (0.0, 0.0))
+        assert abs(r.radial_offset_deg) == pytest.approx(0.0)      # blind
+        assert abs(r.radial_offset_deg) < SPAN_RADIAL_TOLERANCE_DEG
+        assert r.midpoint_lever_mm == pytest.approx(0.0)            # the discriminator
+
+    def test_the_baseline_is_the_span_in_the_plane_the_direction_was_read_in(self):
+        """A span running down the cap's WALL covers more click distance than it does
+        clock arc. The weight must divide by the baseline the direction was actually
+        read over, or a wall span would be trusted as though it were a long radial one.
+        """
+        r = span_readings((1.0, 0.0), (2.0, 0.0), (0.0, 0.0))
+        assert r.baseline_mm == pytest.approx(1.0)
+
+    def test_an_off_axis_hole_still_reads_as_the_chord_it_is(self):
+        """The guard must not swallow the case the span was designed for: a hole OUT
+        on the part still has a usable midpoint, and its diameter still reads chordal.
+        """
+        r = span_readings((2.0, -1.0), (2.0, 1.0), (0.0, 0.0))
+        assert r.midpoint_lever_mm == pytest.approx(2.0)
+        assert abs(r.radial_offset_deg) > SPAN_RADIAL_TOLERANCE_DEG
+
+
+# --- THE OBSERVATION WEIGHTS (review 2026-07-28, finding B) ------------------------------
+
+
+class TestObservationWeights:
+    """Inverse variance, from one assumption (iid click noise) with the noise itself
+    cancelling out. Equal weighting threw the averaged midpoint away by pairing it with
+    an observation up to 2.6x noisier."""
+
+    def test_a_single_click_is_weighted_by_its_lever_arm_squared(self):
+        assert observation_weight("point", 2.0) == pytest.approx(4.0)
+        assert observation_weight("point", 1.0) == pytest.approx(1.0)
+
+    def test_a_span_midpoint_is_worth_two_single_clicks_at_the_same_radius(self):
+        # averaging two clicks halves the positional variance — no more, no less
+        assert observation_weight("midpoint", 2.0) == pytest.approx(
+            2.0 * observation_weight("point", 2.0))
+
+    def test_a_direction_earns_the_midpoints_weight_exactly_at_twice_the_radius(self):
+        """The whole claim in one number: a span is worth its second click when it is
+        as long as the diameter of the circle its midpoint sits on."""
+        lever = 1.75
+        assert observation_weight("direction", lever, span_length_mm=2.0 * lever) == \
+            pytest.approx(observation_weight("midpoint", lever))
+
+    def test_a_short_span_direction_is_worth_far_less_than_its_own_midpoint(self):
+        # the measured fleet case: r 1.5->2.5, so lever 2.0 and length 1.0
+        midpoint = observation_weight("midpoint", 2.0)
+        direction = observation_weight("direction", 2.0, span_length_mm=1.0)
+        assert direction < midpoint / 15.0
+
+    def test_every_admissible_observation_carries_a_strictly_positive_weight(self):
+        # the two floors that make this safe: the lever guard and MIN_SPAN_MM
+        assert observation_weight("point", MIN_LEVER_ARM_MM) > 0.0
+        assert observation_weight("direction", MIN_LEVER_ARM_MM,
+                                  span_length_mm=MIN_SPAN_MM) > 0.0
+
+    def test_an_unknown_observation_kind_is_a_programming_error_not_a_guess(self):
+        with pytest.raises(KeyError):
+            observation_weight("vibes", 2.0)
+
+    def test_a_second_reading_can_never_make_the_answer_worse(self):
+        """THE GUARANTEE THE WEIGHTS EXIST FOR. Under inverse variance the combined
+        variance is 1/(w1+w2), which is below either reading's own for any positive
+        pair — so a span's direction is a gain at best and free at worst. Under EQUAL
+        weighting there is no such floor, and the measured span on a 1.8→2.9mm trench
+        came out worse than a single centre click."""
+        for lever, length in ((2.0, 1.0), (2.35, 1.1), (0.5, 1.0), (2.0, 4.0)):
+            midpoint = observation_weight("midpoint", lever)
+            direction = observation_weight("direction", lever, span_length_mm=length)
+            combined_variance = 1.0 / (midpoint + direction)
+            assert combined_variance < 1.0 / midpoint
+            assert combined_variance < 1.0 / direction
+
+
+class TestWeightedCircularMean:
+    def test_equal_weights_reproduce_the_unweighted_mean_exactly(self):
+        """DEMO PARITY, stated as a test: a coded cap's trenches all share one band
+        radius, so their weights are equal and the lifted circular mean is untouched."""
+        deltas = [12.0, -3.0, 7.5]
+        assert circular_mean_deg(deltas, [4.0, 4.0, 4.0]) == pytest.approx(
+            circular_mean_deg(deltas))
+
+    def test_a_heavier_observation_pulls_the_mean_toward_itself(self):
+        assert circular_mean_deg([0.0, 40.0], [9.0, 1.0]) < \
+            circular_mean_deg([0.0, 40.0])
+
+    def test_the_weighted_mean_still_crosses_the_seam(self):
+        assert abs(circular_mean_deg([170.0, -170.0], [2.0, 2.0])) == \
+            pytest.approx(180.0)
+
+    def test_one_observation_is_its_own_mean_at_any_weight(self):
+        """The COMMONEST fit is one pair, and its answer must be the demo's exactly: a
+        single observation's weight scales both sums and cancels inside the atan2."""
+        for weight in (0.25, 1.0, 8.0):
+            assert circular_mean_deg([-17.5], [weight]) == pytest.approx(-17.5)
+
+    def test_a_weight_per_observation_is_required_or_nothing_is_computed(self):
+        with pytest.raises(ValueError):
+            circular_mean_deg([1.0, 2.0], [1.0])
+
+
+# --- one pair's observations, on an identity frame ---------------------------------------
+
+
+class _FlatSite:
+    """A site whose canonical frame IS the world frame: the click mapping becomes the
+    identity, so every number below is hand-computable without parsing a mesh."""
+
+    frame = np.eye(3)
+    origin = np.zeros(3)
+    pose_local = np.eye(4)
+
+
+def _flat_clicks(centre_xy=(0.0, 0.0)) -> SiteClicks:
+    return SiteClicks(context=_FlatSite(), rim_centre_xy=np.asarray(centre_xy, float))
+
+
+class TestObservationsForOnePair:
+    def test_a_single_point_pair_yields_one_observation_at_its_part_lever(self):
+        audit: dict = {}
+        obs = observations_for(
+            Correspondence(scan_point=[2.0, 0.0, 0.0], part_point=[2.0, 0.0, 1.0]),
+            "point-1", part_azimuth=-10.0, lever_mm=2.0, clicks=_flat_clicks(),
+            max_span_mm=8.0, audit=audit)
+        assert [o.kind for o in obs] == ["point"]
+        assert obs[0].delta_deg == pytest.approx(10.0)
+        assert obs[0].lever_mm == pytest.approx(2.0)
+        assert obs[0].weight == pytest.approx(observation_weight("point", 2.0))
+        assert obs[0].note is None
+
+    def test_a_scan_click_on_the_axis_is_refused_like_a_part_landmark_there(self):
+        with pytest.raises(AdjustInvalid) as exc:
+            observations_for(
+                Correspondence(scan_point=[0.1, 0.0, 0.0], part_point=[2.0, 0.0, 1.0]),
+                "point-1", part_azimuth=0.0, lever_mm=2.0, clicks=_flat_clicks(),
+                max_span_mm=8.0, audit={})
+        assert "names the axis, not a clock angle" in str(exc.value)
+
+    def test_a_radial_span_yields_two_observations_weighted_by_their_own_noise(self):
+        audit: dict = {}
+        obs = observations_for(
+            Correspondence(scan_point=[1.5, 0.0, 0.0], scan_point_end=[2.5, 0.0, 0.0],
+                           part_point=[2.0, 0.0, 1.0]),
+            "point-1", part_azimuth=0.0, lever_mm=2.0, clicks=_flat_clicks(),
+            max_span_mm=8.0, audit=audit)
+        assert [o.kind for o in obs] == ["midpoint", "direction"]
+        assert obs[0].weight == pytest.approx(observation_weight("midpoint", 2.0))
+        assert obs[1].weight == pytest.approx(
+            observation_weight("direction", 2.0, span_length_mm=1.0))
+        assert audit["span"]["baseline_mm"] == pytest.approx(1.0)
+        # FINDING C: both readings report their miss at the PART's own lever arm — the
+        # arc the marked feature actually moves. Reporting the direction at its own
+        # half-length made the noisiest observation read as the tidiest.
+        assert obs[1].lever_mm == pytest.approx(obs[0].lever_mm)
+        assert audit["span"]["direction_used"] is True
+
+    def test_a_span_down_the_wall_is_weighted_by_its_in_plane_baseline(self):
+        """The clicks are 1.9mm apart in space but only 1.0mm apart in the plane the
+        direction is read in — weighting by the click distance would trust it 3.6x too
+        much."""
+        audit: dict = {}
+        obs = observations_for(
+            Correspondence(scan_point=[1.5, 0.0, 0.0],
+                           scan_point_end=[2.5, 0.0, 1.615],
+                           part_point=[2.0, 0.0, 1.0]),
+            "point-1", part_azimuth=0.0, lever_mm=2.0, clicks=_flat_clicks(),
+            max_span_mm=8.0, audit=audit)
+        direction = next(o for o in obs if o.kind == "direction")
+        assert audit["span"]["length_mm"] == pytest.approx(1.9, abs=1e-2)
+        assert audit["span"]["baseline_mm"] == pytest.approx(1.0)
+        assert direction.weight == pytest.approx(
+            observation_weight("direction", 2.0, span_length_mm=1.0))
+
+    def test_a_span_across_the_axis_is_refused_by_its_midpoints_lever(self):
+        with pytest.raises(AdjustInvalid) as exc:
+            observations_for(
+                Correspondence(scan_point=[-1.2, 0.0, 0.0],
+                               scan_point_end=[1.2, 0.0, 0.0],
+                               part_point=[2.0, 0.0, 1.0]),
+                "point-1", part_azimuth=0.0, lever_mm=2.0, clicks=_flat_clicks(),
+                max_span_mm=8.0, audit={})
+        assert "SCREW ACCESS" in str(exc.value)
+
+    def test_a_chordal_span_drops_its_direction_and_says_so_on_the_row_itself(self):
+        """FINDING (suites): the reason was written to disk and nowhere else. The
+        operator spends a whole extra click to buy the rotational constraint — being
+        given one observation without a word is exactly the silent no-op the doctrine
+        forbids."""
+        audit: dict = {}
+        obs = observations_for(
+            Correspondence(scan_point=[2.0, -1.0, 0.0], scan_point_end=[2.0, 1.0, 0.0],
+                           part_point=[2.0, 0.0, 1.0]),
+            "point-1", part_azimuth=0.0, lever_mm=2.0, clicks=_flat_clicks(),
+            max_span_mm=8.0, audit=audit)
+        assert [o.kind for o in obs] == ["midpoint"]
+        assert audit["span"]["direction_used"] is False
+        assert obs[0].note is not None
+        assert "off its own radius" in obs[0].note
+        assert obs[0].note == audit["span"]["direction_note"]
+
+
+class TestResidualRows:
+    def _obs(self, kind, delta, lever, weight, note=None):
+        from case_prep.application.adjust import Observation
+        return Observation(label="point-1", kind=kind, part_azimuth_deg=0.0,
+                           observed_deg=delta, delta_deg=delta, lever_mm=lever,
+                           weight=weight, note=note)
+
+    def test_equal_angular_misses_read_as_equal_millimetres(self):
+        """The QC number an operator judges by must not flatter the noisiest reading:
+        two observations that disagree with the adopted rotation by the same angle
+        miss the marked feature by the same arc."""
+        rows, _rms = residual_rows(
+            [self._obs("midpoint", 4.0, 2.0, 8.0),
+             self._obs("direction", -4.0, 2.0, 0.5)], applied=0.0)
+        assert rows[0]["residual_mm"] == pytest.approx(rows[1]["residual_mm"])
+
+    def test_the_rows_carry_the_weight_that_produced_the_rotation(self):
+        rows, _rms = residual_rows([self._obs("point", 0.0, 2.0, 4.0)], applied=0.0)
+        assert rows[0]["weight"] == pytest.approx(4.0)
+
+    def test_a_dropped_directions_reason_rides_on_the_row_the_operator_reads(self):
+        rows, _rms = residual_rows(
+            [self._obs("midpoint", 0.0, 2.0, 8.0, note="the span runs 47° off …")],
+            applied=0.0)
+        assert rows[0]["note"] == "the span runs 47° off …"
+
+    def test_a_row_with_nothing_to_explain_carries_no_note_key(self):
+        rows, _rms = residual_rows([self._obs("point", 0.0, 2.0, 4.0)], applied=0.0)
+        assert "note" not in rows[0]
+
+
+# --- RESET IS NOT A FREE ACT (review 2026-07-28, finding D) ------------------------------
+
+
+def _moved_pose(dx: float = 0.4) -> list:
+    m = np.eye(4)
+    m[0, 3] = dx
+    return m.tolist()
+
+
+class TestAnchorCertifiedPose:
+    """The anchor a Reset restores. ``best_fit_site`` reasoned about this ordering in
+    a comment and nothing tested it (suites 2026-07-28) — and it cannot be tested on
+    the warmed runs, whose certified poses are already optimal, so it is pinned where
+    it actually lives."""
+
+    def test_a_virgin_record_anchors_on_the_pose_the_pipeline_shipped(self):
+        record = {"pose_matrix": np.eye(4).tolist()}
+        assert np.allclose(anchor_certified_pose(record), np.eye(4))
+        assert record["nudge"]["base_pose_matrix"] == np.eye(4).tolist()
+
+    def test_the_captured_anchor_survives_the_caller_rewriting_the_pose(self):
+        """THE WHOLE POINT OF CAPTURING FIRST: after the act overwrites pose_matrix the
+        certified pose is gone from the record, and an anchor taken then would be the
+        operator's own output — Reset would 'restore' what it was asked to undo."""
+        record = {"pose_matrix": np.eye(4).tolist()}
+        anchor_certified_pose(record)
+        record["pose_matrix"] = _moved_pose()          # the act, re-emitting
+        assert np.allclose(anchor_certified_pose(record), np.eye(4))
+
+    def test_a_second_act_does_not_re_anchor_to_the_first_ones_result(self):
+        record = {"pose_matrix": np.eye(4).tolist()}
+        anchor_certified_pose(record)
+        record["pose_matrix"] = _moved_pose(0.4)
+        anchor_certified_pose(record)                  # a second tool
+        record["pose_matrix"] = _moved_pose(0.9)
+        assert np.allclose(anchor_certified_pose(record), np.eye(4))
+
+
+class TestResetTarget:
+    """Reset rewrites the cap STL, drops the site to ADJUSTED and retires the case's
+    confirmation AND release. On a site nobody has touched it would pay that whole
+    price to move the pose by 1.8e-15mm."""
+
+    def test_a_site_still_on_the_certified_pose_has_nothing_to_reset(self):
+        with pytest.raises(AdjustInvalid) as exc:
+            reset_target({"pose_matrix": np.eye(4).tolist()})
+        assert "nothing to reset" in str(exc.value)
+        assert "already stands on the pipeline's certified pose" in str(exc.value)
+
+    def test_a_rotated_site_can_be_reset(self):
+        record = {"pose_matrix": _moved_pose(),
+                  "nudge": {"cumulative_deg": 5.0,
+                            "base_pose_matrix": np.eye(4).tolist()}}
+        assert reset_target(record)["cumulative_deg"] == pytest.approx(5.0)
+
+    def test_a_best_fitted_site_can_be_reset_although_it_rotated_by_nothing(self):
+        """The guard reads the POSE, not the angle: a best-fit moves the part in 6 DoF
+        and books no rotation at all, so a cumulative-degrees test would refuse the one
+        reset with the most to undo."""
+        record = {"pose_matrix": _moved_pose(),
+                  "nudge": {"base_pose_matrix": np.eye(4).tolist()},
+                  "best_fit": {"matching_diameter_mm": 0.6}}
+        assert reset_target(record) is not None
+
+    def test_a_site_already_reset_once_is_refused_a_second_time(self):
+        """The anchor survives a reset (the acts are history), so the bookkeeping alone
+        would wave this through — and pay a confirmation for another 1.8e-15mm."""
+        record = {"pose_matrix": np.eye(4).tolist(),
+                  "nudge": {"cumulative_deg": 0.0,
+                            "base_pose_matrix": np.eye(4).tolist()}}
+        with pytest.raises(AdjustInvalid):
+            reset_target(record)
+
+    def test_a_nudge_block_without_an_anchor_cannot_restore_anything(self):
+        with pytest.raises(AdjustInvalid):
+            reset_target({"pose_matrix": _moved_pose(),
+                          "nudge": {"cumulative_deg": 5.0}})
+
+
+class TestResetSaysWhatItDiscards:
+    def test_a_rotation_only_reset_names_the_rotation(self):
+        assert "+7.0° of operator rotation" in reset_discards({}, 7.0)
+
+    def test_a_reset_after_a_best_fit_names_both_acts(self):
+        words = reset_discards({"best_fit": {"matching_diameter_mm": 0.6}}, 5.0)
+        assert "+5.0° of operator rotation" in words
+        assert "Ø0.60mm" in words
+
+    def test_a_best_fit_alone_is_not_described_as_a_rotation(self):
+        words = reset_discards({"best_fit": {"matching_diameter_mm": 0.6}}, 0.0)
+        assert "rotation" not in words
+        assert "best-fit" in words
+
+
+class TestBestFitRefusalsNameTheirDial:
+    """server.py:2084-2090: the demo prefixed EVERY best-fit refusal with the dial it
+    was refused at. Half the branches arrived as bare gate sentences after the lift."""
+
+    def test_the_refusal_carries_the_matching_diameter_and_the_reason(self):
+        exc = best_fit_refusal(0.6, "the top face would pull off the scan")
+        assert isinstance(exc, AdjustRefused)
+        assert str(exc) == ("best-fit at a 0.60mm matching diameter refused: the top "
+                            "face would pull off the scan")
+
+    def test_the_already_optimal_pass_is_not_dressed_as_one(self):
+        # AlreadyOptimal is a PASS: it must never inherit the refusal's prefix
+        assert not issubclass(AlreadyOptimal, type(None))
+        assert "refused" not in str(AlreadyOptimal("already the best fit", 0.3, 0.6))
+
+
+# --- WHAT AN ADJUSTMENT RE-DERIVES (review 2026-07-28, finding E) ------------------------
+
+
+class TestRederivedReading:
+    """The run row's numbers describe a pose. When a tool moves that pose, a row left
+    alone describes a cap that is no longer there — and the confirmation seals it under
+    a freshly derived hash, which gives a stale document a false air of freshness."""
+
+    def test_the_deviation_scalars_come_off_the_panes_own_payload(self):
+        """Same instrument, by construction: ``deviation_payload`` publishes the
+        acceptance scalars from ``site_deviation_stats`` — literally the function the
+        run row's own numbers came from — so the row and the pane can no longer
+        disagree about the same cap."""
+        assert rederived_reading({"stats": {"rms_mm": 0.231, "p90_mm": 0.371}}) == {
+            "deviation_rms_mm": 0.231, "deviation_p90_mm": 0.371}
+
+    def test_a_payload_with_no_scalars_re_derives_nothing_rather_than_zero(self):
+        assert rederived_reading({"stats": {}}) == {"deviation_rms_mm": None,
+                                                    "deviation_p90_mm": None}
+
+    def test_the_metrics_that_cannot_be_re_derived_are_named_not_left_unsaid(self):
+        assert "rim_agreement_mm" in STALE_AFTER_REWORK
+        assert "guidance" in STALE_AFTER_REWORK
+
+    def test_a_re_derived_metric_is_not_also_claimed_stale(self):
+        assert "deviation_rms_mm" not in STALE_AFTER_REWORK
+        assert "deviation_p90_mm" not in STALE_AFTER_REWORK
 
 
 # --- the refusals that fire before any mesh is parsed ------------------------------------
@@ -297,6 +705,16 @@ class TestRotationIsAGatedProposal:
         assert np.allclose(np.asarray(restored, float), np.asarray(base, float),
                            atol=1e-9)
 
+    def test_reset_on_an_untouched_site_refuses_and_leaves_every_byte(self, warmed_run):
+        """FINDING D: the price of Reset is a rewritten cap, a dropped rung and a
+        retired confirmation. On a site standing on the pipeline's own pose it bought
+        nothing at all — measured at 1.8e-15mm of movement."""
+        before = _fingerprint(warmed_run)
+        with pytest.raises(AdjustInvalid) as exc:
+            rotate_site(_real_case(), warmed_run, WARMED_TOOTH, reset=True)
+        assert "nothing to reset" in str(exc.value)
+        assert _fingerprint(warmed_run) == before
+
 
 @pytest.mark.slow
 @warmed_only
@@ -406,5 +824,51 @@ class TestBestFit:
             assert exc.matching_diameter_mm == pytest.approx(0.05)
             assert exc.suggested_diameter_mm == pytest.approx(0.1)
             assert "already the best fit" in str(exc)
+            # a PASS must never wear the refusal's prefix
+            assert "refused" not in str(exc)
         except AdjustRefused:
             pytest.skip("this site's tightest band refuses for another reason")
+
+    def test_a_real_refusal_names_the_dial_it_was_refused_at(self, warmed_run):
+        """server.py's ``_refuse_best_fit`` prefixed every branch. The widest band is
+        where the fleet's real refusal lives (measured: trust-region at Ø2.0mm)."""
+        try:
+            best_fit_site(_real_case(), warmed_run, WARMED_TOOTH,
+                          matching_diameter_mm=2.0, apply=False)
+        except AlreadyOptimal:
+            pytest.skip("this site is already optimal at the ceiling — a pass, not a "
+                        "refusal")
+        except AdjustRefused as exc:
+            assert str(exc).startswith("best-fit at a 2.00mm matching diameter "
+                                       "refused: ")
+
+    def test_the_reset_anchor_survives_a_best_fit_whatever_the_gates_say(
+            self, warmed_run):
+        """THE ANCHOR ``best_fit_site`` REASONS ABOUT, on real data (suites 2026-07-28
+        named it untested; the ordering itself is pinned purely in
+        ``TestAnchorCertifiedPose``, which is where it can be pinned unconditionally —
+        a warmed run's certified pose IS its own best fit, so the landing branch is not
+        reachable here and a test that only ran when it was would prove nothing).
+
+        What IS reachable, and what matters: a best-fit asked for AFTER a rotation must
+        not re-anchor. Landed or refused, Reset must still find the pipeline's own pose
+        — and must leave no ``best_fit`` block describing a pose that is gone."""
+        case = _real_case()
+        record_path = warmed_run / f"{WARMED_CASE}-{WARMED_TOOTH}-implant.json"
+        certified = json.loads(record_path.read_text())["pose_matrix"]
+        try:
+            rotate_site(case, warmed_run, WARMED_TOOTH, step_deg=5.0)
+        except AdjustRefused:
+            pytest.skip("this site's gates refuse a 5° step — nothing to anchor")
+        for diameter in (0.3, 0.6, 1.0):
+            try:
+                best_fit_site(case, warmed_run, WARMED_TOOTH,
+                              matching_diameter_mm=diameter)
+            except AdjustRefused:
+                continue
+        outcome = rotate_site(case, warmed_run, WARMED_TOOTH, reset=True)
+        assert "restored the pipeline's certified pose" in outcome.detail
+        restored = json.loads(record_path.read_text())
+        assert np.allclose(np.asarray(restored["pose_matrix"], float),
+                           np.asarray(certified, float), atol=1e-9)
+        assert "best_fit" not in restored

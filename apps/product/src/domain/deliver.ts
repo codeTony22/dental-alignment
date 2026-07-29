@@ -18,6 +18,8 @@ import type {
   ConfirmBody,
   SessionView,
 } from "../api/client";
+// the rework's vocabulary lives where the rework happens; Deliver is where it is read
+import { staleMetricsPhrase } from "./adjust";
 
 export type Disposition = "release" | "withhold";
 
@@ -173,6 +175,33 @@ export function evidenceSummary(assurance: AssuranceView): readonly EvidenceLine
       `${site.seat_method ?? "seat not recorded"}, rim ${mm(site.rim_agreement_mm)} · ` +
       `RMS ${mm(site.deviation_rms_mm)} / p90 ${mm(site.deviation_p90_mm)}`,
   }));
+}
+
+// --- what a reworked row's numbers still describe (review 2026-07-28, finding E) -------
+
+/**
+ * WHICH OF THIS ROW'S NUMBERS PREDATE THE OPERATOR'S REWORK, or null when none do.
+ *
+ * Adjust re-derives what it can over the new pose — the deviation scalars come off the
+ * very payload the operator's panes are rendering — but the rim agreement was anchored
+ * on the scan's own fitted rim circle and the guidance on a dozen run-time inputs, and
+ * neither survives in the shipped record. Recomputing them on a different anchor would
+ * put a different number under the same name; leaving them unlabelled let a re-derived
+ * hash imply the whole table was current.
+ *
+ * So the row SAYS SO, and says what confirming does with them. The list is the BFF's
+ * and the vocabulary is Adjust's (`staleMetricsPhrase`, where the rework happens); this
+ * sentence is Deliver's own voice, because here the subject is a signature.
+ */
+export function staleMetricsWords(site: AssuranceSite): string | null {
+  const named = staleMetricsPhrase(site.stale_metrics);
+  if (named === null) return null;
+  const one = site.stale_metrics.length === 1;
+  return (
+    `Reworked after the run — ${named} below still ${one ? "describes" : "describe"} ` +
+    `the fit the run produced, not the one on this site now. Confirming seals ` +
+    `${one ? "it" : "them"} as ${one ? "it stands" : "they stand"}.`
+  );
 }
 
 /**

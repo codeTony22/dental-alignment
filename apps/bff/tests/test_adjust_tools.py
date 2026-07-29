@@ -67,9 +67,12 @@ def outcome(tooth: int = 4, operation: str = "rotation", applied: bool = True,
                f"{CASE}-{tooth}-alignment-proof.png"],
         clocking={"notch_shift_deg": -1.0, "notch_corr": 0.51,
                   "notch_prominence": 0.16},
+        deviation={"deviation_rms_mm": 0.52, "deviation_p90_mm": 0.88},
+        stale_metrics=["rim_agreement_mm", "guidance"],
         nudge={"operator_delta_deg": 1.0, "cumulative_deg": 1.0},
         applied_delta_deg=1.0, cumulative_deg=1.0, stability_excess_mm=0.002,
-        pane_payload={"tooth": tooth, "preview": False})
+        pane_payload={"tooth": tooth, "preview": False,
+                      "stats": {"rms_mm": 0.52, "p90_mm": 0.88}})
     values.update(overrides)
     return AdjustOutcome(**values)
 
@@ -100,6 +103,17 @@ def tooled(settings, product_root, monkeypatch, rows=None, result=None, raises=N
 
 def site_status(product_root, tooth: int) -> str:
     return SessionStore(product_root).load(CASE).sites[str(tooth)].status.value
+
+
+def materialize_proof(client, product_root, tooth: int) -> None:
+    """Lay down the alignment proof the stubbed tool claims. The confirmation seals QC
+    BYTES, so a proof the package names and disk does not hold refuses the whole
+    confirmation (AM-10) — the real tools write it, the stub cannot."""
+    run_id = client.get(f"/api/case-sessions/{CASE}/run").json()["run_id"]
+    path = (product_root / CASE / "runs" / run_id
+            / f"{CASE}-{tooth}-alignment-proof.png")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\x89PNG:proof")
 
 
 # --- the precondition ---------------------------------------------------------------------
@@ -273,6 +287,85 @@ class TestTheLanding:
         # the run's own words survive the fold — only the instrument fields change
         assert row4["clocking"]["evidence"] == "codes"
         assert row4["nudge"] == {"operator_delta_deg": 1.0, "cumulative_deg": 1.0}
+
+    def test_the_rows_deviation_is_re_derived_over_the_pose_that_just_landed(
+            self, settings, product_root, monkeypatch):
+        """FINDING E (review 2026-07-28): the row's numbers describe A POSE, and the
+        confirmation SEALS the row. Left alone they went on reporting the pre-rework
+        fit under a freshly derived hash — a stale document wearing a fresh signature.
+        """
+        client, _ = tooled(settings, product_root, monkeypatch)
+        run = client.get(f"/api/case-sessions/{CASE}/run").json()
+        assert next(r for r in run["sites"] if r["tooth"] == 4)["deviation_rms_mm"] \
+            == 0.43
+        client.post(f"{BASE}/4/rotation", json={"step_deg": 1.0})
+        row4 = next(r for r in client.get(f"/api/case-sessions/{CASE}/run").json()[
+            "sites"] if r["tooth"] == 4)
+        assert row4["deviation_rms_mm"] == 0.52
+        assert row4["deviation_p90_mm"] == 0.88
+
+    def test_what_could_not_be_re_derived_is_named_on_the_row_not_left_unsaid(
+            self, settings, product_root, monkeypatch):
+        client, _ = tooled(settings, product_root, monkeypatch)
+        client.post(f"{BASE}/4/rotation", json={"step_deg": 1.0})
+        row4 = next(r for r in client.get(f"/api/case-sessions/{CASE}/run").json()[
+            "sites"] if r["tooth"] == 4)
+        assert row4["rework"]["stale_metrics"] == ["rim_agreement_mm", "guidance"]
+
+    def test_a_reset_clears_the_stale_marker_because_nothing_predates_it(
+            self, settings, product_root, monkeypatch):
+        """A reset puts the site back on the pipeline's own certified pose, so the
+        run's rim agreement and guidance describe it correctly again."""
+        client, _ = tooled(settings, product_root, monkeypatch)
+        client.post(f"{BASE}/4/rotation", json={"step_deg": 1.0})
+        stub_tools(monkeypatch, result=outcome(
+            4, operation="rotation-reset", stale_metrics=[],
+            best_fit=None, detail="restored the pipeline's certified pose"))
+        client.post(f"{BASE}/4/rotation", json={"reset": True})
+        row4 = next(r for r in client.get(f"/api/case-sessions/{CASE}/run").json()[
+            "sites"] if r["tooth"] == 4)
+        assert "rework" not in row4
+
+    def test_a_reset_retires_the_rows_best_fit_block_with_the_pose_it_described(
+            self, settings, product_root, monkeypatch):
+        client, _ = tooled(settings, product_root, monkeypatch)
+        stub_tools(monkeypatch, result=outcome(
+            4, operation="best-fit", best_fit={"roi_mean_after_mm": 0.19}))
+        client.post(f"{BASE}/4/best-fit", json={"matching_diameter_mm": 0.3})
+        stub_tools(monkeypatch, result=outcome(4, operation="rotation-reset",
+                                               stale_metrics=[]))
+        client.post(f"{BASE}/4/rotation", json={"reset": True})
+        row4 = next(r for r in client.get(f"/api/case-sessions/{CASE}/run").json()[
+            "sites"] if r["tooth"] == 4)
+        assert "best_fit" not in row4
+
+    def test_an_adjusted_site_cannot_be_confirmed_until_it_is_reviewed_again(
+            self, settings, product_root, monkeypatch):
+        """FINDING F (review 2026-07-28): "every site resolved" lived ONLY in flow.ts.
+        Before this slice ADJUSTED had no writer, so the divergence was unreachable;
+        the tools made it reachable, and an adjusted site whose own acceptance row read
+        FAIL confirmed and released straight through the API. Screen order in a
+        presentational app is not a control — the precondition belongs on the act."""
+        client, _ = tooled(settings, product_root, monkeypatch)
+        client.post(f"{BASE}/13/rotation", json={"step_deg": 1.0})
+        res = client.post(f"/api/case-sessions/{CASE}/confirm",
+                          json={"acknowledged_flags": [4]})
+        assert res.status_code == 422
+        assert "tooth 13" in res.json()["detail"]
+        assert "adjusted" in res.json()["detail"]
+
+    def test_the_review_tick_over_the_new_panes_opens_the_confirmation_again(
+            self, settings, product_root, monkeypatch):
+        """The rung the ladder already drew (adjusted → review_ready): the operator
+        attests the NEW pose, and Deliver opens on that attestation, not on time."""
+        client, _ = tooled(settings, product_root, monkeypatch)
+        client.post(f"{BASE}/13/rotation", json={"step_deg": 1.0})
+        materialize_proof(client, product_root, 13)
+        assert client.post(f"/api/case-sessions/{CASE}/sites/13/review"
+                           ).status_code == 200
+        assert site_status(product_root, 13) == "ready"
+        assert client.post(f"/api/case-sessions/{CASE}/confirm",
+                           json={"acknowledged_flags": [4]}).status_code == 200
 
     def test_the_alignment_proof_joins_the_runs_package_files(
             self, settings, product_root, monkeypatch):
