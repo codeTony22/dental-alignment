@@ -1344,6 +1344,16 @@ class TestStatusesAreNeverClientWritable:
         # server-derived. The body carries no field a claimed fit-outcome could ride
         # in on, which is why "skip" is admissible where "ready" never will be.
         ("POST", "/api/case-sessions/{case_id}/adjust-decision"),
+        # THE FOUR ADJUST TOOLS (slice 6). Each body carries the operator's own
+        # PROPOSAL — a rotation step, a click, named correspondences, a matching
+        # diameter — and nothing else. Not one of them can express an outcome: the
+        # gates decide whether the proposal lands, the status machine decides where
+        # the site stands afterwards, and a refusal writes nothing at all. That is
+        # why a geometry a client chose is admissible where a verdict never will be.
+        ("POST", "/api/case-sessions/{case_id}/sites/{tooth}/rotation"),
+        ("POST", "/api/case-sessions/{case_id}/sites/{tooth}/mark-trench"),
+        ("POST", "/api/case-sessions/{case_id}/sites/{tooth}/fit-by-points"),
+        ("POST", "/api/case-sessions/{case_id}/sites/{tooth}/best-fit"),
     }
     STATUS_SHAPED = {"status", "state", "verdict", "gate", "flagged", "ready",
                      "confirmed"}

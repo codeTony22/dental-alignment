@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 
 from .config import Settings, default_settings
 from .ports.worker import InProcessWorker
-from .resources import case_sessions, deliver, library
+from .resources import adjust, case_sessions, deliver, library
 from .session import SessionStore
 
 
@@ -49,6 +49,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     # gated — mounted after case_sessions so its multi-segment paths never shadow
     # the single-segment detail route
     app.include_router(deliver.router)
+    # the rework surface (plan §4 Adjust / slice 6): mounted after case_sessions for
+    # the same reason deliver is — its multi-segment per-site paths must never shadow
+    # the single-segment detail route
+    app.include_router(adjust.router)
     app.include_router(library.router)
 
     @app.exception_handler(RequestValidationError)

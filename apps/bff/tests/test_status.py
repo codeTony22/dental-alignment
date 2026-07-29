@@ -85,7 +85,15 @@ LADDER = {
         S.READY: S.FLAGGED,       # a run's verdict may downgrade a reviewed site (5c)
     },
     status.adjust: {
-        S.FLAGGED: S.ADJUSTED,    # only flagged sites open in Adjust (plan §4)
+        S.FLAGGED: S.ADJUSTED,    # the stage's reason for existing (plan §4)
+        # WIDENED in slice 6, deliberately. Adjust is a rework SURFACE, not a penalty
+        # box: the plan's queue lists clean sites below the flagged ones, visibly
+        # optional, and a tool that lands on one moves the pose its review attested —
+        # so READY falls to ADJUSTED and the operator re-confirms over the new panes
+        # (review_ready above draws that edge already). ADJUSTED→ADJUSTED is the
+        # second tool on one site: refit, then nudge.
+        S.READY: S.ADJUSTED,
+        S.ADJUSTED: S.ADJUSTED,
     },
 }
 

@@ -12,7 +12,7 @@ row moves to Retired.
 | 2 | Catalog reads (library groups, constructions, relief ceiling) as refusal-raising functions | server.py endpoint bodies | case_prep/application/catalog.py | 200 | slice 1 (`5c7c4b8`) | demo retirement |
 | 3 | Viewer stack (verifyScene, VerifyViewer, sceneController, partFrame, meshCrop, deviationColormap, siteRouting, anatomyOrientation, palette, scanPositions, Viewer3D) + their 5 test files, plus a 13-line domain/types Vec3 subset | apps/web/src/viewer + domain/types.ts | packages/viewer/src | measured 4,698 / 16 files (as landed 4,771 — divergences below) | slice 3 (`3487c16`) | demo retirement |
 | 4 | Server-side validation corpus (catalog membership, explicit-selection 422, relief bounds, point caps, ±45°, 15mm, ≤8 pairs, lever arm, diameter bounds) — copied VERBATIM then EXTENDED with coordinate finiteness | server.py request models | bff request models | 300 | recording STARTED slice 4 (see row 4 record); remainder slices 5a-8 (AM-9) | demo retirement |
-| 5 | The adjust tools' judging: the rotation nudge + its gates, align-to-mark, align-to-correspondence, the manual best-fit | server.py:1268-1608 (`_NUDGE_*`, `_read_clock_at`, `_load_rotation_site`, `_certification_gates`, `_judge_rotation`, `_reemit_site`, `_finish_adjustment`, `_adopt_rotation`, `POST /nudge-rotation`), 1611-1742 (`_MARK_MAX_DISTANCE_MM`, `POST /align-to-mark`), 1745-1994 (`_CORRESPONDENCE_MAX_PAIRS`, `_site_click_azimuth`, `POST /align-to-correspondence`), 1997-2244 (`_BEST_FIT_*`, `_pose_move`, `_fit_residual`, `POST /best-fit`). NOT lifted: the `_append_*_history` streams (1290-1312, 1639-1667, 1805-1832, 2054-2082), `_update_run_row` (1337-1375), `confirm-alignment` (2247-2324) | case_prep/application/adjust.py | 520 (as landed; the two-point span is NEW physics beside the copy — see row 5 record) | slice 6 (`this commit`) | demo retirement |
+| 5 | The adjust tools' judging: the rotation nudge + its gates, align-to-mark, align-to-correspondence, the manual best-fit | server.py:1268-1608 (`_NUDGE_*`, `_read_clock_at`, `_load_rotation_site`, `_certification_gates`, `_judge_rotation`, `_reemit_site`, `_finish_adjustment`, `_adopt_rotation`, `POST /nudge-rotation`), 1611-1742 (`_MARK_MAX_DISTANCE_MM`, `POST /align-to-mark`), 1745-1994 (`_CORRESPONDENCE_MAX_PAIRS`, `_site_click_azimuth`, `POST /align-to-correspondence`), 1997-2244 (`_BEST_FIT_*`, `_pose_move`, `_fit_residual`, `POST /best-fit`). NOT lifted: the `_append_*_history` streams (1290-1312, 1639-1667, 1805-1832, 2054-2082), `_update_run_row` (1337-1375), `confirm-alignment` (2247-2324) | case_prep/application/adjust.py | 520 (as landed; the two-point span is NEW physics beside the copy — see row 5 record) | slice 6 (`716ce65`; the module's own bytes rode into `d1bece6` — see the row 5 record's last note) | demo retirement |
 | 6 | Detection + capture assembly (propose orchestration; crowns-frame capture context; centre+radius precedence; per-proposal + curated-site capture blocks) | server.py:733-853 (`_capture_context`, `_capture_block`, `_site_capture_inputs`, `_with_capture`, `_run_sites_capture`, `POST /propose`; 856+ is `_append_run_history`, NOT lifted) | case_prep/application/detection.py | 120 | slice 4 | demo retirement |
 | 7 | Pre-run preview: the deviation payload builder + the one-site preview seat | server.py:1038 (`_DEVIATION_ROUND`), 1068-1156 (`_deviation_payload`), 1176-1257 (`_PREVIEW_DIRNAME` + `preview_site_alignment`) | case_prep/application/preview.py | 170 | slice 5b | demo retirement |
 | 8 | The full run: explicit-selection gate + run orchestration (everything on: product, QC, confidence, package emission) | server.py:893-916 (`_required_selection`), 933-1011 (`POST /run`) | case_prep/application/run.py | 150 | slice 5c | demo retirement |
@@ -72,9 +72,20 @@ handler):
   routes serve those sentences verbatim. NEW, not a copy: `extra="forbid"` on every
   BFF request model (the demo's FastAPI models silently drop unknown fields; the
   product refuses them — see test_case_sessions' introspection test).
-- Still to record as they are copied (slices 5b-8): explicit-selection 422, unique
-  teeth, point caps, ±45°, 15mm, ≤8 pairs + lever arm, diameter bounds, length-3 +
-  finiteness on client coordinates.
+- Slice 6 additions (2026-07-28), into `bff/resources/adjust.py`'s request models:
+  the ±45° nudge bound and its sentence (server.py:1268 + 1281-1287), the ≤8 pairs cap
+  and its sentence (1768 + 1859-1862), the best-fit diameter band (2012-2017 +
+  2043-2051), and the ONE-part-half rule per pair (1794-1798). Divergences: the field
+  is `step_deg` (the product's ubiquitous language — the demo's `delta_deg` named a
+  quantity, the step names the act), and `np.isfinite` → `math.isfinite` as in row 4's
+  first entry. NEW, not a copy — the corpus' promised EXTENSION: length-3 + finiteness
+  on EVERY client coordinate (`_finite_triple` over `scan_point`, `scan_point_end`,
+  `part_point`), where the demo checked only the marks it happened to receive. The
+  15mm mark distance and the 0.5mm lever arm are deliberately NOT re-stated here —
+  they need the seated pose and the part, so they live once, in the application lift
+  (row 5), and the BFF serves their sentences.
+- Still to record as they are copied: explicit-selection 422, unique teeth, point caps
+  (the marking UI's, when Intake gets one).
 
 NOTE row (slice 5a, 2026-07-27) — a semantic port, NOT a code copy (recorded so the
 conformance check knows the resemblance is deliberate): the BFF's
