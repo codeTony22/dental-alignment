@@ -268,3 +268,35 @@ per-site ceiling beside it. That is more correct than what the demo did, not mer
 **D. Intake badge collision (client, 2026-07-28).** The SUGGESTED / DEFAULT badges sit flush
 against their labels with no gap and no wrap allowance. Cosmetic, product-only; the label row
 needs to be a flex line with a gap and wrapping.
+
+**E. N caps in one scan — the shape holds, but the shared construction part is a DISCLOSURE
+GAP (found 2026-07-28 answering the client's multi-cap question).**
+
+The plumbing is genuinely N-wide: no site-count cap exists anywhere, `sites` is a dict keyed by
+tooth, the run loops per site (auto_flow.py:1714), the queue and the assurance table are
+per-site rows. Jaw being case-level is CORRECT for the client's own framing — one arch, one jaw.
+
+The per-site / case-level split is the thing to state as a rule rather than leave as an
+accident. PER SITE: the variant only. CASE-LEVEL: implant system, construction part, jaw,
+relief. So N caps in one intake must share one implant SYSTEM (variants may differ) — defensible
+for one patient, but it should be a declared constraint the UI enforces, not a shape nobody
+wrote down.
+
+THE GAP: the construction part is case-level while the variant is per-site, and the worker
+already knows this breaks. auto_flow.py:2280-2283 computes
+`"single construction part shared across sites identifying N distinct variants — per-variant
+construction parts needed"` and writes it to `row["production"]["note"]`. The BFF's assurance
+read (resources/deliver.py:176-205) picks up the relief-clamp fields out of that same block and
+DROPS the note. Consequence on a two-variant case (neodent-gm: 6020 + 5020): the worker records
+that the emitted geometry cannot match both sites, and the client sees per-site green verdicts
+with nothing said — then confirms and pays against that surface. Same class as the four slice-8
+disclosure leaks: a fact the system holds and the paying surface does not show.
+
+Fix shape: surface `production.note` on the assurance row (per-site, beside the clamp story),
+and decide whether a multi-variant case should FLAG rather than merely annotate. It should
+probably flag — the note's own words are "cannot match", not "differs slightly".
+
+Untested above N=2: the whole fleet is single-site except neodent-gm. Preview is 3-6s/site
+serial, so a full arch is minutes of previews nobody has measured; the run's N-scaling, the
+memory of N scan crops, and the queue/table at 14 rows are all unmeasured. Not known-broken —
+unmeasured, which is a different claim and should stay one until someone runs it.
