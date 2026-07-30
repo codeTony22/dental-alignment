@@ -570,3 +570,11 @@ export function withoutPick(draft: PairDraft, slot: PairSlot): PairDraft {
       return draft;
   }
 }
+
+/** How many gate reasons a flagged row is standing on, in words — the row states the
+ *  COUNT so the operator knows whether opening the dialog is worth it, while the words
+ *  themselves stay in the dialog (client 2026-07-29). */
+export function reasonCountWords(count: number): string {
+  if (count <= 0) return "the gate recorded no action words";
+  return count === 1 ? "1 reason" : `${count} reasons`;
+}

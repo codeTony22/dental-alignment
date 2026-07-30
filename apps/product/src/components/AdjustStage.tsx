@@ -63,6 +63,7 @@ import {
   pairSlots,
   pairWords,
   queueSummary,
+  reasonCountWords,
   reworkWords,
   withPick,
   type AdjustQueueEntry,
@@ -116,6 +117,13 @@ export interface AdjustStageViewProps {
   readonly onReconfirm: () => void;
   readonly reconfirmSaving: boolean;
   readonly reconfirmError: string | null;
+  /** Which tooth's gate reasons the dialog is showing, if any (client 2026-07-29).
+   *  OPTIONAL with a null default: static callers predate the dialog, and a bare
+   *  `!== null` check let an omitted prop (undefined) open an empty dialog — caught by
+   *  the suite the moment the reasons moved off the row. */
+  readonly reasonsFor?: number | null;
+  readonly onOpenReasons?: (tooth: number) => void;
+  readonly onCloseReasons?: () => void;
 }
 
 function ToolTabs({
@@ -178,6 +186,9 @@ export function AdjustStageView({
   onReconfirm,
   reconfirmSaving,
   reconfirmError,
+  reasonsFor = null,
+  onOpenReasons = () => undefined,
+  onCloseReasons = () => undefined,
 }: AdjustStageViewProps) {
   const active = entries.find((e) => e.tooth === activeTooth) ?? null;
   const busy = phase === "working";
@@ -185,6 +196,10 @@ export function AdjustStageView({
   const openDraft = drafts.find((d) => !isComplete(d)) ?? null;
   const toolInfo = ADJUST_TOOLS.find((t) => t.id === tool)!;
   const reworkNote = lastOutcome !== null ? reworkWords(lastOutcome) : null;
+  const reasonsShown =
+    reasonsFor === null
+      ? []
+      : (entries.find((e) => e.tooth === reasonsFor)?.reasons ?? []);
   return (
     <div data-role="adjust-stage" className="stage-contents">
       <div className="workbench__work">
@@ -221,25 +236,35 @@ export function AdjustStageView({
                     </span>
                   </span>
                   {entry.flagged ? (
-                    <ul data-role="queue-reasons" className="adjust-queue__reasons">
-                      {entry.reasons.length > 0 ? (
-                        entry.reasons.map((reason) => (
-                          <li key={reason} className="adjust-queue__reason">
-                            {reason}
-                          </li>
-                        ))
-                      ) : (
-                        <li className="adjust-queue__reason">
-                          Flagged by the run — the gate recorded no action words.
-                        </li>
-                      )}
-                    </ul>
+                    /* The gate's words used to sit here in full — five lines of amber per
+                       flagged site, which pushed the queue past its card and left the
+                       operator scrolling a list whose whole job is to be scannable
+                       (client 2026-07-29: "the Sites it cut ... should be clickable and
+                       in a modal to save real estate"). The ROW keeps the fact; the
+                       WORDS move to the dialog below. */
+                    <span data-role="queue-flag" className="adjust-queue__flag">
+                      flagged — {reasonCountWords(entry.reasons.length)}
+                    </span>
                   ) : (
                     <span data-role="queue-optional" className="adjust-queue__optional">
                       passed its gates — reworking is optional
                     </span>
                   )}
                 </button>
+                {entry.flagged && (
+                  /* A SIBLING of the row, not a child: the row is itself a button, and a
+                     button inside a button is invalid markup that browsers resolve by
+                     dropping one of them. Selecting the site stays the row's job. */
+                  <button
+                    type="button"
+                    data-role="queue-why"
+                    data-tooth={entry.tooth}
+                    className="adjust-queue__why"
+                    onClick={() => onOpenReasons(entry.tooth)}
+                  >
+                    Why it was flagged
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -588,6 +613,60 @@ export function AdjustStageView({
         </section>
       </div>
       <div className="workbench__stage">{panes}</div>
+
+      {/* THE GATE'S WORDS, ON DEMAND (client 2026-07-29). Same dialog chrome as
+          Deliver's report — backdrop, card, scrolling body — so the product has one
+          modal idiom rather than two. Closes on the backdrop and on its own control. */}
+      {reasonsFor !== null && (
+        <div
+          data-role="reasons-backdrop"
+          className="decode-dialog-backdrop"
+          onClick={onCloseReasons}
+        >
+          <section
+            data-role="reasons-dialog"
+            className="decode-dialog decode-dialog--narrow"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reasons-dialog-heading"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="decode-dialog__header">
+              <div>
+                <h2 id="reasons-dialog-heading" className="decode-dialog__title">
+                  Tooth {reasonsFor} — why the run flagged it
+                </h2>
+                <p className="decode-dialog__subject">
+                  The gate's own words. Nothing here is a summary of them.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-role="reasons-close"
+                className="button button--ghost button--small"
+                onClick={onCloseReasons}
+              >
+                Close
+              </button>
+            </header>
+            <div className="decode-dialog__body">
+              <ul data-role="queue-reasons" className="adjust-queue__reasons">
+                {reasonsShown.length > 0 ? (
+                  reasonsShown.map((reason) => (
+                    <li key={reason} className="adjust-queue__reason">
+                      {reason}
+                    </li>
+                  ))
+                ) : (
+                  <li className="adjust-queue__reason">
+                    Flagged by the run — the gate recorded no action words.
+                  </li>
+                )}
+              </ul>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -861,6 +940,7 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
      returned a detail saying so, never because the button was pressed. */
   const [reconfirmSaving, setReconfirmSaving] = useState(false);
   const [reconfirmError, setReconfirmError] = useState<string | null>(null);
+  const [reasonsFor, setReasonsFor] = useState<number | null>(null);
 
   const handleReconfirm = useCallback(() => {
     if (activeTooth === null) return;
@@ -947,6 +1027,9 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       onReconfirm={handleReconfirm}
       reconfirmSaving={reconfirmSaving}
       reconfirmError={reconfirmError}
+      reasonsFor={reasonsFor}
+      onOpenReasons={setReasonsFor}
+      onCloseReasons={() => setReasonsFor(null)}
     />
   );
 }

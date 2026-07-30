@@ -3360,3 +3360,34 @@ button.package-files__link:hover {
   outline: 2px solid var(--color-accent, #2f7fe6);
   outline-offset: 1px;
 }
+
+/* ---- ADJUST: the flag on the row, the words in the dialog (client 2026-07-29) ---- */
+.adjust-queue__flag {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-amber);
+}
+
+/* A sibling of the row button, not a child — it reads as a quiet link so the ROW stays
+   the obvious click for selecting the site. */
+.adjust-queue__why {
+  margin: 2px 0 0 2px;
+  padding: 2px 4px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dotted var(--color-border);
+  cursor: pointer;
+}
+
+.adjust-queue__why:hover {
+  color: var(--color-text);
+  border-bottom-color: var(--color-text-muted);
+}
+
+/* The reasons dialog carries only a short list — it should not open at report width. */
+.decode-dialog--narrow {
+  max-width: 560px;
+}

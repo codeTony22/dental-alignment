@@ -65,12 +65,40 @@ function view(overrides: Partial<Parameters<typeof AdjustStageView>[0]> = {}) {
 }
 
 describe("the queue", () => {
-  it("shows the flagged site with the GATE'S OWN reason, verbatim", () => {
+  it("shows the flagged site with a COUNT of the gate's reasons, not the words", () => {
     const html = view();
     expect(html).toContain('data-role="queue-site"');
-    // the words as the gate wrote them (the apostrophe arrives HTML-escaped)
+    // Retargeted 2026-07-29: five lines of amber per flagged site pushed the queue past
+    // its own card, so the ROW keeps the fact and a count, while the gate's words move
+    // to the dialog below. The row must NOT carry them any more.
+    expect(html).toContain('data-role="queue-flag"');
+    expect(html).toContain("flagged — 1 reason");
+    expect(html).not.toContain(
+      "ROTATION could not be verified — visually check the coded features",
+    );
+    // ...and the way to read them is on screen, as a SIBLING of the row button
+    expect(html).toContain('data-role="queue-why"');
+  });
+
+  it("keeps the reasons dialog SHUT unless a tooth was actually asked for", () => {
+    // The guard was `reasonsFor !== null`, which an omitted prop (undefined) sailed
+    // straight through — opening a dialog headed "Tooth  — why the run flagged it".
+    expect(view()).not.toContain('data-role="reasons-dialog"');
+  });
+
+  it("opens the dialog on the asked-for tooth, with the gate's words VERBATIM", () => {
+    const html = view({ reasonsFor: 13 });
+    expect(html).toContain('data-role="reasons-dialog"');
+    expect(html).toContain("Tooth 13 — why the run flagged it");
     expect(html).toContain(
       "ROTATION could not be verified — visually check the coded features",
+    );
+  });
+
+  it("says so plainly when a flagged site carries no words at all", () => {
+    // A site can be flagged with nothing recorded; the dialog must not render empty.
+    expect(view({ reasonsFor: 4 })).toContain(
+      "Flagged by the run — the gate recorded no action words.",
     );
   });
 
