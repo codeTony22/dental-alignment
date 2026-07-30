@@ -43,7 +43,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import Mapping, Optional, Sequence
 
 from case_prep.adapters import construction_catalog
 from case_prep.pipeline.auto_flow import ConfirmedSite, run_auto_case
@@ -72,6 +72,14 @@ class RunSelection:
     variants: Mapping[int, Optional[str]] = field(default_factory=dict)
     jaw: Optional[str] = None                # None = the case's own reading
     gingival_offset_mm: float = DEFAULT_GINGIVAL_OFFSET_MM
+    # THE OPERATOR'S OWN CENTRES (client 2026-07-28: sites the detector missed).
+    # tooth → world-frame centre, for sites that exist because a HUMAN marked them.
+    # Detection misses 2 of the 10 sites on this fleet, and until now a missed cap
+    # could not be worked at all: the case record is the only place a centre lived,
+    # and the case record is not something an operator can write to. These ride in
+    # the selection with every other operator act rather than being merged into the
+    # case, so the case record stays exactly what the ingest produced.
+    marked_centers: Mapping[int, Sequence[float]] = field(default_factory=dict)
 
 
 def _require_selection(case: CaseRecord, selection: RunSelection) -> None:
@@ -112,13 +120,22 @@ def run_case(case: CaseRecord, selection: RunSelection, out_dir: Path) -> dict:
     for tooth in teeth:
         site = next((s for s in case.suggested_sites
                      if int(s.get("tooth", -1)) == tooth), None)
-        if site is None or site.get("center") is None:
+        # THE OPERATOR'S MARK WINS over the case's own suggestion, and stands alone
+        # where there is no suggestion at all. A human who marked a centre has looked
+        # at this scan more recently than the ingest did; silently preferring the
+        # ingest would make the mark decorative. A site with NEITHER is still refused,
+        # in the same words — the refusal was never about where the centre came from.
+        marked = selection.marked_centers.get(tooth)
+        centre = marked if marked is not None else (
+            site.get("center") if site is not None else None)
+        if centre is None:
             raise RunRefused(f"tooth {tooth} has no site centre on case {case.id!r} "
                              f"— nothing to align")
+        site = site or {}
         # marks pass through AS GIVEN (the re-click pair-integrity record: a mark is
         # never re-centred), exactly as the preview passes them
         confirmed.append(ConfirmedSite(
-            tooth, tuple(float(c) for c in site["center"]),
+            tooth, tuple(float(c) for c in centre),
             selection.variants[tooth], site.get("marked_points"),
             site.get("center_mark"), site.get("rim_mark"),
             rim_points=site.get("rim_points")))

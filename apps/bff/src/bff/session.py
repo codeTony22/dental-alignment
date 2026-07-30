@@ -91,6 +91,13 @@ class SeatedSelection(BaseModel):
 class SiteSession(BaseModel):
     status: SiteStatus = SiteStatus.DETECTED
     declared_variant: Optional[str] = None
+    # THE OPERATOR'S OWN CENTRE (client 2026-07-28): where this site exists because a
+    # HUMAN marked it, not because detection found it. Detection misses 2 of the 10
+    # sites on this fleet, and a missed cap was previously unworkable — the case
+    # record is the only other place a centre lives, and an operator cannot write to
+    # the case record. Present ONLY on sites someone marked; a detected site leaves
+    # it None and reads its centre from the case as it always did.
+    marked_center: Optional[List[float]] = None
     # THE PREVIEW'S SEAT FACTS (plan §7 slice 5b): the two numbers the operator judges
     # a seat by, persisted by the preview route from what the application derived —
     # worker facts, never a client's. The payload's mesh is response-only and never

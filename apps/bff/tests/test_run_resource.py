@@ -285,6 +285,11 @@ class TestTheRunLands:
             "construction_path": "dess/neodent-gm-scanbody.stl",
             "jaw": "upper", "gingival_offset_mm": 0.2,
             "variants": {"4": "5020", "13": "5020"},
+            # 2026-07-28: sites that exist because a HUMAN marked them. EMPTY
+            # here on purpose — a detected site's centre still comes from the
+            # case, and shipping a redundant copy would invite the two drifting
+            # apart. The map carries the marked ones and nothing else.
+            "marked_centers": {},
         }
 
     def test_an_authorized_run_consumes_the_effective_choices(
@@ -304,6 +309,11 @@ class TestTheRunLands:
             "construction_path": "dess/neodent-gm-scanbody.stl",
             "jaw": "upper", "gingival_offset_mm": 0.2,
             "variants": {"4": "5020", "13": "5020"},
+            # 2026-07-28: sites that exist because a HUMAN marked them. EMPTY
+            # here on purpose — a detected site's centre still comes from the
+            # case, and shipping a redundant copy would invite the two drifting
+            # apart. The map carries the marked ones and nothing else.
+            "marked_centers": {},
         }
 
     def test_verdicts_land_on_the_ladder_ready_holds_attention_flags(

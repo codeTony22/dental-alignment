@@ -1304,6 +1304,11 @@ class TestStatusesAreNeverClientWritable:
 
     ACTION_ALLOWLIST = {
         ("POST", "/api/case-sessions/{case_id}/detect"),   # compute trigger, no body
+        # a cap the DETECTOR MISSED, marked by the operator (client 2026-07-28):
+        # {"tooth", "center"} — WHICH tooth and WHERE, both acts in this allowlist's
+        # sense. The site starts at DETECTED and climbs the same ladder, so marking
+        # buys the operator work to do and never a rung
+        ("POST", "/api/case-sessions/{case_id}/sites"),
         ("PUT", "/api/case-sessions/{case_id}/choices"),   # operator acts (plan §4)
         ("PUT", "/api/case-sessions/{case_id}/system"),    # case-scoped system (AM-8)
         # the per-site variant declaration (AM-8) — the status move it causes is the
@@ -1460,3 +1465,61 @@ class TestStatusesAreNeverClientWritable:
         res = client.put("/api/case-sessions/neodent-gm/choices",
                          json={"jaw": "upper", "status": "ready"})
         assert res.status_code == 422
+
+
+class TestMarkingACapTheDetectorMissed:
+    """Client 2026-07-28: detection finds 8 of the 10 sites on this fleet. Before this
+    route the other two were unworkable — a centre lived only in the case record, which
+    the ingest writes and an operator cannot."""
+
+    def test_a_marked_cap_becomes_a_site_with_its_centre_on_the_surface(self, client):
+        before = {s["tooth"] for s in client.get(
+            "/api/case-sessions/neodent-gm").json()["sites"]}
+        assert 7 not in before
+
+        r = client.post("/api/case-sessions/neodent-gm/sites",
+                        json={"tooth": 7, "center": [1.5, -2.0, 3.25]})
+        assert r.status_code == 200, r.text
+        site = next(s for s in r.json()["sites"] if s["tooth"] == 7)
+        # the surface must not deny the centre the run is about to use
+        assert site["center"] == [1.5, -2.0, 3.25]
+        # marking buys WORK, never a rung
+        assert site["status"] == "detected"
+
+    def test_marking_a_site_that_already_exists_REFUSES(self, client):
+        # re-marking would retire that site's preview and its review; a mis-typed
+        # tooth number must not be able to do that silently
+        r = client.post("/api/case-sessions/neodent-gm/sites",
+                        json={"tooth": 13, "center": [0.0, 0.0, 0.0]})
+        assert r.status_code == 409
+        assert "already a site" in r.json()["detail"]
+
+    def test_a_centre_that_is_not_three_numbers_refuses(self, client):
+        r = client.post("/api/case-sessions/neodent-gm/sites",
+                        json={"tooth": 7, "center": [0.0, 0.0]})
+        assert r.status_code == 422, r.text
+
+    def test_a_NON_FINITE_centre_refuses_even_though_json_cannot_normally_carry_one(
+            self, client):
+        """Python's json.dumps REFUSES NaN, so `json=` can never produce this — the
+        first version of this test failed in the client, not the server, and would
+        have left the guard untested while looking green. Sent as a raw body, which
+        json.loads does accept, so the handler's own check is what answers."""
+        r = client.post("/api/case-sessions/neodent-gm/sites",
+                        content='{"tooth": 7, "center": [0.0, 0.0, NaN]}',
+                        headers={"content-type": "application/json"})
+        assert r.status_code == 422, r.text
+        assert "finite" in r.json()["detail"]
+
+    def test_a_tooth_outside_the_arch_refuses(self, client):
+        r = client.post("/api/case-sessions/neodent-gm/sites",
+                        json={"tooth": 99, "center": [0.0, 0.0, 0.0]})
+        assert r.status_code == 422
+        assert "not a tooth number" in r.json()["detail"]
+
+    def test_the_body_cannot_carry_anything_else(self, client):
+        # extra=forbid: no status, no verdict, no centre-adjacent smuggling
+        r = client.post("/api/case-sessions/neodent-gm/sites",
+                        json={"tooth": 7, "center": [0.0, 0.0, 0.0],
+                              "status": "ready"})
+        assert r.status_code == 422

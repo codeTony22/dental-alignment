@@ -205,6 +205,12 @@ class InProcessWorker:
             variants={int(t): v for t, v in (sel.get("variants") or {}).items()},
             jaw=sel.get("jaw"),
             gingival_offset_mm=float(sel.get("gingival_offset_mm", 0.0)),
+            # the operator's own centres, for sites detection missed (2026-07-28) —
+            # carried like every other act in this selection, so the run needs no
+            # second source and the case record stays what the ingest produced
+            marked_centers={int(t): [float(c) for c in centre]
+                            for t, centre in (sel.get("marked_centers")
+                                              or {}).items()},
         )
 
     @staticmethod

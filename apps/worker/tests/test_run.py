@@ -170,3 +170,53 @@ class TestRunOnTheRealTree:
         assert sorted(case.scan.parent.rglob("*")) == scan_tree_before
         assert DEMO_RUN.read_bytes() == demo_run_bytes
         assert any(out_dir.iterdir())
+
+
+class TestASiteTheOperatorMarked:
+    """Client 2026-07-28: detection MISSES 2 of the 10 sites on this fleet, and until
+    now a missed cap could not be worked at all — the case record was the only place a
+    centre lived, and an operator cannot write to the case record. A marked centre
+    rides in the SELECTION with every other operator act."""
+
+    def test_a_marked_centre_lets_a_site_the_case_never_suggested_be_run(self, tmp_path):
+        # no suggested_sites at all: without the mark this refuses outright
+        case = _case(tmp_path)
+        with pytest.raises(RunRefused) as exc:
+            run_case(case, _selection(), tmp_path / "run")
+        assert "has no site centre" in str(exc.value)
+
+        # with the mark it gets PAST the centre gate — it fails later, on the meshes
+        # this synthetic case does not have, which is the point: the centre resolved.
+        with pytest.raises(Exception) as exc2:
+            run_case(case, _selection(marked_centers={13: [1.0, 2.0, 3.0]}),
+                     tmp_path / "run")
+        assert "has no site centre" not in str(exc2.value)
+
+    def test_the_operators_mark_WINS_over_the_cases_own_suggestion(self, tmp_path):
+        """A human who marked a centre has looked at this scan more recently than the
+        ingest did. Preferring the ingest would make the mark decorative."""
+        case = _case(tmp_path, sites=[{"tooth": 13, "center": [9.0, 9.0, 9.0]}])
+        seen = {}
+        import case_prep.application.run as run_module
+        original = run_module.ConfirmedSite
+
+        def spy(tooth, center, *args, **kwargs):
+            seen[tooth] = center
+            return original(tooth, center, *args, **kwargs)
+
+        run_module.ConfirmedSite = spy
+        try:
+            with pytest.raises(Exception):
+                run_case(case, _selection(marked_centers={13: [1.0, 2.0, 3.0]}),
+                         tmp_path / "run")
+        finally:
+            run_module.ConfirmedSite = original
+        assert seen[13] == (1.0, 2.0, 3.0), "the mark must win over the suggestion"
+
+    def test_a_site_with_NEITHER_still_refuses_in_the_same_words(self, tmp_path):
+        # the refusal was never about where the centre came from
+        case = _case(tmp_path, sites=[{"tooth": 99, "center": [0.0, 0.0, 0.0]}])
+        with pytest.raises(RunRefused) as exc:
+            run_case(case, _selection(marked_centers={99: [1.0, 2.0, 3.0]}),
+                     tmp_path / "run")
+        assert "tooth 13 has no site centre" in str(exc.value)

@@ -76,8 +76,33 @@ def recently_written() -> list[tuple[str, float]]:
     return sorted(fresh, key=lambda pair: pair[1])
 
 
-def already_running() -> str | None:
-    """An equivalent battery already in flight, as its elapsed time."""
+def marker_of(command: str) -> str:
+    """Which LANE a battery is — the thing that decides whether two runs are rivals.
+
+    Reads BOTH spellings, and it has to: what the agent types is `make test-slow`,
+    while what `ps` reports is the expanded `pytest ... -m slow`. Reading only the
+    pytest flag made every make-invoked run look like the catch-all lane, so a second
+    slow lane sailed past the duplicate check — which is the exact failure this hook
+    was written for. Checked with a real run in flight rather than by reasoning.
+    """
+    if re.search(r"-m\s+[\"']?not slow", command) or "test-fast" in command:
+        return "fast"
+    if re.search(r"-m\s+[\"']?slow", command) or "test-slow" in command:
+        return "slow"
+    return "all"
+
+
+def already_running(command: str) -> str | None:
+    """The SAME battery already in flight, as its elapsed time.
+
+    Compares the lane, not merely "is some pytest running" — caught on first real use
+    (2026-07-29): the worker's slow lane was running and this blocked the BFF suite,
+    which is a different tree, a different venv and 37 seconds long. A guard that
+    blocks unrelated work is a guard people learn to switch off, and the failure it
+    exists to prevent (two copies of ONE suite fighting for the same cores) has
+    nothing to do with two different suites sharing a machine.
+    """
+    lane = marker_of(command)
     try:
         out = subprocess.run(
             ["ps", "-eo", "etime,command"], capture_output=True, text=True, timeout=10
@@ -85,9 +110,18 @@ def already_running() -> str | None:
     except Exception:
         return None
     for line in out.splitlines():
-        if "pytest" in line and "guard-test-runs" not in line and "grep" not in line:
-            if " -m slow" in line or line.rstrip().endswith("pytest -q"):
-                return line.split(maxsplit=1)[0]
+        if "pytest" not in line or "guard-test-runs" in line or "grep" in line:
+            continue
+        # THE LANE IS THE WHOLE TEST. An earlier attempt also compared the working
+        # tree by looking for "worker" in both strings, which is wrong twice over:
+        # `ps` reports a command WITHOUT its cwd (the slow lane shows as a relative
+        # `.venv/bin/python -m pytest`), so the comparison silently stopped blocking
+        # genuine duplicates. The lane alone already separates what needs separating —
+        # the BFF suite carries no `-m` filter, so it never collides with the worker's
+        # slow lane, and two slow lanes always do.
+        if marker_of(line) != lane:
+            continue
+        return line.split(maxsplit=1)[0]
     return None
 
 
@@ -99,7 +133,7 @@ def main() -> int:
     if not BATTERY.search(strip_quoted(command)):
         return 0
 
-    elapsed = already_running()
+    elapsed = already_running(command)
     if elapsed is not None:
         print(
             f"BLOCKED: an equivalent test battery is already running ({elapsed} elapsed).\n"

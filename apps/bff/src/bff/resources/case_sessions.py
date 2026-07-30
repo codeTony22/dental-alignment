@@ -399,6 +399,25 @@ class AdjustDecisionIn(BaseModel):
     decision: Literal["skip", "adjust"]
 
 
+class MarkedSiteIn(BaseModel):
+    """A cap the DETECTOR MISSED, marked by the operator (client 2026-07-28).
+
+    Two fields, both operator acts in the sense this allowlist means: WHICH tooth and
+    WHERE its centre is. Nothing here is a status, a verdict or a gate — the site
+    starts at DETECTED like any other and climbs the same ladder, so marking a cap
+    buys the operator work to do, never a rung.
+
+    The centre is a world-frame point on the scan the operator clicked. It is NOT
+    re-centred, snapped or averaged server-side: the re-click pair-integrity record
+    (five attempts, all of which broke calibrated contracts) says a human's mark is
+    fixed at the UI or refused, never quietly corrected downstream."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tooth: int
+    center: List[float]
+
+
 class DeclarationIn(BaseModel):
     """The per-site variant declaration (plan §4 Declare / AM-8) — one required
     catalog entry id. Membership against the EFFECTIVE system's library is judged in
@@ -427,7 +446,11 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
             status=(sess.status.value if sess else SiteStatus.DETECTED.value),
             declared_variant=(sess.declared_variant if sess else None),
             suggested_variant=s.get("declared_variant"),
-            center=s.get("center"),
+            # the operator's mark WINS over the case's suggestion, the same precedence
+            # the run itself applies (application.run) — one rule, stated in both
+            # places rather than the surface and the run disagreeing about the centre
+            center=((sess.marked_center if sess and sess.marked_center is not None
+                     else s.get("center"))),
             capture=capture.get(str(tooth)),
             seat_method=(sess.seat_method if sess else None),
             rim_agreement_mm=(sess.rim_agreement_mm if sess else None),
@@ -437,7 +460,12 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
         if tooth not in views:
             views[tooth] = SiteView(tooth=tooth, status=sess.status.value,
                                     declared_variant=sess.declared_variant,
-                                    suggested_variant=None, center=None,
+                                    suggested_variant=None,
+                                    # a session-only site now HAS a centre when a
+                                    # human marked one — that is the whole point of
+                                    # marking, and reporting None here would have the
+                                    # surface deny what the run is about to use
+                                    center=sess.marked_center,
                                     capture=capture.get(key),
                                     seat_method=sess.seat_method,
                                     rim_agreement_mm=sess.rim_agreement_mm)
@@ -1103,6 +1131,48 @@ def preview_site_action(case_id: str, tooth: int, request: Request) -> dict:
     return payload
 
 
+@router.post("/{case_id}/sites", response_model=CaseSessionDetail)
+def post_marked_site(case_id: str, body: MarkedSiteIn,
+                     request: Request) -> CaseSessionDetail:
+    """Add a site the DETECTOR MISSED (client 2026-07-28).
+
+    Detection finds 8 of the 10 sites on this fleet. Before this route the other two
+    were unworkable: a centre lived only in the case record, which the ingest writes
+    and an operator cannot. The mark rides in the SESSION with every other operator
+    act, and the run prefers it over the case's own suggestion (application.run) —
+    a human who marked a centre has looked at this scan more recently than the ingest.
+
+    Judged INSIDE the mutation against the fresh document (commit 25604e7's rule):
+    a rival mark landing on the same tooth between load and save must lose loudly,
+    not overwrite. Refuses a tooth that is already a site — re-marking an existing
+    cap is a different act with different consequences (it would invalidate a
+    preview and a review), and conflating the two here would let a mis-typed tooth
+    number silently retire an attestation."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+
+    if len(body.center) != 3 or not all(math.isfinite(c) for c in body.center):
+        raise HTTPException(422, "the mark's centre must be a finite [x, y, z] point "
+                                 "in the scan's own frame")
+    if not 1 <= body.tooth <= 32:
+        raise HTTPException(422, f"tooth {body.tooth} is not a tooth number "
+                                 f"(1-32, FDI/universal as the case uses)")
+
+    def apply(session: CaseSession) -> None:
+        known = ({int(s["tooth"]) for s in case.suggested_sites}
+                 | {int(k) for k in session.sites})
+        if body.tooth in known:
+            raise HTTPException(
+                409, f"tooth {body.tooth} is already a site on case {case.id!r} — "
+                     f"marking is for caps detection MISSED, and re-marking an "
+                     f"existing site would retire its preview and its review")
+        session.sites[str(body.tooth)] = SiteSession(
+            marked_center=[float(c) for c in body.center])
+
+    session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
 @router.post("/{case_id}/sites/{tooth}/review", response_model=CaseSessionDetail)
 def post_review(case_id: str, tooth: int, request: Request) -> CaseSessionDetail:
     """The operator's review tick over the live panes (plan §4 Declare / AM-8): the
@@ -1229,6 +1299,14 @@ def _authorized_selection(case: CaseRecord, case_id: str,
         # cannot miss; keyed by tooth-as-string — the wire is JSON either way
         "variants": {str(view.tooth): session.sites[str(view.tooth)].declared_variant
                      for view in sites},
+        # Sites that exist because a HUMAN marked them (2026-07-28). Only the marked
+        # ones appear: a detected site's centre still comes from the case, and sending
+        # a redundant copy would invite the two drifting apart.
+        "marked_centers": {
+            str(view.tooth): session.sites[str(view.tooth)].marked_center
+            for view in sites
+            if session.sites[str(view.tooth)].marked_center is not None
+        },
     }
 
 
