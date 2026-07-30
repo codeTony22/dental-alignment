@@ -490,3 +490,55 @@ export function reworkWords(outcome: AdjustOutcomeView): string | null {
     `marks them as predating the rework, and the next full run re-measures them.`
   );
 }
+
+/** One of the marks a pair is made of, with where it goes and whether it is placed. */
+export interface PairSlotView {
+  readonly key: PairSlot;
+  /** WHICH surface this mark belongs on — the thing the operator kept having to guess. */
+  readonly where: string;
+  readonly label: string;
+  readonly placed: boolean;
+  /** True for the slot the NEXT click fills. */
+  readonly active: boolean;
+}
+
+/**
+ * A pair, broken into the marks it is actually made of (client 2026-07-29: "the match by
+ * points need to mark which points (2 points) we want to mark and match in the scan or
+ * the library").
+ *
+ * The surface already named the next click in a sentence, but a sentence only ever
+ * describes ONE step: an operator could not see that a point pair is TWO marks, which two
+ * surfaces they belong to, or how much of the pair was already done. Enumerating the
+ * slots makes the shape of the act visible before it is begun — and a span honestly
+ * shows THREE, because that is what it costs.
+ */
+export function pairSlots(draft: PairDraft): readonly PairSlotView[] {
+  const slot = pairSlot(draft);
+  const slots: PairSlotView[] = [
+    {
+      key: "part",
+      where: "Library part · pane 1",
+      label: "the feature on the part",
+      placed: draft.partPoint !== null,
+      active: slot === "part",
+    },
+    {
+      key: "scan",
+      where: "Scanned cap · pane 2 or 3",
+      label: draft.span ? "one END of that feature" : "the same spot on the scan",
+      placed: draft.scanPoint !== null,
+      active: slot === "scan",
+    },
+  ];
+  if (draft.span) {
+    slots.push({
+      key: "scan-end",
+      where: "Scanned cap · pane 2 or 3",
+      label: "the OTHER end of the feature",
+      placed: draft.scanPointEnd !== null,
+      active: slot === "scan-end",
+    });
+  }
+  return slots;
+}

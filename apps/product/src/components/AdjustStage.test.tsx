@@ -270,7 +270,7 @@ describe("what comes back", () => {
     expect(html).toContain("point-1 · span direction — misses by 0.112 mm");
   });
 
-  it("an applied tool tells the operator their confirmation no longer describes the site", () => {
+  it("an applied tool tells the operator their confirmation no longer describes the site — and offers the act", () => {
     const html = view({
       activeStatus: "adjusted",
       lastOutcome: {
@@ -281,7 +281,35 @@ describe("what comes back", () => {
       } as unknown as AdjustOutcomeView,
     });
     expect(html).toContain('data-role="reconfirm-note"');
-    expect(html).toContain("confirm it again over the panes before Deliver");
+    // Retargeted 2026-07-29: the sentence used to say "before Deliver" and end there,
+    // which made it an instruction the operator could not carry out without navigating
+    // back to Declare. It now points at the panes beside it AND the act is on screen.
+    expect(html).toContain("confirm it again over the panes on the right");
+    expect(html).toContain('data-role="reconfirm-tick"');
+    expect(html).toContain("Confirm this fit over the panes");
+  });
+
+  it("the re-confirm control names what it is doing while it saves, and surfaces a refusal verbatim", () => {
+    const applied = {
+      applied: true,
+      detail: "rotated +1.0°",
+      clocking: null,
+      pairs: [],
+    } as unknown as AdjustOutcomeView;
+    const saving = view({
+      activeStatus: "adjusted",
+      lastOutcome: applied,
+      reconfirmSaving: true,
+    });
+    expect(saving).toContain("Recording the confirmation…");
+
+    const refused = view({
+      activeStatus: "adjusted",
+      lastOutcome: applied,
+      reconfirmError: "this site has no seat record to confirm over",
+    });
+    expect(refused).toContain('data-role="reconfirm-error"');
+    expect(refused).toContain("this site has no seat record to confirm over");
   });
 
   it("while a proposal is being judged the surface names the work", () => {

@@ -22,6 +22,7 @@ import {
   pairBody,
   pairPrompt,
   pairSlot,
+  pairSlots,
   pairWords,
   queueSummary,
   reworkWords,
@@ -397,5 +398,40 @@ describe("the toolbox", () => {
   it("the best-fit's one-liner states the pass BEFORE the operator meets it", () => {
     const bestFit = ADJUST_TOOLS.find((t) => t.id === "best-fit")!;
     expect(bestFit.oneLiner).toContain("PASS");
+  });
+});
+
+describe("pairSlots — the marks a pair is made of, named with their surface", () => {
+  it("a point pair is TWO marks, and says which surface each belongs on", () => {
+    const draft = newPairDraft("p1", false);
+    const slots = pairSlots(draft);
+    expect(slots).toHaveLength(2);
+    expect(slots[0]!.where).toContain("Library part");
+    expect(slots[1]!.where).toContain("Scanned cap");
+    // Nothing placed yet, so the FIRST is the one the next click fills.
+    expect(slots.map((s) => s.placed)).toEqual([false, false]);
+    expect(slots.map((s) => s.active)).toEqual([true, false]);
+  });
+
+  it("a span pair honestly shows THREE marks — that is what it costs", () => {
+    expect(pairSlots(newPairDraft("p1", true))).toHaveLength(3);
+  });
+
+  it("placing the part mark ticks it and moves the arrow to the scan", () => {
+    const draft = withPick(newPairDraft("p1", false), "part", [1, 2, 3]);
+    const slots = pairSlots(draft);
+    expect(slots.map((s) => s.placed)).toEqual([true, false]);
+    expect(slots.map((s) => s.active)).toEqual([false, true]);
+  });
+
+  it("a complete pair has every mark placed and no arrow left", () => {
+    const draft = withPick(
+      withPick(newPairDraft("p1", false), "part", [1, 2, 3]),
+      "scan",
+      [4, 5, 6],
+    );
+    const slots = pairSlots(draft);
+    expect(slots.every((s) => s.placed)).toBe(true);
+    expect(slots.some((s) => s.active)).toBe(false);
   });
 });

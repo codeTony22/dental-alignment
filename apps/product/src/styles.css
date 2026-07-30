@@ -142,13 +142,26 @@ body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 208px minmax(320px, 400px) minmax(0, 1fr);
+  /* The rail's column is AUTO so folding it actually hands its width to the panes
+     (client 2026-07-29) — a fixed 208px would leave a 208px hole behind a folded rail.
+     The work column also gives up ~40px against its old 320-400px: the panes are the
+     subject of this stage, and every pixel this column does not need is theirs. */
+  grid-template-columns: auto minmax(292px, 356px) minmax(0, 1fr);
   gap: 16px;
   padding: 16px 20px;
 }
 
+/* Two rows: a body that scrolls, and a footer that never does. The footer is what makes
+   the fork buttons reachable without scrolling — see DeclareStage's note on why sticky
+   positioning could not do this job. */
 .workbench__work {
   min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.workbench__work-scroll {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
@@ -2044,8 +2057,25 @@ body {
    a flex item with non-visible overflow has an automatic minimum size of ZERO, so in a
    height-constrained column it collapses invisibly. The column scrolls; children keep
    their height. */
-.workbench__work > * {
+.workbench__work-scroll > * {
   flex: 0 0 auto;
+}
+
+/* THE PINNED FOOTER. Outside the scroll box, so whatever it holds is on screen at every
+   scroll position. */
+.workbench__work-footer {
+  border-top: 1px solid var(--color-border);
+  margin-top: 10px;
+  padding-top: 12px;
+  background: var(--color-bg);
+}
+
+/* The per-site attestation summary grows with the case — on a full arch it would push
+   the very buttons this footer exists to keep visible back off screen. It scrolls
+   INSIDE the footer instead; the fork below it never moves. */
+.workbench__work-footer .attestation-summary {
+  max-height: 20vh;
+  overflow-y: auto;
 }
 
 /* ---- links wearing the demo's button/step clothes (the product navigates by route) ---- */
@@ -2919,15 +2949,10 @@ button.package-files__link:hover {
    queue, the variant shelf and the summary are all taller than the viewport on a small
    screen — so the decision that ENDS the stage sticks to its foot instead of hiding under
    the fold. The recorded-decision note scrolls with the rest; the buttons do not. */
-.declare-fork {
-  position: sticky;
-  bottom: 0;
-  background: var(--color-bg);
-  border-top: 1px solid var(--color-border);
-  padding: 12px 0 4px;
-  margin-top: 8px;
-  z-index: 2;
-}
+/* The fork was `position: sticky` here until 2026-07-29. That could never satisfy the
+   ask: sticky is bounded by its own containing block, so the moment the block holding
+   the fork sat wholly below the fold the buttons vanished with it. The fork now lives in
+   .workbench__work-footer, OUTSIDE the scroll box — it needs no positioning at all. */
 
 /* --- ADJUST (slice 6): the rework surface's own chrome ------------------------------
    Product-own: the frozen demo had no stage like this (its adjust tools lived inside
@@ -3045,15 +3070,24 @@ button.package-files__link:hover {
   gap: 4px;
 }
 
+/* Stacks since 2026-07-29: the row used to be a single flex line, which was fine when
+   it held one sentence and a Remove button. Now it also holds the pair's marks, and in
+   a ~230px column a horizontal line broke them to one word per row with Remove sitting
+   on top of the text. Header line, then the marks, then the control. */
 .adjust-pairs__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 4px 8px;
   font-size: 12px;
-  padding: 4px 8px;
+  padding: 6px 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+}
+
+/* The marks span the full width, under both the words and the Remove button. */
+.adjust-pairs__row > .adjust-pairs__slots {
+  grid-column: 1 / -1;
 }
 
 .adjust-pairs__row[data-slot="complete"] {
@@ -3121,4 +3155,157 @@ button.package-files__link:hover {
   margin: 0;
   font-size: 12px;
   color: var(--color-amber);
+}
+
+/* ---- THE FOLDABLE STAGE RAIL (client 2026-07-29) ---------------------------------
+   The rail orients, but on a stage whose subject is three 3D panes it does not deserve
+   208px of permanent width. Folded, it keeps the numbered markers and their tick state —
+   the operator can still see WHERE they are and still navigate — and gives the rest to
+   the panes. The grid column is `auto`, so the width given up here genuinely lands on
+   the panes rather than leaving a hole. */
+/* NO width transition here, deliberately. The rail's width drives an `auto` grid track,
+   so animating it makes the track chase a value that is still moving — measured on
+   2026-07-29: the fold applied (class set, rule matched, computed width 52px) while the
+   element still reported 208px, and the panes never got the space. With the transition
+   gone the fold is instant and the track resolves in one pass: 208 -> 52px, and the pane
+   column 804 -> 960px. An animation that lies about the layout is worse than no
+   animation. */
+.workflow-rail {
+  position: relative;
+  width: 208px;
+}
+
+.workflow-rail--folded {
+  width: 52px;
+}
+
+.workflow-rail__fold {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 3;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--color-text-muted);
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.workflow-rail__fold:hover {
+  color: var(--color-text);
+  border-color: var(--color-text-muted);
+}
+
+.workflow-rail__fold:focus-visible {
+  outline: 2px solid var(--color-accent, #2f7fe6);
+  outline-offset: 2px;
+}
+
+/* Folded: the words go, the markers stay. `display: none` rather than a width of 0 —
+   a zero-width label still lends its longest word to the flex basis and the rail would
+   refuse to narrow. */
+.workflow-rail--folded .workflow-rail__text {
+  display: none;
+}
+
+.workflow-rail--folded .workflow-rail__step {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* ---- ADJUST: the re-confirmation act, beside the note that asks for it ---------- */
+.adjust-outcome__reconfirm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* ---- ADJUST: the panes stop being skinny (client 2026-07-29) --------------------
+   Three panes sharing what is left of a 1440px screen after a 208px rail and a
+   356px tool column were rendering about 280 x 800 — a letterbox on its end, with
+   the cap a speck in the middle of a tall empty pane. Two things fix it together:
+   the rail folds away (above), and the panes stop being obliged to fill the full
+   stage height. An upper bound on the pane row keeps each pane near enough to
+   square that the subject fills it. */
+.workbench__stage .verify-panel {
+  max-height: 62vh;
+}
+
+/* The grid's real class is .verify-panels__grid — an earlier attempt here used
+   .verify-grid, which matches nothing, and the panes stayed 260px while the rule
+   looked correct. Measured before and after: 280x800 -> 260x414 from the height cap
+   alone, which fixed the aspect but not the width.
+
+   Three panes cannot be anything but slivers in what is left of a 1440px screen. The
+   honest fix is to stop insisting on three-across below the width where three-across
+   works: the panes wrap two-up, each roughly twice as wide, and the third sits under
+   them where it is still one glance away. Above 1600px the row stays as it was. */
+@media (max-width: 1600px) {
+  .workbench__stage .verify-panels__grid:not(.verify-panels__grid--maximized) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .workbench__stage .verify-panel {
+    max-height: 40vh;
+  }
+}
+
+/* ---- ADJUST: a pair's marks, enumerated (client 2026-07-29) ---------------------- */
+.adjust-pairs__slots {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0 0 0 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.adjust-pairs__slot {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0 6px;
+  color: var(--color-text-muted);
+}
+
+/* WHERE the mark goes and WHAT it is are two lines, both in the second column, so
+   neither can be squeezed to one word per line by the other. */
+.adjust-pairs__slot-where,
+.adjust-pairs__slot-label {
+  grid-column: 2;
+}
+
+.adjust-pairs__slot-mark {
+  text-align: center;
+}
+
+/* The surface the mark belongs ON is the part the operator was guessing at — it carries
+   the weight, not the description beside it. */
+.adjust-pairs__slot-where {
+  font-weight: 600;
+}
+
+.adjust-pairs__slot--placed {
+  color: var(--color-ok, #1e8e3e);
+}
+
+.adjust-pairs__slot--active {
+  color: var(--color-text);
+}
+
+.adjust-pairs__slot--active .adjust-pairs__slot-where {
+  text-decoration: underline;
 }

@@ -32,6 +32,7 @@ import {
   postBestFit,
   postFitByPoints,
   postMarkTrench,
+  postReview,
   postRotation,
   type AdjustOutcomeView,
   type AdjustResultView,
@@ -59,6 +60,7 @@ import {
   pairBody,
   pairPrompt,
   pairSlot,
+  pairSlots,
   pairWords,
   queueSummary,
   reworkWords,
@@ -106,6 +108,10 @@ export interface AdjustStageViewProps {
   readonly panes: React.ReactNode;
   /** The site's rung, for the re-confirm nudge after an applied tool. */
   readonly activeStatus: string | null;
+  /** The re-confirmation act, offered where the fit was changed (client 2026-07-29). */
+  readonly onReconfirm: () => void;
+  readonly reconfirmSaving: boolean;
+  readonly reconfirmError: string | null;
 }
 
 function ToolTabs({
@@ -164,6 +170,9 @@ export function AdjustStageView({
   onApplyPairs,
   panes,
   activeStatus,
+  onReconfirm,
+  reconfirmSaving,
+  reconfirmError,
 }: AdjustStageViewProps) {
   const active = entries.find((e) => e.tooth === activeTooth) ?? null;
   const busy = phase === "working";
@@ -377,6 +386,30 @@ export function AdjustStageView({
                         <span className="adjust-pairs__words">
                           {pairWords(draft, index)}
                         </span>
+                        {/* THE MARKS THIS PAIR IS MADE OF, named with their surface —
+                            so "two points" is something the operator can SEE before
+                            starting, not something they infer from one prompt at a
+                            time (client 2026-07-29). */}
+                        <ol data-role="pair-slots" className="adjust-pairs__slots">
+                          {pairSlots(draft).map((slot) => (
+                            <li
+                              key={slot.key}
+                              data-role="pair-slot"
+                              data-slot={slot.key}
+                              data-placed={slot.placed}
+                              data-active={slot.active}
+                              className={`adjust-pairs__slot${
+                                slot.placed ? " adjust-pairs__slot--placed" : ""
+                              }${slot.active ? " adjust-pairs__slot--active" : ""}`}
+                            >
+                              <span aria-hidden="true" className="adjust-pairs__slot-mark">
+                                {slot.placed ? "✓" : slot.active ? "→" : "○"}
+                              </span>
+                              <span className="adjust-pairs__slot-where">{slot.where}</span>
+                              <span className="adjust-pairs__slot-label">{slot.label}</span>
+                            </li>
+                          ))}
+                        </ol>
                         <button
                           type="button"
                           data-role="remove-pair"
@@ -473,10 +506,38 @@ export function AdjustStageView({
               )}
               {lastOutcome.applied && activeStatus !== null &&
                 needsReconfirm(activeStatus as never) && (
-                  <p data-role="reconfirm-note" className="adjust-outcome__note">
-                    This site's fit moved, so its earlier confirmation no longer
-                    describes it — confirm it again over the panes before Deliver.
-                  </p>
+                  /* THE RE-CONFIRMATION, WITH ITS CONTROL (client 2026-07-29: "We need to
+                     be allowed to confirm again in the Adjust step"). This note used to
+                     stand alone, which made it an instruction with nowhere to carry it
+                     out: the operator was told the site needed confirming again and the
+                     only way to do it was to navigate back to Declare. The act belongs
+                     where the fit was changed, over the same panes that show the change. */
+                  <div data-role="reconfirm" className="adjust-outcome__reconfirm">
+                    <p data-role="reconfirm-note" className="adjust-outcome__note">
+                      This site's fit moved, so its earlier confirmation no longer
+                      describes it — confirm it again over the panes on the right.
+                    </p>
+                    <button
+                      type="button"
+                      data-role="reconfirm-tick"
+                      className="button button--primary"
+                      disabled={reconfirmSaving}
+                      onClick={onReconfirm}
+                    >
+                      {reconfirmSaving
+                        ? "Recording the confirmation…"
+                        : "Confirm this fit over the panes"}
+                    </button>
+                    {reconfirmError !== null && (
+                      <span
+                        data-role="reconfirm-error"
+                        role="alert"
+                        className="panel__error"
+                      >
+                        {reconfirmError}
+                      </span>
+                    )}
+                  </div>
                 )}
               {reworkNote !== null && (
                 <p data-role="rework-note" className="adjust-outcome__note">
@@ -754,6 +815,28 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
     seatedError,
   });
 
+  /* THE RE-CONFIRMATION (client 2026-07-29). Same endpoint Declare's tick uses — the
+     act is identical, only its location is new, so the status ladder and the seat
+     record stay the single source of what a confirmation means. Optimism stays OFF
+     here like everywhere else on this surface: the rung changes because the SERVER
+     returned a detail saying so, never because the button was pressed. */
+  const [reconfirmSaving, setReconfirmSaving] = useState(false);
+  const [reconfirmError, setReconfirmError] = useState<string | null>(null);
+
+  const handleReconfirm = useCallback(() => {
+    if (activeTooth === null) return;
+    setReconfirmSaving(true);
+    setReconfirmError(null);
+    void postReview(detail.case.id, activeTooth).then((result) => {
+      setReconfirmSaving(false);
+      if (result.ok) {
+        onDetail(result.value);
+        return;
+      }
+      setReconfirmError(result.error.detail);
+    });
+  }, [activeTooth, detail.case.id, onDetail]);
+
   const panes = (
     <SitePanesView
       variantLabel={activeSite?.declared_variant ?? null}
@@ -816,6 +899,9 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       onApplyPairs={handleApplyPairs}
       panes={panes}
       activeStatus={activeSite?.status ?? null}
+      onReconfirm={handleReconfirm}
+      reconfirmSaving={reconfirmSaving}
+      reconfirmError={reconfirmError}
     />
   );
 }

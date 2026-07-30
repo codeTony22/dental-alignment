@@ -31,6 +31,24 @@ const BRUSH_MOVE_THROTTLE_MS = 30;
 // screenshots where registration points glow through the model.
 const MARKER_RENDER_ORDER = 999;
 
+/**
+ * A proposal marker occupies this SHARE of whatever is framed — it is not an absolute size.
+ *
+ * The product shipped a fixed 2.6mm radius, and on a site-framed pane that is a 5.2mm ball
+ * over a ~4mm cap: the marker swallowed the very thing it was pointing at (client screenshot,
+ * 2026-07-29). The demo had already learned this and fixed it the same way on 2026-07-26 —
+ * its note says a fixed size "hid the very trench it named". A fraction of the framed radius
+ * keeps the dot the same visual size whether the pane shows one tooth or the whole arch,
+ * which is what "mark this point" has to mean across views at different scales.
+ */
+const MARKER_RADIUS_FRACTION = 0.035;
+
+/** Proposal spheres are built at this radius and SCALED — one geometry, any framing. */
+const MARKER_BASE_RADIUS_MM = 1;
+
+/** Never let a marker vanish entirely on a very tight frame. */
+const MARKER_MIN_RADIUS_MM = 0.05;
+
 /** Apply the render-through-geometry indicator convention to a marker's material + object. */
 function makeIndicatorVisible(material: THREE.Material, object: THREE.Object3D): void {
   material.depthTest = false;
@@ -413,6 +431,11 @@ export class SceneController {
   private anatomyFrame: AnatomyFrame | null = null;
   private lastFrameCenter: THREE.Vector3 | null = null;
   private lastFrameDistance = 0;
+  // The SUBJECT radius the last framing call fitted (not the camera distance) — proposal
+  // markers are sized as a share of it, so the dot stays legible whether the pane holds one
+  // tooth or the whole arch. 0 until something has been framed; markers fall back to their
+  // base radius until then.
+  private lastFrameRadius = 0;
 
   constructor(private readonly container: HTMLDivElement) {
     this.scene = new THREE.Scene();
@@ -717,6 +740,8 @@ export class SceneController {
     // remembered for the anatomical presets: same subject + distance, different direction
     this.lastFrameCenter = center.clone();
     this.lastFrameDistance = distance;
+    this.lastFrameRadius = radiusIn;
+    this.applyMarkerScale();
 
     this.controls.target.copy(center);
     const direction = new THREE.Vector3(0.4, 0.35, 1).normalize();
@@ -807,6 +832,8 @@ export class SceneController {
     // the site rather than on the arch.
     this.lastFrameCenter = target.clone();
     this.lastFrameDistance = distance;
+    this.lastFrameRadius = radiusMm;
+    this.applyMarkerScale();
 
     const clip = clipPlanesFor(distance);
     this.camera.near = clip.near;
@@ -842,6 +869,8 @@ export class SceneController {
 
     this.lastFrameCenter = center.clone();
     this.lastFrameDistance = distance;
+    this.lastFrameRadius = radius;
+    this.applyMarkerScale();
     const clip = clipPlanesFor(distance);
     this.camera.near = clip.near;
     this.camera.far = clip.far;
@@ -1814,11 +1843,31 @@ export class SceneController {
     geometry.computeBoundingSphere();
   }
 
+  /**
+   * Size every proposal marker against the CURRENT framing (see MARKER_RADIUS_FRACTION).
+   *
+   * Called both when markers are placed and again on every framing change — the mount order
+   * is markers-then-frame at least as often as the reverse, so a pane that frames after its
+   * markers arrive must not leave them at the wrong scale. Before this existed the product
+   * used a fixed 2.6mm radius and the ball buried the cap it was marking.
+   */
+  private applyMarkerScale(): void {
+    const radius =
+      this.lastFrameRadius > 0
+        ? Math.max(this.lastFrameRadius * MARKER_RADIUS_FRACTION, MARKER_MIN_RADIUS_MM)
+        : MARKER_BASE_RADIUS_MM;
+    for (const child of this.markerGroup.children) {
+      child.scale.setScalar(radius / MARKER_BASE_RADIUS_MM);
+    }
+  }
+
   /** Drop glowing marker spheres at the given points, in the same coordinate frame as the loaded mesh. */
   setMarkers(markers: readonly MarkerSpec[]): void {
     this.clearMarkers();
     for (const marker of markers) {
-      const geometry = new THREE.SphereGeometry(marker.radiusMm, 20, 16);
+      // Built at the BASE radius and scaled by applyMarkerScale below — marker.radiusMm is
+      // deliberately not used as an absolute size (see MARKER_RADIUS_FRACTION).
+      const geometry = new THREE.SphereGeometry(MARKER_BASE_RADIUS_MM, 20, 16);
       const material = new THREE.MeshStandardMaterial({
         color: MARKER_COLOR,
         emissive: MARKER_EMISSIVE,
@@ -1832,6 +1881,7 @@ export class SceneController {
       makeIndicatorVisible(material, sphere);
       this.markerGroup.add(sphere);
     }
+    this.applyMarkerScale();
   }
 
   clearMarkers(): void {

@@ -13,6 +13,7 @@
  * (plan §4 Intake: "Back is a browser affordance"). The unreachable stage is a span
  * in the same clothes (.workflow-rail__step--blocked), never a dead control.
  */
+import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 import type { StageId, StageState } from "../domain/flow";
 
@@ -22,9 +23,59 @@ interface StageRailProps {
   readonly caseId: string;
 }
 
+/** Where the fold preference lives. An operator who folds the rail away on one case
+ *  means it on the next — re-expanding it on every navigation would be the software
+ *  arguing with them. */
+const FOLD_KEY = "artech.rail.folded";
+
+function initialFolded(): boolean {
+  // The suites render this component with renderToStaticMarkup in the NODE environment
+  // (there is no jsdom here), so `window` genuinely does not exist at import time — the
+  // rail must open EXPANDED in that world rather than throw.
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(FOLD_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function StageRail({ states, current, caseId }: StageRailProps) {
+  const [folded, setFolded] = useState(initialFolded);
+
+  const toggle = useCallback(() => {
+    setFolded((was) => {
+      const next = !was;
+      try {
+        window.localStorage.setItem(FOLD_KEY, next ? "1" : "0");
+      } catch {
+        // A browser refusing storage is not a reason to refuse the fold — the
+        // preference simply does not survive the session.
+      }
+      return next;
+    });
+  }, []);
+
   return (
-    <nav aria-label="Case stages" data-role="stage-rail" className="workflow-rail">
+    <nav
+      aria-label="Case stages"
+      data-role="stage-rail"
+      data-folded={folded ? "true" : "false"}
+      className={`workflow-rail${folded ? " workflow-rail--folded" : ""}`}
+    >
+      <button
+        type="button"
+        data-role="rail-fold"
+        className="workflow-rail__fold"
+        aria-expanded={!folded}
+        // The label says what the CLICK does, not what the state is — the arrow alone
+        // is ambiguous to a screen reader and to anyone who did not fold it themselves.
+        aria-label={folded ? "Expand the stage rail" : "Collapse the stage rail"}
+        title={folded ? "Expand the stage rail" : "Collapse the stage rail"}
+        onClick={toggle}
+      >
+        <span aria-hidden="true">{folded ? "»" : "«"}</span>
+      </button>
       <ol className="workflow-rail__list">
         {states.map((stage) => {
           const isCurrent = stage.id === current;

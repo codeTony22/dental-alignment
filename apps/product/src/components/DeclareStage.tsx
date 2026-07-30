@@ -299,6 +299,15 @@ export function DeclareStageView({
     // --split arithmetic), while the arch shrinks to a collapsible context strip.
     <div data-role="declare-stage" className="stage-contents">
       <div className="workbench__work">
+        {/* THE SCROLLING BODY. Everything above the fork scrolls; the fork itself is a
+            SIBLING of this box, not a descendant (client 2026-07-29: "Skip adjustment
+            and Adjust the fit buttons should always show, there should not be a need to
+            scroll down"). A previous attempt made the fork `position: sticky` inside
+            this column, which cannot work: a sticky element is bounded by its own
+            containing block, so once the block holding it sat entirely below the fold
+            the buttons were simply gone. Taking the fork OUT of the scroll area is the
+            only version that is true at every scroll position. */}
+        <div className="workbench__work-scroll">
         <section className="panel">
           <h3 className="panel__title">Implant system</h3>
           <SystemBar detail={detail} onAskSwitch={onAskSwitch} />
@@ -419,7 +428,11 @@ export function DeclareStageView({
                the fits" replace one button that silently chose for the operator.
                Each RECORDS the decision (it rides into the evidence bundle) and then
                navigates. Reachability is untouched: skipping never closes Adjust. */}
-        <div data-role="declare-advance" className="panel__actions panel__actions--advance">
+        </div>
+        <div
+          data-role="declare-advance"
+          className="workbench__work-footer panel__actions panel__actions--advance"
+        >
           {deliverOpen ? (
             <>
               <ul data-role="attestation-summary" className="attestation-summary">
