@@ -79,6 +79,7 @@ Plain functions over ``case_prep.pipeline``/``domain``/``adapters`` — NO serve
 from __future__ import annotations
 
 import json
+import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -93,7 +94,8 @@ from case_prep.adapters.qc_render import render_alignment_proof
 from case_prep.domain.clock_signature import (notch_reading, scan_rim_centre,
                                               template_signature, wrap_deg)
 from case_prep.domain.part_features import (CLICK_SLACK_MM, MIN_LEVER_ARM_MM,
-                                            PartAnnotation, auto_features,
+                                            PartAnnotation, PartFeature,
+                                            auto_features,
                                             coded_feature_azimuths,
                                             template_rim_centre)
 from case_prep.pipeline.auto_flow import (_BEST_FIT_CORR_DIST_MM, _cap_patch_roi,
@@ -310,6 +312,66 @@ def require_clock_lever(radius_mm: float, label: str, *, span: bool) -> float:
         f"the scan mark for {label!r} sits {radius:.2f}mm from the cap's measured rim "
         f"centre — inside {MIN_LEVER_ARM_MM}mm it names the axis, not a clock angle, "
         f"and cannot anchor a rotation; click the coded trench out on the cap's face")
+
+
+# --- THE LANDMARKS THE SOFTWARE PROPOSES (client 2026-07-29, item 3) -----------------
+#
+# "We also need another tool where we automatically mark the points in the library and
+# the client has to match the same points on the scan."
+#
+# The part half of a correspondence pair has always been the easy half — the machine
+# already knows every coded feature on the library part and which of them can anchor a
+# rotation. Making the operator FIND those by eye, on both halves, is what produced the
+# screw-access span the guard above has to refuse: the most clickable feature on a
+# healing cap is the one that carries no clock at all.
+#
+# Proposing the part half removes that failure by CONSTRUCTION rather than by warning:
+# every landmark offered here has already passed ``defines_rotation``, so a pair built
+# on one cannot fail the part-side lever rule, and the operator's whole job becomes the
+# half only a human can do — recognising the same feature in a noisy scan.
+
+
+def landmark_point(feature: PartFeature,
+                   centre_xy: Sequence[float]) -> Tuple[float, float, float]:
+    """A feature's CARTESIAN point in the part's canonical frame.
+
+    ``PartFeature`` stores cylindrical coordinates about the part's rim centre, which
+    is what makes a feature azimuth directly comparable with a clock reading; the
+    viewer needs a point. This is the inverse of the (azimuth, radius) the annotator
+    measured, about the SAME centre convention (``template_rim_centre``) — get the
+    centre wrong and every landmark lands on a ghost ring offset from the part.
+
+    Pure — hand-computable, and unit-pinned."""
+    theta = math.radians(feature.azimuth_deg)
+    return (float(centre_xy[0]) + feature.radius_mm * math.cos(theta),
+            float(centre_xy[1]) + feature.radius_mm * math.sin(theta),
+            float(feature.z_mm))
+
+
+def clock_landmarks(template: trimesh.Trimesh) -> List[dict]:
+    """The part's rotation-defining landmarks, best clock evidence FIRST.
+
+    Filtered by ``PartFeature.defines_rotation`` — a concentric bore names the axis,
+    not a clock angle, so offering one would invite exactly the pairing the scan-side
+    guard refuses. Sorted by lever arm descending because rotation error scales as
+    1/lever: the first landmark offered is the one whose match buys the most.
+
+    Returns plain dicts (the wire's shape), so the BFF adds no vocabulary of its own."""
+    centre_xy = template_rim_centre(template)
+    out: List[dict] = []
+    for feature in auto_features(template):
+        if not feature.defines_rotation:
+            continue
+        x, y, z = landmark_point(feature, centre_xy)
+        out.append({
+            "id": feature.id,
+            "kind": feature.kind,
+            "point": [round(x, 4), round(y, 4), round(z, 4)],
+            "lever_arm_mm": round(feature.radius_mm, 3),
+            "azimuth_deg": round(feature.azimuth_deg, 2),
+        })
+    out.sort(key=lambda row: -row["lever_arm_mm"])
+    return out
 
 
 # --- WHAT EACH OBSERVATION IS WORTH (review 2026-07-28, finding B) ------------------------

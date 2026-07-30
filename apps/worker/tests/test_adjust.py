@@ -38,14 +38,16 @@ from case_prep.application.adjust import (MIN_SPAN_MM, SPAN_RADIAL_TOLERANCE_DEG
                                           SiteClicks, align_to_correspondence,
                                           align_to_mark, anchor_certified_pose,
                                           azimuth_deg, best_fit_refusal, best_fit_site,
-                                          circular_mean_deg, direction_delta, load_site,
+                                          circular_mean_deg, clock_landmarks,
+                                          direction_delta, landmark_point, load_site,
                                           observation_weight, observations_for,
                                           rederived_reading, require_clock_lever,
                                           reset_discards, reset_target, residual_rows,
                                           rotate_site, seated_payload, span_readings,
                                           validate_span)
 from case_prep.application.cases import CaseRecord, discover_cases
-from case_prep.domain.part_features import MIN_LEVER_ARM_MM
+from case_prep.domain.part_features import (MIN_LEVER_ARM_MM, PartFeature)
+from case_prep.domain.clock_signature import wrap_deg
 
 REAL = Path(__file__).resolve().parents[1] / "data" / "real"
 PRODUCT = Path(__file__).resolve().parents[1] / "reports" / "product"
@@ -872,3 +874,40 @@ class TestBestFit:
         assert np.allclose(np.asarray(restored["pose_matrix"], float),
                            np.asarray(certified, float), atol=1e-9)
         assert "best_fit" not in restored
+
+
+class TestTheLandmarksTheSoftwareProposes:
+    """clock_landmarks / landmark_point (client 2026-07-29 item 3): the machine offers
+    the part half, so the operator only does the half a human is needed for."""
+
+    def _feature(self, fid, azimuth, radius, z=1.0, kind="trench"):
+        return PartFeature(id=fid, kind=kind, azimuth_deg=azimuth,
+                           radius_mm=radius, z_mm=z)
+
+    def test_a_landmark_is_the_inverse_of_the_azimuth_radius_it_was_measured_as(self):
+        # 0 degrees at radius 2 about the origin is +x, by hand
+        p = landmark_point(self._feature("f1", 0.0, 2.0, z=0.5), (0.0, 0.0))
+        assert p == pytest.approx((2.0, 0.0, 0.5))
+
+    def test_ninety_degrees_lands_on_plus_y(self):
+        p = landmark_point(self._feature("f1", 90.0, 3.0), (0.0, 0.0))
+        assert p[0] == pytest.approx(0.0, abs=1e-9)
+        assert p[1] == pytest.approx(3.0)
+
+    def test_the_centre_is_HONOURED_not_assumed_to_be_the_origin(self):
+        # the same failure the azimuth helper guards: a wrong centre puts every
+        # landmark on a ghost ring offset from the part
+        p = landmark_point(self._feature("f1", 0.0, 2.0), (10.0, -4.0))
+        assert p[0] == pytest.approx(12.0)
+        assert p[1] == pytest.approx(-4.0)
+
+    def test_a_landmark_round_trips_through_the_azimuth_it_came_from(self):
+        centre = (1.5, -2.5)
+        for azimuth in (0.0, 37.0, 180.0, -95.0, 359.0):
+            f = self._feature("f", azimuth, 2.75)
+            x, y, _ = landmark_point(f, centre)
+            assert azimuth_deg((x, y), centre) == pytest.approx(
+                wrap_deg(azimuth), abs=1e-6)
+
+    def test_z_rides_through_untouched(self):
+        assert landmark_point(self._feature("f", 12.0, 2.0, z=-3.25), (0, 0))[2] == -3.25
