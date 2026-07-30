@@ -234,3 +234,44 @@ describe("the IntakeStage container, statically (effects do not run)", () => {
     expect(html).not.toContain('data-role="detect-error"');
   });
 });
+
+describe("marking a cap the detector missed (client 2026-07-28)", () => {
+  it("offers the door, closed, when nothing is in flight", () => {
+    const html = view();
+    expect(html).toContain('data-role="mark-arm"');
+    expect(html).toContain("Mark a missed cap");
+    // no prompt and no tooth field until the operator asks
+    expect(html).not.toContain('data-role="mark-prompt"');
+    expect(html).not.toContain('data-role="mark-tooth"');
+  });
+
+  it("armed, it asks for the CENTRE and nothing else", () => {
+    const html = view({ markArmed: true });
+    expect(html).toContain("Click the centre of the cap on the scan");
+    // the tooth is asked for AFTERWARDS — holding a number in your head while
+    // hunting a cap in 3D is the version this deliberately avoids
+    expect(html).not.toContain('data-role="mark-tooth"');
+  });
+
+  it("with a centre placed it asks which tooth, and only then offers to add", () => {
+    const html = view({ markPending: [1, 2, 3], markTooth: "7" });
+    expect(html).toContain("Centre placed. Which tooth is it?");
+    expect(html).toContain('data-role="mark-tooth"');
+    expect(html).toContain('data-role="mark-submit"');
+  });
+
+  it("cannot submit without a tooth", () => {
+    const html = view({ markPending: [1, 2, 3], markTooth: "" });
+    expect(html).toMatch(/data-role="mark-submit"[^>]*disabled/);
+  });
+
+  it("shows the BFF's own refusal rather than a summary of it", () => {
+    const html = view({
+      markPending: [1, 2, 3],
+      markTooth: "13",
+      markError: "tooth 13 is already a site on case 'neodent-gm'",
+    });
+    expect(html).toContain('data-role="mark-error"');
+    expect(html).toContain("already a site");
+  });
+});

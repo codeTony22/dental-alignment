@@ -223,6 +223,11 @@ export interface MainStageProps {
   /** The operator's active site (slice 5a — Declare's queue drives the routing).
    * Omitted/null = the stage's own default, the first site with a usable centre. */
   readonly activeTooth?: number | null;
+  /** ARMED: the next click on the scan is the operator's mark for a cap the detector
+   *  missed (client 2026-07-28). Omitted/false leaves the stage read-only, which is
+   *  what every existing mount wants. */
+  readonly markArmed?: boolean;
+  readonly onMark?: ((point: readonly [number, number, number]) => void) | null;
 }
 
 /** The container: streams the scan, opens FRONT, routes to the active site. */
@@ -232,6 +237,8 @@ export function MainStage({
   sites,
   markers,
   activeTooth,
+  markArmed = false,
+  onMark = null,
 }: MainStageProps) {
   const viewerRef = useRef<Viewer3DHandle | null>(null);
   const [scanState, setScanState] = useState<ScanLoadState>({ kind: "loading" });
@@ -289,6 +296,16 @@ export function MainStage({
     if (scanState.kind !== "ready") return;
     viewerRef.current?.setMarkers(markers ?? []);
   }, [markers, scanState.kind]);
+
+  /* MARKING ARMS THE CONTROLLER'S OWN POINT PICK (client 2026-07-28). The machinery
+     has existed since the viewer was lifted — enterPointPick is what the demo's mark
+     tools used — it simply had no caller on this stage. Armed only while the operator
+     asked for it: a stage that silently swallowed clicks would make orbiting the scan
+     feel broken, and orbiting is what this stage is mostly for. */
+  useEffect(() => {
+    if (!markArmed || onMark === null) return;
+    viewerRef.current?.enterPointPick((point) => onMark(point));
+  }, [markArmed, onMark]);
 
   const routeTarget = useMemo(
     () =>

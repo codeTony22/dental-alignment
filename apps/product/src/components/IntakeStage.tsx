@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   postDetect,
+  postMarkedSite,
   putChoices,
   type CaseSessionDetail,
   type ChoicesUpdate,
@@ -260,6 +261,124 @@ export function ChoicesPanel({ detail, saving, error, onChoice }: ChoicesPanelPr
   );
 }
 
+
+export interface MarkMissedCapProps {
+  readonly armed: boolean;
+  /** The centre placed but not yet named — a mark is only a site once it has a tooth. */
+  readonly pending: readonly number[] | null;
+  readonly saving: boolean;
+  readonly error: string | null;
+  readonly onArm: () => void;
+  readonly onCancel: () => void;
+  readonly onTooth: (tooth: string) => void;
+  readonly tooth: string;
+  readonly onSubmit: () => void;
+}
+
+/**
+ * MARK A CAP THE DETECTOR MISSED (client 2026-07-28).
+ *
+ * Detection finds 8 of the 10 sites on this fleet. The other two were unworkable —
+ * a site's centre lived only in the case record, which the ingest writes and an
+ * operator cannot. This is the door.
+ *
+ * TWO STEPS, deliberately: place the centre, THEN name the tooth. Asking for the
+ * tooth first would make the operator hold a number in their head while hunting the
+ * cap in 3D; asking afterwards lets them point at what they can see and label it
+ * once it is unambiguous. The centre is sent exactly as clicked — the re-click
+ * pair-integrity rule says a human's mark is fixed here or refused, never quietly
+ * re-centred downstream.
+ */
+export function MarkMissedCap({
+  armed,
+  pending,
+  saving,
+  error,
+  onArm,
+  onCancel,
+  onTooth,
+  tooth,
+  onSubmit,
+}: MarkMissedCapProps) {
+  return (
+    <section data-role="mark-missed" className="panel">
+      <h3 className="panel__title">A cap the detection missed</h3>
+      {!armed && pending === null ? (
+        <>
+          <p className="panel__hint">
+            Detection does not always find every cap. If you can see one the list
+            above does not have, mark it here.
+          </p>
+          <button
+            type="button"
+            data-role="mark-arm"
+            className="button button--secondary button--small"
+            onClick={onArm}
+          >
+            Mark a missed cap
+          </button>
+        </>
+      ) : pending === null ? (
+        <>
+          <p data-role="mark-prompt" className="panel__hint">
+            Click the centre of the cap on the scan.
+          </p>
+          <button
+            type="button"
+            data-role="mark-cancel"
+            className="button button--ghost button--small"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+        </>
+      ) : (
+        <>
+          <p data-role="mark-placed" className="panel__hint">
+            Centre placed. Which tooth is it?
+          </p>
+          <label className="decode-offset">
+            <input
+              data-role="mark-tooth"
+              className="decode-offset__input"
+              type="number"
+              min={1}
+              max={32}
+              value={tooth}
+              onChange={(event) => onTooth(event.target.value)}
+            />
+          </label>
+          <div className="panel__actions">
+            <button
+              type="button"
+              data-role="mark-submit"
+              className="button button--primary button--small"
+              disabled={saving || tooth.trim() === ""}
+              onClick={onSubmit}
+            >
+              {saving ? "Adding the site…" : "Add this site"}
+            </button>
+            <button
+              type="button"
+              data-role="mark-cancel"
+              className="button button--ghost button--small"
+              disabled={saving}
+              onClick={onCancel}
+            >
+              Discard the mark
+            </button>
+          </div>
+        </>
+      )}
+      {error !== null && (
+        <div data-role="mark-error" role="alert" className="panel__error">
+          {error}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export interface IntakeStageViewProps {
   readonly detail: CaseSessionDetail;
   readonly detectPhase: DetectPhase;
@@ -267,6 +386,17 @@ export interface IntakeStageViewProps {
   readonly choicesError: string | null;
   readonly onChoice: (patch: Partial<ChoicesUpdate>) => void;
   readonly onRetryDetect: () => void;
+  /** Marking a cap detection missed (client 2026-07-28). */
+  readonly markArmed?: boolean;
+  readonly markPending?: readonly number[] | null;
+  readonly markTooth?: string;
+  readonly markSaving?: boolean;
+  readonly markError?: string | null;
+  readonly onArmMark?: () => void;
+  readonly onCancelMark?: () => void;
+  readonly onMarkTooth?: (tooth: string) => void;
+  readonly onMarkPlaced?: (point: readonly [number, number, number]) => void;
+  readonly onSubmitMark?: () => void;
 }
 
 /** The stage's whole surface, pure payload → markup — statically testable. */
@@ -277,6 +407,16 @@ export function IntakeStageView({
   choicesError,
   onChoice,
   onRetryDetect,
+  markArmed = false,
+  markPending = null,
+  markTooth = "",
+  markSaving = false,
+  markError = null,
+  onArmMark = () => undefined,
+  onCancelMark = () => undefined,
+  onMarkTooth = () => undefined,
+  onMarkPlaced = () => undefined,
+  onSubmitMark = () => undefined,
 }: IntakeStageViewProps) {
   const facts = factsFromCaseSession(detail);
   const declareOpen = isReachable("declare", facts);
@@ -308,6 +448,17 @@ export function IntakeStageView({
           </div>
         )}
         <SiteList detail={detail} />
+        <MarkMissedCap
+          armed={markArmed}
+          pending={markPending}
+          saving={markSaving}
+          error={markError}
+          onArm={onArmMark}
+          onCancel={onCancelMark}
+          onTooth={onMarkTooth}
+          tooth={markTooth}
+          onSubmit={onSubmitMark}
+        />
         <ChoicesPanel
           detail={detail}
           saving={savingChoices}
@@ -340,6 +491,8 @@ export function IntakeStageView({
           scanFilename={detail.case.scan_filename}
           sites={detail.sites}
           markers={detectionMarkers(detail)}
+          markArmed={markArmed}
+          onMark={onMarkPlaced}
         />
       </div>
     </div>
@@ -356,6 +509,47 @@ export interface IntakeStageProps {
 export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
   const caseId = detail.case.id;
   const firedRef = useRef<string | null>(null);
+
+  /* MARKING A MISSED CAP (client 2026-07-28). Three states, and the middle one is
+     the reason this is not a single form: ARMED (the next scan click is the centre),
+     PLACED (a centre exists, awaiting its tooth), and idle. Optimism is OFF like
+     everywhere else on this app — the site appears because the BFF returned a detail
+     saying so, never because the click landed. */
+  const [markArmed, setMarkArmed] = useState(false);
+  const [markPending, setMarkPending] = useState<readonly number[] | null>(null);
+  const [markTooth, setMarkTooth] = useState("");
+  const [markSaving, setMarkSaving] = useState(false);
+  const [markError, setMarkError] = useState<string | null>(null);
+
+  const resetMark = useCallback(() => {
+    setMarkArmed(false);
+    setMarkPending(null);
+    setMarkTooth("");
+    setMarkError(null);
+  }, []);
+
+  const handleMarkPlaced = useCallback((point: readonly [number, number, number]) => {
+    setMarkPending([...point]);
+    setMarkArmed(false);   // the click is spent; naming the tooth comes next
+  }, []);
+
+  const handleSubmitMark = useCallback(() => {
+    const tooth = Number(markTooth);
+    if (markPending === null || !Number.isInteger(tooth)) return;
+    setMarkSaving(true);
+    setMarkError(null);
+    void postMarkedSite(caseId, tooth, markPending).then((result) => {
+      setMarkSaving(false);
+      if (result.ok) {
+        onDetail(result.value);
+        resetMark();
+        return;
+      }
+      // the BFF's own words — a 409 on an existing tooth explains itself better
+      // than anything this layer could summarise
+      setMarkError(result.error.detail);
+    });
+  }, [caseId, markPending, markTooth, onDetail, resetMark]);
   const mountedRef = useRef(true);
   const [detectPhase, setDetectPhase] = useState<DetectPhase>({ kind: "idle" });
   const [savingChoices, setSavingChoices] = useState(false);
@@ -420,6 +614,16 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
       savingChoices={savingChoices}
       choicesError={choicesError}
       onChoice={handleChoice}
+      markArmed={markArmed}
+      markPending={markPending}
+      markTooth={markTooth}
+      markSaving={markSaving}
+      markError={markError}
+      onArmMark={() => { setMarkArmed(true); setMarkError(null); }}
+      onCancelMark={resetMark}
+      onMarkTooth={setMarkTooth}
+      onMarkPlaced={handleMarkPlaced}
+      onSubmitMark={handleSubmitMark}
       onRetryDetect={fireDetect}
     />
   );

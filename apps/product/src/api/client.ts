@@ -957,3 +957,25 @@ export async function postBestFit(
 ): Promise<ApiResult<AdjustResultView>> {
   return adjustTool(caseId, tooth, "best-fit", body);
 }
+
+/**
+ * Mark a cap the DETECTOR MISSED (client 2026-07-28). Detection finds 8 of the 10
+ * sites on this fleet; without this a missed cap could not be worked at all.
+ *
+ * An operator ACT in the allowlist's sense — WHICH tooth and WHERE — never a status.
+ * The site the BFF creates starts at `detected` and climbs the same ladder, so
+ * marking buys work to do, not a rung. The centre is sent exactly as clicked: the
+ * re-click pair-integrity rule says a human's mark is fixed here or refused, never
+ * quietly re-centred downstream.
+ */
+export async function postMarkedSite(
+  caseId: string,
+  tooth: number,
+  center: readonly number[],
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(`/api/case-sessions/${encodeURIComponent(caseId)}/sites`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tooth, center: [...center] }),
+  });
+}
