@@ -3330,3 +3330,33 @@ button.package-files__link:hover {
 .adjust-pairs__slot--active .adjust-pairs__slot-where {
   text-decoration: underline;
 }
+
+/* The pane's way home, beside its maximize — same weight, same place, so the two read
+   as one small set of view controls rather than a button someone added later. */
+.verify-panel__reset {
+  margin-left: auto;
+  padding: 0 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+/* Maximize sat on the auto margin before this button existed; with two controls the
+   margin belongs to the FIRST of them or they separate. */
+.verify-panel__reset + .verify-panel__maximize {
+  margin-left: 0;
+}
+
+.verify-panel__reset:hover {
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.verify-panel__reset:focus-visible {
+  outline: 2px solid var(--color-accent, #2f7fe6);
+  outline-offset: 1px;
+}

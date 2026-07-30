@@ -97,6 +97,9 @@ export interface DeclarePanesViewProps {
   readonly onToggleLinked?: () => void;
   readonly maximizedId?: PaneId | null;
   readonly onToggleMaximized?: (pane: PaneId) => void;
+  /** Restore one pane's own framing — the panes' answer to the main stage's "This
+   *  site" (client 2026-07-29). Optional so callers predating it render unchanged. */
+  readonly onResetView?: ((pane: PaneId) => void) | null;
   readonly scaleId?: DeviationScaleId;
   readonly onSelectScale?: (id: DeviationScaleId) => void;
 }
@@ -127,6 +130,7 @@ export function DeclarePanesView({
   onToggleLinked,
   maximizedId = null,
   onToggleMaximized,
+  onResetView = null,
   scaleId = "signed",
   onSelectScale,
 }: DeclarePanesViewProps) {
@@ -169,6 +173,7 @@ export function DeclarePanesView({
       onToggleLinked={onToggleLinked}
       maximizedId={maximizedId}
       onToggleMaximized={onToggleMaximized}
+      onResetView={onResetView}
       scaleId={scaleId}
       onSelectScale={onSelectScale}
       footer={
@@ -361,6 +366,7 @@ export function DeclarePanes({
       onToggleLinked={scene.onToggleLinked}
       maximizedId={scene.maximizedId}
       onToggleMaximized={scene.onToggleMaximized}
+      onResetView={scene.onResetView}
       scaleId={scene.scaleId}
       onSelectScale={scene.onSelectScale}
       libraryViewer={scene.libraryViewer}

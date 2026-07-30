@@ -903,6 +903,7 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       onToggleLinked={scene.onToggleLinked}
       maximizedId={scene.maximizedId}
       onToggleMaximized={scene.onToggleMaximized}
+      onResetView={scene.onResetView}
       scaleId={scene.scaleId}
       onSelectScale={scene.onSelectScale}
     />

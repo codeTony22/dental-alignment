@@ -35,6 +35,16 @@ interface VerifyViewerProps {
     readonly up?: Vec3 | null;
   } | null;
   /** The shared "link views" group — omitted for a standalone pane. */
+  /** Bump to re-apply `frame` on demand — the panes' way HOME.
+   *
+   *  The guard below deliberately frames only once per distinct target, so an operator's
+   *  own orbit is never yanked back by an unrelated re-render. That correctness left the
+   *  panes with no way to RETURN: once you had orbited away from the top-of-cap view
+   *  there was no control to restore it, while the main stage has had "This site" and
+   *  the direction presets all along (client 2026-07-29: the pane camera "is a bit
+   *  weird" next to the main panel). Changing this value is an explicit request to
+   *  re-frame, which the key below folds in. */
+  readonly frameNonce?: number;
   readonly linkGroup?: OrbitLinkGroup | null;
   /** Numbered points drawn over the geometry (the fit-by-points flow). Omitted = none. */
   readonly markers?: readonly VerifyMarker[];
@@ -61,6 +71,7 @@ const NO_MARKERS: readonly VerifyMarker[] = [];
 export function VerifyViewer({
   layers,
   frame,
+  frameNonce = 0,
   linkGroup,
   markers = NO_MARKERS,
   onPick = null,
@@ -161,11 +172,13 @@ export function VerifyViewer({
 
   // Re-frame only on a genuine target change (a new site, or the first geometry landing) —
   // never on an opacity/visibility re-render, which would yank the operator's own orbit back.
-  const frameKey = frame
-    ? `${frame.center[0]},${frame.center[1]},${frame.center[2]}|${frame.radiusMm}|${
-        frame.viewDirection ? frame.viewDirection.join(",") : "default"
-      }|${frame.up ? frame.up.join(",") : "auto"}`
-    : `all:${layers.filter((l) => l.geometry !== null).map((l) => l.id).join(",")}`;
+  const frameKey = `${frameNonce}#${
+    frame
+      ? `${frame.center[0]},${frame.center[1]},${frame.center[2]}|${frame.radiusMm}|${
+          frame.viewDirection ? frame.viewDirection.join(",") : "default"
+        }|${frame.up ? frame.up.join(",") : "auto"}`
+      : `all:${layers.filter((l) => l.geometry !== null).map((l) => l.id).join(",")}`
+  }`;
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;

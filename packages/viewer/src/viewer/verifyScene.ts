@@ -422,6 +422,27 @@ export class VerifyScene {
    * cap"). Omitted, the pane keeps the fixed three-quarter angle, which is right for anything
    * with no axis of its own to look down.
    */
+  /**
+   * Apply a camera change WITHOUT the operator's leftover orbit momentum landing on top
+   * of it.
+   *
+   * OrbitControls only clears its accumulators when damping is OFF: with damping on,
+   * `update()` merely DECAYS `sphericalDelta`/`panOffset`, so whatever spin was still in
+   * flight keeps being applied on the frames after a re-frame and drags the camera off
+   * the view just set. Measured 2026-07-29 with a real drag: orbiting a pane away and
+   * then re-framing it landed somewhere different every time and never on the framing
+   * the pane was born with — the "camera is a bit weird" report.
+   *
+   * Toggling damping off for exactly one update takes the branch that ZEROES both
+   * accumulators, then restores the setting so ordinary dragging keeps its feel.
+   */
+  private settleControls(): void {
+    const damping = this.controls.enableDamping;
+    this.controls.enableDamping = false;
+    this.controls.update();
+    this.controls.enableDamping = damping;
+  }
+
   frameOn(
     center: readonly [number, number, number],
     radiusMm: number,
@@ -461,7 +482,7 @@ export class VerifyScene {
     this.camera.near = Math.max(distance / 500, 0.05);
     this.camera.far = distance * 50;
     this.camera.updateProjectionMatrix();
-    this.controls.update();
+    this.settleControls();
     // the framing IS the marker scale's unit — re-size them with it
     this.applyMarkerScale();
   }
@@ -505,7 +526,10 @@ export class VerifyScene {
       );
       const offset = new THREE.Vector3().setFromSpherical(spherical);
       this.camera.position.copy(this.controls.target).add(offset);
-      this.controls.update();
+      // Same reason as frameOn: a mirrored orbit is an ASSIGNMENT of a camera position,
+      // and this pane's own leftover momentum has no business being added to the pane it
+      // is mirroring — that is how linked views drift apart while claiming to be linked.
+      this.settleControls();
     } finally {
       this.applyingOrbit = false;
     }

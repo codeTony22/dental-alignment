@@ -280,3 +280,19 @@ describe("the attestation — a button-weight act over the panes it attests (AM-
     ).toContain("cannot review_ready");
   });
 });
+
+describe("the panes' way home (client 2026-07-29: the pane camera vs the main stage)", () => {
+  it("offers a reset control on EVERY pane, each naming the pane it restores", () => {
+    const html = view({ onResetView: () => undefined });
+    const controls = html.match(/data-role="pane-reset-view"/g) ?? [];
+    expect(controls).toHaveLength(3);
+    expect(html).toContain("Restore the framing of 1 · Library part");
+    expect(html).toContain("Restore the framing of 2 · Scanned cap");
+  });
+
+  it("renders no reset control when the container supplies no handler", () => {
+    // Static callers that predate the control must keep their markup — a dead button
+    // that cannot restore anything is worse than none.
+    expect(view()).not.toContain('data-role="pane-reset-view"');
+  });
+});

@@ -271,6 +271,13 @@ interface PaneShellProps {
   readonly maximized?: boolean;
   /** Omitted (static tests that predate it), the heading renders without the control. */
   readonly onToggleMaximized?: (() => void) | null;
+  /** THE WAY HOME (client 2026-07-29). The main stage has had "This site", "Whole arch"
+   *  and the four direction presets since the parity slice; these panes had nothing —
+   *  they framed correctly on mount and then, once orbited, could not be recovered
+   *  short of changing site. Restores the pane's own framing: for panes 2 and 3 that is
+   *  the top-of-cap view down the seated pose's axis, with the shared clock reference
+   *  that makes a cutout land at the same screen angle in all three. */
+  readonly onResetView?: (() => void) | null;
 }
 
 /** One pane in the demo's verify-panel clothes: header (title + one-line caption),
@@ -287,12 +294,25 @@ function PaneShell({
   invite,
   maximized = false,
   onToggleMaximized = null,
+  onResetView = null,
 }: PaneShellProps) {
   return (
     <section data-role={role} aria-label={title} className="verify-panel">
       <header className="verify-panel__header">
         <div className="verify-panel__heading">
           <h4 className="verify-panel__title">{title}</h4>
+          {onResetView !== null && (
+            <button
+              type="button"
+              data-role="pane-reset-view"
+              className="verify-panel__reset"
+              aria-label={`Restore the framing of ${title}`}
+              title="Back to this pane's own view"
+              onClick={onResetView}
+            >
+              ⌖
+            </button>
+          )}
           {onToggleMaximized !== null && (
             <button
               type="button"
@@ -363,6 +383,8 @@ export interface SitePanesViewProps {
   readonly unionBusyMessage: string | null;
   readonly payload: SitePreviewPayload | null;
   /** The three live canvases — the container passes VerifyViewers; tests pass stubs. */
+  readonly resetNonce: Readonly<Record<PaneId, number>>;
+  readonly onResetView: (pane: PaneId) => void;
   readonly libraryViewer: ReactNode;
   readonly scanViewer: ReactNode;
   readonly unionViewer: ReactNode;
@@ -374,6 +396,9 @@ export interface SitePanesViewProps {
   readonly linked?: boolean;
   readonly onToggleLinked?: () => void;
   readonly maximizedId?: PaneId | null;
+  /** Restore one pane's own framing — the panes' answer to the main stage's
+   *  "This site" (client 2026-07-29). Optional: static tests predate it. */
+  readonly onResetView?: ((pane: PaneId) => void) | null;
   readonly onToggleMaximized?: (pane: PaneId) => void;
   readonly scaleId?: DeviationScaleId;
   readonly onSelectScale?: (id: DeviationScaleId) => void;
@@ -404,6 +429,7 @@ export function SitePanesView({
   onToggleLinked,
   maximizedId = null,
   onToggleMaximized,
+  onResetView = null,
   scaleId = "signed",
   onSelectScale,
   footer,
@@ -467,6 +493,7 @@ export function SitePanesView({
             hud={hudFor("library")}
             maximized={maximizedId === "library"}
             onToggleMaximized={maximizeFor("library")}
+            onResetView={onResetView === null ? null : () => onResetView("library")}
           />
         )}
         {showPane("scan") && (
@@ -481,6 +508,7 @@ export function SitePanesView({
             hud={hudFor("scan")}
             maximized={maximizedId === "scan"}
             onToggleMaximized={maximizeFor("scan")}
+            onResetView={onResetView === null ? null : () => onResetView("scan")}
           />
         )}
         {showPane("union") && (
@@ -507,6 +535,7 @@ export function SitePanesView({
             invite={unionInvite}
             maximized={maximizedId === "union"}
             onToggleMaximized={maximizeFor("union")}
+            onResetView={onResetView === null ? null : () => onResetView("union")}
           />
         )}
       </div>
@@ -592,6 +621,16 @@ export function useSitePaneScene(
   const [linked, setLinked] = useState(false);
   const [maximizedId, setMaximizedId] = useState<PaneId | null>(null);
   const [scaleId, setScaleId] = useState<DeviationScaleId>("signed");
+  /* PER-PANE, deliberately: resetting the union's view must not yank the library pane's
+     orbit back with it. Each counter is its own re-frame request. */
+  const [resetNonce, setResetNonce] = useState<Readonly<Record<PaneId, number>>>({
+    library: 0,
+    scan: 0,
+    union: 0,
+  });
+  const onResetView = useCallback((pane: PaneId) => {
+    setResetNonce((now) => ({ ...now, [pane]: now[pane] + 1 }));
+  }, []);
   useEffect(() => {
     linkGroupRef.current.setEnabled(linked);
   }, [linked]);
@@ -785,8 +824,11 @@ export function useSitePaneScene(
     onToggleMaximized,
     scaleId,
     onSelectScale: setScaleId,
+    resetNonce,
+    onResetView,
     libraryViewer: (
       <VerifyViewer
+        frameNonce={resetNonce.library}
         layers={[
           {
             id: "part",
@@ -804,6 +846,7 @@ export function useSitePaneScene(
     ),
     scanViewer: (
       <VerifyViewer
+        frameNonce={resetNonce.scan}
         layers={[
           {
             id: "scan",
@@ -821,6 +864,7 @@ export function useSitePaneScene(
     ),
     unionViewer: (
       <VerifyViewer
+        frameNonce={resetNonce.union}
         layers={[
           // the client's own defaults, kept: the scan half-transparent so the
           // coloured cap reads through it
