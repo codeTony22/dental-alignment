@@ -68,7 +68,9 @@ import {
   type AdjustQueueEntry,
   type AdjustToolId,
   type AlreadyOptimal,
+  withoutPick,
   type PairDraft,
+  type PairSlot,
   type SeatedPhase,
 } from "../domain/adjust";
 import { SitePanesView, useSitePaneScene, type PaneId } from "./SitePanes";
@@ -103,6 +105,8 @@ export interface AdjustStageViewProps {
   readonly drafts: readonly PairDraft[];
   readonly onStartPair: (span: boolean) => void;
   readonly onRemovePair: (id: string) => void;
+  /** Clear ONE mark, leaving the rest of the pair (client 2026-07-29). */
+  readonly onRemovePoint: (id: string, slot: PairSlot) => void;
   readonly onApplyPairs: () => void;
   /** The panes, already assembled by the container (tests pass a stub). */
   readonly panes: React.ReactNode;
@@ -167,6 +171,7 @@ export function AdjustStageView({
   drafts,
   onStartPair,
   onRemovePair,
+  onRemovePoint,
   onApplyPairs,
   panes,
   activeStatus,
@@ -405,7 +410,27 @@ export function AdjustStageView({
                               <span aria-hidden="true" className="adjust-pairs__slot-mark">
                                 {slot.placed ? "✓" : slot.active ? "→" : "○"}
                               </span>
-                              <span className="adjust-pairs__slot-where">{slot.where}</span>
+                              <span className="adjust-pairs__slot-where">
+                                {slot.where}
+                                {slot.placed && (
+                                  /* Per-MARK removal: losing the whole pair because the
+                                     second click landed wrong was the only exit before
+                                     2026-07-29. */
+                                  <button
+                                    type="button"
+                                    data-role="remove-point"
+                                    data-pair={draft.id}
+                                    data-slot={slot.key}
+                                    className="adjust-pairs__slot-clear"
+                                    aria-label={`Remove this mark on ${slot.where}`}
+                                    title="Remove just this mark"
+                                    disabled={busy}
+                                    onClick={() => onRemovePoint(draft.id, slot.key)}
+                                  >
+                                    undo
+                                  </button>
+                                )}
+                              </span>
                               <span className="adjust-pairs__slot-label">{slot.label}</span>
                             </li>
                           ))}
@@ -504,6 +529,20 @@ export function AdjustStageView({
                   ))}
                 </ul>
               )}
+              {lastOutcome.applied && activeStatus !== null &&
+                !needsReconfirm(activeStatus as never) && (
+                  /* THE ACT SURVIVES ITS OWN EFFECT (client 2026-07-29: "confirm this
+                     fit over the panes does not work"). It did work — POST /review
+                     returned 200 and moved the rung adjusted->ready — but the control
+                     was rendered only while the site NEEDED re-confirming, so a
+                     successful click deleted the button and said nothing. A silent
+                     success is indistinguishable from a dead button. The outcome now
+                     stands in its place. */
+                  <p data-role="reconfirm-done" className="adjust-outcome__confirmed">
+                    Confirmed. This site is ready again, and the confirmation now
+                    describes the fit on screen.
+                  </p>
+                )}
               {lastOutcome.applied && activeStatus !== null &&
                 needsReconfirm(activeStatus as never) && (
                   /* THE RE-CONFIRMATION, WITH ITS CONTROL (client 2026-07-29: "We need to
@@ -896,6 +935,11 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
         ])
       }
       onRemovePair={(id) => setDrafts((current) => current.filter((d) => d.id !== id))}
+      onRemovePoint={(id, slot) =>
+        setDrafts((current) =>
+          current.map((d) => (d.id === id ? withoutPick(d, slot) : d)),
+        )
+      }
       onApplyPairs={handleApplyPairs}
       panes={panes}
       activeStatus={activeSite?.status ?? null}

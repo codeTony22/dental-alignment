@@ -542,3 +542,31 @@ export function pairSlots(draft: PairDraft): readonly PairSlotView[] {
   }
   return slots;
 }
+
+/**
+ * Clear ONE mark from a pair, leaving the rest of it standing (client 2026-07-29:
+ * "Points need to be able to be removed one by one not all at once").
+ *
+ * Removing the whole pair was the only exit, so a misplaced second click cost the
+ * first one too. This does NOT weaken the re-click pair-integrity rule: that rule
+ * forbids a mark being SILENTLY replaced by a stray click, and this is the opposite —
+ * an explicit act, on a named mark, that the operator asked for.
+ *
+ * A span's two scan ends collapse in order: clearing the first end promotes the second
+ * into its place rather than leaving a hole the slot machinery would mis-read as
+ * "waiting for the first end" while the second sits filled.
+ */
+export function withoutPick(draft: PairDraft, slot: PairSlot): PairDraft {
+  switch (slot) {
+    case "part":
+      return { ...draft, partPoint: null };
+    case "scan":
+      return draft.span && draft.scanPointEnd !== null
+        ? { ...draft, scanPoint: draft.scanPointEnd, scanPointEnd: null }
+        : { ...draft, scanPoint: null };
+    case "scan-end":
+      return { ...draft, scanPointEnd: null };
+    default:
+      return draft;
+  }
+}

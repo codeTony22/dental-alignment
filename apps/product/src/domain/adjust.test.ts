@@ -28,6 +28,7 @@ import {
   reworkWords,
   staleMetricsPhrase,
   withPick,
+  withoutPick,
   type AdjustQueueEntry,
 } from "./adjust";
 import { siteView } from "../testing/fixtures";
@@ -433,5 +434,41 @@ describe("pairSlots — the marks a pair is made of, named with their surface", 
     const slots = pairSlots(draft);
     expect(slots.every((s) => s.placed)).toBe(true);
     expect(slots.some((s) => s.active)).toBe(false);
+  });
+});
+
+describe("withoutPick — one mark leaves, the rest of the pair stands", () => {
+  const complete = () =>
+    withPick(withPick(newPairDraft("p1", false), "part", [1, 2, 3]), "scan", [4, 5, 6]);
+
+  it("clearing the part mark keeps the scan mark", () => {
+    const d = withoutPick(complete(), "part");
+    expect(d.partPoint).toBeNull();
+    expect(d.scanPoint).toEqual([4, 5, 6]);
+  });
+
+  it("clearing the scan mark keeps the part mark", () => {
+    const d = withoutPick(complete(), "scan");
+    expect(d.partPoint).toEqual([1, 2, 3]);
+    expect(d.scanPoint).toBeNull();
+  });
+
+  it("a span's second end is PROMOTED when the first is cleared — never a hole", () => {
+    let span = newPairDraft("s1", true);
+    span = withPick(span, "part", [0, 0, 0]);
+    span = withPick(span, "scan", [1, 0, 0]);
+    span = withPick(span, "scan", [2, 0, 0]);
+    expect(span.scanPointEnd).toEqual([2, 0, 0]);
+
+    const cleared = withoutPick(span, "scan");
+    // The surviving end slides into the first slot, so the next click fills the SECOND
+    // end — not a state where slot 1 is empty while slot 2 is full.
+    expect(cleared.scanPoint).toEqual([2, 0, 0]);
+    expect(cleared.scanPointEnd).toBeNull();
+    expect(pairSlot(cleared)).toBe("scan-end");
+  });
+
+  it("the cleared mark becomes the one the next click fills", () => {
+    expect(pairSlot(withoutPick(complete(), "part"))).toBe("part");
   });
 });
