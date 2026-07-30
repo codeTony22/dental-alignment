@@ -151,14 +151,35 @@ body {
   padding: 16px 20px;
 }
 
-/* Two rows: a body that scrolls, and a footer that never does. The footer is what makes
-   the fork buttons reachable without scrolling — see DeclareStage's note on why sticky
-   positioning could not do this job. */
+/* The DEFAULT work column: a plain scrolling stack. Every stage uses this.
+
+   It was briefly a two-row grid so Declare's fork could pin to the bottom — and that
+   silently captured ADJUST, which has no footer: its Sites panel landed in the 1fr row
+   and stretched, its Tools panel pinned to the bottom, and switching tools visibly
+   resized the Sites card and shoved Tools down (caught on a screen recording,
+   2026-07-29). A layout rule that only suits one stage must be opt-IN, so the footer
+   behaviour now lives in the --footered modifier below and nothing inherits it by
+   accident. */
 .workbench__work {
   min-width: 0;
   min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.workbench__work > * {
+  flex: 0 0 auto;
+}
+
+/* OPT-IN: a body that scrolls above a footer that never does. Declare only. */
+.workbench__work--footered {
+  overflow: visible;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0;
 }
 
 .workbench__work-scroll {

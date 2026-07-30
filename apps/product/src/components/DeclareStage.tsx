@@ -298,7 +298,7 @@ export function DeclareStageView({
     // ≥55% of the stage height guaranteed by construction (see styles.css's
     // --split arithmetic), while the arch shrinks to a collapsible context strip.
     <div data-role="declare-stage" className="stage-contents">
-      <div className="workbench__work">
+      <div className="workbench__work workbench__work--footered">
         {/* THE SCROLLING BODY. Everything above the fork scrolls; the fork itself is a
             SIBLING of this box, not a descendant (client 2026-07-29: "Skip adjustment
             and Adjust the fit buttons should always show, there should not be a need to
