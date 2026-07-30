@@ -25,6 +25,7 @@ import {
   pairSlots,
   pairWords,
   queueSummary,
+  spanLeverCaution,
   reworkWords,
   staleMetricsPhrase,
   withPick,
@@ -470,5 +471,49 @@ describe("withoutPick — one mark leaves, the rest of the pair stands", () => {
 
   it("the cleared mark becomes the one the next click fills", () => {
     expect(pairSlot(withoutPick(complete(), "part"))).toBe("part");
+  });
+});
+
+describe("spanLeverCaution — warn before the span earns a 422", () => {
+  const pose = { origin: [0, 0, 0], axis: [0, 0, 1] };
+  const span = (a: number[], b: number[]) => {
+    let d = newPairDraft("s1", true);
+    d = withPick(d, "part", [5, 0, 0]);
+    d = withPick(d, "scan", a);
+    return withPick(d, "scan", b);
+  };
+
+  it("warns on a diameter through the axis — the screw-access span", () => {
+    // two ends opposite each other: the midpoint lands ON the axis
+    const words = spanLeverCaution(span([2, 0, 0], [-2, 0, 0]), pose);
+    expect(words).not.toBeNull();
+    expect(words).toContain("crosses the screw access");
+    expect(words).toContain("0.5mm");
+  });
+
+  it("stays quiet on a trench spanned along its own radius", () => {
+    // both ends out on the same side: the midpoint keeps a real lever arm
+    expect(spanLeverCaution(span([2, 0, 0], [3, 0, 0]), pose)).toBeNull();
+  });
+
+  it("measures PERPENDICULAR to the axis — depth along it is not a lever arm", () => {
+    // ends differing only in z: no in-plane arm at all, so this must warn
+    expect(spanLeverCaution(span([0, 0, 1], [0, 0, -1]), pose)).not.toBeNull();
+  });
+
+  it("says nothing about a point pair, or before both ends are placed", () => {
+    let point = newPairDraft("p1", false);
+    point = withPick(point, "part", [5, 0, 0]);
+    point = withPick(point, "scan", [0, 0, 0]);
+    expect(spanLeverCaution(point, pose)).toBeNull();
+
+    let half = newPairDraft("s2", true);
+    half = withPick(half, "part", [5, 0, 0]);
+    half = withPick(half, "scan", [0, 0, 0]);
+    expect(spanLeverCaution(half, pose)).toBeNull();
+  });
+
+  it("says nothing when no pose is known — it never guesses at the reference", () => {
+    expect(spanLeverCaution(span([2, 0, 0], [-2, 0, 0]), null)).toBeNull();
   });
 });

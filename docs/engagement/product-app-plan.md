@@ -300,3 +300,31 @@ Untested above N=2: the whole fleet is single-site except neodent-gm. Preview is
 serial, so a full arch is minutes of previews nobody has measured; the run's N-scaling, the
 memory of N scan crops, and the queue/table at 14 rows are all unmeasured. Not known-broken —
 unmeasured, which is a different claim and should stay one until someone runs it.
+
+**F. The span caution should become a true pre-refusal (2026-07-29, item 2 of three).**
+
+The client asked that fit-by-points "refuse before you place the span, not after". What
+shipped is a CAUTION, not a refusal, and the difference is deliberate rather than a
+shortcut.
+
+The server's scan-side lever guard measures a mark's distance from the scan's MEASURED
+RIM CENTRE — `scan_rim_centre(canon, sig.ztop, sig.rmax)`, derived from that site's clock
+signature in canonical xy. The client has no such quantity. What it has is the seated
+pose's origin, which sits close to that rim centre but is not it. Blocking on the client's
+number could therefore refuse a span the server would have ACCEPTED, silently costing the
+operator a legitimate correction — a worse failure than the 422, because it is invisible.
+
+So the warning fires on the client's approximation, the server stays the authority, and a
+refusal now says the marks are still placed (they are — `setDrafts([])` runs only on
+success) so one mark can be undone rather than the pair restarted.
+
+TO MAKE IT A REAL PRE-REFUSAL: expose the measured rim centre in WORLD coordinates on the
+seated/preview payload — `clock_reference: {rim_centre: [x,y,z], min_lever_mm}` — beside
+the existing `pose` block. The client then measures the same quantity the guard does and
+can refuse locally with the gate's own bound, with no risk of disagreeing. That is worker
++ BFF + product and wants the worker battery, which is why it is written down rather than
+squeezed in beside a UI change.
+
+Item 3 (the auto-mark tool) reduces how much this matters: points proposed from
+`PartFeature.defines_rotation` carry a valid lever arm BY CONSTRUCTION, so the operator
+never places the bad span in the first place. The guard still belongs on the manual path.

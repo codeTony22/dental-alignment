@@ -578,3 +578,65 @@ export function reasonCountWords(count: number): string {
   if (count <= 0) return "the gate recorded no action words";
   return count === 1 ? "1 reason" : `${count} reasons`;
 }
+
+/** The server's own bound, mirrored for the WARNING below. Kept beside the sentence
+ *  that quotes it so the two cannot drift apart silently; the SERVER remains the
+ *  authority — this constant never refuses anything. */
+export const MIN_CLOCK_LEVER_MM = 0.5;
+
+function inPlaneRadius(
+  point: readonly number[],
+  origin: readonly number[],
+  axis: readonly number[],
+): number {
+  const d = [point[0]! - origin[0]!, point[1]! - origin[1]!, point[2]! - origin[2]!];
+  const n = Math.hypot(axis[0]!, axis[1]!, axis[2]!) || 1;
+  const u = [axis[0]! / n, axis[1]! / n, axis[2]! / n];
+  const along = d[0]! * u[0]! + d[1]! * u[1]! + d[2]! * u[2]!;
+  // the component of d PERPENDICULAR to the axis — the lever arm the clock rides on
+  return Math.hypot(
+    d[0]! - along * u[0]!,
+    d[1]! - along * u[1]!,
+    d[2]! - along * u[2]!,
+  );
+}
+
+/**
+ * WARN before a span earns the scan-side lever refusal (client 2026-07-29: the tool
+ * "should refuse before you place the span, not after").
+ *
+ * A span across the SCREW ACCESS is a diameter through the part axis: its midpoint
+ * names the axis rather than a clock angle, and the server refuses it. Until now the
+ * operator learned that only from a 422 after both clicks were placed.
+ *
+ * This is a CAUTION, never a block, and that distinction is deliberate. The server
+ * measures against the scan's MEASURED rim centre, derived from its clock signature;
+ * the client has only the seated pose's origin. They agree closely but not exactly,
+ * so blocking on this number could refuse a span the server would have accepted —
+ * silently costing the operator a legitimate correction. Warning costs nothing and is
+ * right about the case that matters. Exposing the measured rim centre on the payload
+ * would let this become a true pre-refusal; see the plan.
+ */
+export function spanLeverCaution(
+  draft: PairDraft,
+  pose: { readonly origin: readonly number[]; readonly axis: readonly number[] } | null,
+): string | null {
+  if (!draft.span || pose === null) return null;
+  const a = draft.scanPoint;
+  const b = draft.scanPointEnd;
+  if (a === null || b === null) return null;
+  const mid = [
+    (a[0]! + b[0]!) / 2,
+    (a[1]! + b[1]!) / 2,
+    (a[2]! + b[2]!) / 2,
+  ];
+  const radius = inPlaneRadius(mid, pose.origin, pose.axis);
+  if (radius >= MIN_CLOCK_LEVER_MM) return null;
+  return (
+    `This span looks like it crosses the screw access: its midpoint sits about ` +
+    `${radius.toFixed(2)}mm from the cap's centre, and a span whose midpoint is ` +
+    `inside ${MIN_CLOCK_LEVER_MM}mm names the AXIS rather than a clock angle — the ` +
+    `server will refuse it. Undo one end and span a coded trench along its own ` +
+    `radius instead.`
+  );
+}

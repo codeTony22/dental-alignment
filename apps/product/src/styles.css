@@ -3391,3 +3391,18 @@ button.package-files__link:hover {
 .decode-dialog--narrow {
   max-width: 560px;
 }
+
+/* The pre-flight span caution: amber, like every other "look at this before you
+   commit" on this surface — never the refusal red, because nothing has been refused
+   and the operator may still be right. */
+.adjust-pairs__caution {
+  grid-column: 1 / -1;
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-amber);
+  background: var(--color-amber-bg);
+  border-left: 3px solid var(--color-amber-border);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}

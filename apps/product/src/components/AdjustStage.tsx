@@ -65,6 +65,7 @@ import {
   queueSummary,
   reasonCountWords,
   reworkWords,
+  spanLeverCaution,
   withPick,
   type AdjustQueueEntry,
   type AdjustToolId,
@@ -117,6 +118,9 @@ export interface AdjustStageViewProps {
   readonly onReconfirm: () => void;
   readonly reconfirmSaving: boolean;
   readonly reconfirmError: string | null;
+  /** The seated pose, for the pre-flight span caution (client 2026-07-29). Null until
+   *  a payload has landed; the caution simply stays quiet then. */
+  readonly pose?: { readonly origin: readonly number[]; readonly axis: readonly number[] } | null;
   /** Which tooth's gate reasons the dialog is showing, if any (client 2026-07-29).
    *  OPTIONAL with a null default: static callers predate the dialog, and a bare
    *  `!== null` check let an omitted prop (undefined) open an empty dialog — caught by
@@ -186,6 +190,7 @@ export function AdjustStageView({
   onReconfirm,
   reconfirmSaving,
   reconfirmError,
+  pose = null,
   reasonsFor = null,
   onOpenReasons = () => undefined,
   onCloseReasons = () => undefined,
@@ -460,6 +465,15 @@ export function AdjustStageView({
                             </li>
                           ))}
                         </ol>
+                        {spanLeverCaution(draft, pose) !== null && (
+                          <p
+                            data-role="span-caution"
+                            role="status"
+                            className="adjust-pairs__caution"
+                          >
+                            {spanLeverCaution(draft, pose)}
+                          </p>
+                        )}
                         <button
                           type="button"
                           data-role="remove-pair"
@@ -538,6 +552,8 @@ export function AdjustStageView({
               <p className="run-refusal__detail">{refusal}</p>
               <p className="run-refusal__next">
                 Nothing changed — the fit on screen is the one that passed the gates.
+                Your marks are still placed: undo just the one the message names and
+                re-place it, rather than starting the pair again.
               </p>
             </div>
           )}
@@ -1027,6 +1043,7 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       onReconfirm={handleReconfirm}
       reconfirmSaving={reconfirmSaving}
       reconfirmError={reconfirmError}
+      pose={payload?.pose ?? null}
       reasonsFor={reasonsFor}
       onOpenReasons={setReasonsFor}
       onCloseReasons={() => setReasonsFor(null)}
