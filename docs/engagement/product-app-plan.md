@@ -328,3 +328,36 @@ squeezed in beside a UI change.
 Item 3 (the auto-mark tool) reduces how much this matters: points proposed from
 `PartFeature.defines_rotation` carry a valid lever arm BY CONSTRUCTION, so the operator
 never places the bad span in the first place. The guard still belongs on the manual path.
+
+**G. Two battery fragilities the 2026-07-29 slow lane exposed (5 failed, 212 passed).**
+
+Neither was a code regression. Both will recur, so they are written down rather than
+re-diagnosed next time.
+
+**G1 — the warmed fixture lives in a directory the running product writes to.**
+`test_adjust.py` pins `WARMED_RUN = reports/product/295811960-neodent-gm/runs/
+20260728-224101-47bb54` and copies it per test, which correctly stops tests mutating
+it. What it does NOT stop is the APP mutating it: demoing Adjust on that case rewrites
+the site record, the cap STL and the manifest in place — that is what rework IS. A
+session spent driving fit-by-points through the UI left `rotated -5.3°` in the record,
+so four tests asserting "reset restores the PIPELINE's own certified pose" compared the
+restored pose against a base that already carried an operator rotation, and failed.
+
+Restoring it needed the product's own reset (`rotate_site(..., reset=True)`) because
+the directory is UNTRACKED — git could not put it back. After that, 7/7 pass.
+
+The repo's own rule says landed run dirs are immutable; the adjust tools are the
+sanctioned exception, which is exactly why a battery must not point at one that is
+also demo-able. Fix: give the slow lane its OWN warmed run — copied once into
+`tests/data/` and tracked, or minted by a fixture — so no amount of demoing can move
+the battery's floor. Until then, anyone who demos Adjust on 295811960 tooth 29 must
+expect four red tests and reset the site before believing them.
+
+**G2 — a wall-clock assertion under an 8-way parallel lane.**
+`test_a_cold_search_is_cheap_enough_to_answer_at_selection_time` asserts the ceiling
+search finishes in under 3.0s ("~1.2s worst case measured"). It passes alone in 1.97s
+and failed inside the parallel lane while the BFF suite, the product suite and a
+browser shared the box. The intent is right — the number is asked while an operator
+waits on a dropdown — but a wall-clock bound measures the MACHINE, not the code, and
+`-n auto` guarantees the machine is busy. Fix: measure work rather than seconds (cache
+hits, catalog reads), or mark it serial, or widen the bound and say it is a smoke test.
