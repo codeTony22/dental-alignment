@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StaticRouter } from "react-router-dom";
 import { ADDABLE_CARDS, CheckoutView, SAVED_CARDS, nextAddableCard } from "./CheckoutPage";
-import { caseSessionDetail } from "../testing/fixtures";
+import { assuranceView, caseSessionDetail, invoiceView } from "../testing/fixtures";
 import type { CaseSessionDetail } from "../api/client";
 
 function confirmedDetail(): CaseSessionDetail {
@@ -69,7 +69,9 @@ describe("the mock checkout", () => {
     expect(html).toContain("•••• •••• •••• 4242");
     expect(html).toContain("MOCK");
     expect(html).toContain('data-role="checkout-pay"');
-    expect(html).toContain("PLACEHOLDER — pricing not yet defined");
+    // Retargeted 2026-07-31 (gap invoice-on-the-surfaces): with no invoice fetched
+    // the amount is still unstated — the checkout never invents one.
+    expect(html).toContain("pricing not yet defined");
   });
 
   it("has NO editable card field — when idle there is no input AT ALL", () => {
@@ -206,6 +208,125 @@ describe("adding a card (client 2026-07-31: 'needs to be better')", () => {
     });
     expect(html).toContain('data-role="add-card-exhausted"');
     expect(html).not.toContain('data-role="add-card-open"');
+  });
+});
+
+describe("the metrics the money is being asked for (gap pay-modal-metric-signoff)", () => {
+  it("restates every site — identity, deviation and the server's own chip words", () => {
+    const html = view(confirmedDetail(), { assurance: assuranceView() });
+    expect(html).toContain('data-role="signoff-metrics"');
+    expect(html).toContain('data-role="signoff-row" data-tooth="30"');
+    expect(html).toContain('data-role="signoff-row" data-tooth="19"');
+    expect(html).toContain("0.43 mm");
+    expect(html).toContain("flagged");
+    expect(html).toContain("attention");
+  });
+
+  it("keeps the BFF's worst-first order — this app never re-sorts evidence", () => {
+    const html = view(confirmedDetail(), { assurance: assuranceView() });
+    expect(html.indexOf('data-tooth="30"')).toBeLessThan(
+      html.indexOf('data-tooth="19"'),
+    );
+  });
+
+  it("NEVER renders a tolerance verdict of its own", () => {
+    // the design's chip read "in tolerance" off a client-side comparison; every band
+    // comparison in this product is the acceptance catalog's, made server-side
+    const html = view(confirmedDetail(), { assurance: assuranceView() });
+    expect(html).not.toContain("in tolerance");
+    expect(html).not.toContain("Case tolerance");
+  });
+
+  it("states the case policy from server-attributed choices", () => {
+    const html = view(confirmedDetail(), { assurance: assuranceView() });
+    expect(html).toContain('data-role="case-policy"');
+    expect(html).toContain("relief 0.20 mm");
+    expect(html).toContain("standard turnaround");
+  });
+
+  it("shows no metric strip at all when the assurance has not been handed in", () => {
+    expect(view(confirmedDetail())).not.toContain('data-role="signoff-metrics"');
+  });
+});
+
+describe("the sealed responsibility sentence, echoed read-only", () => {
+  it("restates what was signed — with NO checkbox to sign it again", () => {
+    const html = view(confirmedDetail(), { invoice: invoiceView() });
+    expect(html).toContain('data-role="sealed-attestation"');
+    expect(html).toContain("clinical responsibility");
+    expect(html).toContain("2 constructions");
+    // the design moves the signature into this modal; the product does NOT — it is
+    // bound to confirm, where the evidence hash covers it
+    expect(html).not.toContain('type="checkbox"');
+  });
+
+  it("resolves the version the confirmation actually sealed", () => {
+    const html = view(confirmedDetail(), { invoice: invoiceView() });
+    expect(html).toContain('href="/terms/placeholder-v0"');
+  });
+
+  it("says nothing about a signature on a case that has none", () => {
+    expect(view(caseSessionDetail(), { invoice: invoiceView() })).not.toContain(
+      'data-role="sealed-attestation"',
+    );
+  });
+});
+
+describe("the order summary (gap invoice-on-the-surfaces)", () => {
+  it("renders the served lines and the SERVER's total", () => {
+    const html = view(confirmedDetail(), { invoice: invoiceView() });
+    expect(html).toContain('data-role="invoice-line" data-key="released_sites"');
+    expect(html).toContain("1 acknowledged exception, at half rate");
+    expect(html).toContain('data-role="checkout-total"');
+    expect(html).toContain("$48.00");
+  });
+
+  it("the total is the server's, not the sum of what is on screen", () => {
+    const html = view(confirmedDetail(), {
+      invoice: invoiceView({ total_cents: 12_345 }),
+    });
+    expect(html).toContain("$123.45");
+  });
+
+  it("KEEPS the placeholder banner and prints the rate note verbatim", () => {
+    const html = view(confirmedDetail(), { invoice: invoiceView() });
+    expect(html).toContain('data-role="invoice-placeholder"');
+    expect(html).toContain("PLACEHOLDER RATES");
+    expect(html).toContain("$32 per site standard, $48 rush, exceptions at half");
+    expect(html).toContain("are not a quotation");
+  });
+
+  it("states the turnaround the rates key on", () => {
+    const html = view(confirmedDetail(), { invoice: invoiceView() });
+    expect(html).toContain('data-role="invoice-turnaround"');
+    expect(html).toContain("Standard turnaround — the standing default.");
+  });
+
+  it("prices the pay button (design payLabel 1481-1482)", () => {
+    const html = view(confirmedDetail(), { invoice: invoiceView() });
+    expect(html).toContain("Pay $48.00 (demo)");
+  });
+
+  it("an already-paid case shows the RECEIPT, which may differ from today's price", () => {
+    const base = confirmedDetail();
+    const paid = {
+      ...base,
+      session: { ...base.session, payment_authorized: true },
+    } as CaseSessionDetail;
+    const html = view(paid, {
+      invoice: invoiceView({
+        paid: {
+          amount_cents: 6400,
+          currency: "USD",
+          rate_card_version: "placeholder-v1",
+          turnaround: "rush",
+          at: "2026-07-31T09:00:00+00:00",
+        },
+      }),
+    });
+    expect(html).toContain('data-role="invoice-receipt"');
+    expect(html).toContain("Charged $64.00");
+    expect(html).toContain("rush turnaround");
   });
 });
 

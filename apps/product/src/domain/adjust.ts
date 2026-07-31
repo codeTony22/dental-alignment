@@ -91,6 +91,27 @@ export const MIN_DIAMETER_MM = 0.05;
 export const MAX_DIAMETER_MM = 2.0;
 export const DEFAULT_DIAMETER_MM = 0.3;
 
+/**
+ * THE DIAL'S BOUNDS, SAID OUT LOUD (design review 2026-07-31). The band was carried
+ * only by the input's min/max attributes: an operator learned the ceiling by typing
+ * past it and watching the field argue back, and learned the default by never having
+ * touched it.
+ *
+ * The design's companion sentence — "the rim reads about X mm, this dial is Y off it"
+ * — is deliberately NOT ported. It reads the prototype's invented `site.diamTrue`;
+ * the product's nearest field, `SiteView.rim_agreement_mm`, measures how well the rim
+ * agreed at the seat, which is a different quantity. Synthesising the comparison
+ * client-side would be this app inventing a measurement (AM-4), so the words state
+ * only what the constants above already are, and a server field would have to be
+ * specified before the richer note can exist.
+ */
+export function diameterBandWords(): string {
+  return (
+    `The dial spans ${MIN_DIAMETER_MM.toFixed(2)}–${MAX_DIAMETER_MM.toFixed(2)} mm; ` +
+    `${DEFAULT_DIAMETER_MM.toFixed(2)} mm is the polish the run itself used.`
+  );
+}
+
 // --- the flagged-first queue -----------------------------------------------------------
 
 /** One row of Adjust's site queue. `optional` is the honest half of the plan's "clean
@@ -393,6 +414,33 @@ export function applyBlockedReason(drafts: readonly PairDraft[]): string | null 
   return null;
 }
 
+/**
+ * THE SET'S OWN OVERVIEW — how many pairs stand, and the ceiling, BEFORE it is hit
+ * (design review 2026-07-31). `MAX_PAIRS` surfaced only through `applyBlockedReason`,
+ * which speaks once the cap is already exceeded: the operator met the limit by being
+ * told to undo work they had just done. A ceiling is cheap to state in advance and
+ * expensive to discover.
+ *
+ * "One complete pair is enough" is the same fact `applyBlockedReason` refuses on,
+ * stated from the other side — the floor and the ceiling in one line.
+ */
+export function pairSetWords(drafts: readonly PairDraft[]): string {
+  const complete = drafts.filter(isComplete).length;
+  const open = drafts.length - complete;
+  if (drafts.length === 0) {
+    return (
+      `No pairs placed yet — ${MAX_PAIRS} at most, and one complete pair is enough ` +
+      `to apply.`
+    );
+  }
+  const counted = `${complete} of ${MAX_PAIRS} pairs complete`;
+  const half = open > 0 ? `, ${open} still being placed` : "";
+  if (complete >= MAX_PAIRS) {
+    return `${counted}${half} — that is the cap; remove one before placing another.`;
+  }
+  return `${counted}${half}.`;
+}
+
 // --- auto-mark: the software proposes the part half (client 2026-07-29, item 3) ------
 //
 // "We also need another tool where we automatically mark the points in the library and
@@ -524,6 +572,47 @@ export function outcomeWords(outcome: AdjustOutcomeView): string {
  * over the NEW panes before Deliver opens again. */
 export function needsReconfirm(status: SiteStatus): boolean {
   return status === "adjusted";
+}
+
+/**
+ * The same rule over the WIRE'S raw status string, with no site selected folded in.
+ *
+ * The surface carries `activeStatus` as `string | null` (it is the payload's own word,
+ * and a rung this app has not met yet must not crash a render), and the only way to
+ * reach `needsReconfirm` from there was a `as never` cast at the call site — which
+ * type-checks anything, including the omission that hid this control off a fresh
+ * outcome (design review 2026-07-31). One narrowing, in the module that owns the rule.
+ */
+export function needsReconfirmStatus(status: string | null): boolean {
+  return status !== null && needsReconfirm(status as SiteStatus);
+}
+
+/**
+ * THE OTHER WAY OUT OF A FLAG, POINTED AT — never performed here (design review
+ * 2026-07-31; the design's "accept as flagged exception" button, template 1348).
+ *
+ * Adjust offered five tools and a re-confirmation, all of which mean "rework this
+ * until it is not flagged". The product has always had a second answer — a flagged
+ * site is a legitimate shipping outcome (deliver.py's `_RESOLVED_RUNGS` carries
+ * 'flagged'), released only once the operator acknowledges THAT row on Deliver
+ * (AM-12) — and nothing on this stage said so, so the only visible exit from a flag
+ * that will not lift was to keep grinding at it.
+ *
+ * THE ACT IS NOT LIFTED HERE, deliberately. Acknowledgment is row-by-row on Deliver's
+ * own table ("a bulk yes-to-all cannot exist on this wire"), it must be made against
+ * the evidence the operator is about to sign, and an acknowledgment recorded on Adjust
+ * would survive a later rework that moved the very fit it acknowledged. `accepted` is
+ * also not a status this app may ever set (AM-4). So this is a POINTER: one sentence,
+ * no control, no status.
+ */
+export function flaggedExceptionWords(status: string | null): string | null {
+  if (status !== "flagged") return null;
+  return (
+    "Reworking is not the only way out. A flagged site can still ship, as an " +
+    "acknowledged exception: Deliver refuses to release one without an " +
+    "acknowledgment on its own row, and that row is where the act is made — " +
+    "nothing on this stage accepts it for you."
+  );
 }
 
 // --- what a rework leaves behind on the run's report (review 2026-07-28, finding E) ----

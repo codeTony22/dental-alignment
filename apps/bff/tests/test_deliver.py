@@ -25,7 +25,7 @@ import json
 import pytest
 
 from bff.config import Settings
-from bff.resources.deliver import TERMS_VERSION
+from bff.resources.deliver import CLINICAL_VERSION, TERMS_VERSION
 from bff.session import SessionStore
 
 from conftest import make_data_tree
@@ -1351,6 +1351,55 @@ class TestTheTermsResolve:
         res = client.get("/api/terms/not-a-version")
         assert res.status_code == 404
         assert TERMS_VERSION in res.json()["detail"]
+
+
+class TestTheClinicalResponsibilityStatement:
+    """THE SECOND DOCUMENT (gap ``clinical-responsibility-attestation``,
+    2026-07-31). The sealed agreement named a site count and nothing else: an
+    operator signed "all N sites" without the sentence ever saying that some of
+    those sites release only as ACKNOWLEDGED EXCEPTIONS, or that a withheld site
+    ships nothing. The clinical-responsibility statement is that missing text, and
+    it is a document — resolvable by version — rather than a sentence the browser
+    invents.
+
+    It is INCORPORATED BY THE TERMS, not signed separately: ``ConfirmationRecord``
+    carries one ``terms_version``, and a second boolean on the wire would be a
+    second act the evidence hash does not cover. Accepting the terms therefore
+    accepts this, and the terms body cites it by version so an auditor holding the
+    sealed id can reach both texts."""
+
+    def test_the_clinical_statement_resolves_by_its_own_version(self, client):
+        res = client.get(f"/api/terms/{CLINICAL_VERSION}")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["version"] == CLINICAL_VERSION
+        assert body["status"] == "placeholder"
+        # the three classes the old sentence never named
+        assert "acknowledged exception" in body["body"]
+        assert "withheld" in body["body"]
+
+    def test_the_current_terms_cite_the_clinical_statement_by_version(self, client):
+        # the incorporation must be legible in the text itself: a document that
+        # merely sits in the same dict is not part of what anyone signed
+        body = client.get("/api/terms").json()["body"]
+        assert CLINICAL_VERSION in body
+
+    def test_the_retired_terms_version_still_resolves_verbatim(self, client):
+        """Versions are ADDITIVE, never edited in place (this module's own stated
+        rule): a confirmation sealed over the old text must still be able to
+        produce the text its signer actually saw."""
+        res = client.get("/api/terms/placeholder-v1")
+        assert res.status_code == 200
+        assert res.json()["body"].startswith("PLACEHOLDER")
+
+    def test_the_bump_is_visible_in_what_a_new_confirmation_seals(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        sealed = SessionStore(product_root).load("neodent-gm").confirmation
+        assert sealed is not None
+        assert sealed.terms_version == TERMS_VERSION
+        assert sealed.terms_version != "placeholder-v1"
 
 
 class TestResettingTheWholeCase:

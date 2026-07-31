@@ -36,6 +36,7 @@ import {
   fetchArtifactBlob,
   fetchArtifacts,
   fetchAssurance,
+  fetchInvoice,
   postConfirm,
   postDeliveryReset,
   postRelease,
@@ -45,10 +46,14 @@ import {
   type AssuranceView,
   type CaseSessionDetail,
   type FetchState,
+  type InvoiceView,
 } from "../api/client";
 import {
+  ATTESTATION_PENDING_CAVEAT,
   CHECKOUT_SEAL_WORDS,
+  CLINICAL_TERMS_VERSION,
   ackRequired,
+  attestationText,
   acknowledgmentPolicyWords,
   adjustmentsWords,
   assuranceCountsWords,
@@ -58,14 +63,18 @@ import {
   evidenceSummary,
   formatBytes,
   groupArtifacts,
+  invoiceIsPlaceholder,
   isEvidenceDrift409,
   needsAcknowledgment,
+  orderLines,
+  orderTotal,
+  receiptWords,
   releaseDisclosureWords,
   releaseSteps,
   releasedClosingWords,
   sealedTermsHref,
   staleMetricsWords,
-  termsText,
+  turnaroundWords,
   withholdOffered,
   type Disposition,
   type DispositionMap,
@@ -131,11 +140,16 @@ function AdjustmentsNote({ words }: { readonly words: string }) {
  * legal language is the client's to supply. */
 function TermsAcceptance({
   siteCount,
+  invoice,
   accepted,
   disabled,
   onChange,
 }: {
   readonly siteCount: number;
+  /** The derived invoice, whose line quantities ARE the enumeration (gap
+   *  ``clinical-responsibility-attestation``) — null until it lands, and then the
+   *  sentence falls back to the site count rather than claiming zero. */
+  readonly invoice: InvoiceView | null;
   readonly accepted: boolean;
   readonly disabled: boolean;
   readonly onChange: (accepted: boolean) => void;
@@ -154,7 +168,14 @@ function TermsAcceptance({
           onChange={(event) => onChange(event.target.checked)}
         />
         <span data-role="terms-text">
-          {termsText(siteCount)}{" "}
+          {/* THE SENTENCE NAMES WHAT IS BEING RELEASED (gap
+              ``clinical-responsibility-attestation``, 2026-07-31). It used to name a
+              site count and nothing else — never the sites released under
+              acknowledgment, never the withheld — so the signature covered a state of
+              affairs the words declined to describe. Every count in it is the BFF's
+              (the invoice's own line quantities, classified by the same
+              ``_needs_acknowledgment`` predicate this confirm gate stands on). */}
+          {attestationText(invoice, siteCount)}{" "}
           {/* THE TERMS ARE A LINK (client 2026-07-30). A NEW TAB, deliberately:
               reading the agreement must never cost the operator the confirmation
               they are part-way through — and a legal document wants a URL you can
@@ -170,9 +191,26 @@ function TermsAcceptance({
             rel="noreferrer"
           >
             Read the Terms and Conditions ↗
+          </a>{" "}
+          {/* THE SECOND DOCUMENT (gap ``clinical-responsibility-attestation``). The
+              terms INCORPORATE it by version rather than asking for a second tick:
+              one signature, sealed once, with both texts resolvable from it. */}
+          <a
+            data-role="clinical-terms-link"
+            className="terms-block__link"
+            href={`/terms/${encodeURIComponent(CLINICAL_TERMS_VERSION)}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Read the Clinical Responsibility Statement ↗
           </a>
         </span>
       </label>
+      {invoice !== null && (
+        <p data-role="attestation-caveat" className="terms-block__caveat">
+          {ATTESTATION_PENDING_CAVEAT}
+        </p>
+      )}
     </div>
   );
 }
@@ -442,6 +480,10 @@ function AssuranceRow({
 export interface DeliverStageViewProps {
   readonly detail: CaseSessionDetail;
   readonly assurance: FetchState<AssuranceView>;
+  /** The derived invoice (gap ``invoice-on-the-surfaces``) — optional, because every
+   *  static test written before the money existed passes none, and a surface without
+   *  it says the amount is undefined rather than inventing one. */
+  readonly invoice?: FetchState<InvoiceView> | null;
   readonly dispositions: DispositionMap;
   readonly acknowledged: readonly number[];
   readonly expanded: readonly number[];
@@ -482,6 +524,7 @@ export interface DeliverStageViewProps {
 export function DeliverStageView({
   detail,
   assurance,
+  invoice = null,
   dispositions,
   acknowledged,
   expanded,
@@ -521,6 +564,9 @@ export function DeliverStageView({
   const forkWords = assurance.kind === "ok" ? adjustmentsWords(assurance.data) : null;
   const steps = releaseSteps(session);
   const disclosure = releaseDisclosureWords(session.release_preview);
+  // the priced document, or null — one reading, shared by the attestation sentence,
+  // the order summary and the checkout dialog behind it
+  const invoiceData = invoice?.kind === "ok" ? invoice.data : null;
   const statusOf = (tooth: number): string =>
     detail.sites.find((s) => s.tooth === tooth)?.status ?? "unknown";
   const groups = artifacts?.kind === "ok" ? groupArtifacts(artifacts.data.files) : [];
@@ -629,6 +675,7 @@ export function DeliverStageView({
                           it gates. */}
                       <TermsAcceptance
                         siteCount={detail.sites.length}
+                        invoice={invoiceData}
                         accepted={termsAccepted}
                         disabled={phase !== "idle"}
                         onChange={onTermsChange}
@@ -647,13 +694,92 @@ export function DeliverStageView({
                   {step.id === "paid" && step.state === "current" && (
                     <div className="release-step__actions">
                       {/* THE CHECKOUT SCREEN (plan §10-A: "a checkout screen and
-                          a return"). Pricing is a PLACEHOLDER on purpose — this
-                          codebase must never render a number a lab could mistake
-                          for a real quote. */}
+                          a return"). THE DERIVED INVOICE LANDS HERE (gap
+                          ``invoice-on-the-surfaces``, 2026-07-31): the lines the BFF
+                          priced, then ITS total — `total_cents` rendered, never the
+                          sum of what is on screen, because an amount the browser
+                          arrived at is the money-shaped cousin of a claimed verdict.
+                          The placeholder banner stays while the server calls the
+                          rates a placeholder: these are the design prototype's
+                          figures, not the client's price list, and a total that
+                          reads like a quotation when it is not is worse than none. */}
                       <div data-role="checkout-screen" className="checkout-screen">
-                        <p data-role="checkout-price" className="checkout-screen__price">
-                          Amount due: <strong>PLACEHOLDER — pricing not yet defined</strong>
-                        </p>
+                        {invoice !== null && invoice.kind === "ok" ? (
+                          <div className="checkout-screen__invoice">
+                            <dl className="checkout-order">
+                              {orderLines(invoice.data).map((line) => (
+                                <div
+                                  key={line.key}
+                                  data-role="invoice-line"
+                                  data-key={line.key}
+                                  className={`checkout-order__row${
+                                    line.billed ? "" : " checkout-order__row--unbilled"
+                                  }`}
+                                >
+                                  <dt>
+                                    {line.label}
+                                    {line.unit !== null && (
+                                      <span className="checkout-order__unit">
+                                        {" "}
+                                        · {line.unit}
+                                      </span>
+                                    )}
+                                  </dt>
+                                  <dd>{line.amount}</dd>
+                                </div>
+                              ))}
+                              <div className="checkout-order__row checkout-order__row--total">
+                                <dt>Amount due</dt>
+                                <dd data-role="checkout-price">
+                                  <strong data-role="checkout-total">
+                                    {orderTotal(invoice.data)}
+                                  </strong>
+                                </dd>
+                              </div>
+                            </dl>
+                            <p
+                              data-role="invoice-turnaround"
+                              className="checkout-order__note"
+                            >
+                              {turnaroundWords(invoice.data)}
+                            </p>
+                            {invoiceIsPlaceholder(invoice.data) && (
+                              <p
+                                data-role="invoice-placeholder"
+                                className="checkout-order__placeholder-banner"
+                              >
+                                {invoice.data.note}
+                              </p>
+                            )}
+                            {receiptWords(invoice.data.paid) !== null && (
+                              <p
+                                data-role="invoice-receipt"
+                                className="checkout-order__receipt"
+                              >
+                                {receiptWords(invoice.data.paid)}
+                              </p>
+                            )}
+                          </div>
+                        ) : invoice !== null && invoice.kind === "error" ? (
+                          /* a refusal in the BFF's own words: a blank where money
+                             goes reads as "free", which is the one thing it is not */
+                          <div
+                            data-role="invoice-error"
+                            role="alert"
+                            className="panel__error"
+                          >
+                            {invoice.detail}
+                          </div>
+                        ) : (
+                          <p data-role="checkout-price" className="checkout-screen__price">
+                            Amount due:{" "}
+                            <strong>
+                              {invoice !== null
+                                ? "pricing the case…"
+                                : "pricing not yet defined"}
+                            </strong>
+                          </p>
+                        )}
                         {/* THE CHECKOUT DIALOG (client 2026-07-30, twice): first
                             "no way … to add credit card or saved credit card
                             mocks" — so an inline stub became a real checkout
@@ -1025,6 +1151,7 @@ export function DeliverStageView({
                     from, so it needs the same checkbox the stage does */}
                 <TermsAcceptance
                   siteCount={detail.sites.length}
+                  invoice={invoiceData}
                   accepted={termsAccepted}
                   disabled={phase !== "idle"}
                   onChange={onTermsChange}
@@ -1061,6 +1188,9 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
   const caseId = detail.case.id;
   const mountedRef = useRef(true);
   const [assurance, setAssurance] = useState<FetchState<AssuranceView>>({
+    kind: "loading",
+  });
+  const [invoice, setInvoice] = useState<FetchState<InvoiceView>>({
     kind: "loading",
   });
   const [dispositions, setDispositions] = useState<DispositionMap>({});
@@ -1118,6 +1248,21 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
       if (mountedRef.current) setAssurance(result);
     });
   }, [caseId, runState]);
+
+  /* THE PRICE, RE-READ WHENEVER WHAT IS BEING PRICED MOVES (gap
+     ``invoice-on-the-surfaces``). `derive_invoice` classifies sites against the
+     STANDING CONFIRMATION's dispositions, so a confirmation landing (or being
+     withdrawn) changes both the amount AND the attestation sentence's counts; the
+     payment record adds the receipt. Keying on the two records' timestamps re-reads
+     on exactly those transitions and on nothing else. */
+  const confirmedAt = detail.session.confirmation?.at ?? null;
+  const paidAt = detail.session.payment?.at ?? null;
+  useEffect(() => {
+    setInvoice({ kind: "loading" });
+    void fetchInvoice(caseId).then((result) => {
+      if (mountedRef.current) setInvoice(result);
+    });
+  }, [caseId, runState, confirmedAt, paidAt]);
 
   // once released, the gated list is fetched — the release record is the gate
   const released = detail.session.released;
@@ -1265,6 +1410,7 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
     <DeliverStageView
       detail={detail}
       assurance={assurance}
+      invoice={invoice}
       dispositions={dispositions}
       acknowledged={acknowledged}
       expanded={expanded}
@@ -1288,6 +1434,11 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
         checkoutOpen ? (
           <CheckoutDialog
             detail={detail}
+            // HANDED DOWN, never re-fetched: the dialog restates the very numbers
+            // this stage is rendering behind it (gap ``pay-modal-metric-signoff``),
+            // and two fetches of the same document are two answers waiting to differ
+            assurance={assurance.kind === "ok" ? assurance.data : null}
+            invoice={invoice.kind === "ok" ? invoice.data : null}
             onDetail={onDetail}
             onClose={() => setCheckoutOpen(false)}
           />

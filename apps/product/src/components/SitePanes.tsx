@@ -67,6 +67,49 @@ import {
 /** The pane ids — pane 1/2/3 in the module doc's order. */
 export type PaneId = "library" | "scan" | "union";
 
+/** Pane 1, 2, 3 — the order the operator counts in, and the order the toolbox's
+ *  prompts cite ("Library part · pane 1", "Scanned cap · pane 2 or 3"). */
+export const PANE_ORDER: readonly PaneId[] = ["library", "scan", "union"];
+
+/** ONE source for each pane's heading, so the number in the switcher and the number in
+ *  the heading can never disagree — they are the operator's whole address for a pane. */
+export const PANE_TITLES: Readonly<Record<PaneId, string>> = {
+  library: "1 · Library part",
+  scan: "2 · Scanned cap",
+  union: "3 · Union — coloured by deviation",
+};
+
+/**
+ * Pane 2's caption. The TOOTH leads it (client 2026-07-30): the triangle count says how
+ * much scan is on screen but not WHOSE, and the only other place the tooth number
+ * appears is the queue rail — which scrolls, so on a long case the operator could have
+ * three panes up and nothing on any of them naming the site.
+ */
+export function scanPaneCaption(
+  tooth: number | null,
+  triangles: number,
+  radiusMm: number,
+): string {
+  const measured = `${triangles.toLocaleString()} triangles within ${radiusMm} mm of the site's centre`;
+  return tooth === null ? measured : `Tooth ${tooth} · ${measured}`;
+}
+
+/**
+ * Pane 1's caption. The variant CODE alone is not an identity — the same 5020 means a
+ * different part under a different implant system, and the system is already on the
+ * detail that drives the variant catalog, so saying it costs no fetch (client
+ * 2026-07-30). Kept to one short segment: captions are single-line by design, and a
+ * wrapping caption once stole height from all three stages at once.
+ */
+export function libraryPaneCaption(
+  variantLabel: string | null,
+  systemLabel: string | null,
+): string | null {
+  if (variantLabel === null) return null;
+  const system = systemLabel?.trim() ?? "";
+  return system === "" ? variantLabel : `${variantLabel} · ${system}`;
+}
+
 /** One controllable layer inside a pane — the demo dialog's eye + opacity slider.
  * `swatch` is the layer's 3D colour (null = the deviation ramp, which has the
  * colorbar instead); `available` is false while the geometry has not arrived. */
@@ -267,6 +310,16 @@ interface PaneShellProps {
   readonly hud?: ReactNode;
   /** A clickable bottom strip (the union pane's retry) — the invite tone. */
   readonly invite?: ReactNode;
+  /** THE ARMED TELL, ON THE GLASS (client 2026-07-30). The toolbox already named the
+   *  pane a click belongs to ("Library part · pane 1") and flipped its button to
+   *  "Armed" — but it said so UNDER the panes, so the operator read the instruction in
+   *  one place and performed it in another. This is the same sentence where the click
+   *  goes. It is a MESSAGE, never a control: `verify-panel__hint` is pointer-events:none
+   *  because a notice overlay printed over this stage once swallowed exactly the click it
+   *  was inviting (review 2026-07-26, styles.css). */
+  readonly hint?: string | null;
+  /** Lift the hint clear of the colorbar strip — the union pane's bottom is spoken for. */
+  readonly hintRaised?: boolean;
   /** The demo's per-pane maximize (parity fix): true while this pane IS the stage. */
   readonly maximized?: boolean;
   /** Omitted (static tests that predate it), the heading renders without the control. */
@@ -292,6 +345,8 @@ function PaneShell({
   viewer,
   hud,
   invite,
+  hint = null,
+  hintRaised = false,
   maximized = false,
   onToggleMaximized = null,
   onResetView = null,
@@ -358,6 +413,14 @@ function PaneShell({
           </div>
         )}
         {invite}
+        {!busy && hint !== null && hint !== "" && (
+          <p
+            data-role="pane-hint"
+            className={`verify-panel__hint${hintRaised ? " verify-panel__hint--raised" : ""}`}
+          >
+            {hint}
+          </p>
+        )}
       </div>
     </section>
   );
@@ -372,6 +435,10 @@ export interface PaneNoticesShape {
 
 export interface SitePanesViewProps {
   readonly variantLabel: string | null;
+  /** The implant system behind that variant code — see libraryPaneCaption. OPTIONAL:
+   *  both stages call this view, and one that only compiled for the caller who happened
+   *  to be updated first would give back exactly what extracting these panes bought. */
+  readonly systemLabel?: string | null;
   readonly notices: PaneNoticesShape;
   readonly partBusy: boolean;
   readonly scanBusy: boolean;
@@ -391,6 +458,9 @@ export interface SitePanesViewProps {
   readonly unionViewer: ReactNode;
   /** A clickable bottom strip on the union pane (a retry) — the invite tone. */
   readonly unionInvite?: ReactNode;
+  /** WHAT A CLICK ON THIS PANE WILL DO, said on the pane (see PaneShellProps.hint).
+   *  Per-pane and optional throughout: Declare arms nothing and passes none. */
+  readonly hints?: Partial<Record<PaneId, string | null>>;
   readonly layers?: PaneLayers;
   readonly onToggleLayer?: (pane: PaneId, layerId: string) => void;
   readonly onChangeOpacity?: (pane: PaneId, layerId: string, opacity: number) => void;
@@ -411,6 +481,7 @@ export interface SitePanesViewProps {
  * slots are props precisely so WebGL never enters a test). */
 export function SitePanesView({
   variantLabel,
+  systemLabel = null,
   notices,
   partBusy,
   scanBusy,
@@ -423,6 +494,7 @@ export function SitePanesView({
   scanViewer,
   unionViewer,
   unionInvite,
+  hints = {},
   layers,
   onToggleLayer = () => undefined,
   onChangeOpacity = () => undefined,
@@ -448,10 +520,45 @@ export function SitePanesView({
   const showPane = (pane: PaneId): boolean => maximizedId === null || maximizedId === pane;
   const maximizeFor = (pane: PaneId): (() => void) | null =>
     onToggleMaximized !== undefined ? () => onToggleMaximized(pane) : null;
+  /* THE SWITCHER (client 2026-07-30). Maximizing was built; MOVING was not — going from
+     a maximized pane 1 to a maximized pane 3 meant un-maximize, hunt for the other
+     pane's ⤢, re-maximize. onToggleMaximized already switches directly when handed a
+     different pane, so the whole fix is three buttons on the existing setter. It shows
+     only while a pane IS the stage: with all three on screen there is nothing to
+     switch between. */
+  const switching = maximizedId !== null && onToggleMaximized !== undefined;
   return (
     <div data-role="declare-panes" className="verify-panels">
-      {onToggleLinked !== undefined && (
+      {(onToggleLinked !== undefined || switching) && (
         <div className="verify-panels__toolbar">
+          {switching && (
+            <div
+              className="verify-panels__switch"
+              role="group"
+              aria-label="Which pane is the stage"
+            >
+              {PANE_ORDER.map((pane, index) => (
+                <button
+                  key={pane}
+                  type="button"
+                  data-role="pane-switch"
+                  data-pane={pane}
+                  aria-pressed={maximizedId === pane}
+                  className={`button button--ghost button--small${
+                    maximizedId === pane ? " button--active" : ""
+                  }`}
+                  title={
+                    maximizedId === pane
+                      ? `${PANE_TITLES[pane]} — back to all three panels`
+                      : `Show ${PANE_TITLES[pane]} on the whole stage`
+                  }
+                  onClick={() => onToggleMaximized?.(pane)}
+                >
+                  {index + 1}
+                </button>
+              ))}
+            </div>
+          )}
           {maximizedId !== null && onToggleMaximized !== undefined && (
             <button
               type="button"
@@ -461,20 +568,22 @@ export function SitePanesView({
               ⤡ show all three
             </button>
           )}
-          <button
-            type="button"
-            className={`button button--ghost button--small${linked ? " button--active" : ""}`}
-            aria-pressed={linked}
-            disabled={maximizedId !== null}
-            onClick={onToggleLinked}
-            title={
-              maximizedId !== null
-                ? "Linking needs more than one panel on screen"
-                : "Rotate all three panels together (same angles and zoom, each around its own content)"
-            }
-          >
-            {linked ? "⛓ views linked" : "⛓ link views"}
-          </button>
+          {onToggleLinked !== undefined && (
+            <button
+              type="button"
+              className={`button button--ghost button--small${linked ? " button--active" : ""}`}
+              aria-pressed={linked}
+              disabled={maximizedId !== null}
+              onClick={onToggleLinked}
+              title={
+                maximizedId !== null
+                  ? "Linking needs more than one panel on screen"
+                  : "Rotate all three panels together (same angles and zoom, each around its own content)"
+              }
+            >
+              {linked ? "⛓ views linked" : "⛓ link views"}
+            </button>
+          )}
         </div>
       )}
       <div
@@ -485,13 +594,14 @@ export function SitePanesView({
         {showPane("library") && (
           <PaneShell
             role="pane-library"
-            title="1 · Library part"
-            caption={variantLabel}
+            title={PANE_TITLES.library}
+            caption={libraryPaneCaption(variantLabel, systemLabel)}
             notice={notices.part}
             busy={partBusy}
             busyMessage="Loading the library part…"
             viewer={libraryViewer}
             hud={hudFor("library")}
+            hint={hints.library ?? null}
             maximized={maximizedId === "library"}
             onToggleMaximized={maximizeFor("library")}
             onResetView={onResetView === null ? null : () => onResetView("library")}
@@ -500,13 +610,14 @@ export function SitePanesView({
         {showPane("scan") && (
           <PaneShell
             role="pane-scan"
-            title="2 · Scanned cap"
+            title={PANE_TITLES.scan}
             caption={scanCaption}
             notice={notices.scan}
             busy={scanBusy}
             busyMessage="Loading the scan…"
             viewer={scanViewer}
             hud={hudFor("scan")}
+            hint={hints.scan ?? null}
             maximized={maximizedId === "scan"}
             onToggleMaximized={maximizeFor("scan")}
             onResetView={onResetView === null ? null : () => onResetView("scan")}
@@ -515,7 +626,7 @@ export function SitePanesView({
         {showPane("union") && (
           <PaneShell
             role="pane-union"
-            title="3 · Union — coloured by deviation"
+            title={PANE_TITLES.union}
             caption={unionCaption}
             notice={notices.union}
             busy={unionBusy}
@@ -534,6 +645,10 @@ export function SitePanesView({
               </>
             }
             invite={unionInvite}
+            hint={hints.union ?? null}
+            /* the colorbar owns this pane's bottom strip whenever a payload is on
+               screen — the hint sits above it rather than under it */
+            hintRaised={payload !== null}
             maximized={maximizedId === "union"}
             onToggleMaximized={maximizeFor("union")}
             onResetView={onResetView === null ? null : () => onResetView("union")}
@@ -605,6 +720,16 @@ export type PanePick = (point: [number, number, number]) => void;
 export interface SitePaneSceneOptions {
   readonly markers?: Partial<Record<PaneId, readonly VerifyMarker[]>>;
   readonly onPick?: Partial<Record<PaneId, PanePick | null>>;
+  /**
+   * WHICH PANES ARE WAITING FOR A CLICK — the crosshair cursor (client 2026-07-30).
+   *
+   * Separate from `onPick` on purpose: Adjust installs one pick router on all three
+   * panes for the whole stage and decides INSIDE it whether the click means anything, so
+   * "has a listener" and "wants a click" are different facts. Reading the cursor off the
+   * listener would arm all three panes for the entire stage, which is exactly the lie
+   * this control exists to stop telling. Omitted, no pane claims to be armed.
+   */
+  readonly armed?: Partial<Record<PaneId, boolean>>;
 }
 
 export function useSitePaneScene(
@@ -819,7 +944,7 @@ export function useSitePaneScene(
     scanEmpty: scanCrop !== null && scanCrop.length === 0,
     scanCaption:
       scanCrop !== null && scanCrop.length > 0
-        ? `${triangleCount(scanCrop).toLocaleString()} triangles within ${CAP_REGION_RADIUS_MM} mm of the site's centre`
+        ? scanPaneCaption(site?.tooth ?? null, triangleCount(scanCrop), CAP_REGION_RADIUS_MM)
         : null,
     layers,
     onToggleLayer,
@@ -847,6 +972,7 @@ export function useSitePaneScene(
         linkGroup={linkGroup}
         markers={options.markers?.library}
         onPick={options.onPick?.library ?? null}
+        armed={options.armed?.library ?? false}
         ariaLabel="The declared library part"
       />
     ),
@@ -865,6 +991,7 @@ export function useSitePaneScene(
         linkGroup={linkGroup}
         markers={options.markers?.scan}
         onPick={options.onPick?.scan ?? null}
+        armed={options.armed?.scan ?? false}
         ariaLabel="The scanned cap region"
       />
     ),
@@ -891,6 +1018,7 @@ export function useSitePaneScene(
         linkGroup={linkGroup}
         markers={options.markers?.union}
         onPick={options.onPick?.union ?? null}
+        armed={options.armed?.union ?? false}
         ariaLabel="The scan and the previewed cap overlaid, coloured by deviation"
       />
     ),

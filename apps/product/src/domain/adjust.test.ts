@@ -12,7 +12,10 @@ import type {
 } from "../api/client";
 import {
   ADJUST_TOOLS,
+  DEFAULT_DIAMETER_MM,
+  MAX_DIAMETER_MM,
   MAX_PAIRS,
+  MIN_DIAMETER_MM,
   adjustPaneNotices,
   adjustQueue,
   adjustUnionCaption,
@@ -21,11 +24,15 @@ import {
   autoMarkDrafts,
   autoMarkSourceLabel,
   autoMarkSummary,
+  diameterBandWords,
+  flaggedExceptionWords,
   gateActions,
   isComplete,
   landmarkLabel,
   needsReconfirm,
+  needsReconfirmStatus,
   newPairDraft,
+  pairSetWords,
   observationWords,
   outcomeWords,
   pairBody,
@@ -586,5 +593,85 @@ describe("spanLeverCaution — warn before the span earns a 422", () => {
 
   it("says nothing when no pose is known — it never guesses at the reference", () => {
     expect(spanLeverCaution(span([2, 0, 0], [-2, 0, 0]), null)).toBeNull();
+  });
+});
+
+describe("needsReconfirmStatus — the predicate over the WIRE'S raw status", () => {
+  it("is true for the adjusted rung and false for every other one", () => {
+    expect(needsReconfirmStatus("adjusted")).toBe(true);
+    for (const other of ["detected", "declared", "previewed", "ready", "flagged"]) {
+      expect(needsReconfirmStatus(other)).toBe(false);
+    }
+  });
+
+  it("is false with no site selected — nothing to re-confirm", () => {
+    expect(needsReconfirmStatus(null)).toBe(false);
+  });
+
+  it("agrees with needsReconfirm, which stays the one rule", () => {
+    expect(needsReconfirmStatus("adjusted")).toBe(needsReconfirm("adjusted"));
+  });
+});
+
+describe("the best-fit dial's own bounds, in words", () => {
+  it("names the band and the default the run itself used", () => {
+    const words = diameterBandWords();
+    expect(words).toContain(MIN_DIAMETER_MM.toFixed(2));
+    expect(words).toContain(MAX_DIAMETER_MM.toFixed(2));
+    expect(words).toContain(DEFAULT_DIAMETER_MM.toFixed(2));
+  });
+
+  it("claims nothing about THIS site's rim — that number is not on this payload", () => {
+    // the design's pre-run note reads its fixture's `diamTrue`; the product's
+    // `rim_agreement_mm` is a different quantity (how well the rim agreed at the
+    // seat), so no sentence here may compare the dial to it
+    expect(diameterBandWords()).not.toMatch(/rim/i);
+  });
+});
+
+describe("the pair set's own overview — the cap, before it is exceeded", () => {
+  const complete = (id: string) =>
+    withPick(withPick(newPairDraft(id, false), "part", [1, 0, 1]), "scan", [5, 5, 5]);
+
+  it("states the cap before a single pair exists", () => {
+    const words = pairSetWords([]);
+    expect(words).toContain(`${MAX_PAIRS}`);
+    expect(words).toContain("one complete pair is enough");
+  });
+
+  it("counts the complete ones against the cap, and names the half-built ones", () => {
+    const words = pairSetWords([complete("a"), newPairDraft("b", true)]);
+    expect(words).toContain(`1 of ${MAX_PAIRS} pairs complete`);
+    expect(words).toContain("1 still being placed");
+  });
+
+  it("at the cap it says so — the operator learns the ceiling before Apply refuses", () => {
+    const full = Array.from({ length: MAX_PAIRS }, (_, i) => complete(`p${i}`));
+    const words = pairSetWords(full);
+    expect(words).toContain(`${MAX_PAIRS} of ${MAX_PAIRS} pairs complete`);
+    expect(words).toContain("remove one before placing another");
+  });
+});
+
+describe("the flagged-exception pointer (the act lives on Deliver's row)", () => {
+  it("says a flagged site can still ship, and where the act is made", () => {
+    const words = flaggedExceptionWords("flagged");
+    expect(words).not.toBeNull();
+    expect(words).toContain("exception");
+    expect(words).toContain("Deliver");
+  });
+
+  it("promises no acceptance HERE — this stage sets no status", () => {
+    // AM-4 / the no-status-fields doctrine: `accepted` may never be client-set, and
+    // the sentence must not imply that clicking anything on Adjust does it
+    const words = flaggedExceptionWords("flagged")!;
+    expect(words).toContain("nothing on this stage accepts it");
+  });
+
+  it("says nothing on a site that is not flagged, or with none selected", () => {
+    for (const other of ["ready", "adjusted", "previewed", "declared", "detected"]) {
+      expect(flaggedExceptionWords(other)).toBeNull();
+    }
+    expect(flaggedExceptionWords(null)).toBeNull();
   });
 });

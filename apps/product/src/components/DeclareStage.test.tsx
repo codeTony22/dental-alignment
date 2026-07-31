@@ -86,6 +86,49 @@ describe("the site queue (left) — server statuses, never local ones", () => {
       /data-role="queue-site"[^>]*aria-pressed="true"[^>]*data-tooth="30"/,
     );
   });
+
+  // gap `declare-queue-header`: Declare's queue had a bare title and went straight to
+  // rows, while Adjust's carried its counts — progress mid-declaration was invisible.
+  it("the queue heads with how far through the declaration the operator is", () => {
+    const html = view();
+    expect(html).toContain('data-role="queue-summary"');
+    expect(html).toContain("0 of 2 sites reviewed");
+  });
+
+  it("an empty queue heads with nothing to review, never '0 of 0'", () => {
+    const html = view({ detail: { ...detail, sites: [] } });
+    expect(html).not.toContain("0 of 0");
+    expect(html).toContain('data-role="declare-empty"');
+  });
+
+  // gap `queue-row-state-sentence`: the rows printed the wire's ladder word and no
+  // measured number at all.
+  it("each row states what the site is waiting for, not just the wire's word", () => {
+    const html = view();
+    expect(html).toMatch(/data-role="queue-state"[^>]*>[^<]*preview/i);
+    expect(html).toContain("Awaiting your declaration");
+  });
+
+  it("pre-run the row SAYS no run has measured the fit — never a dash reading as zero", () => {
+    const html = view({
+      detail: {
+        ...detail,
+        sites: [siteView({ tooth: 19, status: "ready", declared_variant: "5020" })],
+      },
+    });
+    expect(html).toContain("no run has measured");
+  });
+
+  it("with the run's rows in hand the number is the RUN's, read from its own row", () => {
+    const html = view({
+      detail: {
+        ...detail,
+        sites: [siteView({ tooth: 19, status: "flagged", declared_variant: "5020" })],
+      },
+      runRows: [{ tooth: 19, deviation_rms_mm: 0.184 }],
+    });
+    expect(html).toContain("0.184 mm");
+  });
 });
 
 describe("the system bar (top) — the effective system says WHICH it is", () => {
@@ -157,6 +200,46 @@ describe("variant cards (centre) — the active site declares from the catalog",
       },
     });
     expect(html).not.toContain('data-role="superseded-fold"');
+  });
+
+  // gap `variant-suggested-badge`: the server has served `suggested_variant` per site
+  // since 5a and no surface read it — the operator could not see which part detection
+  // proposed for the site they are declaring.
+  it("the card detection proposed for the ACTIVE site wears the sugg. badge", () => {
+    const html = view({
+      activeTooth: 30,
+      detail: {
+        ...detail,
+        sites: [
+          detail.sites[0]!,
+          siteView({ tooth: 30, suggested_variant: "5020" }),
+        ],
+      },
+    });
+    expect(html).toMatch(
+      /data-role="variant-card"[^>]*data-variant="5020"[\s\S]*?data-role="variant-suggested"/,
+    );
+    expect(html).toContain("sugg.");
+    // exactly one card wears it — the proposal is for ONE part, not a shelf tone
+    expect(html.match(/data-role="variant-suggested"/g)).toHaveLength(1);
+  });
+
+  it("the badge vanishes once that site is declared — the operator's act supersedes it", () => {
+    const html = view({
+      activeTooth: 30,
+      detail: {
+        ...detail,
+        sites: [
+          detail.sites[0]!,
+          siteView({
+            tooth: 30,
+            suggested_variant: "5020",
+            declared_variant: "5020",
+          }),
+        ],
+      },
+    });
+    expect(html).not.toContain('data-role="variant-suggested"');
   });
 });
 

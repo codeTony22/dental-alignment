@@ -449,3 +449,167 @@ describe("what comes back", () => {
     expect(html).toContain("the same gates that judged the automation");
   });
 });
+
+describe("re-confirming a site reached ANY way (not only off a fresh outcome)", () => {
+  const APPLIED = {
+    applied: true,
+    detail: "rotated +1.0°",
+    clocking: null,
+    pairs: [],
+  } as unknown as AdjustOutcomeView;
+
+  it("an ADJUSTED site opened from the queue offers the act with no outcome in hand", () => {
+    // THE DEAD END (verified 2026-07-31): the control lived inside the outcome block,
+    // so a click on the queue — which clears lastOutcome — left an `adjusted` site with
+    // nothing to confirm it, and Declare's tick refuses a site it never previewed while
+    // Deliver refuses the case for being "still unresolved". Reload had the same effect.
+    const html = view({ activeTooth: 13, activeStatus: "adjusted", lastOutcome: null });
+    expect(html).toContain('data-role="reconfirm"');
+    expect(html).toContain('data-role="reconfirm-tick"');
+    expect(html).toContain("Confirm this fit over the panes");
+  });
+
+  it("the outcome DETAIL is what lastOutcome decides — not whether the act exists", () => {
+    const html = view({ activeStatus: "adjusted", lastOutcome: null });
+    expect(html).not.toContain('data-role="tool-outcome"');
+    expect(html).toContain('data-role="reconfirm-tick"');
+  });
+
+  it("the outcome renders BESIDE the act when a tool just applied one", () => {
+    const html = view({ activeStatus: "adjusted", lastOutcome: APPLIED });
+    expect(html).toContain('data-role="tool-outcome"');
+    expect(html).toContain('data-role="reconfirm-tick"');
+  });
+
+  it("a site on any other rung is offered no re-confirmation — there is nothing to redo", () => {
+    for (const status of ["ready", "flagged", "previewed"]) {
+      expect(view({ activeStatus: status })).not.toContain('data-role="reconfirm-tick"');
+    }
+  });
+
+  it("a refusal from another tool does not take the standing re-confirmation away", () => {
+    // the site is still `adjusted`: whatever the last tool did or failed to do, the
+    // pose on screen is one the earlier confirmation no longer describes
+    const html = view({
+      activeStatus: "adjusted",
+      lastOutcome: null,
+      refusal: "the rim band would leave the scan",
+    });
+    expect(html).toContain('data-role="reconfirm-tick"');
+  });
+});
+
+describe("the way onward from Adjust's own rail", () => {
+  it("carries a footer with both directions — never only the top rail", () => {
+    const html = view();
+    expect(html).toContain('data-role="adjust-advance"');
+    expect(html).toContain('data-role="adjust-back"');
+    expect(html).toContain('data-role="adjust-forward"');
+    expect(html).toContain("Back to Declare");
+  });
+
+  it("says what leaving the rest of the queue costs — Declare's own words", () => {
+    const html = view({ flaggedCount: 2 });
+    expect(html).toContain('data-role="adjust-skip-consequence"');
+    expect(html).toContain("2 flagged sites stay exactly as the run left them");
+    expect(html).toContain("acknowledge it there");
+  });
+
+  it("with nothing flagged the same sentence says adjusting was optional", () => {
+    expect(view({ flaggedCount: 0 })).toContain("Nothing is flagged — adjusting is optional.");
+  });
+
+  it("a blocked Deliver is inert AND says why, in the flow's own sentence", () => {
+    const why =
+      "Sites are still awaiting review — 1 of 3 still have no verdict; every site " +
+      "must be ready, or flagged, before Deliver.";
+    const html = view({ deliverBlockedReason: why });
+    expect(html).toContain("still have no verdict");
+    expect(html).toContain('data-role="adjust-forward" aria-disabled="true"');
+    expect(html).not.toContain("Done adjusting — go to Deliver");
+  });
+});
+
+describe("the best-fit dial's affordances", () => {
+  it("shows the band and the default without making the operator probe the input", () => {
+    const html = view({ tool: "best-fit" });
+    expect(html).toContain('data-role="diameter-band"');
+    expect(html).toContain("0.05");
+    expect(html).toContain("2.00");
+    expect(html).toContain("0.30");
+  });
+
+  it("offers the way back to the run's own polish", () => {
+    const html = view({ tool: "best-fit", diameterMm: 1.4 });
+    expect(html).toContain('data-role="diameter-reset"');
+    expect(html).toContain("Reset to Ø0.30 mm");
+  });
+
+  it("states no comparison against THIS site's rim — no such number is on the payload", () => {
+    // the design's pre-run note reads a fixture field (`diamTrue`) the product has no
+    // server equivalent for; rim_agreement_mm measures something else entirely
+    expect(view({ tool: "best-fit" })).not.toContain("The rim reads about");
+  });
+});
+
+describe("the pair set: its ceiling, and starting over", () => {
+  const complete = withPick(
+    withPick(newPairDraft("p1", false), "part", [1, 0, 1]),
+    "scan",
+    [5, 5, 5],
+  );
+
+  it("names the 8-pair ceiling BEFORE it is exceeded", () => {
+    const html = view({ tool: "fit-by-points", drafts: [] });
+    expect(html).toContain('data-role="pair-set"');
+    expect(html).toContain("8 at most");
+  });
+
+  it("offers one bulk clear once anything is placed", () => {
+    const html = view({ tool: "fit-by-points", drafts: [complete] });
+    expect(html).toContain('data-role="clear-pairs"');
+    expect(html).toContain("Clear all pairs");
+  });
+
+  it("offers no clear when there is nothing to clear", () => {
+    expect(view({ tool: "fit-by-points", drafts: [] })).not.toContain(
+      'data-role="clear-pairs"',
+    );
+  });
+
+  it("auto-mark's bulk act is a START OVER — its drafts are the server's proposal", () => {
+    const landmarks: LandmarkView[] = [
+      { id: "notch-a", kind: "notch", point: [1.5, 0, 2], lever_arm_mm: 1.5,
+        azimuth_deg: 0 },
+    ];
+    const html = view({
+      tool: "auto-mark",
+      autoMarkPhase: "ready",
+      autoMarkLandmarks: landmarks,
+      drafts: autoMarkDrafts(landmarks),
+    });
+    expect(html).toContain('data-role="clear-pairs"');
+    expect(html).toContain("Start the matching over");
+  });
+});
+
+describe("a flagged site's OTHER way out (the act itself lives on Deliver)", () => {
+  it("says a flagged site can ship as an exception, and where that is acknowledged", () => {
+    const html = view({ activeStatus: "flagged" });
+    expect(html).toContain('data-role="flagged-exception"');
+    expect(html).toContain("exception");
+    expect(html).toContain("Deliver");
+  });
+
+  it("offers no accept control here — this stage sets no status", () => {
+    const html = view({ activeStatus: "flagged" });
+    expect(html).not.toContain('data-role="accept-flagged"');
+    expect(html).toContain("nothing on this stage accepts it");
+  });
+
+  it("says nothing on a site that is not flagged", () => {
+    expect(view({ activeStatus: "ready" })).not.toContain(
+      'data-role="flagged-exception"',
+    );
+  });
+});

@@ -67,6 +67,14 @@ export interface VariantCard {
   readonly label: string;
   readonly dims: string;
   readonly superseded: boolean;
+  /**
+   * The part DETECTION proposed for the site being declared — the BFF's
+   * `SiteView.suggested_variant`, which is the case record's own curated variant
+   * (bff/resources/case_sessions.py:491), never a comparison this module makes.
+   * It is a per-SITE fact, so the same shelf marks a different card as the
+   * operator moves down the queue.
+   */
+  readonly suggested: boolean;
 }
 
 /** "Ø 5.0 × 2.0 mm", or honesty when the catalog could not measure the file. */
@@ -84,9 +92,26 @@ export interface VariantShelves {
   readonly superseded: readonly VariantCard[];
 }
 
-export function variantShelves(detail: CaseSessionDetail): VariantShelves {
+/**
+ * The active system's cards, for ONE site.
+ *
+ * `site` is optional only so a caller with no active site (an empty queue) still gets
+ * a shelf; passing it is what lets the shelf mark the DETECTOR'S PROPOSAL (gap
+ * `variant-suggested-badge`, design flow.dc.html:374-377 — the "sugg." pill). The
+ * proposal is shown until the operator declares and not one render longer: once
+ * `declared_variant` is set, their act is the answer and a second highlighted card
+ * would only ask them to re-litigate a decision they already made. This is the same
+ * attribution rule the SYSTEM card's "suggested" tag follows — a server fact, worn
+ * only while the server is still the one supplying the value.
+ */
+export function variantShelves(
+  detail: CaseSessionDetail,
+  site: SiteView | null = null,
+): VariantShelves {
   const effective = detail.system.effective_model;
   const group = declarableGroups(detail).find((g) => g.model === effective);
+  const proposed =
+    site !== null && site.declared_variant === null ? site.suggested_variant : null;
   const cards = (group?.variants ?? []).flatMap((row): VariantCard[] => {
     const id = row["id"];
     if (typeof id !== "string") return []; // no id = not declarable; drop, not lie
@@ -103,6 +128,7 @@ export function variantShelves(detail: CaseSessionDetail): VariantShelves {
           typeof height === "number" ? height : null,
         ),
         superseded: flags.includes("superseded"),
+        suggested: proposed !== null && id === proposed,
       },
     ];
   });
@@ -147,6 +173,92 @@ export function activeSiteFrom(
 /** The queue's declared-variant column: the id, or an honest dash. */
 export function declaredLabel(site: SiteView): string {
   return site.declared_variant ?? "—";
+}
+
+/**
+ * HOW FAR THROUGH THE DECLARATION THE OPERATOR IS (gap `declare-queue-header`;
+ * design flow.dc.html:1173-1175, `queueNote`). Adjust's queue has carried its counts
+ * since slice 6 (domain/adjust.queueSummary) while Declare's went straight from title
+ * to rows, so the one stage with a per-site obligation was the one that never said how
+ * many were left.
+ *
+ * REVIEWED means `ready` and nothing else: the tick over the live panes is what sets
+ * it (bff/status.review_ready), and it is the same fact flow.isComplete("declare")
+ * reads — two places must not count "done" differently. A flagged or adjusted site is
+ * deliberately NOT reviewed here: the run or a rework moved the pose out from under
+ * the attestation, and the ladder draws its way back through `previewed`.
+ *
+ * The design's second clause ("authorize the run in the left rail") does not port —
+ * this product fires the run itself once every site is ready (shouldAutoRun), so
+ * telling the operator to go press something would name a control that does not exist.
+ */
+export function declareQueueSummary(sites: readonly SiteView[]): string {
+  const total = sites.length;
+  if (total === 0) return "No sites on this case yet — nothing to review.";
+  const reviewed = sites.filter((s) => s.status === "ready").length;
+  const plural = total === 1 ? "site" : "sites";
+  if (reviewed === total) {
+    return `${reviewed} of ${total} ${plural} reviewed — every one confirmed over its panes.`;
+  }
+  return (
+    `${reviewed} of ${total} ${plural} reviewed — ${total - reviewed} still to ` +
+    `confirm over the panes.`
+  );
+}
+
+/**
+ * THE MEASURED FIGURE A QUEUE ROW MAY CARRY — the RUN's own `deviation_rms_mm`, read
+ * off its verdict row verbatim (the same key deliver.py:353 reads; the worker rounds
+ * it at auto_flow.py:2408). Nothing here computes a deviation, a tolerance comparison
+ * or a verdict: those are server-derived, and a browser that re-derived them would be
+ * a second, quieter source of truth.
+ *
+ * The three absences are three different sentences, on purpose. Pre-run there IS no
+ * row, and the design's dash (`"—"`) reads as a measured zero to anyone scanning a
+ * column of numbers — the very confusion this surface exists to prevent.
+ */
+function measuredWords(row: Record<string, unknown> | undefined): string {
+  if (row === undefined) return "no run has measured this fit yet";
+  const rms = row["deviation_rms_mm"];
+  if (typeof rms !== "number") return "the run's row carries no deviation figure";
+  return `deviation RMS ${rms.toFixed(3)} mm`;
+}
+
+/**
+ * THE ROW'S STATE AS A SENTENCE (gap `queue-row-state-sentence`; design
+ * flow.dc.html:1180-1187). The queue printed `site.status` — "previewed",
+ * "review_ready", "adjusted" — wire vocabulary from bff/status.py that names a rung
+ * on a ladder the operator never saw, and no row carried a number at all.
+ *
+ * Each sentence names the operator's NEXT ACT where there is one, and the run's own
+ * measurement where there is one. The words map the ladder; they never re-decide it.
+ *
+ * `rows` is the current run's verdict rows (GET /{id}/run), empty before a run exists.
+ */
+export function siteStateSentence(
+  site: SiteView,
+  rows: ReadonlyArray<Record<string, unknown>> = [],
+): string {
+  const measured = measuredWords(rows.find((r) => r["tooth"] === site.tooth));
+  switch (site.status) {
+    case "detected":
+      return "Awaiting your declaration — no cap variant chosen for this site yet.";
+    case "declared":
+      return "Variant declared — the panes have not previewed this seat yet.";
+    case "previewed":
+      return "Previewed — confirm it over the panes to release it to the run.";
+    case "ready":
+      return `Confirmed over the panes — ${measured}.`;
+    case "flagged":
+      // "flagged" is the RUN's verdict, landed server-side; restating it is not
+      // deciding it. What this must never say is whether the number is acceptable.
+      return `Flagged by the run — ${measured}. Adjust reworks it.`;
+    case "adjusted":
+      return `Reworked since the run — ${measured}; confirm it again over the panes.`;
+    default:
+      // a rung this app has not met yet is still a fact the operator must see
+      return site.status;
+  }
 }
 
 // --- the three panes' rules (plan §7 slice 5b; reference semantics: the demo's -------

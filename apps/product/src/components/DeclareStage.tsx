@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  fetchRun,
   postAdjustDecision,
   postRun,
   putDeclaration,
@@ -36,7 +37,9 @@ import {
 import {
   activeSiteFrom,
   attestationSummary,
+  declareQueueSummary,
   declaredLabel,
+  siteStateSentence,
   resetCount,
   runKeyFor,
   shouldAutoRun,
@@ -135,16 +138,28 @@ function SwitchConfirm({ detail, pendingSwitch, onConfirm, onCancel }: SwitchCon
 interface SiteQueueProps {
   readonly detail: CaseSessionDetail;
   readonly activeTooth: number | null;
+  /** The current run's verdict rows, empty before a run exists — the ONLY source of
+   * a measured number on these rows (the client never re-derives one). */
+  readonly runRows: ReadonlyArray<Record<string, unknown>>;
   readonly onSelectSite: (tooth: number) => void;
 }
 
 /** The site queue: every site, its server facts, one click = active — the demo's
  * stepper-list clothes (.decode-stepper__item), status/capture as chips. */
-function SiteQueue({ detail, activeTooth, onSelectSite }: SiteQueueProps) {
+function SiteQueue({ detail, activeTooth, runRows, onSelectSite }: SiteQueueProps) {
   const active = activeSiteFrom(detail.sites, activeTooth);
   return (
     <aside data-role="declare-queue" aria-label="Site queue" className="panel">
       <h3 className="panel__title">Site queue</h3>
+      {/* THE PROGRESS LINE (gap `declare-queue-header`): Adjust's queue has headed
+          with its counts since slice 6 and Declare's did not, so the stage with a
+          per-site obligation was the one that never said how many were left. Hidden
+          on an empty queue only because `declare-empty` below says it better. */}
+      {detail.sites.length > 0 && (
+        <p data-role="queue-summary" className="panel__hint">
+          {declareQueueSummary(detail.sites)}
+        </p>
+      )}
       <ul className="decode-stepper__overview">
         {detail.sites.map((site) => (
           <li key={site.tooth}>
@@ -153,9 +168,9 @@ function SiteQueue({ detail, activeTooth, onSelectSite }: SiteQueueProps) {
               data-role="queue-site"
               aria-pressed={active?.tooth === site.tooth}
               data-tooth={site.tooth}
-              className={`decode-stepper__item${
+              className={`decode-stepper__item decode-stepper__item--stacked${
                 active?.tooth === site.tooth ? " decode-stepper__item--active" : ""
-              }`}
+              }${site.status === "ready" ? " decode-stepper__item--reviewed" : ""}`}
               onClick={() => onSelectSite(site.tooth)}
             >
               <span className="decode-stepper__position">Tooth {site.tooth}</span>
@@ -181,6 +196,13 @@ function SiteQueue({ detail, activeTooth, onSelectSite }: SiteQueueProps) {
                 <span data-role="declared-variant" className="decode-stepper__declared">
                   {declaredLabel(site)}
                 </span>
+              </span>
+              {/* THE ROW'S STATE IN WORDS (gap `queue-row-state-sentence`). The chip
+                  above keeps the wire's rung — it is the colour key, and data-status
+                  is what the stylesheet reads — but the operator gets a sentence that
+                  names their next act, and the RUN's own number once one exists. */}
+              <span data-role="queue-state" className="decode-stepper__state">
+                {siteStateSentence(site, runRows)}
               </span>
             </button>
           </li>
@@ -217,6 +239,19 @@ function VariantCardButton({ card, declared, archived, onDeclare }: VariantCardB
     >
       <span className="decode-variant__name">{card.label}</span>{" "}
       <span className="decode-variant__dims">{card.dims}</span>
+      {/* WHAT DETECTION PROPOSED for this site (gap `variant-suggested-badge`; design
+          flow.dc.html:374-377). It wears the same badge the SYSTEM card's server
+          attribution wears, because it is the same kind of claim — a server value the
+          operator has not yet answered — and it disappears the moment they do. */}
+      {card.suggested && (
+        <span
+          data-role="variant-suggested"
+          className="library-badge library-badge--suggested"
+        >
+          {" "}
+          sugg.
+        </span>
+      )}
     </button>
   );
 }
@@ -228,6 +263,10 @@ export interface DeclareStageViewProps {
   readonly pendingSwitch: string | null;
   readonly saving: DeclareSaving;
   readonly error: string | null;
+  /** The current run's verdict rows (GET /{id}/run), which is where a queue row's
+   * measured deviation comes from — never a client re-derivation. Empty (the default)
+   * is the honest pre-run state, and the rows SAY so rather than print a dash. */
+  readonly runRows?: ReadonlyArray<Record<string, unknown>>;
   /** The auto-fired run's client lifecycle (5c); defaults idle for static tests. */
   readonly runPhase?: RunPhase;
   /** A run POST that never reached an outcome (transport/409) — stated with retry. */
@@ -257,6 +296,7 @@ export function DeclareStageView({
   pendingSwitch,
   saving,
   error,
+  runRows = [],
   runPhase = "idle",
   runError = null,
   onRetryRun,
@@ -277,7 +317,9 @@ export function DeclareStageView({
      nothing downstream reads it, so it earns no prop. Static tests render it CLOSED,
      which is also the honest default: the panes are the subject of this stage. */
   const [archOpen, setArchOpen] = useState(false);
-  const shelves = variantShelves(detail);
+  // Per-SITE shelves: the detector's proposal is a fact about the active site, so the
+  // same catalog marks a different card as the operator moves down the queue.
+  const shelves = variantShelves(detail, active);
   // THE FORK'S ONE PRECONDITION, and it is exactly Deliver's reachability: a done
   // run whose verdicts cover every site (the BFF's own 422 for the decision route).
   // Adjust's reachability is deliberately NOT the gate here — a refused run opens
@@ -328,6 +370,7 @@ export function DeclareStageView({
         <SiteQueue
           detail={detail}
           activeTooth={activeTooth}
+          runRows={runRows}
           onSelectSite={onSelectSite}
         />
         <section data-role="variant-cards" aria-label="Variant cards" className="panel">
@@ -599,6 +642,7 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
   const [runError, setRunError] = useState<string | null>(null);
   const [forkSaving, setForkSaving] = useState<ForkSaving>("idle");
   const [forkError, setForkError] = useState<string | null>(null);
+  const [runRows, setRunRows] = useState<ReadonlyArray<Record<string, unknown>>>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -607,6 +651,25 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
       mountedRef.current = false;
     };
   }, []);
+
+  // THE QUEUE ROWS' NUMBER, AND ONLY FROM THE RUN. Declare stays open after the run
+  // lands (the fork lives here), so its rows can carry the measured deviation — but
+  // only the run's own verdict rows may supply it, exactly as Adjust reads them
+  // (AdjustStage's fetchRun effect). Anything short of a DONE run has no rows to
+  // read, and the rows then say "no run has measured this fit yet" rather than
+  // printing a dash a reader takes for a zero. The endpoint 404s while no current
+  // run exists — a refusal is emptiness here, never an error to raise at the
+  // operator, because the run's own footer already states what happened.
+  useEffect(() => {
+    if (detail.session.run_state !== "done") {
+      setRunRows([]);
+      return;
+    }
+    void fetchRun(caseId).then((result) => {
+      if (!mountedRef.current) return;
+      setRunRows(result.kind === "ok" ? result.data.sites : []);
+    });
+  }, [caseId, detail.session.run_state]);
 
   // THE AUTO-FIRE (plan §1.2 compute-early; the automation directive): when the
   // detail shows choices complete + every site ready + no current run, POST once.
@@ -736,6 +799,7 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
       pendingSwitch={pendingSwitch}
       saving={saving}
       error={error}
+      runRows={runRows}
       runPhase={runPhase}
       runError={runError}
       onRetryRun={handleRetryRun}

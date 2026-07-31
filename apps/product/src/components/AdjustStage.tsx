@@ -25,6 +25,7 @@
  * Deliver having never opened it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { FREE_POINT_COLOR, type VerifyMarker } from "viewer";
 import {
   fetchLandmarks,
@@ -57,13 +58,16 @@ import {
   autoMarkDrafts,
   autoMarkSourceLabel,
   autoMarkSummary,
+  diameterBandWords,
+  flaggedExceptionWords,
   isComplete,
-  needsReconfirm,
+  needsReconfirmStatus,
   newPairDraft,
   observationWords,
   outcomeWords,
   pairBody,
   pairPrompt,
+  pairSetWords,
   pairSlot,
   pairSlots,
   pairWords,
@@ -80,6 +84,8 @@ import {
   type PairSlot,
   type SeatedPhase,
 } from "../domain/adjust";
+import { skipConsequenceWords } from "../domain/declare";
+import { blockedReason, factsFromCaseSession } from "../domain/flow";
 import { SitePanesView, useSitePaneScene, type PaneId } from "./SitePanes";
 
 /** What the surface is waiting on — named, so it never freezes silently. */
@@ -115,6 +121,9 @@ export interface AdjustStageViewProps {
   /** Clear ONE mark, leaving the rest of the pair (client 2026-07-29). */
   readonly onRemovePoint: (id: string, slot: PairSlot) => void;
   readonly onApplyPairs: () => void;
+  /** START OVER, on the ACTIVE tool's set only (design review 2026-07-31). Optional
+   *  with an inert default: static callers predate it. */
+  readonly onClearPairs?: () => void;
   /** The panes, already assembled by the container (tests pass a stub). */
   readonly panes: React.ReactNode;
   /** The site's rung, for the re-confirm nudge after an applied tool. */
@@ -144,6 +153,17 @@ export interface AdjustStageViewProps {
   /** A refusal from the landmarks read, VERBATIM — same posture as every other
    *  refusal on this surface. */
   readonly autoMarkError?: string | null;
+  /** THE STAGE'S OWN FOOTER (design review 2026-07-31): the queue rail had no
+   *  forward or back, so an operator who had just reworked the last flagged site
+   *  had to go hunting the top rail. NAVIGATION ONLY — these assert no status and
+   *  record nothing; the words are Declare's fork's own, so the two doors describe
+   *  the same consequence. Optional with inert defaults: static callers predate it. */
+  readonly flaggedCount?: number;
+  /** flow.ts's `blockedReason("deliver", facts)`, verbatim — null when Deliver is
+   *  reachable. Never re-derived here: reachability is one rule, in one module. */
+  readonly deliverBlockedReason?: string | null;
+  readonly onBack?: () => void;
+  readonly onForward?: () => void;
 }
 
 function ToolTabs({
@@ -195,6 +215,8 @@ function PairsList({
   onRemovePair,
   onRemovePoint,
   onApplyPairs,
+  onClearPairs,
+  clearLabel,
   sourceLabelFor,
 }: {
   readonly drafts: readonly PairDraft[];
@@ -203,11 +225,22 @@ function PairsList({
   readonly onRemovePair: (id: string) => void;
   readonly onRemovePoint: (id: string, slot: PairSlot) => void;
   readonly onApplyPairs: () => void;
+  readonly onClearPairs: () => void;
+  /** What starting over MEANS for this tool — "clear" where the operator built the
+   *  set by hand, "start over" where the server proposed it and re-proposes it. */
+  readonly clearLabel: string;
   readonly sourceLabelFor?: (draft: PairDraft) => string | null;
 }) {
   const applyBlocked = applyBlockedReason(drafts);
   return (
     <>
+      {/* THE CEILING, BEFORE IT IS HIT (design review 2026-07-31): MAX_PAIRS used to
+          surface only through applyBlockedReason, which speaks once the cap is
+          already exceeded — the operator met the limit by being told to undo work
+          they had just finished. */}
+      <p data-role="pair-set" className="panel__hint">
+        {pairSetWords(drafts)}
+      </p>
       <ul data-role="pair-list" className="adjust-pairs">
         {drafts.map((draft, index) => (
           <li key={draft.id} data-role="pair-row" data-span={draft.span}
@@ -306,6 +339,21 @@ function PairsList({
             {applyBlocked}
           </span>
         )}
+        {drafts.length > 0 && (
+          /* ONE way to start over. Per-pair and per-mark removal already exist; what
+             did not was an exit from a set built wrong from the first click, which
+             cost eight removals. It clears only THIS tool's set — the container keeps
+             fit-by-points' hand-built pairs and auto-mark's proposal apart on purpose. */
+          <button
+            type="button"
+            data-role="clear-pairs"
+            className="button button--ghost button--small"
+            disabled={busy}
+            onClick={onClearPairs}
+          >
+            {clearLabel}
+          </button>
+        )}
       </div>
     </>
   );
@@ -335,6 +383,7 @@ export function AdjustStageView({
   onRemovePair,
   onRemovePoint,
   onApplyPairs,
+  onClearPairs = () => undefined,
   panes,
   activeStatus,
   onReconfirm = () => undefined,
@@ -347,19 +396,35 @@ export function AdjustStageView({
   autoMarkLandmarks = [],
   autoMarkPhase = "idle",
   autoMarkError = null,
+  flaggedCount = 0,
+  deliverBlockedReason = null,
+  onBack = () => undefined,
+  onForward = () => undefined,
 }: AdjustStageViewProps) {
   const active = entries.find((e) => e.tooth === activeTooth) ?? null;
   const busy = phase === "working";
   const openDraft = drafts.find((d) => !isComplete(d)) ?? null;
   const toolInfo = ADJUST_TOOLS.find((t) => t.id === tool)!;
   const reworkNote = lastOutcome !== null ? reworkWords(lastOutcome) : null;
+  /* THE RE-CONFIRMATION IS THE SITE'S STATE, NOT THE LAST CLICK'S (design review
+     2026-07-31). It used to render only inside the outcome block, and every route
+     into an `adjusted` site that was not "a tool just applied" — a queue click, a
+     reload — cleared `lastOutcome` and took the only control with it. Declare's tick
+     refuses a site it never previewed and Deliver refuses the case as "still
+     unresolved", so that site was a dead end. The RUNG decides whether the act
+     exists; `lastOutcome` decides only whether the outcome detail renders beside it. */
+  const reconfirmOffered = needsReconfirmStatus(activeStatus);
+  const exceptionWords = flaggedExceptionWords(activeStatus);
   const reasonsShown =
     reasonsFor === null
       ? []
       : (entries.find((e) => e.tooth === reasonsFor)?.reasons ?? []);
   return (
     <div data-role="adjust-stage" className="stage-contents">
-      <div className="workbench__work">
+      {/* The work column scrolls ABOVE a footer that never does — the same opt-in
+          Declare uses, so the way onward stays on screen at every scroll position. */}
+      <div className="workbench__work workbench__work--footered">
+        <div className="workbench__work-scroll">
         <aside data-role="adjust-queue" aria-label="Site queue" className="panel">
           <h3 className="panel__title">Sites</h3>
           <p data-role="queue-summary" className="panel__hint">
@@ -494,7 +559,21 @@ export function AdjustStageView({
                       onChange={(e) => onChangeDiameter(Number(e.target.value))}
                     />
                   </label>
+                  {/* THE BAND, VISIBLE (design review 2026-07-31): it lived only in the
+                      input's min/max, so the ceiling was learned by typing past it. */}
+                  <p data-role="diameter-band" className="panel__hint">
+                    {diameterBandWords()}
+                  </p>
                   <div className="adjust-tool__row">
+                    <button
+                      type="button"
+                      data-role="diameter-reset"
+                      className="button button--ghost button--small"
+                      disabled={busy}
+                      onClick={() => onChangeDiameter(DEFAULT_DIAMETER_MM)}
+                    >
+                      Reset to Ø{DEFAULT_DIAMETER_MM.toFixed(2)} mm
+                    </button>
                     <button
                       type="button"
                       data-role="best-fit-measure"
@@ -573,6 +652,8 @@ export function AdjustStageView({
                     onRemovePair={onRemovePair}
                     onRemovePoint={onRemovePoint}
                     onApplyPairs={onApplyPairs}
+                    onClearPairs={onClearPairs}
+                    clearLabel="Clear all pairs"
                   />
                 </>
               )}
@@ -616,6 +697,11 @@ export function AdjustStageView({
                     onRemovePair={onRemovePair}
                     onRemovePoint={onRemovePoint}
                     onApplyPairs={onApplyPairs}
+                    onClearPairs={onClearPairs}
+                    /* not "clear": the proposal is the SERVER'S, and clearing it would
+                       leave the tool with nothing to match. The container re-seeds the
+                       same landmarks — a fresh round, not an empty one. */
+                    clearLabel="Start the matching over"
                     sourceLabelFor={(draft) => autoMarkSourceLabel(draft, autoMarkLandmarks)}
                   />
                 </>
@@ -680,55 +766,19 @@ export function AdjustStageView({
                   ))}
                 </ul>
               )}
-              {lastOutcome.applied && activeStatus !== null &&
-                !needsReconfirm(activeStatus as never) && (
-                  /* THE ACT SURVIVES ITS OWN EFFECT (client 2026-07-29: "confirm this
-                     fit over the panes does not work"). It did work — POST /review
-                     returned 200 and moved the rung adjusted->ready — but the control
-                     was rendered only while the site NEEDED re-confirming, so a
-                     successful click deleted the button and said nothing. A silent
-                     success is indistinguishable from a dead button. The outcome now
-                     stands in its place. */
-                  <p data-role="reconfirm-done" className="adjust-outcome__confirmed">
-                    Confirmed. This site is ready again, and the confirmation now
-                    describes the fit on screen.
-                  </p>
-                )}
-              {lastOutcome.applied && activeStatus !== null &&
-                needsReconfirm(activeStatus as never) && (
-                  /* THE RE-CONFIRMATION, WITH ITS CONTROL (client 2026-07-29: "We need to
-                     be allowed to confirm again in the Adjust step"). This note used to
-                     stand alone, which made it an instruction with nowhere to carry it
-                     out: the operator was told the site needed confirming again and the
-                     only way to do it was to navigate back to Declare. The act belongs
-                     where the fit was changed, over the same panes that show the change. */
-                  <div data-role="reconfirm" className="adjust-outcome__reconfirm">
-                    <p data-role="reconfirm-note" className="adjust-outcome__note">
-                      This site's fit moved, so its earlier confirmation no longer
-                      describes it — confirm it again over the panes on the right.
-                    </p>
-                    <button
-                      type="button"
-                      data-role="reconfirm-tick"
-                      className="button button--primary"
-                      disabled={reconfirmSaving}
-                      onClick={onReconfirm}
-                    >
-                      {reconfirmSaving
-                        ? "Recording the confirmation…"
-                        : "Confirm this fit over the panes"}
-                    </button>
-                    {reconfirmError !== null && (
-                      <span
-                        data-role="reconfirm-error"
-                        role="alert"
-                        className="panel__error"
-                      >
-                        {reconfirmError}
-                      </span>
-                    )}
-                  </div>
-                )}
+              {lastOutcome.applied && activeStatus !== null && !reconfirmOffered && (
+                /* THE ACT SURVIVES ITS OWN EFFECT (client 2026-07-29: "confirm this
+                   fit over the panes does not work"). It did work — POST /review
+                   returned 200 and moved the rung adjusted->ready — but the control
+                   was rendered only while the site NEEDED re-confirming, so a
+                   successful click deleted the button and said nothing. A silent
+                   success is indistinguishable from a dead button. The outcome now
+                   stands in its place. */
+                <p data-role="reconfirm-done" className="adjust-outcome__confirmed">
+                  Confirmed. This site is ready again, and the confirmation now
+                  describes the fit on screen.
+                </p>
+              )}
               {reworkNote !== null && (
                 <p data-role="rework-note" className="adjust-outcome__note">
                   {reworkNote}
@@ -736,7 +786,100 @@ export function AdjustStageView({
               )}
             </div>
           )}
+
+          {reconfirmOffered && (
+            /* THE RE-CONFIRMATION, WITH ITS CONTROL (client 2026-07-29: "We need to be
+               allowed to confirm again in the Adjust step") — now rendered off the
+               SITE'S RUNG rather than off the last tool call (see `reconfirmOffered`
+               above). The note used to stand alone, which made it an instruction with
+               nowhere to carry it out; then it stood inside the outcome, which made it
+               an instruction that vanished the moment the operator clicked away. The
+               act belongs where the fit was changed, over the same panes that show it,
+               for as long as the site is on the rung that asks for it. */
+            <div data-role="reconfirm" className="adjust-reconfirm">
+              <p data-role="reconfirm-note" className="adjust-outcome__note">
+                This site's fit moved, so its earlier confirmation no longer
+                describes it — confirm it again over the panes on the right.
+              </p>
+              <button
+                type="button"
+                data-role="reconfirm-tick"
+                className="button button--primary"
+                disabled={reconfirmSaving}
+                onClick={onReconfirm}
+              >
+                {reconfirmSaving
+                  ? "Recording the confirmation…"
+                  : "Confirm this fit over the panes"}
+              </button>
+              {reconfirmError !== null && (
+                <span
+                  data-role="reconfirm-error"
+                  role="alert"
+                  className="panel__error"
+                >
+                  {reconfirmError}
+                </span>
+              )}
+            </div>
+          )}
+
+          {exceptionWords !== null && (
+            /* THE OTHER WAY OUT, POINTED AT — no control (design's "accept as flagged
+               exception", template 1348). The act is Deliver's per-row acknowledgment
+               (AM-12) and stays there: it is made against the evidence being signed,
+               row by row, and an acknowledgment recorded here would outlive the very
+               fit it acknowledged the moment a later tool moved it. */
+            <p data-role="flagged-exception" className="adjust-exception">
+              {exceptionWords}
+            </p>
+          )}
         </section>
+        </div>
+
+        {/* THE WAY ONWARD FROM ADJUST'S OWN RAIL (design review 2026-07-31; the
+            design's sticky footer, template 465-469). Until now the stage's only exit
+            was the top rail, which says nothing about what leaving the rest of the
+            queue costs. NAVIGATION ONLY: neither control records anything and neither
+            asserts a status — the consequence sentence and the blocked reason are
+            Declare's fork's own words, so the two doors out of the rework loop cannot
+            describe the same case differently. */}
+        <div
+          data-role="adjust-advance"
+          className="workbench__work-footer panel__actions panel__actions--advance"
+        >
+          <p data-role="adjust-skip-consequence" className="panel__hint">
+            {skipConsequenceWords(flaggedCount)}
+          </p>
+          <div className="adjust-fork">
+            <button
+              type="button"
+              data-role="adjust-back"
+              className="button button--secondary"
+              onClick={onBack}
+            >
+              Back to Declare
+            </button>
+            {deliverBlockedReason === null ? (
+              <button
+                type="button"
+                data-role="adjust-forward"
+                className="button button--primary"
+                onClick={onForward}
+              >
+                Done adjusting — go to Deliver
+              </button>
+            ) : (
+              <span
+                data-role="adjust-forward"
+                aria-disabled="true"
+                className="button button--secondary button--blocked"
+              >
+                Go to Deliver — {deliverBlockedReason}
+              </span>
+            )}
+          </div>
+        </div>
       </div>
       <div className="workbench__stage">{panes}</div>
 
@@ -824,6 +967,7 @@ export interface AdjustStageProps {
  * and the picking that feeds fit-by-points and mark-trench. */
 export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   const caseId = detail.case.id;
+  const navigate = useNavigate();
   const mountedRef = useRef(true);
   const [rows, setRows] = useState<ReadonlyArray<Record<string, unknown>>>([]);
   const [activeTooth, setActiveTooth] = useState<number | null>(null);
@@ -871,6 +1015,9 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   }, [caseId, detail.session.run_state]);
 
   const entries = useMemo(() => adjustQueue(detail.sites, rows), [detail.sites, rows]);
+  // The footer's facts: the SAME projection the rail judges, so Adjust's own door to
+  // Deliver can never open on a case the rail calls blocked (or vice versa).
+  const facts = useMemo(() => factsFromCaseSession(detail), [detail]);
   // The queue opens on the first FLAGGED site — the stage's whole reason for existing.
   useEffect(() => {
     if (activeTooth === null && entries.length > 0) {
@@ -1029,6 +1176,21 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
     },
     [caseId, activeTooth, diameterMm, run],
   );
+
+  /** START OVER on the ACTIVE tool's set, and only that one — the two sets are kept
+   * apart on purpose (see the state above), so a clear must never reach across.
+   *
+   * Auto-mark's "clear" is a RE-SEED, not an emptying: its drafts are the worker's own
+   * proposal, and emptying them would leave the tool with nothing to match and no way
+   * to ask again (the landmarks fetch is gated on `autoMarkPhase === "idle"`). This is
+   * exactly what `settle` already does after a successful apply. */
+  const handleClearPairs = useCallback(() => {
+    if (tool === "auto-mark") {
+      setAutoDrafts(autoMarkDrafts(autoMarkLandmarks));
+      return;
+    }
+    setFitDrafts([]);
+  }, [tool, autoMarkLandmarks]);
 
   const handleApplyPairs = useCallback(() => {
     if (activeTooth === null) return;
@@ -1218,6 +1380,7 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
         )
       }
       onApplyPairs={handleApplyPairs}
+      onClearPairs={handleClearPairs}
       panes={panes}
       activeStatus={activeSite?.status ?? null}
       onReconfirm={handleReconfirm}
@@ -1230,6 +1393,13 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       autoMarkLandmarks={autoMarkLandmarks}
       autoMarkPhase={autoMarkPhase}
       autoMarkError={autoMarkError}
+      /* The footer's facts come from the ONE flow model, not from a second count
+         taken here: `blockedReason` is what the rail itself shows for Deliver, and
+         `siteFlagged` is the BFF's rollup. Navigation only — no POST, no status. */
+      flaggedCount={facts.siteFlagged}
+      deliverBlockedReason={blockedReason("deliver", facts)}
+      onBack={() => navigate(`/case/${caseId}/declare`)}
+      onForward={() => navigate(`/case/${caseId}/deliver`)}
     />
   );
 }

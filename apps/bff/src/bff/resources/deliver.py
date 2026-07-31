@@ -65,13 +65,58 @@ terms_router = APIRouter(prefix="/api/terms", tags=["terms"])
 # it for the client's real text is a ONE-STRING change; bump ``TERMS_VERSION``
 # alongside it so a confirmation sealed over the old text reads honestly as having
 # accepted THAT text, never silently reinterpreted as covering the new one.
-TERMS_VERSION = "placeholder-v1"
+TERMS_VERSION = "placeholder-v2"
 
-TERMS_TEXT_PLACEHOLDER = (
+# THE RETIRED TEXT, kept verbatim (see TERMS_DOCUMENTS below): a confirmation sealed
+# over v1 must still resolve to the words its signer actually saw.
+_TERMS_TEXT_V1 = (
     "PLACEHOLDER — pending the client's final Terms and Conditions text. "
     "I have reviewed the alignment for all N sites in this case, including the "
     "assurance report and its QC images. I accept the alignment as shown and "
     "authorize release of the deliverables."
+)
+
+# THE SECOND DOCUMENT (gap ``clinical-responsibility-attestation``, 2026-07-31).
+#
+# The v1 sentence named a SITE COUNT and nothing else. An operator signed "all N
+# sites" without the text ever saying that some of those sites release only as
+# ACKNOWLEDGED EXCEPTIONS (``_needs_acknowledgment`` — the very rows the confirm gate
+# makes them tick one by one), or that a WITHHELD site ships nothing and stays open.
+# The signature covered a state of affairs the sentence declined to describe.
+#
+# This is that missing text. It is a DOCUMENT rather than a sentence composed in the
+# browser: the classes it names are the same three the invoice prices against, and a
+# clinical attestation whose wording is assembled client-side is a signature nobody
+# can reproduce afterwards. The CASE-SPECIFIC COUNTS are deliberately NOT in here — a
+# document is case-independent, and its per-case enumeration is derived from the
+# invoice's own server-derived line quantities (bff/pricing.py) and rendered beside
+# the checkbox.
+CLINICAL_VERSION = "clinical-responsibility-placeholder-v1"
+
+CLINICAL_TEXT_PLACEHOLDER = (
+    "PLACEHOLDER — pending the client's final clinical-responsibility wording. "
+    "I confirm that the alignment metrics shown for this case are the ones I "
+    "reviewed, and I accept clinical responsibility for releasing the "
+    "constructions named in this confirmation. This includes every site released "
+    "as an acknowledged exception — a site the run itself raised, or one whose "
+    "construction part is shared with a differently-declared variant — which I "
+    "have acknowledged row by row. It excludes every withheld site: a withheld "
+    "site discloses nothing, stays open, and remains my responsibility to resolve."
+)
+
+# THE CURRENT AGREEMENT (v2). It INCORPORATES the clinical statement by version
+# rather than asking for a second signature: ``ConfirmationRecord`` carries one
+# ``terms_version``, and a second boolean on the wire would be an act the evidence
+# hash does not cover. Citing the id in the text is what makes the incorporation
+# legible to an auditor holding only the sealed version string.
+TERMS_TEXT_PLACEHOLDER = (
+    "PLACEHOLDER — pending the client's final Terms and Conditions text. "
+    "I have reviewed the alignment for every site in this case, including the "
+    "assurance report and its QC images. I accept the alignment as shown and "
+    "authorize release of the deliverables for the sites released under this "
+    "confirmation — including those released as acknowledged exceptions, and "
+    "excluding any site I have withheld. The Clinical Responsibility Statement "
+    f"({CLINICAL_VERSION}) forms part of this agreement and is accepted with it."
 )
 
 
@@ -94,6 +139,21 @@ TERMS_DOCUMENTS: Dict[str, Dict[str, str]] = {
         "title": "Terms and Conditions",
         "status": "placeholder",
         "body": TERMS_TEXT_PLACEHOLDER,
+    },
+    CLINICAL_VERSION: {
+        "version": CLINICAL_VERSION,
+        "title": "Clinical Responsibility Statement",
+        "status": "placeholder",
+        "body": CLINICAL_TEXT_PLACEHOLDER,
+    },
+    # ADDITIVE, never edited in place — the rule stated above, applied the first
+    # time it actually cost something: v1 is superseded, and a confirmation sealed
+    # over it still resolves to the words that signer saw.
+    "placeholder-v1": {
+        "version": "placeholder-v1",
+        "title": "Terms and Conditions",
+        "status": "placeholder",
+        "body": _TERMS_TEXT_V1,
     },
 }
 

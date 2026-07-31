@@ -19,7 +19,9 @@ import {
   activeSiteFrom,
   claimSlot,
   createPreviewFirer,
+  declareQueueSummary,
   declaredLabel,
+  siteStateSentence,
   dimsLabel,
   indicesFrom,
   paneNotices,
@@ -794,5 +796,135 @@ describe("shouldAutoRun — fire once per authorized content", () => {
   it("never fires without a key, nor twice for the same key", () => {
     expect(shouldAutoRun({ key: null, firedKey: null })).toBe(false);
     expect(shouldAutoRun({ key: "k1", firedKey: "k1" })).toBe(false);
+  });
+});
+
+describe("the variant DETECTION proposed for this site (gap variant-suggested-badge)", () => {
+  const detail = caseSessionDetail({
+    catalog: {
+      groups: [
+        catalogGroup("conical-4x4", [
+          catalogEntry({ id: "5020" }),
+          catalogEntry({ id: "6030", variant: "6030" }),
+        ]),
+      ],
+      constructions: [],
+    },
+  });
+
+  it("marks the card whose id is the SERVER's suggested_variant for the site", () => {
+    const site = siteView({ tooth: 19, suggested_variant: "6030" });
+    const cards = variantShelves(detail, site).current;
+    expect(cards.find((c) => c.id === "6030")?.suggested).toBe(true);
+    expect(cards.find((c) => c.id === "5020")?.suggested).toBe(false);
+  });
+
+  it("the badge VANISHES once the operator declares — their act supersedes the proposal", () => {
+    const site = siteView({
+      tooth: 19,
+      suggested_variant: "6030",
+      declared_variant: "5020",
+    });
+    expect(variantShelves(detail, site).current.every((c) => !c.suggested)).toBe(true);
+  });
+
+  it("no site, or a site the detector proposed nothing for, marks nothing", () => {
+    expect(variantShelves(detail).current.every((c) => !c.suggested)).toBe(true);
+    const bare = siteView({ tooth: 19, suggested_variant: null });
+    expect(variantShelves(detail, bare).current.every((c) => !c.suggested)).toBe(true);
+  });
+
+  it("a suggestion naming a part off this shelf marks nothing — it is not declarable here", () => {
+    const site = siteView({ tooth: 19, suggested_variant: "not-in-this-catalog" });
+    expect(variantShelves(detail, site).current.every((c) => !c.suggested)).toBe(true);
+  });
+});
+
+describe("declareQueueSummary — how far through the declaration the operator is", () => {
+  it("counts REVIEWED (the tick's `ready`) against the total, and names the shortfall", () => {
+    const words = declareQueueSummary([
+      siteView({ tooth: 19, status: "ready" }),
+      siteView({ tooth: 30, status: "previewed" }),
+      siteView({ tooth: 3, status: "detected" }),
+    ]);
+    expect(words).toContain("1 of 3 sites reviewed");
+    expect(words).toContain("2");
+  });
+
+  it("says so plainly when every site is reviewed", () => {
+    const words = declareQueueSummary([
+      siteView({ tooth: 19, status: "ready" }),
+      siteView({ tooth: 30, status: "ready" }),
+    ]);
+    expect(words).toContain("2 of 2 sites reviewed");
+  });
+
+  it("a flagged or adjusted site is NOT reviewed — the run moved it off the tick", () => {
+    const words = declareQueueSummary([
+      siteView({ tooth: 19, status: "flagged" }),
+      siteView({ tooth: 30, status: "adjusted" }),
+    ]);
+    expect(words).toContain("0 of 2 sites reviewed");
+  });
+
+  it("an empty queue says there is nothing to review, never '0 of 0'", () => {
+    expect(declareQueueSummary([])).not.toContain("0 of 0");
+  });
+});
+
+describe("siteStateSentence — the row's state in words, and the RUN's own number", () => {
+  const rows = [
+    { tooth: 19, deviation_rms_mm: 0.041 },
+    { tooth: 30, deviation_rms_mm: 0.184 },
+    { tooth: 3 }, // a row the run wrote no deviation onto
+  ];
+
+  it("pre-run a confirmed site SAYS no run has measured it — never a dash reading as zero", () => {
+    const words = siteStateSentence(siteView({ tooth: 19, status: "ready" }), []);
+    expect(words).toContain("no run has measured");
+    // no figure at all, and above all no "0.00" / bare placeholder a reader takes
+    // for a measured zero (the design's `—` in the deviation slot)
+    expect(words).not.toContain("mm");
+    expect(words).not.toContain("0.00");
+  });
+
+  it("a confirmed site with a run row carries the run's deviation RMS verbatim", () => {
+    const words = siteStateSentence(siteView({ tooth: 19, status: "ready" }), rows);
+    expect(words).toContain("0.041 mm");
+  });
+
+  it("a flagged site names the flag AND the number the run measured", () => {
+    const words = siteStateSentence(siteView({ tooth: 30, status: "flagged" }), rows);
+    expect(words.toLowerCase()).toContain("flagged");
+    expect(words).toContain("0.184 mm");
+  });
+
+  it("a run row with no deviation says so rather than inventing one", () => {
+    const words = siteStateSentence(siteView({ tooth: 3, status: "ready" }), rows);
+    expect(words).toContain("no deviation");
+  });
+
+  it("the pre-run rungs speak the operator's next act, not the wire's word", () => {
+    const detected = siteStateSentence(siteView({ tooth: 19, status: "detected" }), []);
+    const declared = siteStateSentence(siteView({ tooth: 19, status: "declared" }), []);
+    const previewed = siteStateSentence(siteView({ tooth: 19, status: "previewed" }), []);
+    expect(detected).not.toBe("detected");
+    expect(detected.toLowerCase()).toContain("declar");
+    expect(declared).not.toBe("declared");
+    expect(previewed.toLowerCase()).toContain("confirm");
+  });
+
+  it("a reworked site asks for its confirmation again", () => {
+    const words = siteStateSentence(siteView({ tooth: 19, status: "adjusted" }), rows);
+    expect(words.toLowerCase()).toContain("confirm");
+    expect(words).toContain("0.041 mm");
+  });
+
+  it("no sentence is a verdict of ours: 'in tolerance' is never claimed client-side", () => {
+    for (const status of ["ready", "flagged", "adjusted"] as const) {
+      const words = siteStateSentence(siteView({ tooth: 19, status }), rows);
+      expect(words.toLowerCase()).not.toContain("in tolerance");
+      expect(words.toLowerCase()).not.toContain("pass");
+    }
   });
 });

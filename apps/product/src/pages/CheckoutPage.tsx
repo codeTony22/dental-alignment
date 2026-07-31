@@ -21,8 +21,22 @@ import { useEffect, useRef, useState } from "react";
 import {
   postCheckoutReturn,
   postPayment,
+  type AssuranceView,
   type CaseSessionDetail,
+  type InvoiceView,
 } from "../api/client";
+import {
+  attestationText,
+  casePolicyWords,
+  invoiceIsPlaceholder,
+  orderLines,
+  orderTotal,
+  payButtonLabel,
+  receiptWords,
+  sealedTermsHref,
+  signoffRows,
+  turnaroundWords,
+} from "../domain/deliver";
 
 type CheckoutPhase = "idle" | "paying" | "failed";
 
@@ -63,6 +77,16 @@ export function nextAddableCard(
 
 export interface CheckoutViewProps {
   readonly detail: CaseSessionDetail;
+  /**
+   * THE EVIDENCE THIS CHECKOUT IS BILLING FOR (gap ``pay-modal-metric-signoff``).
+   * Optional and defaulting to null: the dialog opens over a stage that has already
+   * fetched it, and a checkout that has not been handed the numbers shows no metric
+   * strip rather than an empty one.
+   */
+  readonly assurance?: AssuranceView | null;
+  /** The derived invoice (gap ``invoice-on-the-surfaces``) — the BFF's figures, and
+   *  the only source of any amount this page prints. */
+  readonly invoice?: InvoiceView | null;
   readonly phase: CheckoutPhase;
   readonly error: string | null;
   readonly cards: readonly MockCard[];
@@ -118,6 +142,8 @@ function CheckoutNotice({
 /** Pure markup — statically testable; the container owns the flow. */
 export function CheckoutView({
   detail,
+  assurance = null,
+  invoice = null,
   phase,
   error,
   cards,
@@ -169,8 +195,82 @@ export function CheckoutView({
         </p>
       </header>
 
+      {/* THE ALIGNMENT NUMBERS THIS CHECKOUT IS BILLING FOR (gap
+          ``pay-modal-metric-signoff``, 2026-07-31; design payMetricRows 1401-1408).
+          The dialog asked for money over a case id and a site count while the
+          deviations sat on the stage BEHIND it — a reader about to pay could not see
+          the very numbers being paid for. Both chips are the SERVER'S OWN WORDS: the
+          design's third chip read "in tolerance", built from a client-side
+          comparison, and that verdict is the acceptance catalog's to make. */}
+      {assurance !== null && (
+        <section className="checkout-section">
+          <h3 className="checkout-section__title">
+            Alignment metrics you are paying for
+          </h3>
+          <ul data-role="signoff-metrics" className="checkout-metrics">
+            {signoffRows(assurance).map((row) => (
+              <li
+                key={row.tooth}
+                data-role="signoff-row"
+                data-tooth={row.tooth}
+                className={`checkout-metric${
+                  row.flagged ? " checkout-metric--flagged" : ""
+                }`}
+              >
+                <span className="checkout-metric__site">Site {row.tooth}</span>
+                <span className="checkout-metric__variant">{row.variant}</span>
+                <span className="checkout-metric__dev">RMS {row.deviation}</span>
+                <span className="checkout-metric__chip">{row.status}</span>
+                {/* only where the gate says something the status does not — see
+                    `signoffRows`, which nulls it when the two words match */}
+                {row.gate !== null && (
+                  <span className="checkout-metric__chip checkout-metric__chip--gate">
+                    {row.gate}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+          {/* the design's toleranceLine, minus the tolerance it invented */}
+          <p data-role="case-policy" className="checkout-metrics__policy">
+            {casePolicyWords(detail.choices)}
+          </p>
+        </section>
+      )}
+
+      {/* THE SENTENCE ALREADY SIGNED, echoed READ-ONLY (gap
+          ``clinical-responsibility-attestation``). The design moves the clinical
+          checkbox into this modal; the product keeps it on CONFIRM, where it rides
+          into the evidence hash with its terms version — strictly stronger than a
+          tick beside a card. So this restates what was sealed and offers no way to
+          sign anything here. */}
+      {confirmed && invoice !== null && (
+        <section className="checkout-section">
+          <h3 className="checkout-section__title">What you signed</h3>
+          <blockquote data-role="sealed-attestation" className="checkout-sealed">
+            <p className="checkout-sealed__words">
+              {attestationText(invoice, siteCount)}
+            </p>
+            <p className="checkout-sealed__meta">
+              Sealed at {detail.session.confirmation?.at}{" "}
+              <a
+                data-role="sealed-attestation-link"
+                className="terms-block__link"
+                href={sealedTermsHref(detail.session.confirmation)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Read the sealed Terms and Conditions ↗
+              </a>
+            </p>
+          </blockquote>
+        </section>
+      )}
+
       {/* THE ORDER, as line items rather than a sentence: a checkout's first job is
-          to say exactly what is being bought before it asks for money. */}
+          to say exactly what is being bought before it asks for money. Every amount
+          below is the BFF's — `total_cents` is rendered, never the sum of what is on
+          screen (domain/deliver's own rule). */}
       <section className="checkout-section">
         <h3 className="checkout-section__title">Order</h3>
         <dl className="checkout-order">
@@ -184,15 +284,64 @@ export function CheckoutView({
             <dt>Deliverables</dt>
             <dd>Aligned parts + assurance report</dd>
           </div>
+          {invoice !== null &&
+            orderLines(invoice).map((line) => (
+              <div
+                key={line.key}
+                data-role="invoice-line"
+                data-key={line.key}
+                className={`checkout-order__row${
+                  line.billed ? "" : " checkout-order__row--unbilled"
+                }`}
+              >
+                <dt>
+                  {line.label}
+                  {line.unit !== null && (
+                    <span className="checkout-order__unit"> · {line.unit}</span>
+                  )}
+                </dt>
+                <dd>{line.amount}</dd>
+              </div>
+            ))}
           <div className="checkout-order__row checkout-order__row--total">
             <dt>Amount due</dt>
             <dd data-role="checkout-price">
-              <span className="checkout-order__placeholder">
-                PLACEHOLDER — pricing not yet defined
-              </span>
+              {invoice !== null ? (
+                <strong data-role="checkout-total">{orderTotal(invoice)}</strong>
+              ) : (
+                <span className="checkout-order__placeholder">
+                  PLACEHOLDER — pricing not yet defined
+                </span>
+              )}
             </dd>
           </div>
         </dl>
+        {invoice !== null && (
+          <>
+            <p data-role="invoice-turnaround" className="checkout-order__note">
+              {turnaroundWords(invoice)}
+            </p>
+            {/* THE BANNER STAYS while the server calls these rates a placeholder: a
+                total that reads like a quotation when it is not is worse than no
+                total. The note is the server's, printed verbatim. */}
+            {invoiceIsPlaceholder(invoice) && (
+              <p
+                data-role="invoice-placeholder"
+                className="checkout-order__placeholder-banner"
+              >
+                {invoice.note}
+              </p>
+            )}
+            {/* WHAT WAS ACTUALLY CHARGED, which may legitimately differ from the
+                figures above after a turnaround change — beside them, never instead
+                of them. */}
+            {receiptWords(invoice.paid) !== null && (
+              <p data-role="invoice-receipt" className="checkout-order__receipt">
+                {receiptWords(invoice.paid)}
+              </p>
+            )}
+          </>
+        )}
       </section>
 
       {!confirmed && !paid ? (
@@ -422,7 +571,10 @@ export function CheckoutView({
               disabled={busy || selected === null}
               onClick={onPay}
             >
-              {busy ? "Authorizing (demo)…" : "Pay (demo)"}
+              {/* PRICED (design payLabel 1481-1482): a pay button that names the
+                  amount is the last honest chance to notice a wrong figure. The
+                  amount is the invoice's total, rendered — never assembled here. */}
+              {payButtonLabel(invoice, busy)}
             </button>
             <button
               type="button"
@@ -450,10 +602,17 @@ export function CheckoutView({
  */
 export function CheckoutDialog({
   detail,
+  assurance = null,
+  invoice = null,
   onDetail,
   onClose,
 }: {
   readonly detail: CaseSessionDetail;
+  /** The evidence and the price the stage already holds — handed down rather than
+   *  re-fetched, so the dialog can never show a different case than the one behind
+   *  it (gaps ``pay-modal-metric-signoff`` / ``invoice-on-the-surfaces``). */
+  readonly assurance?: AssuranceView | null;
+  readonly invoice?: InvoiceView | null;
   readonly onDetail: (next: CaseSessionDetail) => void;
   readonly onClose: () => void;
 }) {
@@ -501,6 +660,8 @@ export function CheckoutDialog({
         <div className="decode-dialog__body decode-dialog__body--plain">
           <CheckoutView
             detail={detail}
+            assurance={assurance}
+            invoice={invoice}
             phase={phase}
             error={error}
             cards={cards}

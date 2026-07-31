@@ -10,8 +10,20 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  ATTESTATION_PENDING_CAVEAT,
   CHECKOUT_SEAL_WORDS,
   ackRequired,
+  attestationCounts,
+  attestationText,
+  casePolicyWords,
+  formatMoney,
+  invoiceIsPlaceholder,
+  orderLines,
+  orderTotal,
+  payButtonLabel,
+  receiptWords,
+  signoffRows,
+  turnaroundWords,
   acknowledgmentPolicyWords,
   adjustmentsWords,
   assuranceCounts,
@@ -38,6 +50,7 @@ import {
   assuranceView,
   caseSessionDetail,
   flaggedAssuranceSite,
+  invoiceView,
 } from "../testing/fixtures";
 import type { ArtifactsView } from "../api/client";
 
@@ -599,5 +612,325 @@ describe("the checkout's terms footnote (design payment modal; plan §10-A)", ()
   it("says what paying does — and what it does NOT do", () => {
     expect(CHECKOUT_SEAL_WORDS).toContain("this run");
     expect(CHECKOUT_SEAL_WORDS).toContain("releasing the artifacts is a separate act");
+  });
+});
+
+// --- the invoice, FORMATTED and never computed (gap invoice-on-the-surfaces) ---------
+
+describe("formatMoney — a server amount SPLIT into its printed parts", () => {
+  it("prints whole dollars and cents from integer cents", () => {
+    expect(formatMoney(4800, "USD")).toBe("$48.00");
+    expect(formatMoney(3205, "USD")).toBe("$32.05");
+    expect(formatMoney(0, "USD")).toBe("$0.00");
+  });
+
+  it("names an unknown currency rather than inventing a symbol for it", () => {
+    expect(formatMoney(4800, "EUR")).toBe("48.00 EUR");
+  });
+});
+
+describe("orderLines / orderTotal — the served figures, verbatim", () => {
+  it("renders every served line with its own amount, in the served order", () => {
+    const lines = orderLines(invoiceView());
+    expect(lines.map((l) => l.key)).toEqual([
+      "released_sites",
+      "exception_sites",
+      "turnaround",
+    ]);
+    expect(lines[0]!.label).toBe("1 released site");
+    expect(lines[0]!.amount).toBe("$32.00");
+    expect(lines[1]!.amount).toBe("$16.00");
+  });
+
+  it("shows a per-unit rate only where the server priced one", () => {
+    const lines = orderLines(invoiceView());
+    expect(lines[0]!.unit).toBe("$32.00 each");
+    expect(lines[2]!.unit).toBeNull(); // the turnaround line has no unit
+  });
+
+  it("an unbilled line says NOT BILLED rather than a misleading $0.00", () => {
+    const lines = orderLines(
+      invoiceView({
+        lines: [
+          {
+            key: "withheld_sites",
+            label: "1 withheld site, not released",
+            quantity: 1,
+            unit_amount_cents: null,
+            amount_cents: 0,
+            billed: false,
+          },
+        ],
+      }),
+    );
+    expect(lines[0]!.amount).toBe("not billed");
+    expect(lines[0]!.billed).toBe(false);
+  });
+
+  it("THE TOTAL IS THE SERVER'S — never the sum of the lines rendered", () => {
+    // a doctored line set must not move the total: if this ever fails, someone
+    // reintroduced client-side arithmetic over money
+    const doctored = invoiceView({
+      lines: [
+        {
+          key: "released_sites",
+          label: "1 released site",
+          quantity: 1,
+          unit_amount_cents: 999_999,
+          amount_cents: 999_999,
+          billed: true,
+        },
+      ],
+      total_cents: 4800,
+    });
+    expect(orderTotal(doctored)).toBe("$48.00");
+  });
+});
+
+describe("the placeholder rates stay visible (gap invoice-on-the-surfaces)", () => {
+  it("reads the placeholder state off the SERVER's own word", () => {
+    expect(invoiceIsPlaceholder(invoiceView())).toBe(true);
+    expect(invoiceIsPlaceholder(invoiceView({ status: "final" }))).toBe(false);
+  });
+
+  it("the turnaround line names the word and where it came from", () => {
+    expect(turnaroundWords(invoiceView())).toBe(
+      "Standard turnaround — the standing default.",
+    );
+    expect(
+      turnaroundWords(
+        invoiceView({ turnaround: "rush", turnaround_source: "chosen" }),
+      ),
+    ).toBe("Rush turnaround — chosen for this case.");
+  });
+});
+
+describe("payButtonLabel — the priced button (design payLabel 1481-1482)", () => {
+  it("prices the act it performs", () => {
+    expect(payButtonLabel(invoiceView(), false)).toBe("Pay $48.00 (demo)");
+  });
+
+  it("says nothing about money it does not have", () => {
+    expect(payButtonLabel(null, false)).toBe("Pay (demo)");
+  });
+
+  it("authorizing wins over the price — the amount already left", () => {
+    expect(payButtonLabel(invoiceView(), true)).toBe("Authorizing (demo)…");
+  });
+});
+
+describe("receiptWords — what was CHARGED, beside what it costs now", () => {
+  it("states the charged amount, its card version and its turnaround", () => {
+    const words = receiptWords({
+      amount_cents: 6400,
+      currency: "USD",
+      rate_card_version: "placeholder-v1",
+      turnaround: "rush",
+      at: "2026-07-31T09:00:00+00:00",
+    });
+    expect(words).toContain("$64.00");
+    expect(words).toContain("rush");
+    expect(words).toContain("placeholder-v1");
+    expect(words).toContain("2026-07-31T09:00:00+00:00");
+  });
+
+  it("a record from before amounts were kept says so instead of printing $0.00", () => {
+    const words = receiptWords({
+      amount_cents: null,
+      currency: null,
+      rate_card_version: null,
+      turnaround: null,
+      at: "2026-07-27T12:01:00+00:00",
+    });
+    expect(words).toContain("no amount was recorded");
+    expect(words).not.toContain("$0.00");
+  });
+
+  it("no payment, no receipt", () => {
+    expect(receiptWords(null)).toBeNull();
+  });
+});
+
+// --- the attestation's enumeration (gap clinical-responsibility-attestation) ---------
+
+describe("attestationCounts — a LOOKUP of the server's own line quantities", () => {
+  it("reads each class off the line the server keyed for it", () => {
+    expect(attestationCounts(invoiceView())).toEqual({
+      released: 1,
+      exceptions: 1,
+      withheld: 0,
+    });
+  });
+
+  it("an omitted line is zero — the server omits a line with nothing in it", () => {
+    const clean = invoiceView({
+      lines: [
+        {
+          key: "released_sites",
+          label: "2 released sites",
+          quantity: 2,
+          unit_amount_cents: 3200,
+          amount_cents: 6400,
+          billed: true,
+        },
+      ],
+    });
+    expect(attestationCounts(clean)).toEqual({
+      released: 2,
+      exceptions: 0,
+      withheld: 0,
+    });
+  });
+});
+
+describe("attestationText — the sentence names what is being released", () => {
+  it("enumerates the released constructions and the acknowledged exceptions", () => {
+    const words = attestationText(invoiceView(), 2);
+    expect(words).toContain("2 constructions");
+    expect(words).toContain("1 as an acknowledged exception");
+    expect(words).toContain("clinical responsibility");
+  });
+
+  it("names the withheld sites as staying OPEN, never as merely unbilled", () => {
+    const words = attestationText(
+      invoiceView({
+        lines: [
+          {
+            key: "released_sites",
+            label: "1 released site",
+            quantity: 1,
+            unit_amount_cents: 3200,
+            amount_cents: 3200,
+            billed: true,
+          },
+          {
+            key: "withheld_sites",
+            label: "1 withheld site, not released",
+            quantity: 1,
+            unit_amount_cents: null,
+            amount_cents: 0,
+            billed: false,
+          },
+        ],
+      }),
+      2,
+    );
+    expect(words).toContain("1 withheld site");
+    expect(words).toContain("stays open");
+  });
+
+  it("a case with nothing exceptional says so plainly — no empty clauses", () => {
+    const words = attestationText(
+      invoiceView({
+        lines: [
+          {
+            key: "released_sites",
+            label: "3 released sites",
+            quantity: 3,
+            unit_amount_cents: 3200,
+            amount_cents: 9600,
+            billed: true,
+          },
+        ],
+      }),
+      3,
+    );
+    expect(words).toContain("3 constructions");
+    expect(words).not.toContain("exception");
+    expect(words).not.toContain("withheld");
+  });
+
+  it("falls back to the site-count text when the invoice has not arrived", () => {
+    // an unfetched invoice must not silently become "0 constructions"
+    expect(attestationText(null, 2)).toBe(termsText(2));
+  });
+
+  it("the caveat states that withholding re-derives the sentence on confirm", () => {
+    expect(ATTESTATION_PENDING_CAVEAT).toContain("Withholding a site");
+    expect(ATTESTATION_PENDING_CAVEAT).toContain("re-derived");
+  });
+});
+
+// --- the checkout's metric restatement (gap pay-modal-metric-signoff) ----------------
+
+describe("signoffRows — the numbers the money is being asked for", () => {
+  it("restates each site in the SERVED order, worst first", () => {
+    const rows = signoffRows(TWO_SITES);
+    expect(rows.map((r) => r.tooth)).toEqual([30, 19]);
+  });
+
+  it("carries the identity, the deviation and the server's own words", () => {
+    const [flagged, ready] = signoffRows(TWO_SITES);
+    expect(flagged!.variant).toBe("5020");
+    expect(flagged!.deviation).toBe("0.43 mm");
+    // THE CHIP IS THE SERVER'S WORD, never a comparison made here
+    expect(flagged!.status).toBe("flagged");
+    expect(flagged!.gate).toBe("attention");
+    expect(flagged!.flagged).toBe(true);
+    expect(ready!.flagged).toBe(false);
+  });
+
+  it("an unmeasured deviation stays a dash — never a zero", () => {
+    const rows = signoffRows(
+      assuranceView({ sites: [assuranceSite({ deviation_rms_mm: null })] }),
+    );
+    expect(rows[0]!.deviation).toBe("—");
+  });
+
+  it("an undeclared site says so rather than printing an empty cell", () => {
+    const rows = signoffRows(
+      assuranceView({ sites: [assuranceSite({ declared_variant: null })] }),
+    );
+    expect(rows[0]!.variant).toBe("no cap declared");
+  });
+});
+
+describe("the sign-off row's two chips (2026-07-31)", () => {
+  it("drops the gate chip when it would only repeat the status", () => {
+    // Seen on screen: a site whose status and gate level both read "ready"
+    // rendered "ready ready" to someone about to pay, which reads as a bug.
+    const rows = signoffRows(
+      assuranceView({
+        sites: [assuranceSite({ tooth: 29, status: "ready", gate: { level: "ready", actions: [] } })],
+      }),
+    );
+    expect(rows[0]!.status).toBe("ready");
+    expect(rows[0]!.gate).toBeNull();
+  });
+
+  it("keeps it where the gate says something the status does not", () => {
+    // The divergence is the whole reason the second chip exists: the ladder says
+    // where the site stands, the acceptance catalog says what it thinks of it.
+    const rows = signoffRows(
+      assuranceView({
+        sites: [assuranceSite({ tooth: 29, status: "ready", gate: { level: "advisory", actions: [] } })],
+      }),
+    );
+    expect(rows[0]!.gate).toBe("advisory");
+  });
+});
+
+
+describe("casePolicyWords — the design's toleranceLine, minus the tolerance", () => {
+  it("states the relief and the turnaround, each with its source", () => {
+    const words = casePolicyWords(caseSessionDetail().choices);
+    expect(words).toContain("relief 0.20 mm");
+    expect(words).toContain("standard turnaround");
+  });
+
+  it("NEVER prints a case tolerance — no such number exists in this product", () => {
+    // the design's line reads "Case tolerance 0.40 mm · …"; every band comparison
+    // here belongs to the acceptance catalog and is made server-side, per metric
+    expect(casePolicyWords(caseSessionDetail().choices)).not.toContain("tolerance");
+  });
+
+  it("an unset relief is stated as unset, not as 0.00 mm", () => {
+    const choices = caseSessionDetail().choices;
+    const words = casePolicyWords({
+      ...choices,
+      effective_relief: { value: null, source: "none" },
+    });
+    expect(words).toContain("relief not set");
+    expect(words).not.toContain("0.00 mm");
   });
 });

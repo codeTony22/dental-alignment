@@ -4225,3 +4225,342 @@ button.package-files__link:hover {
 .checkout-terms {
   margin-top: 6px;
 }
+
+
+/* ============================================================================
+   ArTech End-to-End Flow — design import, round 2 (2026-07-31)
+   ============================================================================ */
+/* ===== declare ===== */
+/* ---- Declare's queue row: the state sentence (gap `queue-row-state-sentence`, 2026-07-31) ---- */
+
+/* The row is a flex LINE — tooth on the left, chips on the right — and the state
+   sentence is a third thing that belongs under both, not squeezed between them.
+   Wrapping is opt-in through this modifier rather than added to
+   `.decode-stepper__item` itself, because Adjust's queue shares that class and was
+   laid out for one line. */
+.decode-stepper__item--stacked {
+  flex-wrap: wrap;
+}
+
+/* The sentence: full width (it claims its own line inside the wrapping row), muted,
+   and allowed to run to two lines rather than truncate — a state the operator has to
+   guess at is the exact thing this line exists to stop. Note styles.css:1482 already
+   carried `.decode-stepper__item--reviewed .decode-stepper__state` from the demo port
+   with no producer in the tree; this is the base rule it was always waiting for. */
+.decode-stepper__state {
+  flex: 1 0 100%;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+  white-space: normal;
+  text-wrap: pretty;
+}
+
+/* The detector's proposal on a variant card (gap `variant-suggested-badge`). The card
+   is a flex COLUMN, so an unconstrained pill would stretch edge to edge and read as a
+   banner over the card rather than a badge on it. */
+.decode-variant .library-badge--suggested {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+/* ===== panes ===== */
+/* ---- the pane says what a click on it will do (client 2026-07-30) ------------------
+   The toolbox named the pane a click belongs to ("Library part · pane 1") and flipped
+   its button to "Armed", but it said so UNDER the panes — the operator read the
+   instruction in one place and performed it in another. This is the same sentence,
+   printed where the click goes.
+
+   pointer-events: none is LOAD-BEARING, not decoration: the notice overlay above this
+   one swallowed exactly the click it was inviting (review 2026-07-26, see
+   .verify-panel__overlay--notice). A strip that asks for a click may never eat it. */
+.verify-panel__hint {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 10px;
+  z-index: 3;
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text);
+  /* one line, like the caption above it — an instruction that wraps pushes itself over
+     the very geometry it is pointing at */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+/* The union pane's bottom strip is the colorbar's (.verify-panel__hud--scale). Lift the
+   hint over it rather than under it; 64px clears the bar, its ticks and the folded
+   legend summary at their measured heights. */
+.verify-panel__hint--raised {
+  bottom: 64px;
+}
+
+/* ---- the 1/2/3 switcher (client 2026-07-30) ----------------------------------------
+   Only visible while one pane IS the stage. It sits at the LEFT of a toolbar that is
+   otherwise right-aligned: it addresses the panes below it, while the link/show-all
+   controls act on the whole grid. */
+.verify-panels__switch {
+  display: flex;
+  gap: 3px;
+  margin-right: auto;
+}
+
+/* ---- an armed pane says so under the pointer (client 2026-07-30) -------------------
+   A pane waiting for a click behaves completely differently from its neighbours — the
+   click PLACES a point — and until this the only way to learn that was to click. The
+   cursor is set on the container so the canvas inside it inherits, and the class is
+   applied only when the stage says the pane is armed, never merely because a pick
+   listener is installed (Adjust installs one router on all three panes at once). */
+.verify-viewer--armed {
+  cursor: crosshair;
+}
+
+/* ===== adjust ===== */
+/* ---- ADJUST: the stage's own way onward (design review 2026-07-31) -----------------
+   Adjust's queue rail had no forward or back, so an operator who had just reworked the
+   last flagged site had to go hunting the top rail. The stage now opts into
+   `.workbench__work--footered` + `.workbench__work-scroll` — the scroll-box-above-a-
+   pinned-footer pattern written for Declare — for the same reason it was written:
+   the exit must not scroll away with the queue. Nothing about those rules changes.
+
+   The fork keeps its OWN class rather than borrowing `.declare-fork`: the geometry is
+   identical, but a stage should not be named after another stage's control. */
+.adjust-fork {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Equal-width, like Declare's fork: back and forward are both real doors, so neither
+   may look like the incidental one. Tone carries the recommendation; geometry stays
+   symmetric. */
+.adjust-fork > .button {
+  flex: 1 1 200px;
+}
+
+/* ---- ADJUST: the re-confirmation, now standing on its own ------------------------
+   It used to live inside `.adjust-outcome` and borrow that block's separation. It
+   renders off the SITE'S RUNG now (an `adjusted` site reached by a queue click or a
+   reload has no outcome in hand), so it carries its own rule above it. Same geometry
+   `.adjust-outcome__reconfirm` has — the two are the same control in two places until
+   the outcome-nested copy is retired. */
+.adjust-reconfirm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* ---- ADJUST: the flagged-exception POINTER ---------------------------------------
+   Amber, the tone this product already uses for "a consequence to weigh" (the system
+   switch ceremony, Declare's owed lines) — never the danger red (nothing failed) and
+   never the accent green (nothing was accepted; the act is Deliver's, row by row).
+
+   It is a SENTENCE, not a control, and must never read as one: no pointer cursor, no
+   hover state, no button clothes. A surface that looks clickable here would be
+   offering an acceptance this stage is forbidden to make. */
+.adjust-exception {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  text-wrap: pretty;
+  color: var(--color-amber);
+  background: var(--color-amber-bg);
+  border: 1px solid var(--color-amber-border);
+  border-radius: var(--radius-md);
+}
+
+/* ===== checkout ===== */
+/* ================================================================
+   CHECKOUT: the metrics, the sealed sentence, and the order lines
+   (gaps pay-modal-metric-signoff / clinical-responsibility-attestation /
+   invoice-on-the-surfaces, 2026-07-31)
+   ================================================================ */
+
+/* THE ALIGNMENT METRICS THE MONEY IS BEING ASKED FOR (design payMetricRows
+   1401-1408). A bordered list rather than a table: four short facts per row that
+   must survive a 520px dialog, so the row WRAPS instead of scrolling sideways —
+   a horizontal scrollbar inside a payment dialog hides the number it exists to
+   show (the same reason the assurance table was cut to five columns). */
+.checkout-metrics {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.checkout-metric {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+/* every row after the first gets its own rule — a divider, not a box each */
+.checkout-metric + .checkout-metric {
+  border-top: 1px solid var(--color-border);
+}
+
+/* a flagged row is TINTED, not merely chipped: the chip says what it is, the tint
+   makes it findable while scrolling past four sites to reach the pay button */
+.checkout-metric--flagged {
+  background: var(--color-amber-bg);
+}
+
+.checkout-metric__site {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.checkout-metric__variant {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* the deviation is pushed to the right edge so the numbers line up down the
+   column — the one thing a reader scans this strip for */
+.checkout-metric__dev {
+  margin-left: auto;
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* THE CHIPS CARRY SERVER WORDS, so they are styled by shape and never by meaning:
+   no green/red mapping lives here, because a tone chosen in CSS for a word the
+   server sent is a verdict this app is not entitled to render. */
+.checkout-metric__chip {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+}
+
+.checkout-metric__chip--gate {
+  border-style: dashed;
+}
+
+.checkout-metrics__policy {
+  margin: 7px 0 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}
+
+/* THE SEALED SENTENCE, ECHOED READ-ONLY. It is quoted chrome — a left rule and a
+   tint — precisely so it does not read as a control: there is nothing to sign
+   here, the signature was given at confirm. */
+.checkout-sealed {
+  margin: 0;
+  padding: 9px 12px;
+  border-left: 3px solid var(--color-accent-green);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.checkout-sealed__words {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.checkout-sealed__meta {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+/* ---- the order lines (design payLines/payTotal 1475-1480) ---- */
+
+/* the per-unit rate is subordinate to the label it qualifies */
+.checkout-order__unit {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* AN UNBILLED LINE IS DIMMED, NEVER HIDDEN: a withheld site not being charged for
+   is exactly the kind of thing an operator must be able to see they were not
+   charged for. */
+.checkout-order__row--unbilled dd {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.checkout-order__note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* THE PLACEHOLDER-RATES BANNER stays as long as the server calls the rates a
+   placeholder, and wears the amber "not the real thing yet" tone the terms
+   placeholder and the demo banner already use — one visual vocabulary for "this
+   figure is not the client's". */
+.checkout-order__placeholder-banner {
+  margin: 8px 0 0;
+  padding: 7px 9px;
+  font-size: 11px;
+  line-height: 1.4;
+  text-wrap: pretty;
+  color: var(--color-amber);
+  background: var(--color-amber-bg);
+  border: 1px dashed var(--color-amber-border);
+  border-radius: var(--radius-md);
+}
+
+/* the receipt sits BESIDE the current price, and reads as a record rather than a
+   quote — it may legitimately differ after a turnaround change */
+.checkout-order__receipt {
+  margin: 8px 0 0;
+  padding: 7px 9px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+/* the invoice block inside the Deliver progression's Paid step: the surrounding
+   .checkout-screen is `align-items: flex-start`, which would collapse the dl to
+   its content width and un-align every amount, so it stretches deliberately */
+.checkout-screen__invoice {
+  align-self: stretch;
+  width: 100%;
+}
+
+/* the caveat under the attestation checkbox: why the sentence can lag a withhold
+   that has not been confirmed yet (domain/deliver.ATTESTATION_PENDING_CAVEAT) */
+.terms-block__caveat {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}

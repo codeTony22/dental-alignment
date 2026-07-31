@@ -16,8 +16,11 @@ import type {
   ArtifactsView,
   AssuranceSite,
   AssuranceView,
+  ChoicesView,
   ConfirmBody,
   ConfirmationView,
+  InvoicePaymentView,
+  InvoiceView,
   SessionView,
 } from "../api/client";
 // the rework's vocabulary lives where the rework happens; Deliver is where it is read
@@ -174,6 +177,284 @@ export function termsText(siteCount: number): string {
     `and its QC images. I accept the alignment as shown and authorize release ` +
     `of the deliverables.`
   );
+}
+
+// --- the invoice, FORMATTED (gap ``invoice-on-the-surfaces``, 2026-07-31) -------------
+//
+// TWO RULES HOLD THIS SECTION HONEST, and they are the money-shaped twins of AM-4's
+// "every verdict is the BFF's":
+//
+//  1. FORMAT, NEVER COMPUTE. `orderTotal` renders `total_cents`; nothing here sums a
+//     line, compares an amount, or applies a rate. An amount the browser arrived at is
+//     the money-shaped cousin of a client-asserted verdict — and `postPayment` still
+//     carries `{authorize: true}` and nothing else, so a number invented here could
+//     only ever mislead the reader, which is worse, not better.
+//  2. THE PLACEHOLDER STAYS. `status` is the SERVER's word for "these rates are not
+//     the client's yet"; the surface badges it and prints `note` verbatim. A total
+//     that looks like a quotation when it is not is worse than no total at all.
+
+/**
+ * A server amount SPLIT into the parts it is printed with — integer arithmetic over
+ * cents the BFF sent, never arithmetic that produces a new amount.
+ *
+ * Deliberately not `Intl.NumberFormat`: it is locale-dependent, and a figure that
+ * reads $48.00 for one operator and 48,00 $ for another is a receipt two people
+ * cannot compare. An unknown currency prints its ISO code rather than borrowing a
+ * symbol it has no right to.
+ */
+export function formatMoney(cents: number, currency: string): string {
+  const sign = cents < 0 ? "-" : "";
+  const abs = Math.abs(cents);
+  const whole = Math.trunc(abs / 100);
+  const part = String(abs % 100).padStart(2, "0");
+  return currency === "USD"
+    ? `${sign}$${whole}.${part}`
+    : `${sign}${whole}.${part} ${currency}`;
+}
+
+/** One order row, ready to render. */
+export interface OrderLine {
+  readonly key: string;
+  readonly label: string;
+  /** The line's own amount, or "not billed" — see `InvoiceLine.billed`. */
+  readonly amount: string;
+  /** The per-unit rate where the server priced one; null otherwise. */
+  readonly unit: string | null;
+  readonly billed: boolean;
+}
+
+/**
+ * The served lines, in the SERVED order, each carrying the server's own amount.
+ *
+ * An unbilled line reads "not billed" rather than "$0.00": `billed` is not
+ * `amount_cents === 0` (a rush turnaround is included at zero and IS billed — it
+ * repriced every site above), and collapsing the two would tell an operator that
+ * withholding a site was free when what happened is that it was never charged for.
+ */
+export function orderLines(invoice: InvoiceView): readonly OrderLine[] {
+  return invoice.lines.map((line) => ({
+    key: line.key,
+    label: line.label,
+    amount: line.billed
+      ? formatMoney(line.amount_cents, invoice.currency)
+      : "not billed",
+    unit:
+      line.unit_amount_cents !== null
+        ? `${formatMoney(line.unit_amount_cents, invoice.currency)} each`
+        : null,
+    billed: line.billed,
+  }));
+}
+
+/** The total — `total_cents` rendered, NEVER the sum of the lines above it. */
+export function orderTotal(invoice: InvoiceView): string {
+  return formatMoney(invoice.total_cents, invoice.currency);
+}
+
+/** Whether the rates are still the prototype's — the SERVER's own word, not a guess
+ *  from whether the figures look round. */
+export function invoiceIsPlaceholder(invoice: InvoiceView): boolean {
+  return invoice.status === "placeholder";
+}
+
+/** The turnaround line, with WHERE the word came from — the `EffectiveChoiceView`
+ *  vocabulary the Intake chips already use, so "default" reads the same everywhere. */
+export function turnaroundWords(invoice: InvoiceView): string {
+  const word = invoice.turnaround;
+  const head = `${word.charAt(0).toUpperCase()}${word.slice(1)} turnaround`;
+  return invoice.turnaround_source === "chosen"
+    ? `${head} — chosen for this case.`
+    : `${head} — the standing default.`;
+}
+
+/**
+ * WHAT WAS ACTUALLY CHARGED, once a payment record exists — beside, never instead of,
+ * the current price. The two can legitimately differ: a turnaround change after
+ * payment reprices the case going forward, and rewriting the receipt to match would
+ * forge it. A record persisted before amounts were kept says so rather than printing
+ * a $0.00 nobody was charged.
+ */
+export function receiptWords(paid: InvoicePaymentView | null): string | null {
+  if (paid === null) return null;
+  if (paid.amount_cents === null) {
+    return `Authorized at ${paid.at} — no amount was recorded with this payment.`;
+  }
+  const amount = formatMoney(paid.amount_cents, paid.currency ?? "USD");
+  const how = [
+    paid.turnaround !== null ? `${paid.turnaround} turnaround` : null,
+    paid.rate_card_version !== null ? `rate card ${paid.rate_card_version}` : null,
+  ].filter((piece): piece is string => piece !== null);
+  const under = how.length > 0 ? ` under ${how.join(", ")}` : "";
+  return `Charged ${amount} at ${paid.at}${under}.`;
+}
+
+/** The pay button, priced (design payLabel, flow.dc.html:1481-1482). With no invoice
+ *  it says nothing about money — a button that names a price it does not have is the
+ *  one thing worse than an unpriced button. */
+export function payButtonLabel(invoice: InvoiceView | null, busy: boolean): string {
+  if (busy) return "Authorizing (demo)…";
+  return invoice !== null ? `Pay ${orderTotal(invoice)} (demo)` : "Pay (demo)";
+}
+
+// --- the attestation's enumeration (gap ``clinical-responsibility-attestation``) ------
+//
+// The signed sentence named a SITE COUNT and nothing else — never the sites released
+// under acknowledgment, never the withheld. The three counts below are the BFF's:
+// `derive_invoice` classifies every site with `_needs_acknowledgment`, the very
+// predicate the confirm gate stands on, against the STANDING confirmation's own
+// dispositions. So once a confirmation exists this sentence enumerates exactly what
+// was sealed, and the checkout can echo it read-only.
+//
+// WHAT IS DONE HERE IS A LOOKUP, NOT ARITHMETIC: each count is one server-sent
+// `quantity`, keyed by the line the server itself keyed. A line the server omitted is
+// zero because the server's own rule is that a line appears only when it has
+// something in it (bff/pricing.price_invoice) — that convention is read, not inferred.
+
+export interface AttestationCounts {
+  readonly released: number;
+  readonly exceptions: number;
+  readonly withheld: number;
+}
+
+function lineQuantity(invoice: InvoiceView, key: string): number {
+  return invoice.lines.find((line) => line.key === key)?.quantity ?? 0;
+}
+
+export function attestationCounts(invoice: InvoiceView): AttestationCounts {
+  return {
+    released: lineQuantity(invoice, "released_sites"),
+    exceptions: lineQuantity(invoice, "exception_sites"),
+    withheld: lineQuantity(invoice, "withheld_sites"),
+  };
+}
+
+/**
+ * THE SENTENCE THE OPERATOR SIGNS, enumerated (design clinicalLabel,
+ * flow.dc.html:1409-1414).
+ *
+ * The design puts this checkbox INSIDE the pay modal; the product does not, and the
+ * product wins: here the acceptance is bound to CONFIRM, where it rides into the
+ * evidence hash with its `terms_version` — strictly stronger than a tick beside a
+ * card. The checkout echoes the sealed sentence read-only instead.
+ *
+ * The wording's constant clauses live in the BFF's Clinical Responsibility Statement
+ * (`CLINICAL_VERSION` — a resolvable document, incorporated by the terms); this is
+ * the case-specific enumeration of it, and every number in it is a server-derived
+ * count. Where the invoice has not arrived, the sentence falls back to the site-count
+ * text rather than claiming "0 constructions".
+ */
+export function attestationText(
+  invoice: InvoiceView | null,
+  siteCount: number,
+): string {
+  if (invoice === null) return termsText(siteCount);
+  const { released, exceptions, withheld } = attestationCounts(invoice);
+  const shipped = released + exceptions;
+  const head =
+    `I confirm the alignment metrics shown for this case are the ones I reviewed, ` +
+    `and I accept clinical responsibility for releasing ${shipped} ` +
+    `construction${shipped === 1 ? "" : "s"}`;
+  const exceptionClause =
+    exceptions > 0
+      ? `, including ${exceptions} as ` +
+        `${exceptions === 1 ? "an acknowledged exception" : "acknowledged exceptions"}`
+      : "";
+  const withheldClause =
+    withheld > 0
+      ? ` ${withheld} withheld site${withheld === 1 ? "" : "s"} ` +
+        `${withheld === 1 ? "stays" : "stay"} open: nothing is disclosed for ` +
+        `${withheld === 1 ? "it" : "them"} and ` +
+        `${withheld === 1 ? "it remains" : "they remain"} mine to resolve.`
+      : "";
+  return `${head}${exceptionClause}.${withheldClause}`;
+}
+
+/**
+ * WHY THE SENTENCE ABOVE CAN LAG THE OPERATOR'S PENDING ACTS, said out loud.
+ *
+ * The counts come from the server, and the server knows only the dispositions it has
+ * been given — the standing confirmation's, or the all-release default. A withhold
+ * ticked in the report but not yet confirmed is still only in this browser. Rather
+ * than let the browser adjust the counts (that arithmetic is exactly what must stay
+ * server-side), the surface states the fact: the sentence is re-derived against what
+ * is actually confirmed, and the checkout echoes THAT.
+ */
+/**
+ * THE CLINICAL STATEMENT'S VERSION, for the link only.
+ *
+ * It mirrors ``bff/resources/deliver.CLINICAL_VERSION``, and that duplication is
+ * bounded on purpose: nothing here is ever SEALED with it. What a confirmation
+ * records is the TERMS version the server chose, read back off the record
+ * (`sealedTermsHref`); this constant only points a reader at the document the current
+ * terms incorporate. A stale copy would 404 on a real document, which is loud —
+ * unlike a stale copy that silently claimed a signature covered something it did not.
+ */
+export const CLINICAL_TERMS_VERSION = "clinical-responsibility-placeholder-v1";
+
+export const ATTESTATION_PENDING_CAVEAT =
+  "Withholding a site in the report removes it from this release. The statement " +
+  "above is re-derived server-side against the dispositions actually confirmed, " +
+  "and the checkout echoes the sealed wording.";
+
+// --- the metrics the checkout restates (gap ``pay-modal-metric-signoff``) -------------
+
+/** One site's line in the checkout's sign-off strip. */
+export interface SignoffRow {
+  readonly tooth: number;
+  readonly variant: string;
+  readonly deviation: string;
+  /** The SESSION LADDER's rung, verbatim — the chip's word. */
+  readonly status: string;
+  /** The run's guidance level, verbatim — the second chip's word. */
+  /** null when it would only repeat `status` — see `signoffRows`. */
+  readonly gate: string | null;
+  readonly flagged: boolean;
+}
+
+/**
+ * THE NUMBERS THE MONEY IS BEING ASKED FOR (design payMetricRows,
+ * flow.dc.html:1401-1408). The checkout asked for payment over a case id and a site
+ * count; the deviations sat on the stage BEHIND the dialog, where a reader about to
+ * pay could not see them.
+ *
+ * The design's chip word came from a client-side `deviation() <= tolerance`
+ * comparison — "in tolerance" — and that is exactly what this product must never
+ * render: every band comparison belongs to the acceptance catalog and is made
+ * server-side, per metric. Both chips here are server WORDS carried verbatim (the
+ * session ladder's rung, the run's guidance level), and the order is the BFF's served
+ * order — this app never re-sorts evidence.
+ */
+export function signoffRows(assurance: AssuranceView): readonly SignoffRow[] {
+  return assurance.sites.map((site) => ({
+    tooth: site.tooth,
+    variant: site.declared_variant ?? "no cap declared",
+    deviation: mm(site.deviation_rms_mm),
+    status: site.status ?? "unknown",
+    // The gate level is a SECOND server word, not a restatement of the first: the
+    // status is where the site stands in the ladder, the gate level is what the
+    // run's acceptance catalog said about it. They usually agree — and when they
+    // do, rendering both put a bare "ready ready" in front of someone about to
+    // pay, which reads as a bug rather than as two facts (seen on screen
+    // 2026-07-31). Null here means "the same word twice", and the surface drops
+    // it. It survives only where it DIVERGES, which is the case worth the room.
+    gate: site.gate.level === (site.status ?? "unknown") ? null : site.gate.level,
+    flagged: site.status === "flagged",
+  }));
+}
+
+/**
+ * THE CASE-POLICY LINE (design toleranceLine, flow.dc.html:1415) — MINUS THE
+ * TOLERANCE, for the reason `assuranceCountsWords` already states: there is no single
+ * case tolerance in this product, and printing one would invent a case-wide threshold
+ * nothing in the pipeline applies. What IS case-wide and server-derived is the relief
+ * and the turnaround, each with the source the BFF attributed it to.
+ */
+export function casePolicyWords(choices: ChoicesView): string {
+  const relief = choices.effective_relief.value;
+  const reliefWords =
+    relief !== null ? `relief ${relief.toFixed(2)} mm` : "relief not set";
+  const turnaround = choices.effective_turnaround?.value ?? "standard";
+  return `Case policy: ${reliefWords} · ${turnaround} turnaround.`;
 }
 
 /** The release button's named blockers — the chain's remaining steps, in order. */

@@ -22,6 +22,7 @@ import {
   assuranceSite,
   assuranceView,
   caseSessionDetail,
+  invoiceView,
   siteView,
 } from "../testing/fixtures";
 import type { CaseSessionDetail } from "../api/client";
@@ -316,11 +317,47 @@ describe("the delivery progression — Confirmed, Paid, Released (#6)", () => {
     expect(html).not.toContain('data-role="delivery-reset"');
   });
 
-  it("the checkout screen shows a placeholder amount, never a real number (#10-A)", () => {
+  it("with no invoice yet the amount is unstated, never invented (#10-A)", () => {
     const html = view({ detail: deliverableDetail(CONFIRMED) });
     expect(html).toContain('data-role="checkout-screen"');
     expect(html).toContain('data-role="checkout-price"');
-    expect(html).toContain("PLACEHOLDER — pricing not yet defined");
+    expect(html).toContain("pricing not yet defined");
+  });
+
+  it("the derived invoice reaches the paid step — lines, then the SERVER's total", () => {
+    const html = view({
+      detail: deliverableDetail(CONFIRMED),
+      invoice: { kind: "ok", data: invoiceView() },
+    });
+    expect(html).toContain('data-role="invoice-line" data-key="released_sites"');
+    expect(html).toContain('data-role="invoice-line" data-key="exception_sites"');
+    expect(html).toContain('data-role="checkout-total"');
+    expect(html).toContain("$48.00");
+    // and the lines are read BEFORE the total they do not add up to on screen
+    expect(html.indexOf('data-key="released_sites"')).toBeLessThan(
+      html.indexOf('data-role="checkout-total"'),
+    );
+  });
+
+  it("the placeholder-rate banner STAYS beside the total, in the server's words", () => {
+    const html = view({
+      detail: deliverableDetail(CONFIRMED),
+      invoice: { kind: "ok", data: invoiceView() },
+    });
+    expect(html).toContain('data-role="invoice-placeholder"');
+    expect(html).toContain("PLACEHOLDER RATES");
+    expect(html).toContain("are not a quotation");
+    expect(html).toContain('data-role="invoice-turnaround"');
+  });
+
+  it("a refused invoice says so instead of leaving a blank where money goes", () => {
+    const html = view({
+      detail: deliverableDetail(CONFIRMED),
+      invoice: { kind: "error", status: 404, detail: "no completed current run" },
+    });
+    expect(html).toContain('data-role="invoice-error"');
+    expect(html).toContain("no completed current run");
+    expect(html).not.toContain('data-role="checkout-total"');
   });
 
   it("once paid, the record's provider and time show, and release becomes current", () => {
@@ -365,9 +402,27 @@ describe("the agreement — confirm and accept terms is one act (plan §10-A)", 
     );
   });
 
-  it("the terms text names the case's own site count", () => {
+  it("the terms text names the case's own site count until the invoice lands", () => {
     const html = view();
     expect(html).toContain("all 2 sites in this case");
+  });
+
+  it("with the invoice, the sentence ENUMERATES what is being released", () => {
+    // gap ``clinical-responsibility-attestation``: "all N sites" never said that
+    // some of those sites release only as acknowledged exceptions. Every count in
+    // the sentence is the BFF's — the invoice's own line quantities.
+    const html = view({ invoice: { kind: "ok", data: invoiceView() } });
+    expect(html).toContain("clinical responsibility");
+    expect(html).toContain("2 constructions");
+    expect(html).toContain("1 as an acknowledged exception");
+    expect(html).toContain('data-role="attestation-caveat"');
+    expect(html).toContain("re-derived server-side");
+  });
+
+  it("the Clinical Responsibility Statement is reachable as its own document", () => {
+    const html = view({ invoice: { kind: "ok", data: invoiceView() } });
+    expect(html).toContain('data-role="clinical-terms-link"');
+    expect(html).toContain('href="/terms/clinical-responsibility-placeholder-v1"');
   });
 
   it("unaccepted terms block confirming even over a clean, acknowledged table", () => {
