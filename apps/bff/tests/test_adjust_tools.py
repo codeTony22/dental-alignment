@@ -300,11 +300,14 @@ class TestTheLanding:
 
         PAIRS come from the REQUEST, observations from the outcome: a two-point span
         contributes two residual rows to one pair, so counting the outcome would
-        over-report what the operator actually placed."""
+        over-report what the operator actually placed. SPANS and DIRECTIONS_USED come
+        off the observations' own kinds (audit finding 6, 2026-07-31) — one radial
+        span here, so its direction counted."""
         client, _ = tooled(settings, product_root, monkeypatch, result=outcome(
             4, operation="fit-by-points",
-            pairs=[{"residual_mm": 0.05}, {"residual_mm": 0.07},
-                   {"residual_mm": 0.06}],
+            pairs=[{"observation": "midpoint", "residual_mm": 0.05},
+                   {"observation": "direction", "residual_mm": 0.07},
+                   {"observation": "point", "residual_mm": 0.06}],
             residual_rms_mm=0.06))
         assert client.post(f"{BASE}/4/fit-by-points", json={"pairs": [
             {"feature_id": "code-1", "scan_point": [0.0, 0.0, 0.0],
@@ -314,6 +317,7 @@ class TestTheLanding:
         row4 = next(r for r in client.get(f"/api/case-sessions/{CASE}/run").json()[
             "sites"] if r["tooth"] == 4)
         assert row4["correspondence"] == {"pairs": 2, "observations": 3,
+                                          "spans": 1, "directions_used": 1,
                                           "max_pairs": 8, "residual_rms_mm": 0.06}
 
     def test_a_rotation_reset_drops_the_correspondence_with_the_best_fit_block(
@@ -334,10 +338,22 @@ class TestTheLanding:
             "sites"] if r["tooth"] == 4)
         assert "correspondence" not in row4
 
-    def test_a_rotation_leaves_an_earlier_correspondence_alone(
+    def test_a_rotation_drops_the_correspondence_it_moved_off(
             self, settings, product_root, monkeypatch):
-        # only a RESET undoes it; a further nudge still stands on the pose the
-        # correspondence produced, so the record keeps saying what it was built from
+        """AUDIT FINDING 5 (2026-07-31), and the test it replaces was the finding.
+
+        The old rule cleared the block only on ``rotation-reset`` and sanctioned
+        everything else with "a further nudge still stands on the pose the
+        correspondence produced". A nudge is BY DEFINITION a move off that pose:
+        fit three pairs to 0.021mm RMS, then step 15°, and the marks now disagree by
+        fifteen degrees while the sealed row goes on claiming 0.021mm. That violates
+        the invariant ``_fold_outcome``'s own docstring was rewritten for (finding E,
+        2026-07-28: THE ROW MUST DESCRIBE THE POSE THAT SHIPPED), and unlike the
+        row's other numbers it was not even named in ``rework.stale_metrics``.
+
+        So the guard is INVERTED: the block belongs to the act that produced it, and
+        any later applied act drops it — the same rule ``best_fit`` already got on
+        reset."""
         client, _ = tooled(settings, product_root, monkeypatch, result=outcome(
             4, operation="fit-by-points", pairs=[{"residual_mm": 0.05}],
             residual_rms_mm=0.05))
@@ -346,10 +362,67 @@ class TestTheLanding:
         ).status_code == 200
         stub_tools(monkeypatch, result=outcome(4, operation="rotation"))
         assert client.post(f"{BASE}/4/rotation",
-                           json={"step_deg": 1.0}).status_code == 200
+                           json={"step_deg": 15.0}).status_code == 200
         row4 = next(r for r in client.get(f"/api/case-sessions/{CASE}/run").json()[
             "sites"] if r["tooth"] == 4)
-        assert row4["correspondence"]["pairs"] == 1
+        assert "correspondence" not in row4
+
+    def test_a_best_fit_drops_the_correspondence_the_new_pose_does_not_stand_on(
+            self, settings, product_root, monkeypatch):
+        """The sharper half of the same finding: ``best-fit`` is a full 6-DoF
+        re-pose that REPLACES ``row["best_fit"]`` in the line immediately above, and
+        left the residual of a superseded pose standing beside it — sealed into the
+        confirmed bundle and rendered on the Deliver row as "the correspondence the
+        shipped pose stands on"."""
+        client, _ = tooled(settings, product_root, monkeypatch, result=outcome(
+            4, operation="fit-by-points", pairs=[{"residual_mm": 0.05}],
+            residual_rms_mm=0.021))
+        assert client.post(f"{BASE}/4/fit-by-points", json={"pairs": [
+            {"feature_id": "code-1", "scan_point": [0.0, 0.0, 0.0]}]},
+        ).status_code == 200
+        stub_tools(monkeypatch, result=outcome(
+            4, operation="best-fit", nudge=None,
+            best_fit={"matching_diameter_mm": 0.45, "rms_mm": 0.031}))
+        assert client.post(f"{BASE}/4/best-fit", json={
+            "matching_diameter_mm": 0.45, "apply": True}).status_code == 200
+        row4 = next(r for r in client.get(f"/api/case-sessions/{CASE}/run").json()[
+            "sites"] if r["tooth"] == 4)
+        assert row4["best_fit"]["matching_diameter_mm"] == 0.45
+        assert "correspondence" not in row4
+
+    def test_the_block_states_how_many_spans_counted_their_directions(
+            self, settings, product_root, monkeypatch):
+        """AUDIT FINDING 6 (2026-07-31). The block's stated contract was that pairs
+        and observations "differ exactly when spans were used" — false. A span emits
+        its direction only when it reads as RADIAL (``observations_for``:
+        ``abs(radial_offset_deg) <= SPAN_RADIAL_TOLERANCE_DEG``); a chord across the
+        feature contributes its midpoint alone.
+
+        So three chord spans produced {pairs: 3, observations: 3} — byte-identical to
+        three clean single clicks, and the reader of the confirmed document could not
+        tell that three spans were placed and all three directions discarded. That is
+        exactly the fact the 2026-07-28 dropped-direction fix exists to state.
+
+        The accounting the physics actually produces is carried instead: each span
+        emits one ``midpoint`` observation and, only if its direction counted, one
+        ``direction`` observation."""
+        client, _ = tooled(settings, product_root, monkeypatch, result=outcome(
+            4, operation="fit-by-points",
+            # three chord spans: three midpoints, no direction survived
+            pairs=[{"observation": "midpoint", "residual_mm": 0.05},
+                   {"observation": "midpoint", "residual_mm": 0.07},
+                   {"observation": "midpoint", "residual_mm": 0.06}],
+            residual_rms_mm=0.06))
+        span = {"scan_point": [0.0, 0.0, 0.0], "scan_point_end": [1.0, 0.0, 0.0]}
+        assert client.post(f"{BASE}/4/fit-by-points", json={"pairs": [
+            {"feature_id": f"code-{i}", **span} for i in (1, 2, 3)]},
+        ).status_code == 200
+        row4 = next(r for r in client.get(f"/api/case-sessions/{CASE}/run").json()[
+            "sites"] if r["tooth"] == 4)
+        assert row4["correspondence"]["pairs"] == 3
+        assert row4["correspondence"]["observations"] == 3
+        assert row4["correspondence"]["spans"] == 3
+        assert row4["correspondence"]["directions_used"] == 0
 
     def test_the_rows_deviation_is_re_derived_over_the_pose_that_just_landed(
             self, settings, product_root, monkeypatch):

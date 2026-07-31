@@ -14,6 +14,11 @@
  * structural mirrors of the BFF's two GET resources (bff/resources/case_sessions.py),
  * so both payloads project into one `FlowFacts` and every rule has a single home.
  */
+// The ONE definition of a usable centre, shared with the site list, the framing hint
+// and the scan picker (audit 2026-07-31 — the rail held a looser one and over-claimed
+// against the very rows beside it). intake.ts imports only TYPES from api/client, so
+// this stays a pure-rules dependency.
+import { asVec3 } from "./intake";
 
 export type StageId = "intake" | "declare" | "adjust" | "deliver";
 
@@ -90,6 +95,17 @@ export interface FlowFacts {
    * that is a client decision, not a display one.
    */
   readonly siteCentred?: number;
+  /**
+   * Sites the DETECTOR actually proposed — a site whose tooth a proposal guessed
+   * (`detection.proposals[].tooth_guess`). NOT `siteTotal`: the missed-cap door
+   * (bff/resources/case_sessions.py:503-513) creates session-only sites with a
+   * `marked_center` and no proposal behind them, and the rail was the only surface
+   * on the screen claiming the detector had seen those caps (audit 2026-07-31).
+   *
+   * ABSENT, like `siteCentred`, when the payload in hand does not carry it: the
+   * worklist row projects no proposals, and a zero there would invent a shortfall.
+   */
+  readonly siteDetected?: number;
 }
 
 /** Structural mirror of a `WorklistRow` (GET /api/case-sessions). */
@@ -125,12 +141,18 @@ export function factsFromWorklistRow(row: WorklistRowLike): FlowFacts {
 export interface CaseSessionLike {
   /** `center` is REQUIRED here though it is nullable: `SiteView.center` always
    * rides the wire (api/client.ts), and letting a caller omit it would make an
-   * unmarked site and an unreported one look identical to the shortfall count. */
+   * unmarked site and an unreported one look identical to the shortfall count.
+   * `tooth` is what joins a site to the proposal that found it. */
   readonly sites: ReadonlyArray<{
+    readonly tooth: number;
     readonly status: string;
     readonly center: ReadonlyArray<number> | null;
   }>;
-  readonly detection: object | null;
+  /** The detection RECORD — its presence is `detectionDone`, and its proposals are
+   * the only evidence that the detector saw a given tooth at all. */
+  readonly detection: {
+    readonly proposals: ReadonlyArray<{ readonly tooth_guess: number | null }>;
+  } | null;
   readonly choices: { readonly complete: boolean };
   readonly session: {
     readonly run_state: string;
@@ -140,6 +162,11 @@ export interface CaseSessionLike {
 }
 
 export function factsFromCaseSession(payload: CaseSessionLike): FlowFacts {
+  const guessed = new Set(
+    (payload.detection?.proposals ?? [])
+      .map((p) => p.tooth_guess)
+      .filter((t): t is number => t !== null),
+  );
   return {
     siteTotal: payload.sites.length,
     siteDeclared: payload.sites.filter((s) => s.status !== "detected").length,
@@ -150,7 +177,10 @@ export function factsFromCaseSession(payload: CaseSessionLike): FlowFacts {
     released: payload.session.released,
     detectionDone: payload.detection !== null,
     choicesComplete: payload.choices.complete,
-    siteCentred: payload.sites.filter((s) => s.center !== null).length,
+    // intake.asVec3, not `center !== null`: same predicate as the site list's framing
+    // hint and the scan picker, so the rail cannot over-report against its own rows
+    siteCentred: payload.sites.filter((s) => asVec3(s.center) !== null).length,
+    siteDetected: payload.sites.filter((s) => guessed.has(s.tooth)).length,
   };
 }
 
@@ -285,9 +315,24 @@ export function stageSubLine(stage: StageId, facts: FlowFacts): string {
       if (centred !== undefined && centred < total) {
         return `${total - centred} of ${nSites(total)} still without a centre.`;
       }
-      return facts.choicesComplete
-        ? `${nSites(total)} detected — case-level choices made.`
-        : `${nSites(total)} detected — case-level choices still open.`;
+      // COUNT WHAT THE SENTENCE NAMES (audit 2026-07-31). "N sites detected" over
+      // `siteTotal` asserted detection across hand-marked caps — on a screen whose
+      // own panel ("A cap the detection missed") is what created them and whose rows
+      // render no detector evidence for them, because there is none. Detection finds
+      // 8 of 10 on this fleet, which is the whole reason that door exists.
+      const detected = facts.siteDetected;
+      const tail = facts.choicesComplete
+        ? "case-level choices made."
+        : "case-level choices still open.";
+      if (detected === undefined) {
+        // the payload never carried the fact (the worklist row) — drop the word
+        // rather than claim it
+        return `${nSites(total)} — ${tail}`;
+      }
+      const byHand = total - detected;
+      return byHand > 0
+        ? `${detected} detected, ${byHand} marked by hand — ${tail}`
+        : `${nSites(total)} detected — ${tail}`;
     }
     case "declare": {
       if (total === 0) return standing;

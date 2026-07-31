@@ -19,7 +19,8 @@ import pytest
 from bff.config import Settings
 from bff.pricing import (CURRENCY, EXCEPTION_NUMERATOR, EXCEPTION_DENOMINATOR,
                          RATE_CARD_STATUS, RATE_CARD_VERSION, unit_amount_cents)
-from bff.session import SessionStore
+from bff.session import (SeatedSelection, SessionConflict, SessionStore,
+                         SiteSession, SiteStatus)
 
 from conftest import make_data_tree
 from test_assurance import PACKAGE_FILES, landed_client
@@ -54,6 +55,54 @@ def lines_by_key(body) -> dict:
 def exception_cents(turnaround: str) -> int:
     return (unit_amount_cents(turnaround) * EXCEPTION_NUMERATOR
             // EXCEPTION_DENOMINATOR)
+
+
+CHOICES = {"construction_path": "dess/neodent-gm-scanbody.stl", "jaw": "upper",
+           "gingival_offset_mm": 0.2}
+
+
+def put_choices(client, **overrides):
+    return client.put("/api/case-sessions/neodent-gm/choices",
+                      json={**CHOICES, **overrides})
+
+
+def materialize_run(client, product_root, files=PACKAGE_FILES) -> str:
+    """Lay down the CURRENT run's package bytes — QC images (the evidence the
+    confirmation hashes) and deliverables alike. ``deliverable_client`` does this for
+    the first run; a SECOND run lands in a fresh directory that nobody has filled."""
+    run_id = client.get("/api/case-sessions/neodent-gm/run").json()["run_id"]
+    run_dir = product_root / "neodent-gm" / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    for name in files:
+        run_dir.joinpath(name).write_bytes(
+            (b"\x89PNG:" if name.endswith(".png") else b"STL:") + name.encode())
+    return run_id
+
+
+def rerun_across_a_boundary(client, product_root, offset: float = 0.25) -> str:
+    """Take the case through a REAL reset boundary onto a SECOND done run, exactly as
+    an operator would: a choices change clears the run pointer (and deliberately
+    leaves any standing confirmation), the sites are re-previewed and re-reviewed,
+    and a fresh run is authorized. Returns the new run id.
+
+    The re-review is written through the store because there is no client path to a
+    READY rung by design (``seed_ready``'s own rule) — the seat record mirrors what
+    the preview route persists, so the authorized gate accepts it."""
+    assert put_choices(client, gingival_offset_mm=offset).status_code == 200
+    store = SessionStore(product_root)
+    session = store.load("neodent-gm")
+    assert session.run is None, "the boundary must have cleared the run pointer"
+    for tooth in ("4", "13"):
+        session.sites[tooth] = SiteSession(
+            status=SiteStatus.READY, declared_variant="5020",
+            seat_method="rim-seat", rim_agreement_mm=0.07,
+            seated_selection=SeatedSelection(
+                model="neodent-gm",
+                construction_path="dess/neodent-gm-scanbody.stl",
+                variant="5020", jaw="upper", gingival_offset_mm=offset))
+    store.save(session)
+    assert client.post("/api/case-sessions/neodent-gm/run").status_code == 200
+    return materialize_run(client, product_root)
 
 
 class TestTheInvoiceIsAProjection:
@@ -284,3 +333,185 @@ class TestPricingIsPureArithmeticInCents:
     def test_an_unknown_turnaround_word_refuses_rather_than_guessing(self):
         with pytest.raises(KeyError):
             unit_amount_cents("overnight")
+
+
+class TestTheChargeStandsOnWhatWasSigned:
+    """THE THREE MONEY HOLES the 2026-07-31 audit walked, pinned as the failures they
+    actually were. Every one of them let the amount charged and the document the
+    operator signed describe different cases, and every one of them was reachable
+    through the public API with no race and no forged body.
+    """
+
+    def test_paying_over_a_run_the_confirmation_never_named_refuses(
+            self, settings, product_root):
+        """AUDIT FINDING 1. ``_require_done_run_for_act(..., "pay for")`` asks only
+        that SOME run be done — never that the standing confirmation names THAT run.
+        One reset boundary and one re-run later, a confirmation sealed over run A sat
+        beside a done run B, and ``_billing_dispositions`` failed OPEN on the
+        mismatch: every withhold the operator signed was dropped and every site
+        priced as released, on evidence nobody had confirmed.
+
+        Measured before the fix: 200, and ``amount_cents`` twice the confirmed
+        invoice — for a case whose release could then never succeed, because the
+        evidence sha re-derives over run B and can never equal run A's."""
+        from test_deliver import confirm, confirm_body, deliverable_client
+        client = deliverable_client(settings, product_root)
+        assert confirm(client, confirm_body({"4": "release",
+                                             "13": "withhold"})).status_code == 200
+        signed_total = invoice_of(client)["total_cents"]
+        assert signed_total == unit_amount_cents("standard")   # one site released
+        run_a = SessionStore(product_root).load("neodent-gm").confirmation.run_id
+
+        run_b = rerun_across_a_boundary(client, product_root)
+        assert run_b != run_a
+        session = SessionStore(product_root).load("neodent-gm")
+        assert session.confirmation.run_id == run_a, "the confirmation still stands"
+
+        res = client.post("/api/case-sessions/neodent-gm/payment",
+                          json={"authorize": True})
+        assert res.status_code == 409
+        detail = res.json()["detail"]
+        assert run_a in detail and run_b in detail
+        assert SessionStore(product_root).load("neodent-gm").payment is None
+
+    def test_an_invoice_read_against_a_foreign_confirmation_refuses_not_defaults(
+            self, settings, product_root):
+        """The same finding's read half. "No confirmation at all" legitimately
+        defaults to release (confirm's own omission rule). "A confirmation naming
+        ANOTHER run" is not that state — it is a case whose signature no longer
+        applies — and quietly re-pricing it at the full released rate is the
+        over-claiming direction. The invoice says so instead."""
+        from test_deliver import confirm, confirm_body, deliverable_client
+        client = deliverable_client(settings, product_root)
+        assert confirm(client, confirm_body({"4": "release",
+                                             "13": "withhold"})).status_code == 200
+        rerun_across_a_boundary(client, product_root)
+        res = client.get("/api/case-sessions/neodent-gm/invoice")
+        assert res.status_code == 409
+        assert "re-confirm" in res.json()["detail"]
+
+    def test_releasing_more_than_was_paid_for_refuses_with_the_shortfall(
+            self, settings, product_root):
+        """AUDIT FINDING 2. Dispositions sit OUTSIDE the evidence hash by design, so
+        re-confirming four withholds into releases moves no sha at all — the release
+        gate's byte comparison passes unchanged, and it gated on the payment BOOLEAN.
+        Measured before the fix: a 200 release disclosing every site, against a
+        receipt for one."""
+        from test_deliver import confirm, confirm_body, deliverable_client, pay, release
+        client = deliverable_client(settings, product_root)
+        assert confirm(client, confirm_body({"4": "release",
+                                             "13": "withhold"})).status_code == 200
+        assert pay(client).status_code == 200
+        paid = SessionStore(product_root).load("neodent-gm").payment.amount_cents
+        assert paid == unit_amount_cents("standard")
+
+        # the same evidence, a wider release — a supported act, and one that moves no
+        # hash (test_evidence pins that dispositions never enter the bytes)
+        before = SessionStore(product_root).load("neodent-gm").confirmation
+        assert confirm(client, confirm_body({"4": "release",
+                                             "13": "release"})).status_code == 200
+        after = SessionStore(product_root).load("neodent-gm").confirmation
+        assert after.evidence_sha256 == before.evidence_sha256, "no drift to catch"
+
+        res = release(client)
+        assert res.status_code == 409
+        detail = res.json()["detail"]
+        assert str(paid) in detail and str(invoice_of(client)["total_cents"]) in detail
+        assert SessionStore(product_root).load("neodent-gm").release is None
+
+    def test_releasing_a_rush_case_paid_at_the_standard_rate_refuses(
+            self, settings, product_root):
+        """The same hole through the turnaround door: ``turnaround`` is client-settable
+        and fires no reset boundary (deliberately — it touches no geometry), so pay
+        standard, upgrade to rush, release used to ship rush work at the standard
+        rate with nothing comparing the two numbers."""
+        from test_deliver import confirm, deliverable_client, pay, release
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        assert pay(client).status_code == 200
+        assert put_choices(client, turnaround="rush").status_code == 200
+        session = SessionStore(product_root).load("neodent-gm")
+        assert session.run is not None, "a turnaround change fires no boundary"
+        assert session.confirmation is not None
+
+        res = release(client)
+        assert res.status_code == 409
+        assert "re-authorize" in res.json()["detail"]
+
+    def test_a_release_at_exactly_the_priced_amount_still_passes(
+            self, settings, product_root):
+        """The re-pricing gate must not become a wall in front of the ordinary
+        walk: paid == priced releases, as it always did."""
+        from test_deliver import confirm, deliverable_client, pay, release
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        assert pay(client).status_code == 200
+        assert release(client).status_code == 200
+
+    def test_a_second_authorization_refuses_instead_of_overwriting_the_receipt(
+            self, settings, product_root):
+        """AUDIT FINDING 3. Nothing checked ``session.payment is None``, so a second
+        POST re-priced off the CURRENT document and replaced the record. With
+        turnaround settable and boundary-free, that let the recorded charge be
+        lowered after the work was billed high — destroying the only record of what
+        was charged. Measured before the fix: the rush receipt became a standard one
+        and the rush charge existed nowhere."""
+        from test_deliver import confirm, deliverable_client, pay
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        assert put_choices(client, turnaround="rush").status_code == 200
+        assert pay(client).status_code == 200
+        charged = SessionStore(product_root).load("neodent-gm").payment
+        assert charged.amount_cents == 2 * unit_amount_cents("rush")
+
+        assert put_choices(client, turnaround="standard").status_code == 200
+        res = pay(client)
+        assert res.status_code == 409
+        assert "already paid" in res.json()["detail"]
+        assert "/delivery/reset" in res.json()["detail"]
+        again = SessionStore(product_root).load("neodent-gm").payment
+        assert again.amount_cents == charged.amount_cents
+        assert again.turnaround == "rush" and again.at == charged.at
+
+    def test_the_door_back_still_reopens_a_second_authorization(
+            self, settings, product_root):
+        """The refusal above must not wedge the demo: ``POST /delivery/reset``
+        withdraws all three records together and the flow is walkable again."""
+        from test_deliver import confirm, deliverable_client, pay
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        assert pay(client).status_code == 200
+        assert client.post(
+            "/api/case-sessions/neodent-gm/delivery/reset").status_code == 200
+        assert confirm(client).status_code == 200
+        assert pay(client).status_code == 200
+
+    def test_a_lost_race_refuses_rather_than_silently_re_pricing(
+            self, settings, product_root, monkeypatch):
+        """AUDIT FINDING 7's minimum, and finding 3's other half. Payment rode
+        ``_mutate_session``, which RE-LOADS and RE-APPLIES after a lost CAS — so a
+        turnaround PUT landing in that window re-derived the price upward and
+        returned 200, charging a number the authorizing act never saw.
+
+        A signature-shaped record does not get a retry: the act refuses and the
+        operator re-reads. Simulated here by losing the first save, which is exactly
+        what a rival write does."""
+        from test_deliver import confirm, deliverable_client, pay
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+
+        real_save = SessionStore.save
+        saves = {"n": 0}
+
+        def flaky(self, session):
+            saves["n"] += 1
+            if saves["n"] == 1:
+                raise SessionConflict(session.case_id, session.version,
+                                      session.version + 1)
+            return real_save(self, session)
+
+        monkeypatch.setattr(SessionStore, "save", flaky)
+        res = pay(client)
+        assert res.status_code == 409
+        monkeypatch.undo()
+        assert SessionStore(product_root).load("neodent-gm").payment is None

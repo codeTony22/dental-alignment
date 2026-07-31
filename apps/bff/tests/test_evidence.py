@@ -20,8 +20,8 @@ from pathlib import Path
 
 import pytest
 
-from bff.evidence import (EvidenceBundle, canonical_bundle, qc_image_hashes,
-                          write_bundle)
+from bff.evidence import (BUNDLE_VERSION, EvidenceBundle, canonical_bundle,
+                          qc_image_hashes, write_bundle)
 
 
 ASSURANCE = {
@@ -85,12 +85,27 @@ class TestCanonicalization:
         would start 409-ing as "the case changed", blaming the run for an act."""
         bundle = canonical_bundle(ASSURANCE, QC_HASHES, "skip")
         # "terms_version" joined the shape (plan §10-A) the same way "adjustments"
-        # did: an ACT beside the run's facts, never inside them
+        # did: an ACT beside the run's facts, never inside them. "bundle_version"
+        # joined it as the shape's own name (audit finding 4, 2026-07-31).
         assert set(bundle.payload) == {"assurance", "qc_sha256", "adjustments",
-                                       "terms_version"}
+                                       "terms_version", "bundle_version"}
         text = bundle.canonical.decode("ascii")
         assert "dispositions" not in text
         assert "withhold" not in text
+
+    def test_the_bundle_names_the_shape_it_was_built_under(self):
+        """AUDIT FINDING 4 (2026-07-31). The bundle's SHAPE moves — twice already
+        (``adjustments``, then ``terms_version``), and again whenever the assurance
+        projection gains a field, since ``sealed_facts()`` is a ``model_dump``. Every
+        such move silently restages every bundle on disk, and the only thing that
+        noticed was a full re-derivation with a disk read.
+
+        A version IN the payload makes the shape a fact a cheap session-only clause
+        can compare (``_released``'s own need), and one an auditor holding the bytes
+        can read without guessing which build wrote them."""
+        bundle = canonical_bundle(ASSURANCE, QC_HASHES, None)
+        assert bundle.payload["bundle_version"] == BUNDLE_VERSION
+        assert json.loads(bundle.canonical)["bundle_version"] == BUNDLE_VERSION
 
     def test_the_decision_is_stated_once_beside_the_runs_facts(self):
         """The fork's word is an ACT and sits at the top level, next to the run's

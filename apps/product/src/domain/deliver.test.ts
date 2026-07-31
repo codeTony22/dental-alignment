@@ -378,6 +378,45 @@ describe("the exceptions policy, in the product's own act (not a status word)", 
     const view = assuranceView({ sites: [assuranceSite()] });
     expect(acknowledgmentPolicyWords(view)).toContain("No site needs an acknowledgment");
   });
+
+  it("a WITHHELD site is never described as releasing under an acknowledgment", () => {
+    // Audit 2026-07-31. The header counted needsAcknowledgment alone, so on a table
+    // where the operator withheld both flagged sites it asserted "2 sites release only
+    // as acknowledged exceptions" while (a) neither row rendered a tick — ackRequired
+    // is false once withheld — (b) confirmBlockers demanded nothing, and (c) the
+    // server's own derive_invoice counted them as `withheld`, explicitly NOT as
+    // exceptions. The whole content of the operator's act is that they do not release.
+    const view = assuranceView({
+      sites: [
+        flaggedAssuranceSite({ tooth: 14 }),
+        flaggedAssuranceSite({ tooth: 15 }),
+        assuranceSite({ tooth: 19 }),
+      ],
+    });
+    const words = acknowledgmentPolicyWords(view, { 14: "withhold", 15: "withhold" });
+    expect(words).not.toContain("release only as");
+    expect(words).toContain("No site releases as an acknowledged exception");
+    expect(words).toContain("2 sites are withheld");
+  });
+
+  it("counts the same predicate the rows and the confirm gate stand on", () => {
+    const view = assuranceView({
+      sites: [flaggedAssuranceSite({ tooth: 14 }), flaggedAssuranceSite({ tooth: 15 })],
+    });
+    const words = acknowledgmentPolicyWords(view, { 15: "withhold" });
+    expect(words).toContain("1 site releases only as an acknowledged exception");
+    expect(words).toContain("1 site is withheld");
+    // and the obligation it names is exactly what the gate still demands
+    expect(confirmBlockers(view, { 15: "withhold" }, [])).toEqual([
+      "tooth 14 is flagged — releasing it needs its own acknowledgment",
+    ]);
+  });
+
+  it("with no dispositions in hand it reads exactly as it did — release is the default", () => {
+    expect(acknowledgmentPolicyWords(TWO_SITES, {})).toBe(
+      acknowledgmentPolicyWords(TWO_SITES),
+    );
+  });
 });
 
 describe("staleMetricsWords — what a reworked row's numbers still describe", () => {
@@ -581,13 +620,56 @@ describe("the closing note — what actually shipped, counted from the served li
     expect(words).not.toContain("Nothing was withheld");
   });
 
-  it("two withheld sites are both named, and the closing is scoped to what shipped", () => {
-    const words = releasedClosingWords(
-      artifacts({ withheld_teeth: [30, 19] }),
-    );
+  it("two withheld sites are both named, and nothing shipped is never called closed", () => {
+    const words = releasedClosingWords(artifacts({ withheld_teeth: [30, 19] }));
     expect(words).toContain("Teeth 30, 19 stay open");
     expect(words).toContain("No files were disclosed");
-    expect(words).toContain("closed for the sites that shipped");
+    // audit 2026-07-31: "closed for the sites that shipped" over an EMPTY served list
+    // named a set of sites that is empty — under-claiming is the whole point here.
+    expect(words).not.toContain("this run is closed");
+    expect(words).not.toContain("closed for the sites");
+  });
+
+  it("a file the run directory no longer holds is a GAP, never folded into the count", () => {
+    // The BFF sets size_bytes: None for "a file the package claims but disk no longer
+    // holds — visible as a gap rather than smoothed into a zero" (deliver.py:1158-1170),
+    // and clicking that row 404s (fetch_artifact, deliver.py:1230). Counting the LISTED
+    // rows laundered that disclosed gap back into a total and then called the run closed
+    // from the very page the download fails on.
+    const words = releasedClosingWords(
+      artifacts({
+        files: [
+          { name: "a-19-cap.stl", size_bytes: 1, tooth: 19 },
+          { name: "a-19-sb.stl", size_bytes: 1, tooth: 19 },
+          { name: "a-30-cap.stl", size_bytes: null, tooth: 30 },
+        ],
+      }),
+    );
+    expect(words).toContain("Released 2 files for 1 site.");
+    expect(words).toContain("1 listed file is no longer in the run directory");
+    expect(words).not.toContain("this run is closed");
+  });
+
+  it("every listed file missing means nothing was disclosed at all", () => {
+    const words = releasedClosingWords(
+      artifacts({
+        files: [
+          { name: "a-19-cap.stl", size_bytes: null, tooth: 19 },
+          { name: "a-30-cap.stl", size_bytes: null, tooth: 30 },
+        ],
+      }),
+    );
+    expect(words).toContain("No files were disclosed");
+    expect(words).toContain("2 listed files are no longer in the run directory");
+    expect(words).not.toContain("this run is closed");
+  });
+
+  it("a full, intact release is still the one thing allowed to say closed", () => {
+    expect(
+      releasedClosingWords(
+        artifacts({ files: [{ name: "a-19-cap.stl", size_bytes: 4, tooth: 19 }] }),
+      ),
+    ).toBe("Released 1 file for 1 site. Nothing was withheld — this run is closed.");
   });
 });
 

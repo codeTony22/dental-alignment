@@ -29,12 +29,16 @@ import {
   choicesUpdateFrom,
   constructionOptions,
   detectionMarkers,
+  EMPTY_MARK,
+  markOnArmMark,
+  markOnArmPick,
   pickSiteAt,
   rescanNotices,
   shouldAutoDetect,
   siteCentre,
   siteEvidence,
   SITE_PICK_RADIUS_MM,
+  type MarkDraft,
 } from "../domain/intake";
 import { MainStage } from "./MainStage";
 
@@ -629,23 +633,20 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
      the reason this is not a single form: ARMED (the next scan click is the centre),
      PLACED (a centre exists, awaiting its tooth), and idle. Optimism is OFF like
      everywhere else on this app — the site appears because the BFF returned a detail
-     saying so, never because the click landed. */
-  const [markArmed, setMarkArmed] = useState(false);
-  const [markPending, setMarkPending] = useState<readonly number[] | null>(null);
-  const [markTooth, setMarkTooth] = useState("");
-  const [markSaving, setMarkSaving] = useState(false);
-  const [markError, setMarkError] = useState<string | null>(null);
+     saying so, never because the click landed.
 
-  const resetMark = useCallback(() => {
-    setMarkArmed(false);
-    setMarkPending(null);
-    setMarkTooth("");
-    setMarkError(null);
-  }, []);
+     ONE draft, not four useStates (audit 2026-07-31): the transitions that must not
+     lose a placed centre are then named rules in domain/intake with their own tests,
+     instead of four setters a caller can forget one of. `markSaving` stays separate —
+     it is the request's phase, not part of what the operator drafted. */
+  const [mark, setMark] = useState<MarkDraft>(EMPTY_MARK);
+  const [markSaving, setMarkSaving] = useState(false);
+
+  const resetMark = useCallback(() => setMark(EMPTY_MARK), []);
 
   const handleMarkPlaced = useCallback((point: readonly [number, number, number]) => {
-    setMarkPending([...point]);
-    setMarkArmed(false);   // the click is spent; naming the tooth comes next
+    // the click is spent; naming the tooth comes next
+    setMark((prev) => ({ ...prev, armed: false, pending: [...point] }));
   }, []);
 
   /* PICKING A SITE (client 2026-07-31). Purely a VIEW act — which site the stage
@@ -667,8 +668,11 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
   const handleArmPick = useCallback(() => {
     setPickArmed(true);
     setPickMiss(null);
-    resetMark();           // one point pick, one owner
-  }, [resetMark]);
+    // one point pick, one owner — DISARM the mark, never discard it (audit
+    // 2026-07-31: this used to reset the whole draft, silently destroying a placed
+    // centre the operator had hunted down in 3D). The rule lives in domain/intake.
+    setMark(markOnArmPick);
+  }, []);
 
   const handleCancelPick = useCallback(() => {
     setPickArmed(false);
@@ -686,26 +690,37 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
         return;
       }
       setPickArmed(false);  // the viewer's pick is one-shot; so is this arming
-      const tooth = pickSiteAt(detail.sites, point);
-      if (tooth === null) {
+      const pick = pickSiteAt(detail.sites, point);
+      if (pick.kind === "miss") {
         setPickMiss(
           `No site within ${SITE_PICK_RADIUS_MM.toFixed(1)}mm of that click — ` +
             "try the centre of a cap, or pick the row instead.",
         );
         return;
       }
+      if (pick.kind === "ambiguous") {
+        // Said, not guessed (audit 2026-07-31): two centres can sit inside one reach,
+        // and resolving by nearest would frame a tooth the operator did not click.
+        setPickMiss(
+          `That click is within ${SITE_PICK_RADIUS_MM.toFixed(1)}mm of ` +
+            `${pick.teeth.length} sites (${pick.teeth.map((t) => `tooth ${t}`).join(", ")}) — ` +
+            "click nearer the cap you mean, or pick its row.",
+        );
+        return;
+      }
       setPickMiss(null);
-      setActiveTooth(tooth);
+      setActiveTooth(pick.tooth);
     },
     [detail.sites, handleMarkPlaced, pickArmed],
   );
 
   const handleSubmitMark = useCallback(() => {
-    const tooth = Number(markTooth);
-    if (markPending === null || !Number.isInteger(tooth)) return;
+    const tooth = Number(mark.tooth);
+    const pending = mark.pending;
+    if (pending === null || !Number.isInteger(tooth)) return;
     setMarkSaving(true);
-    setMarkError(null);
-    void postMarkedSite(caseId, tooth, markPending).then((result) => {
+    setMark((prev) => ({ ...prev, error: null }));
+    void postMarkedSite(caseId, tooth, pending).then((result) => {
       setMarkSaving(false);
       // ApiResult is a {kind} union — same wrong-shape bug as the reconfirm handler
       // (result.ok/.value/.error exist on nothing), caught in the same sweep
@@ -716,9 +731,9 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
       }
       // the BFF's own words — a 409 on an existing tooth explains itself better
       // than anything this layer could summarise
-      setMarkError(result.detail);
+      setMark((prev) => ({ ...prev, error: result.detail }));
     });
-  }, [caseId, markPending, markTooth, onDetail, resetMark]);
+  }, [caseId, mark.pending, mark.tooth, onDetail, resetMark]);
   const mountedRef = useRef(true);
   const [detectPhase, setDetectPhase] = useState<DetectPhase>({ kind: "idle" });
   const [savingChoices, setSavingChoices] = useState(false);
@@ -783,19 +798,18 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
       savingChoices={savingChoices}
       choicesError={choicesError}
       onChoice={handleChoice}
-      markArmed={markArmed}
-      markPending={markPending}
-      markTooth={markTooth}
+      markArmed={mark.armed}
+      markPending={mark.pending}
+      markTooth={mark.tooth}
       markSaving={markSaving}
-      markError={markError}
+      markError={mark.error}
       onArmMark={() => {
-        setMarkArmed(true);
-        setMarkError(null);
+        setMark(markOnArmMark);
         setPickArmed(false); // one point pick, one owner
         setPickMiss(null);
       }}
       onCancelMark={resetMark}
-      onMarkTooth={setMarkTooth}
+      onMarkTooth={(tooth) => setMark((prev) => ({ ...prev, tooth }))}
       onStagePoint={handleStagePoint}
       onSubmitMark={handleSubmitMark}
       onRetryDetect={fireDetect}

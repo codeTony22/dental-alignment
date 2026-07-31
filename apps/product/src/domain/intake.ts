@@ -104,16 +104,37 @@ export interface SiteMarker {
   readonly radiusMm: number;
 }
 
-function asVec3(center: readonly number[]): readonly [number, number, number] | null {
-  return center.length === 3
-    ? [center[0]!, center[1]!, center[2]!]
+/**
+ * THE ONE DEFINITION OF "A USABLE CENTRE" (audit 2026-07-31).
+ *
+ * Exactly three coordinates, all FINITE. The finiteness check is not defensive
+ * pedantry: only the operator-mark route validates a 3-and-finite vector
+ * (bff/resources/case_sessions.py:1264) — a CURATED site's `center` is an
+ * unvalidated pass-through of the case record (:495-496), typed no more tightly
+ * than `Optional[List[float]]`. A NaN coordinate then poisons every comparison
+ * downstream (`NaN > radius` is false, so the site is not skipped; `NaN < best` is
+ * also false, so it never wins either), which is a worse failure than not having a
+ * point at all.
+ *
+ * Exported because flow.ts's rail count must use THIS predicate: the rail once
+ * counted `center !== null` while the site list and the picker used this one, so a
+ * two-coordinate centre had the rail printing "5 sites detected" over a row that
+ * said "has no centre yet — the stage cannot frame it".
+ */
+export function asVec3(
+  center: readonly number[] | null,
+): readonly [number, number, number] | null {
+  if (center === null || center.length !== 3) return null;
+  const [x, y, z] = center as readonly [number, number, number];
+  return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)
+    ? [x, y, z]
     : null;
 }
 
 /** A site's centre as a usable 3-vector, or nothing — a short/absent vector is never
  *  padded into a point (the stage would then frame a place that does not exist). */
 export function siteCentre(site: SiteView): readonly [number, number, number] | null {
-  return site.center !== null ? asVec3(site.center) : null;
+  return asVec3(site.center);
 }
 
 export function detectionMarkers(detail: CaseSessionDetail): readonly SiteMarker[] {
@@ -128,7 +149,7 @@ export function detectionMarkers(detail: CaseSessionDetail): readonly SiteMarker
   }
   const unmatched = (site: SiteView) => !guessedTeeth.has(site.tooth);
   for (const site of detail.sites.filter(unmatched)) {
-    const center = site.center !== null ? asVec3(site.center) : null;
+    const center = asVec3(site.center);
     if (center !== null) markers.push({ center, radiusMm: MARKER_RADIUS_MM });
   }
   return markers;
@@ -143,20 +164,41 @@ export function detectionMarkers(detail: CaseSessionDetail): readonly SiteMarker
  * within reach owns it.
  *
  * 6mm, not the 2.6mm marker ring: the stored centre sits at rim height over the screw
- * recess while the click lands wherever the operator's ray met the cap's flank, and two
- * implants are never closer than 8mm (cap_detection._MIN_SEPARATION_MM) — so 6mm cannot
- * make a click ambiguous between two caps. Beyond it the operator plainly meant
- * something else and null is the honest answer: snapping to the least-far site would
- * silently reframe the stage onto a tooth nobody clicked.
+ * recess while the click lands wherever the operator's ray met the cap's flank, so the
+ * reach has to cover a whole cap from its own centre. Beyond it the operator plainly
+ * meant something else and a MISS is the honest answer: snapping to the least-far site
+ * would silently reframe the stage onto a tooth nobody clicked.
+ *
+ * WHY THIS DOES NOT RESOLVE BY NEAREST (audit 2026-07-31). The earlier justification
+ * here was arithmetically false: `cap_detection._MIN_SEPARATION_MM = 8.0` bounds
+ * centre-to-CENTRE distance, not click-to-centre, so with two centres 8mm apart a
+ * click at 5mm from one is 3mm from the other and BOTH are inside a 6mm reach. Worse,
+ * that filter is internal to the detector and governs neither of the two site sets
+ * this searches: `POST /{case_id}/sites` (bff/resources/case_sessions.py:1244-1281)
+ * validates tooth-uniqueness, 1..32 and a finite 3-vector and nothing about spacing,
+ * so the missed-cap door can place a centre 1mm from an existing site.
+ *
+ * Dropping the reach to 4mm was the other option and was rejected: it would make a
+ * legitimate flank click on a well-isolated cap miss, which is the common case, to
+ * guard the rare one. Instead the rare one is SAID. An ambiguous click is refused out
+ * loud, exactly the way a bare-arch click is said rather than snapped — the operator
+ * settles it with one more click, and the stage never flies to a tooth on a guess.
  */
 export const SITE_PICK_RADIUS_MM = 6.0;
+
+/** What one click on the scan resolved to. `ambiguous` carries the teeth in reach,
+ *  nearest first, so the surface can name them in the order the operator would look. */
+export type SitePick =
+  | { readonly kind: "site"; readonly tooth: number }
+  | { readonly kind: "miss" }
+  | { readonly kind: "ambiguous"; readonly teeth: readonly number[] };
 
 export function pickSiteAt(
   sites: readonly SiteView[],
   point: readonly [number, number, number],
   radiusMm: number = SITE_PICK_RADIUS_MM,
-): number | null {
-  let best: { tooth: number; distance: number } | null = null;
+): SitePick {
+  const inReach: { tooth: number; distance: number }[] = [];
   for (const site of sites) {
     const centre = siteCentre(site);
     if (centre === null) continue;
@@ -165,10 +207,63 @@ export function pickSiteAt(
       centre[1] - point[1],
       centre[2] - point[2],
     );
-    if (distance > radiusMm) continue;
-    if (best === null || distance < best.distance) best = { tooth: site.tooth, distance };
+    // written as "<= radius", not "> radius ⇒ skip": a NaN distance must FAIL the
+    // test rather than slip through it (siteCentre already refuses non-finite
+    // centres, so this is belt-and-braces on the arithmetic itself)
+    if (!(distance <= radiusMm)) continue;
+    inReach.push({ tooth: site.tooth, distance });
   }
-  return best?.tooth ?? null;
+  if (inReach.length === 0) return { kind: "miss" };
+  inReach.sort((a, b) => a.distance - b.distance);
+  if (inReach.length > 1) {
+    return { kind: "ambiguous", teeth: inReach.map((entry) => entry.tooth) };
+  }
+  return { kind: "site", tooth: inReach[0]!.tooth };
+}
+
+/**
+ * THE MISSED-CAP MARK, as the container holds it (client 2026-07-28; audit
+ * 2026-07-31). Kept here rather than as four `useState`s in the component so the
+ * one rule that got broken has a name and a test.
+ */
+export interface MarkDraft {
+  /** the next stage click is the CENTRE — false again the moment one is placed */
+  readonly armed: boolean;
+  /** a centre placed and awaiting its tooth; a mark is only a site once named */
+  readonly pending: readonly number[] | null;
+  readonly tooth: string;
+  /** the BFF's own refusal, verbatim */
+  readonly error: string | null;
+}
+
+export const EMPTY_MARK: MarkDraft = {
+  armed: false,
+  pending: null,
+  tooth: "",
+  error: null,
+};
+
+/**
+ * ARMING THE SITE PICKER (audit 2026-07-31). Intake has two doors onto the viewer's
+ * SINGLE one-shot point pick, so arming either must disarm the other — but disarming
+ * is not discarding. `handleArmPick` used to reset the whole draft, which threw away
+ * a placed-but-unnamed centre: the operator had marked the cap, typed its tooth, then
+ * clicked "Pick a site on the scan" to check a neighbour, and the panel collapsed to
+ * its idle button with no message and no centre, a fresh hunt in 3D to redo.
+ *
+ * That is precisely the quiet loss this surface's doctrine forbids (a human's mark is
+ * fixed at the UI or refused, never dropped downstream), the panel already offers
+ * "Discard the mark" so discarding is a deliberate act, and the sibling
+ * `handleSelectSite` never reset the mark either. `armed` is already false once a
+ * centre is placed, so a placed draft makes no claim on the point pick at all.
+ */
+export function markOnArmPick(mark: MarkDraft): MarkDraft {
+  return mark.armed ? { ...mark, armed: false } : mark;
+}
+
+/** Arming the mark: a stale refusal from the last attempt is not about this one. */
+export function markOnArmMark(mark: MarkDraft): MarkDraft {
+  return { ...mark, armed: true, error: null };
 }
 
 /**

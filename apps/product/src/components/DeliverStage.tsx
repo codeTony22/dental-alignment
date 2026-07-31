@@ -813,7 +813,7 @@ export function DeliverStageView({
                           {CHECKOUT_SEAL_WORDS}{" "}
                           <a
                             data-role="checkout-terms-link"
-                            className="terms-block__link"
+                            className="terms-block__link terms-block__link--inline"
                             href={sealedTermsHref(detail.session.confirmation)}
                             target="_blank"
                             rel="noreferrer"
@@ -985,7 +985,11 @@ export function DeliverStageView({
                 {assuranceCountsWords(assurance.data)}
               </span>
               <span data-role="assurance-policy" className="deliver-evidence__policy">
-                {acknowledgmentPolicyWords(assurance.data)}
+                {/* the DISPOSITIONS ride in (audit 2026-07-31): without them this
+                    header asserted that sites the operator had withheld "release
+                    only as acknowledged exceptions", contradicting the rows below
+                    it, the confirm gate, and the server's own invoice split */}
+                {acknowledgmentPolicyWords(assurance.data, dispositions)}
               </span>
             </p>
           )}

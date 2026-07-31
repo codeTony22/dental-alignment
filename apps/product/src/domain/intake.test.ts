@@ -10,11 +10,15 @@ import {
   choicesUpdateFrom,
   constructionOptions,
   detectionMarkers,
+  EMPTY_MARK,
+  markOnArmMark,
+  markOnArmPick,
   pickSiteAt,
   rescanNotices,
   shouldAutoDetect,
   siteCentre,
   siteEvidence,
+  type MarkDraft,
 } from "./intake";
 import {
   captureAssessment,
@@ -326,23 +330,52 @@ describe("siteEvidence — what the server already knows about a site", () => {
 describe("pickSiteAt — choosing a site by clicking it on the scan", () => {
   const sites = [
     siteView({ tooth: 19, center: [0, 0, 0] }),
-    siteView({ tooth: 30, center: [10, 0, 0] }),
+    siteView({ tooth: 30, center: [14, 0, 0] }),
   ];
 
   it("a click near a cap picks that site's tooth", () => {
-    expect(pickSiteAt(sites, [1.5, 0.5, 0])).toBe(19);
-  });
-
-  it("the NEAREST centre wins when two are in reach", () => {
-    expect(pickSiteAt(sites, [6.0, 0, 0])).toBe(30);
+    expect(pickSiteAt(sites, [1.5, 0.5, 0])).toEqual({ kind: "site", tooth: 19 });
   });
 
   it("a click on bare arch picks nothing rather than the least-far site", () => {
-    expect(pickSiteAt([siteView({ tooth: 19, center: [0, 0, 0] })], [40, 0, 0])).toBeNull();
+    expect(pickSiteAt([siteView({ tooth: 19, center: [0, 0, 0] })], [40, 0, 0])).toEqual({
+      kind: "miss",
+    });
   });
 
   it("sites without a usable centre cannot be picked", () => {
-    expect(pickSiteAt([siteView({ tooth: 19, center: null })], [0, 0, 0])).toBeNull();
+    expect(pickSiteAt([siteView({ tooth: 19, center: null })], [0, 0, 0])).toEqual({
+      kind: "miss",
+    });
+    // audit 2026-07-31: a non-finite coordinate made Math.hypot NaN, and every
+    // comparison against NaN is false — the site was neither skipped by the radius
+    // test nor able to displace a better match. It is simply not a usable centre.
+    expect(
+      pickSiteAt([siteView({ tooth: 19, center: [0, Number.NaN, 0] })], [0, 0, 0]),
+    ).toEqual({ kind: "miss" });
+    expect(pickSiteAt([siteView({ tooth: 19, center: [0, 0] })], [0, 0, 0])).toEqual({
+      kind: "miss",
+    });
+  });
+
+  it("a click inside TWO caps' reach is refused as ambiguous, never resolved by nearest", () => {
+    // Audit 2026-07-31. The 8mm detector minimum separation bounds CENTRE-TO-CENTRE
+    // distance, not click-to-centre, so a 6mm reach genuinely can cover two caps —
+    // and hand-marked sites bypass the separation filter entirely. Nearest-wins there
+    // silently reframed the stage onto a tooth nobody clicked, which is exactly what
+    // the radius was documented to prevent.
+    const adjacent = [
+      siteView({ tooth: 19, center: [0, 0, 0] }),
+      siteView({ tooth: 20, center: [8, 0, 0] }),
+    ];
+    expect(pickSiteAt(adjacent, [5, 0, 0])).toEqual({
+      kind: "ambiguous",
+      teeth: [20, 19], // nearest first, so the surface can name them in order
+    });
+  });
+
+  it("a cap well clear of its neighbour still resolves to one tooth", () => {
+    expect(pickSiteAt(sites, [13, 0, 0])).toEqual({ kind: "site", tooth: 30 });
   });
 });
 
@@ -354,5 +387,42 @@ describe("siteCentre — the honest 3-vector, or nothing", () => {
   it("null centre and short vectors are nothing, not a partial point", () => {
     expect(siteCentre(siteView({ center: null }))).toBeNull();
     expect(siteCentre(siteView({ center: [1, 2] }))).toBeNull();
+  });
+
+  it("a non-finite coordinate is not a point — the server validates marks, not curation", () => {
+    // Only the operator-mark route checks 3-and-finite (case_sessions.py:1264); a
+    // curated `center` is an unvalidated pass-through of the case record, so the
+    // client's notion of a usable point has to carry the same check.
+    expect(siteCentre(siteView({ center: [Number.NaN, 0, 0] }))).toBeNull();
+    expect(siteCentre(siteView({ center: [0, Number.POSITIVE_INFINITY, 0] }))).toBeNull();
+  });
+});
+
+describe("the two doors onto the stage's ONE point pick (audit 2026-07-31)", () => {
+  const placed: MarkDraft = {
+    armed: false,
+    pending: [1, 2, 3],
+    tooth: "14",
+    error: null,
+  };
+
+  it("arming the site picker disarms the mark but never discards a placed centre", () => {
+    // The operator placed a centre, typed its tooth, then armed the picker to check a
+    // neighbour before submitting. Dropping the centre there costs a fresh hunt in 3D
+    // and says nothing — while the panel offers "Discard the mark" as a deliberate act.
+    expect(markOnArmPick(placed)).toEqual(placed);
+    expect(markOnArmPick({ ...EMPTY_MARK, armed: true })).toEqual(EMPTY_MARK);
+  });
+
+  it("arming the mark clears a stale refusal and nothing else", () => {
+    expect(markOnArmMark({ ...EMPTY_MARK, error: "tooth 14 already has a site" })).toEqual({
+      ...EMPTY_MARK,
+      armed: true,
+    });
+    expect(markOnArmMark(placed)).toEqual({ ...placed, armed: true });
+  });
+
+  it("discarding is the only thing that empties the draft", () => {
+    expect(EMPTY_MARK).toEqual({ armed: false, pending: null, tooth: "", error: null });
   });
 });

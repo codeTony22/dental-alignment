@@ -605,17 +605,46 @@ export function assuranceCountsWords(assurance: AssuranceView): string {
  * the operator's per-row acknowledgment (AM-12), and the rows that need one are
  * ``needsAcknowledgment``'s, flagged or production-noted alike (plan §10-E). So the
  * header names the OBLIGATION rather than minting a fourth status word.
+ *
+ * IT READS THE DISPOSITIONS (audit 2026-07-31). Counting ``needsAcknowledgment``
+ * alone made this header assert that sites the operator had explicitly WITHHELD
+ * "release only as acknowledged exceptions" — contradicting, on the same screen, the
+ * rows (which render no tick, ``ackRequired`` being false once withheld), the confirm
+ * gate (which demands nothing for them), and the server's own ``derive_invoice``
+ * (bff/resources/deliver.py:492-500 counts them ``withheld``, explicitly NOT
+ * ``exceptions``). The whole content of withholding is that the site does not
+ * release. So the count is ``ackRequired`` — the very predicate the rows and
+ * ``confirmBlockers`` stand on — and the withheld are named as what they are.
+ *
+ * ``dispositions`` defaults to empty, which is the SERVER's default too (an omitted
+ * disposition IS release), so a caller with none in hand reads exactly as before.
  */
-export function acknowledgmentPolicyWords(assurance: AssuranceView): string {
-  const owed = assurance.sites.filter(needsAcknowledgment).length;
+export function acknowledgmentPolicyWords(
+  assurance: AssuranceView,
+  dispositions: DispositionMap = {},
+): string {
+  const owed = assurance.sites.filter((site) =>
+    ackRequired(site, dispositions[site.tooth]),
+  ).length;
+  const held = assurance.sites.filter(
+    (site) => needsAcknowledgment(site) && dispositions[site.tooth] === "withhold",
+  ).length;
+  const heldClause =
+    held === 0
+      ? ""
+      : ` ${held} site${held === 1 ? " is" : "s are"} withheld — ` +
+        `${held === 1 ? "it does" : "they do"} not release at all.`;
   if (owed === 0) {
-    return "No site needs an acknowledgment — every row here releases as it stands.";
+    return held > 0
+      ? `No site releases as an acknowledged exception.${heldClause}`
+      : "No site needs an acknowledgment — every row here releases as it stands.";
   }
   const one = owed === 1;
   return (
     `${owed} site${one ? "" : "s"} release${one ? "s" : ""} only as ` +
     `${one ? "an acknowledged exception" : "acknowledged exceptions"} — the tick sits ` +
-    `on the row in the report, and the acknowledgment rides in the confirmation.`
+    `on the row in the report, and the acknowledgment rides in the confirmation.` +
+    heldClause
   );
 }
 
@@ -778,29 +807,53 @@ export function releaseDisclosureWords(
  * files stay back, and the sentence has to describe the disclosure that happened.
  * Which is also why a withheld case is never called closed: it says which sites stay
  * open, because withholding is a site left unfinished on purpose, not a deferral.
+ *
+ * SERVED, NOT LISTED (audit 2026-07-31). The BFF deliberately lists a file it could
+ * not find on disk with ``size_bytes: None`` — "a file the package claims but the run
+ * directory no longer holds: an honest gap the operator can see, never a 0"
+ * (bff/resources/deliver.py:1158-1170). Counting the LISTED rows folded that
+ * disclosed gap straight back into a total and then called the run closed, from the
+ * very page on which clicking that row 404s (``fetch_artifact``, :1230). So the count
+ * is the served files, the gap is said out loud, and "closed" is refused whenever
+ * anything is missing or nothing shipped at all — under-claiming here is the entire
+ * reason this sentence exists.
  */
 export function releasedClosingWords(artifacts: ArtifactsView): string {
+  const served = artifacts.files.filter((f) => f.size_bytes !== null);
+  const absent = artifacts.files.length - served.length;
   const withheld = artifacts.withheld_teeth;
-  const closing =
+  const closed = served.length > 0 && absent === 0;
+  const openSites =
     withheld.length > 0
       ? `${withheld.length === 1 ? "Tooth" : "Teeth"} ${withheld.join(", ")} ` +
         `${withheld.length === 1 ? "stays" : "stay"} open and ` +
-        `${withheld.length === 1 ? "its" : "their"} files stayed back — this run is ` +
-        `closed for the sites that shipped.`
-      : "Nothing was withheld — this run is closed.";
-  const files = artifacts.files.length;
-  if (files === 0) return `No files were disclosed. ${closing}`;
-  const teeth = new Set(
-    artifacts.files.filter((f) => f.tooth !== null).map((f) => f.tooth),
-  ).size;
-  const caseWide = artifacts.files.filter((f) => f.tooth === null).length;
+        `${withheld.length === 1 ? "its" : "their"} files stayed back`
+      : null;
+  const closing =
+    openSites !== null
+      ? closed
+        ? `${openSites} — this run is closed for the sites that shipped.`
+        : `${openSites}.`
+      : closed
+        ? "Nothing was withheld — this run is closed."
+        : "Nothing was withheld.";
+  const gap =
+    absent > 0
+      ? ` ${absent} listed file${absent === 1 ? "" : "s"} ` +
+        `${absent === 1 ? "is" : "are"} no longer in the run directory — ` +
+        `${absent === 1 ? "it" : "they"} cannot be downloaded from here.`
+      : "";
+  if (served.length === 0) return `No files were disclosed.${gap} ${closing}`;
+  const teeth = new Set(served.filter((f) => f.tooth !== null).map((f) => f.tooth))
+    .size;
+  const caseWide = served.filter((f) => f.tooth === null).length;
   const aggregate =
     caseWide > 0
       ? `, including ${caseWide} case-wide file${caseWide === 1 ? "" : "s"}`
       : "";
   return (
-    `Released ${files} file${files === 1 ? "" : "s"} for ${teeth} ` +
-    `site${teeth === 1 ? "" : "s"}${aggregate}. ${closing}`
+    `Released ${served.length} file${served.length === 1 ? "" : "s"} for ${teeth} ` +
+    `site${teeth === 1 ? "" : "s"}${aggregate}.${gap} ${closing}`
   );
 }
 

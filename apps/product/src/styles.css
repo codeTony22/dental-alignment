@@ -3596,7 +3596,17 @@ button.package-files__link:hover {
   display: inline-block;
   margin-top: 4px;
   font-weight: 600;
-  color: var(--color-accent, #2f7fe6);
+  /* `var(--color-accent, ...)` again — a token this stylesheet never defines, so
+     every link wearing this class had been rendering the BLUE fallback in a green
+     app. Same defect as the checkout's selected-card border, fixed 2026-07-31. */
+  color: var(--color-accent-green);
+}
+
+/* Mid-sentence, the 4px top margin lifts the link off the surrounding baseline —
+   the block rule was written for a link sitting on its own line under the terms
+   text, which is still where most of them are. */
+.terms-block__link--inline {
+  margin-top: 0;
 }
 
 /* the sealed version, resolvable from the confirmed step — quiet, it is an audit
@@ -4201,7 +4211,15 @@ button.package-files__link:hover {
    rule nor the darker ink. */
 .evidence-summary__note[data-verbatim="true"] {
   padding-left: 8px;
-  border-left: 2px solid var(--color-amber-border);
+  /* NEUTRAL, NOT AMBER (2026-07-31). This rule shipped as
+     `2px solid var(--color-amber-border)` — character-for-character
+     `.assurance-stale` above, which on this same surface means "part of this
+     row's numbers predate a rework, weigh them". A reworked flagged row renders
+     BOTH, so two visually identical amber rules sat side by side meaning
+     "warning" and "this text is quoted", on the panel a confirmation is about to
+     seal. Provenance is not a warning: it gets the quiet border ink, and amber
+     goes on staying the colour of something the operator must weigh. */
+  border-left: 2px solid var(--color-border);
   color: var(--color-text);
 }
 

@@ -57,7 +57,8 @@ from ..ports.worker import JobState, WorkerPort
 from ..session import (AdjustDecisionRecord, CaseChoices, CaseSession,
                        DetectedProposal, DetectionRecord, RunSession,
                        SeatedSelection, SessionConflict, SessionStore, SiteSession,
-                       SiteStatus, clear_current_run, confirmation_covers_fork,
+                       SiteStatus, clear_current_run,
+                       confirmation_covers_bundle_shape, confirmation_covers_fork,
                        release_matches_confirmation, released_teeth_of,
                        split_released_files, summary_teeth_of)
 
@@ -564,6 +565,14 @@ def _released(session: CaseSession) -> bool:
     since the release and confirmation records still agreed with each other. Two
     ways to retire a release, only one of them visible, is the divergence.
 
+    THE BUNDLE'S SHAPE JOINED IT for the same reason and at the same price (audit
+    finding 4, 2026-07-31). A shape move restages every bundle on disk, and unlike
+    the fork it needs no operator act at all — a deploy is enough. Every clause
+    below still held over a store of cases released under the previous shape, so
+    the rail's tick stayed lit while every artifact read 409'd: the exact divergence
+    this docstring says was already paid for once, arriving a second time through a
+    door the fork's clause does not cover.
+
     The artifact endpoints still re-verify the evidence BYTES; this stays the cheap
     half — every clause here is a session fact, no disk read — and the rail's
     deliver tick reads it."""
@@ -572,7 +581,8 @@ def _released(session: CaseSession) -> bool:
             and session.run.state == "done"
             and session.release.run_id == (session.run.run_id or session.run.job_id)
             and release_matches_confirmation(session)
-            and confirmation_covers_fork(session))
+            and confirmation_covers_fork(session)
+            and confirmation_covers_bundle_shape(session))
 
 
 def _release_preview(session: CaseSession) -> Optional[ReleasePreviewView]:
@@ -612,8 +622,13 @@ def _session_view(session: CaseSession) -> SessionView:
         # model's leniency: the ASSURANCE is where the operator reads the fork, and
         # a second copy on the session would invite comparing a sealed word against
         # a current one and calling the difference a decision
+        # ``bundle_version`` is dropped beside ``adjustments`` and for a related
+        # reason: it is an INTERNAL encoding fact, not something an operator acts on
+        # — its only job is to let ``released`` above retire cheaply. Putting it on
+        # the wire would invite a surface to compare shape strings and invent a
+        # verdict the server already derived.
         confirmation=(ConfirmationView(**session.confirmation.model_dump(
-            exclude={"adjustments"}))
+            exclude={"adjustments", "bundle_version"}))
             if session.confirmation is not None else None),
         payment=(PaymentView(provider=session.payment.provider,
                              at=session.payment.at,

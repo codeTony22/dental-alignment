@@ -355,16 +355,42 @@ def _fold_outcome(run: RunSession, tooth: int, outcome: AdjustOutcome,
     # the pose outright, so a running total would have the sealed row claim a
     # history the record does not carry. What is written here is the LAST APPLIED
     # correspondence: how many pairs the operator named, how many OBSERVATIONS they
-    # produced (a two-point span contributes two), and the cap the wire enforces —
-    # so a surface can render "3/8" without hard-coding the server's own bound.
-    # A rotation-reset drops it with the best-fit block: a site back on the
-    # pipeline's certified pose stands on no correspondence at all.
+    # produced, how many of those pairs were SPANS and how many spans' DIRECTIONS
+    # actually counted, and the cap the wire enforces — so a surface can render
+    # "3/8" without hard-coding the server's own bound.
+    #
+    # THE SPAN ACCOUNTING IS THE PHYSICS', NOT AN ASSUMPTION (audit finding 6,
+    # 2026-07-31). The block used to claim pairs and observations "differ exactly
+    # when spans were used". False: ``observations_for`` emits a span's direction
+    # ONLY when the span reads as RADIAL (``abs(radial_offset_deg) <=
+    # SPAN_RADIAL_TOLERANCE_DEG``); a chord across the feature contributes its
+    # midpoint alone, which is why the worker writes an explicit ``direction_note``
+    # for it. So three chord spans read {pairs: 3, observations: 3} — byte-identical
+    # to three clean single clicks, and the reader of a sealed row could not tell
+    # that three spans were placed and every direction discarded. The counts are
+    # taken off the observations' own KINDS instead: one ``midpoint`` per span, one
+    # ``direction`` per span whose direction counted.
+    #
+    # THE BLOCK BELONGS TO THE ACT THAT PRODUCED IT (audit finding 5). The guard was
+    # inverted in the same change: it used to clear only on ``rotation-reset``, so
+    # every other applied act — including ``best-fit``, a full 6-DoF re-pose that
+    # replaces ``row["best_fit"]`` two lines above — left a residual measured against
+    # a pose that no longer exists standing in the sealed document, unnamed by
+    # ``rework.stale_metrics``. A 15° nudge after a 0.021mm fit is the sharpest case:
+    # the marks now disagree by fifteen degrees and the row still said 0.021mm. This
+    # is the invariant this function's own docstring was rewritten for (finding E,
+    # 2026-07-28), so any applied act that is not the fit-by-points which WROTE the
+    # block drops it.
     if correspondence_pairs is not None:
+        kinds = [str(p.get("observation") or "") for p in outcome.pairs
+                 if isinstance(p, dict)]
         row["correspondence"] = {"pairs": correspondence_pairs,
                                  "observations": len(outcome.pairs),
+                                 "spans": kinds.count("midpoint"),
+                                 "directions_used": kinds.count("direction"),
                                  "max_pairs": _MAX_PAIRS,
                                  "residual_rms_mm": outcome.residual_rms_mm}
-    elif outcome.operation == "rotation-reset":
+    else:
         row.pop("correspondence", None)
     for name in outcome.files:
         if name not in run.package_files:

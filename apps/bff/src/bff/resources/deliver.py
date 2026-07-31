@@ -34,7 +34,8 @@ from case_prep.application.cases import CaseRecord
 from case_prep.domain.acceptance import evaluate_acceptance
 
 from ..config import Settings
-from ..evidence import canonical_bundle, qc_image_hashes, write_bundle
+from ..evidence import (BUNDLE_VERSION, canonical_bundle, qc_image_hashes,
+                        write_bundle)
 from ..pricing import InvoicePaymentView, InvoiceView, price_invoice
 from ..session import (CaseSession, ConfirmationRecord, PaymentRecord,
                        ReleaseRecord, RunSession, SessionConflict, SessionStore,
@@ -233,13 +234,30 @@ class AssuranceCorrespondence(BaseModel):
     """THE PAIRS a fit-by-points stood on (design flow.dc.html's PAIRS metric).
 
     ``pairs`` is what the operator NAMED; ``observations`` is what those pairs
-    produced (a two-point span contributes two), and the two differ exactly when
-    spans were used — which is the fact a reader of a sealed row most wants, since a
-    span is the stronger observation. ``max_pairs`` is the wire's own cap, carried so
-    a surface renders "3/8" from a server fact instead of hard-coding the bound."""
+    produced. THE TWO DIFFER WHEN A SPAN'S DIRECTION COUNTED — not merely when spans
+    were used, which is what this docstring claimed until the 2026-07-31 audit
+    (finding 6) checked it against the physics. ``observations_for``
+    (case_prep/application/adjust.py) emits a span's direction observation only when
+    the span reads as RADIAL (within ``SPAN_RADIAL_TOLERANCE_DEG`` of its own
+    radius); a chord ACROSS the feature contributes its midpoint alone, and the
+    worker writes it an explicit ``direction_note`` saying so. Three chord spans
+    therefore produced 3 pairs and 3 observations — byte-identical, in the sealed
+    document, to three plain clicks.
+
+    So the accounting the physics actually produces is carried: ``spans`` is how many
+    of the named pairs were two-point spans, ``directions_used`` how many of those
+    spans' directions the fit could use. A reader of a confirmed row can tell a fit
+    built from clean radial spans from one built from discarded chords — the exact
+    fact the 2026-07-28 dropped-direction fix exists to state.
+
+    ``max_pairs`` is the wire's own cap, carried so a surface renders "3/8" from a
+    server fact instead of hard-coding the bound. All fields are Optional: a row
+    folded before this shape existed simply carries fewer of them."""
 
     pairs: Optional[int] = None
     observations: Optional[int] = None
+    spans: Optional[int] = None
+    directions_used: Optional[int] = None
     max_pairs: Optional[int] = None
     residual_rms_mm: Optional[float] = None
 
@@ -427,7 +445,8 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession,
         matching_diameter_mm=best_fit.get("matching_diameter_mm"),
         correspondence=(AssuranceCorrespondence(**{
             k: correspondence.get(k)
-            for k in ("pairs", "observations", "max_pairs", "residual_rms_mm")})
+            for k in ("pairs", "observations", "spans", "directions_used",
+                      "max_pairs", "residual_rms_mm")})
             if correspondence is not None else None),
         qc_images=_site_qc_images(run, case_id, tooth),
         references={key: metrics[key] for key in _REFERENCE_KEYS if key in metrics},
@@ -519,19 +538,43 @@ def case_assurance(case_id: str, request: Request) -> AssuranceView:
 # status-shaped claim wearing a currency symbol. The amount is derived here from the
 # run's own assurance and the case's turnaround, and ``bff.pricing`` owns the card.
 
+def _confirmation_run_id(session: CaseSession) -> Optional[str]:
+    return (session.confirmation.run_id
+            if session.confirmation is not None else None)
+
+
 def _billing_dispositions(session: CaseSession, run: RunSession) -> Dict[str, str]:
     """The dispositions the invoice prices against: the STANDING confirmation's when
-    it names this run, else empty — and empty resolves, site by site, to release.
+    it names this run; empty when there is NO confirmation at all, which resolves
+    site by site to release.
 
     That default is confirm's own rule (client 2026-07-27 #4: "omission means
     release"), read here rather than re-invented: a case that reached Deliver is a
     case being delivered, and an invoice that quoted zero until someone clicked every
     site would be describing a different flow than the one the confirm route
-    implements."""
+    implements.
+
+    A CONFIRMATION NAMING ANOTHER RUN IS NOT THAT STATE, and conflating the two was
+    a money hole (audit finding 1, 2026-07-31). It happens with no race at all:
+    ``clear_current_run`` fires at three boundaries and deliberately leaves the
+    confirmation standing (pinned by test_pricing), so one re-run later a
+    confirmation sealed over run A sits beside a done run B. Returning ``{}`` there
+    silently dropped every withhold the operator had signed and priced every site as
+    released — a bill FOR evidence nobody confirmed, on a case whose release could
+    then never succeed (the sha re-derives over run B and can never equal run A's).
+    Fail-open on money is the over-claiming direction, so it refuses instead. The
+    honest act is named in the refusal."""
     confirmation = session.confirmation
-    if (confirmation is None
-            or confirmation.run_id != (run.run_id or run.job_id)):
+    if confirmation is None:
         return {}
+    current = run.run_id or run.job_id
+    if confirmation.run_id != current:
+        raise HTTPException(
+            409, f"the standing confirmation covers run {confirmation.run_id!r}, "
+                 f"but the case's current run is {current!r} — the case changed "
+                 f"under its own signature, and neither its price nor its "
+                 f"dispositions can be read off a confirmation that does not "
+                 f"describe it; re-confirm over the current evidence")
     return dict(confirmation.dispositions)
 
 
@@ -911,6 +954,11 @@ def confirm_case(case_id: str, body: ConfirmIn,
             # wire value.
             terms_accepted=True,
             terms_version=TERMS_VERSION,
+            # the SHAPE those bytes were encoded under (audit finding 4,
+            # 2026-07-31), from the same build that just wrote them — so the
+            # display half can retire the moment the shape moves, without
+            # re-hashing the run's QC bytes to find out
+            bundle_version=BUNDLE_VERSION,
         )
 
     session = _mutate_signing(store, case_id, apply, "confirmation",
@@ -944,7 +992,18 @@ def authorize_payment(case_id: str, body: PaymentIn,
     confirmation already proves it — and a confirmation sealed before the
     concept existed reads ``terms_accepted=False`` honestly (the same
     under-claiming precedent ``adjustments``/``payment_authorized`` already
-    follow), refusing until it is re-confirmed under the current terms."""
+    follow), refusing until it is re-confirmed under the current terms.
+
+    TWO MORE GATES ARRIVED WITH THE AMOUNT (audit 2026-07-31), each closing a walked
+    failure rather than a hypothetical one — see the refusals in ``apply``.
+
+    AND IT RIDES THE SIGNING WRITE PATH (``_mutate_signing``), not the retrying one.
+    The moment this record carried money it became signature-shaped: ``_mutate_
+    session`` re-loads and re-applies after a lost CAS, so a rival ``turnaround`` PUT
+    landing in that window re-derived the charge UPWARD and still returned 200 — the
+    operator authorized one number and was charged another, with no re-read and no
+    consent. Deriving fresh is correct doctrine; charging a number the authorizing
+    act never saw is not, and under-claiming here means refusing."""
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
     if not body.authorize:
@@ -953,6 +1012,21 @@ def authorize_payment(case_id: str, body: PaymentIn,
                                  "all")
 
     def apply(session: CaseSession) -> None:
+        # ONCE (audit finding 3). Nothing checked this record for existence, so a
+        # second POST re-priced off the CURRENT document and OVERWROTE the receipt —
+        # and ``turnaround`` is client-settable and fires no reset boundary, so the
+        # recorded charge could be LOWERED after the work was billed at the higher
+        # rate, leaving the rush charge recorded nowhere. When a real provider
+        # replaces this route's body the same second POST becomes a second CHARGE,
+        # and this refusal is the idempotency key an amount-carrying stub owes.
+        if session.payment is not None and session.payment.payment_authorized:
+            raise HTTPException(
+                409, f"case {case_id!r} is already paid — authorized at "
+                     f"{session.payment.at}, and that record is what was charged; a "
+                     f"second authorization would re-price off the case as it "
+                     f"stands now and overwrite it. The door back is POST "
+                     f"/api/case-sessions/{case_id}/delivery/reset, which withdraws "
+                     f"the confirmation, the payment and the release together")
         confirmation = session.confirmation
         if confirmation is None or not confirmation.terms_accepted:
             raise HTTPException(409, f"payment requires a confirmation that "
@@ -964,7 +1038,26 @@ def authorize_payment(case_id: str, body: PaymentIn,
         # run pointer means the case changed under the confirmation, which is inert
         # without a current run anyway. Named as an ACT refusal (409, this module's
         # own sentence) rather than letting the read helper's 404 leak out of a POST.
-        _require_done_run_for_act(session, case_id, "pay for")
+        run = _require_done_run_for_act(session, case_id, "pay for")
+        # AND THE CONFIRMATION MUST NAME *THAT* RUN (audit finding 1, 2026-07-31).
+        # The gate above asks only that SOME run be done. A reset boundary clears
+        # the run pointer and deliberately leaves the confirmation standing, so one
+        # re-run later a confirmation sealed over run A sits beside a done run B —
+        # and paying then charged for evidence nobody signed, at the full released
+        # rate, on a case whose release could never succeed afterwards (the sha
+        # re-derives over run B and can never equal run A's). RELEASE has always
+        # stood on the confirmation of the run it discloses; payment must stand on
+        # the confirmation of the run it PRICES, or the two acts describe different
+        # cases. Stated here as well as in ``_billing_dispositions`` so the refusal
+        # names the ACT rather than the derivation that noticed.
+        current = run.run_id or run.job_id
+        if confirmation.run_id != current:
+            raise HTTPException(
+                409, f"the standing confirmation covers run "
+                     f"{confirmation.run_id!r}, but case {case_id!r} is now on run "
+                     f"{current!r} — paying would charge for evidence nobody "
+                     f"confirmed, and release would refuse afterwards anyway; "
+                     f"re-confirm over the current evidence, then authorize")
         # THE SERVER PRICES AT AUTHORIZATION TIME (2026-07-31), inside the mutation,
         # off the FRESH document — the same derivation the operator just read. The
         # body carries no amount and never will; what is recorded is what this
@@ -979,7 +1072,8 @@ def authorize_payment(case_id: str, body: PaymentIn,
                                         rate_card_version=invoice.rate_card_version,
                                         turnaround=invoice.turnaround)
 
-    session = _mutate_session(store, case_id, apply)
+    session = _mutate_signing(store, case_id, apply, "payment",
+                              lambda s: s.payment)
     return _detail(case, session, settings)
 
 
@@ -1116,8 +1210,26 @@ def release_case(case_id: str, request: Request) -> CaseSessionDetail:
     Refuses (409) unless: a done current run; a confirmation record; the
     RE-DERIVED evidence hashes to the confirmed sha256 (confirm → change → release
     is structurally a 409: validity is re-derivation, never trust in the record);
-    and the stubbed payment is authorized. Persists WHAT was released, over which
-    evidence, with the withheld sites already dropped from the released set."""
+    the stubbed payment is authorized; AND WHAT WAS PAID COVERS WHAT IS ABOUT TO BE
+    DISCLOSED. Persists WHAT was released, over which evidence, with the withheld
+    sites already dropped from the released set.
+
+    THE AMOUNT IS RE-DERIVED AT THE DISCLOSURE EDGE (audit finding 2, 2026-07-31).
+    Gating on the ``payment_authorized`` BOOLEAN alone was a hole with two doors,
+    and neither needed a race:
+
+      - DISPOSITIONS sit outside the evidence hash by design (they are the
+        operator's acts, not the run's facts — bff/evidence.py), so re-confirming
+        four withholds into releases moves no sha at all. Pay a
+        withhold-discounted invoice, re-confirm wide, release: every site
+        disclosed against a receipt for one.
+      - TURNAROUND is client-settable and deliberately fires no boundary. Pay
+        standard, upgrade to rush, release: rush work at the standard rate.
+
+    Both are the SAME defect — the price is a function of the case, the case can
+    legitimately move after payment, and only the disclosure edge is in a position
+    to compare. So it compares, here, at the last moment before anything leaves the
+    building."""
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
 
@@ -1135,6 +1247,32 @@ def release_case(case_id: str, request: Request) -> CaseSessionDetail:
             raise HTTPException(409, f"payment is not authorized for case "
                                      f"{case_id!r} — the (stub) payment gate "
                                      f"precedes disclosure")
+        # WHAT WAS PAID MUST COVER WHAT SHIPS (audit finding 2). ``derive_invoice``
+        # is the same derivation the operator read and the payment route charged
+        # under, run once more over the case AS IT STANDS NOW.
+        priced = derive_invoice(case, session)
+        paid = session.payment.amount_cents
+        if paid is None:
+            # a record persisted before this module existed carries no amount. It
+            # is refused rather than waved through: "we cannot tell what was paid"
+            # is not a reason to disclose, and the door back re-walks the flow at
+            # today's price. Under-claiming, the ``adjustments`` precedent.
+            raise HTTPException(
+                409, f"case {case_id!r} carries a payment record from before this "
+                     f"server priced anything, so what was charged cannot be read "
+                     f"— re-authorize through POST /api/case-sessions/{case_id}/"
+                     f"delivery/reset and the payment route before releasing")
+        if paid < priced.total_cents:
+            raise HTTPException(
+                409, f"the authorized payment does not cover this case as it now "
+                     f"stands: {paid} {priced.currency} cents were authorized and "
+                     f"the case prices at {priced.total_cents} — a shortfall of "
+                     f"{priced.total_cents - paid}. Dispositions and turnaround "
+                     f"both move the price without moving the evidence hash, so "
+                     f"the sha check above cannot see this; re-authorize over the "
+                     f"current invoice (POST /api/case-sessions/{case_id}/delivery/"
+                     f"reset withdraws the three records so the flow can be walked "
+                     f"again) before releasing")
         session.release = ReleaseRecord(
             at=_now(),
             run_id=run.run_id or run.job_id,

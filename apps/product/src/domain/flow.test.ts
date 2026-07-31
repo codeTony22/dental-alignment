@@ -202,13 +202,25 @@ describe("the rail's sub-line speaks the LIVE counts", () => {
     expect(
       stageSubLine(
         "intake",
-        facts({ siteTotal: 5, siteCentred: 5, detectionDone: true, choicesComplete: false }),
+        facts({
+          siteTotal: 5,
+          siteCentred: 5,
+          siteDetected: 5,
+          detectionDone: true,
+          choicesComplete: false,
+        }),
       ),
     ).toBe("5 sites detected — case-level choices still open.");
     expect(
       stageSubLine(
         "intake",
-        facts({ siteTotal: 5, siteCentred: 5, detectionDone: true, choicesComplete: true }),
+        facts({
+          siteTotal: 5,
+          siteCentred: 5,
+          siteDetected: 5,
+          detectionDone: true,
+          choicesComplete: true,
+        }),
       ),
     ).toBe("5 sites detected — case-level choices made.");
   });
@@ -218,8 +230,39 @@ describe("the rail's sub-line speaks the LIVE counts", () => {
     // there — silence, not zero. Claiming "5 of 5 without a centre" off a fact the
     // payload never carried would be the client inventing a status.
     expect(
-      stageSubLine("intake", facts({ siteTotal: 5, detectionDone: true, choicesComplete: true })),
+      stageSubLine(
+        "intake",
+        facts({ siteTotal: 5, siteDetected: 5, detectionDone: true, choicesComplete: true }),
+      ),
     ).toBe("5 sites detected — case-level choices made.");
+  });
+
+  it("the rail never claims detection over a cap the operator marked by hand", () => {
+    // Audit 2026-07-31. Detection finds 8 of 10 (the fleet number the missed-cap
+    // door exists for); the operator marks the other two, which become session-only
+    // sites with no proposal behind them. "10 sites detected" asserted the detector
+    // saw caps the same screen's own panel says it missed.
+    expect(
+      stageSubLine(
+        "intake",
+        facts({
+          siteTotal: 10,
+          siteCentred: 10,
+          siteDetected: 8,
+          detectionDone: true,
+          choicesComplete: true,
+        }),
+      ),
+    ).toBe("8 detected, 2 marked by hand — case-level choices made.");
+  });
+
+  it("a payload that does not carry the detected count drops the word rather than guessing", () => {
+    // The worklist row projects no proposals, so `siteDetected` is absent there. A
+    // neutral count is the honest sentence; "5 sites detected" would be a claim the
+    // payload never supported.
+    expect(
+      stageSubLine("intake", facts({ siteTotal: 5, detectionDone: true, choicesComplete: true })),
+    ).toBe("5 sites — case-level choices made.");
   });
 
   it("deliver's sub-line reports the verdicts, then the release", () => {
@@ -382,22 +425,27 @@ describe("the two payload projections agree", () => {
     });
     const fromDetail = factsFromCaseSession({
       sites: [
-        { status: "ready", center: [0, 0, 0] },
-        { status: "ready", center: [1, 0, 0] },
-        { status: "flagged", center: [2, 0, 0] },
+        { tooth: 3, status: "ready", center: [0, 0, 0] },
+        { tooth: 14, status: "ready", center: [1, 0, 0] },
+        { tooth: 19, status: "flagged", center: [2, 0, 0] },
       ],
-      detection: { proposals: [] },
+      detection: {
+        proposals: [{ tooth_guess: 3 }, { tooth_guess: 14 }, { tooth_guess: 19 }],
+      },
       choices: { complete: true },
       session: { run_state: "done", confirmed: false, released: false },
     });
-    // The centre count is the ONE fact only the DETAIL carries: the worklist's
-    // SiteRollup has no centred column (bff/resources/case_sessions.py:69-73) and the
-    // worklist renders no rail, so the row leaves it ABSENT rather than guessing a
-    // zero. On every fact the rules share, the two projections still agree exactly.
-    const { siteCentred, ...sharedFromDetail } = fromDetail;
+    // The centre count and the DETECTED count are the two facts only the DETAIL
+    // carries: the worklist's SiteRollup has no centred column and projects no
+    // proposals (bff/resources/case_sessions.py:69-73), and the worklist renders no
+    // rail, so the row leaves both ABSENT rather than guessing a zero. On every fact
+    // the rules share, the two projections still agree exactly.
+    const { siteCentred, siteDetected, ...sharedFromDetail } = fromDetail;
     expect(fromRow).toEqual(sharedFromDetail);
     expect(siteCentred).toBe(3);
+    expect(siteDetected).toBe(3);
     expect(fromRow.siteCentred).toBeUndefined();
+    expect(fromRow.siteDetected).toBeUndefined();
   });
 
   it("counts only sites with a usable centre — a null centre is not one", () => {
@@ -406,9 +454,9 @@ describe("the two payload projections agree", () => {
     // until a human marks it. Neither can be aligned, so neither counts.
     const projected = factsFromCaseSession({
       sites: [
-        { status: "detected", center: [0, 0, 0] },
-        { status: "detected", center: null },
-        { status: "declared", center: [2, 0, 0] },
+        { tooth: 3, status: "detected", center: [0, 0, 0] },
+        { tooth: 14, status: "detected", center: null },
+        { tooth: 19, status: "declared", center: [2, 0, 0] },
       ],
       detection: { proposals: [] },
       choices: { complete: false },
@@ -421,9 +469,54 @@ describe("the two payload projections agree", () => {
     expect(isReachable("declare", projected)).toBe(true);
   });
 
+  it("the rail's centre count uses the SAME predicate as the picker and the framing hint", () => {
+    // Audit 2026-07-31: `center !== null` and intake's `siteCentre` were two
+    // definitions of "has a usable centre". `SiteView.center` is an unvalidated
+    // pass-through of the case record (case_sessions.py:495-496) — only the
+    // operator-mark path validates 3-and-finite (case_sessions.py:1264) — so a
+    // curated `[12.4, 3.1]` had the rail printing "5 sites detected" while the same
+    // screen's site list printed "has no centre yet" and the picker skipped it.
+    const projected = factsFromCaseSession({
+      sites: [
+        { tooth: 3, status: "detected", center: [0, 0, 0] },
+        { tooth: 14, status: "detected", center: [12.4, 3.1] },
+        { tooth: 19, status: "detected", center: [1, Number.NaN, 2] },
+        { tooth: 30, status: "detected", center: [1, 2, Number.POSITIVE_INFINITY] },
+      ],
+      detection: { proposals: [] },
+      choices: { complete: true },
+      session: { run_state: "none", confirmed: false, released: false },
+    });
+    expect(projected.siteTotal).toBe(4);
+    expect(projected.siteCentred).toBe(1);
+    expect(stageSubLine("intake", { ...projected, detectionDone: true })).toBe(
+      "3 of 4 sites still without a centre.",
+    );
+  });
+
+  it("counts DETECTED sites as the ones a proposal actually matched", () => {
+    // The missed-cap door creates session-only sites with a marked centre and no
+    // entry in detection.proposals (case_sessions.py:503-513). They are sites; they
+    // are not detections.
+    const projected = factsFromCaseSession({
+      sites: [
+        { tooth: 3, status: "detected", center: [0, 0, 0] },
+        { tooth: 14, status: "detected", center: [8, 0, 0] },
+        { tooth: 19, status: "detected", center: [16, 0, 0] },
+      ],
+      detection: { proposals: [{ tooth_guess: 3 }, { tooth_guess: null }] },
+      choices: { complete: true },
+      session: { run_state: "none", confirmed: false, released: false },
+    });
+    expect(projected.siteTotal).toBe(3);
+    // the null-guess proposal matched no site — it is a detection without a tooth,
+    // which the site list already counts separately as "unassigned"
+    expect(projected.siteDetected).toBe(1);
+  });
+
   it("detection facts project from the payload, not from sites existing", () => {
     const undetected = factsFromCaseSession({
-      sites: [{ status: "detected", center: [0, 0, 0] }],
+      sites: [{ tooth: 3, status: "detected", center: [0, 0, 0] }],
       detection: null,
       choices: { complete: false },
       session: { run_state: "none", confirmed: false, released: false },
@@ -431,16 +524,17 @@ describe("the two payload projections agree", () => {
     expect(undetected.detectionDone).toBe(false);
     expect(undetected.choicesComplete).toBe(false);
     expect(undetected.siteTotal).toBe(1); // curated suggestions predate detection
+    expect(undetected.siteDetected).toBe(0); // no detection record, no detections
   });
 
   it("in-flight statuses (declared/previewed/adjusted) count as neither ready nor flagged", () => {
     const projected = factsFromCaseSession({
       sites: [
-        { status: "detected", center: [0, 0, 0] },
-        { status: "declared", center: [1, 0, 0] },
-        { status: "previewed", center: [2, 0, 0] },
-        { status: "adjusted", center: [3, 0, 0] },
-        { status: "ready", center: [4, 0, 0] },
+        { tooth: 3, status: "detected", center: [0, 0, 0] },
+        { tooth: 14, status: "declared", center: [1, 0, 0] },
+        { tooth: 19, status: "previewed", center: [2, 0, 0] },
+        { tooth: 30, status: "adjusted", center: [3, 0, 0] },
+        { tooth: 31, status: "ready", center: [4, 0, 0] },
       ],
       detection: null,
       choices: { complete: false },

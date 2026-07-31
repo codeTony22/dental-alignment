@@ -1092,6 +1092,83 @@ class TestAPostReleaseForkClickRetiresTheRelease:
             "session"]["released"] is True
 
 
+class TestABundleShapeChangeRetiresTheDisplayHalfToo:
+    """AUDIT FINDING 4 (2026-07-31). ``confirmation_covers_fork`` gave the display
+    half a cheap session-only clause for ONE kind of drift — a re-clicked fork. A
+    change to the bundle's SHAPE had no such clause, and shapes move: this codebase
+    has moved them three times (``adjustments``, ``terms_version``, and every
+    ``AssuranceSite`` field, since ``sealed_facts()`` is a ``model_dump`` that emits
+    None-valued keys).
+
+    So a deploy over a store of already-released cases reproduced exactly the
+    divergence ``_released``'s own docstring says was already paid for once: the
+    session facts all still held, the rail's deliver tick stayed lit, Deliver
+    rendered its Released step — and every artifact read 409'd. The operator was
+    told the case shipped while every byte of it was refused.
+
+    The fix is the same shape as the fork's: the bundle NAMES its version, the
+    confirmation records it, and ``_released`` compares — one string, no disk read."""
+
+    def released_client(self, settings, product_root):
+        client = confirmed_paid_client(settings, product_root)
+        assert release(client).status_code == 200
+        return client
+
+    def test_the_ordinary_walk_records_the_shape_it_sealed_under(
+            self, settings, product_root):
+        from bff.evidence import BUNDLE_VERSION
+        client = self.released_client(settings, product_root)
+        record = SessionStore(product_root).load("neodent-gm").confirmation
+        assert record.bundle_version == BUNDLE_VERSION
+        assert client.get("/api/case-sessions/neodent-gm").json()[
+            "session"]["released"] is True
+
+    def test_a_case_released_under_an_older_bundle_shape_stops_claiming_released(
+            self, settings, product_root):
+        """The walked deploy, simulated on the store: case X was confirmed, paid and
+        released under the PREVIOUS bundle shape, so its records carry that shape's
+        sha and no version at all. Nothing about the session changes — which is
+        precisely why every clause of ``_released`` used to still hold."""
+        client = self.released_client(settings, product_root)
+        store = SessionStore(product_root)
+        session = store.load("neodent-gm")
+        stale = "0" * 64          # what the pre-commit shape hashed to
+        session.confirmation.bundle_version = None
+        session.confirmation.evidence_sha256 = stale
+        session.release.evidence_sha256 = stale
+        store.save(session)
+
+        # the GATE refuses, as it always did — the bytes genuinely moved
+        assert client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts").status_code == 409
+        # and the DISPLAY half no longer contradicts it
+        assert client.get("/api/case-sessions/neodent-gm").json()[
+            "session"]["released"] is False
+        (row_,) = client.get("/api/case-sessions").json()
+        assert row_["released"] is False
+
+    def test_a_version_this_build_does_not_speak_is_drift_by_itself(
+            self, settings, product_root):
+        """The clause is cheap on purpose: a foreign version retires the display half
+        on the string alone, without re-hashing the run's QC bytes to find out."""
+        client = self.released_client(settings, product_root)
+        store = SessionStore(product_root)
+        session = store.load("neodent-gm")
+        session.confirmation.bundle_version = "some-later-deployments-shape"
+        store.save(session)
+        assert client.get("/api/case-sessions/neodent-gm").json()[
+            "session"]["released"] is False
+        # under-claiming, exactly as the pre-field fork record does: the bundle's
+        # bytes did not move here, so what was disclosed stays disclosable
+        assert client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts").status_code == 200
+        # and one re-confirm + re-release restores the display half to the truth
+        assert confirm(client).status_code == 200
+        assert release(client).status_code == 200
+        assert client.get("/api/case-sessions/neodent-gm").json()[
+            "session"]["released"] is True
+
+
 # --- signing acts are one-winner -------------------------------------------------------
 
 class TestSigningActsAreOneWinner:

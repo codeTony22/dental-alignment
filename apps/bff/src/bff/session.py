@@ -40,6 +40,8 @@ from typing import Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
+from .evidence import BUNDLE_VERSION
+
 
 class SessionConflict(RuntimeError):
     """A CAS save lost: the disk's version is no longer the one the caller loaded.
@@ -255,7 +257,20 @@ class ConfirmationRecord(BaseModel):
     honest gap ``adjustments`` reads as for pre-field records). ``terms_version``
     names WHICH text was accepted (``bff.resources.deliver.TERMS_VERSION``) so a
     later swap of the client's real legal text is visible on old records rather
-    than silently reinterpreted."""
+    than silently reinterpreted.
+
+    ``bundle_version`` is the SHAPE the bundle above was built under
+    (``bff.evidence.BUNDLE_VERSION`` — audit finding 4, 2026-07-31). The sha alone
+    cannot say whether a mismatch means "a number moved" or "this build encodes a
+    different document"; the display half needs the second answer without a disk
+    read (see ``confirmation_covers_bundle_shape``). ``None`` reads as "sealed
+    before the shape was named", which for every such record is true and is drift.
+
+    It rides on the CONFIRMATION only, not on ``ReleaseRecord``: a release is valid
+    only while it still covers the current confirmation
+    (``release_matches_confirmation``), so the release's own copy could never
+    disagree with this one without the record comparison already having failed — and
+    a second copy of a fact is a second thing to keep in step."""
 
     at: str
     run_id: str
@@ -265,6 +280,7 @@ class ConfirmationRecord(BaseModel):
     adjustments: Optional[str] = None
     terms_accepted: bool = False
     terms_version: Optional[str] = None
+    bundle_version: Optional[str] = None
 
 
 class PaymentRecord(BaseModel):
@@ -506,6 +522,28 @@ def confirmation_covers_fork(session: "CaseSession") -> bool:
     confirmation = session.confirmation
     return (confirmation is not None
             and confirmation.adjustments == adjustments_of(session))
+
+
+def confirmation_covers_bundle_shape(session: "CaseSession") -> bool:
+    """Whether the standing confirmation was sealed under the bundle shape THIS
+    build encodes (audit finding 4, 2026-07-31).
+
+    The second cheap half of "the evidence has not moved", and the twin of
+    ``confirmation_covers_fork``. The bundle's SHAPE has moved three times already —
+    ``adjustments``, ``terms_version``, and every ``AssuranceSite`` field, because
+    ``sealed_facts()`` is a ``model_dump`` that emits None-valued keys. Each move
+    restages every bundle on disk, the artifact gate catches it by re-deriving, and
+    the display half — session-only by design, no disk read per request — kept
+    saying "Released ✓" over a case whose every artifact read 409'd. The fork got a
+    clause for its own drift; a shape change had none.
+
+    ``None`` is drift, not an exemption: a record sealed before the shape was named
+    was sealed under a shape this build no longer writes. Under-claiming a release
+    is the safe direction (the ``adjustments`` precedent) and the honest path out is
+    the one every other drift takes — re-confirm over what is there now."""
+    confirmation = session.confirmation
+    return (confirmation is not None
+            and confirmation.bundle_version == BUNDLE_VERSION)
 
 
 def release_matches_confirmation(session: "CaseSession") -> bool:

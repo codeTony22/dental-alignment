@@ -60,6 +60,20 @@ WHAT THE BUNDLE NEVER CARRIED, and now cannot: an ACTOR. The confirmation record
 used to hold an ``X-Operator`` name (the bundle itself never did); that field is
 gone entirely (client 2026-07-27 — see bff/session.py's note). The bundle seals the
 EVIDENCE, and the act of sealing it is the whole attestation.
+
+AND THE SHAPE NOW NAMES ITSELF (``BUNDLE_VERSION``, audit finding 4, 2026-07-31).
+Three paragraphs above are three separate shape moves, each answered with "harmless
+— it re-derives, so an old case simply refuses release until re-confirmed". That
+reasoning is sound about the GATE and was never true of the DISPLAY half:
+``_released`` is deliberately session-only (no disk read per request), so an
+already-released case kept reporting ``released: true`` while every artifact read
+409'd. The fork got a cheap session-only clause for exactly this
+(``confirmation_covers_fork``); a shape change had none, and the assurance
+projection's shape moves whenever ``AssuranceSite`` gains a field, since
+``sealed_facts()`` is a ``model_dump``. Carrying the version IN the payload and ON
+the confirmation record gives the display half its one-string clause, so both halves
+retire together the moment the shape moves. BUMP IT beside any change to the payload
+keys or to what ``AssuranceView.sealed_facts()`` emits.
 """
 from __future__ import annotations
 
@@ -72,6 +86,10 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional
 
 ROUND_DECIMALS = 6
+
+# The canonical payload's SHAPE, named. Dated rather than numbered so a reader can
+# place it against this repo's own history without a changelog lookup.
+BUNDLE_VERSION = "2026-07-31"
 
 # the run directory's evidence store: runs/<run_id>/evidence/<sha256>.json
 EVIDENCE_DIRNAME = "evidence"
@@ -124,6 +142,9 @@ def canonical_bundle(assurance: Mapping[str, Any],
         "qc_sha256": dict(sorted(qc_hashes.items())),
         "adjustments": adjustments,
         "terms_version": terms_version,
+        # not a parameter: the shape is this module's own fact, and a caller that
+        # could pass one could seal bytes claiming a shape they are not in
+        "bundle_version": BUNDLE_VERSION,
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"),
                            ensure_ascii=True, allow_nan=False).encode("ascii")

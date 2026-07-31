@@ -669,6 +669,20 @@ describe("the assurance header states its own counts and its exceptions policy",
     expect(html).toContain("No site needs an acknowledgment");
   });
 
+  it("never says a WITHHELD site releases (audit 2026-07-31)", () => {
+    // On one screen the header asserted "1 site releases only as an acknowledged
+    // exception" while the row below it rendered no tick (ackRequired is false once
+    // withheld), the confirm gate demanded nothing, and the server's derive_invoice
+    // counted the site as `withheld`, explicitly not as an exception.
+    const html = view({ reportOpen: true, dispositions: { 30: "withhold" } });
+    expect(html).toContain('data-role="assurance-policy"');
+    expect(html).not.toContain("releases only as an acknowledged exception");
+    expect(html).toContain("No site releases as an acknowledged exception");
+    expect(html).toContain("1 site is withheld");
+    // and the row it describes really does offer no tick
+    expect(html).not.toContain('data-role="acknowledge-flag"');
+  });
+
   it("states NO tolerance number — this product has none to state", () => {
     // the design's header ends "· tolerance 0.40 mm"; every band comparison here is
     // the BFF's, per metric, against the acceptance catalog (AM-4)

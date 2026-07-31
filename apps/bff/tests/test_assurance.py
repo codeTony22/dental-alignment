@@ -365,17 +365,33 @@ class TestTheAlignmentMetricsAreTyped:
 
     def test_the_correspondence_says_pairs_observations_and_the_servers_own_cap(
             self, settings, product_root):
-        # a two-point SPAN contributes two observations to one pair, so the two
-        # numbers differ exactly when spans were used — the fact a reader of a
-        # sealed row most wants. ``max_pairs`` rides along so a surface renders
-        # "3/8" from a server fact rather than a hard-coded bound.
+        # a two-point SPAN contributes a midpoint observation, and a SECOND one only
+        # when its direction counted — so the counts alone cannot say how many spans
+        # were placed (audit finding 6, 2026-07-31). ``spans``/``directions_used``
+        # carry that, and ``max_pairs`` rides along so a surface renders "3/8" from a
+        # server fact rather than a hard-coded bound.
         rows = self.rows_with({"correspondence": {"pairs": 3, "observations": 5,
+                                                  "spans": 2, "directions_used": 2,
                                                   "max_pairs": 8,
                                                   "residual_rms_mm": 0.08}})
         client = landed_client(settings, product_root, rows)
         assert self.site(client, 4)["correspondence"] == {
-            "pairs": 3, "observations": 5, "max_pairs": 8,
-            "residual_rms_mm": 0.08}
+            "pairs": 3, "observations": 5, "spans": 2, "directions_used": 2,
+            "max_pairs": 8, "residual_rms_mm": 0.08}
+
+    def test_three_chord_spans_no_longer_read_like_three_single_clicks(
+            self, settings, product_root):
+        """AUDIT FINDING 6's own scenario, on the wire. All three spans read more
+        than 30° off their own radius, so every direction was discarded and the
+        counts collapsed to 3/3 — identical to three plain clicks. The reader of the
+        sealed row is now told three spans were placed and none of their directions
+        counted."""
+        rows = self.rows_with({"correspondence": {
+            "pairs": 3, "observations": 3, "spans": 3, "directions_used": 0,
+            "max_pairs": 8, "residual_rms_mm": 0.08}})
+        block = self.site(landed_client(settings, product_root, rows),
+                          4)["correspondence"]
+        assert block["spans"] == 3 and block["directions_used"] == 0
 
     def test_a_malformed_block_is_ignored_rather_than_crashing_the_projection(
             self, settings, product_root):

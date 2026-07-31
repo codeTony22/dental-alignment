@@ -364,4 +364,25 @@ describe("picking a site by clicking it on the scan (client 2026-07-31)", () => 
     expect(html).toContain('data-role="pick-miss"');
     expect(html).toContain("No site within 6.0mm");
   });
+
+  it("a placed missed-cap centre survives arming the picker (audit 2026-07-31)", () => {
+    // The two doors share the stage's ONE point pick, so arming the picker disarms
+    // the mark — but a placed centre is not an arming, and dropping it silently is
+    // the quiet loss this surface's doctrine forbids. The panel must still be able
+    // to show both at once.
+    const html = view({ pickArmed: true, markPending: [1, 2, 3], markTooth: "14" });
+    expect(html).toContain('data-role="pick-prompt"');
+    expect(html).toContain("Centre placed. Which tooth is it?");
+    expect(html).toContain('data-role="mark-tooth"');
+  });
+
+  it("an ambiguous click is refused out loud, not resolved by nearest", () => {
+    const html = view({
+      pickMiss:
+        "That click is within 6.0mm of 2 sites (tooth 20, tooth 19) — click nearer " +
+        "the cap you mean, or pick its row.",
+    });
+    expect(html).toContain('data-role="pick-miss"');
+    expect(html).toContain("within 6.0mm of 2 sites");
+  });
 });
