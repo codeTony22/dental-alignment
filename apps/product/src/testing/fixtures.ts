@@ -3,13 +3,19 @@
  * the hand-written mirror), so component tests exercise the real seam shapes.
  */
 import type {
+  ActivityEntryView,
   AssuranceSite,
   AssuranceView,
   CaptureAssessmentView,
+  CaseActivityView,
   CaseSessionDetail,
   DetectedProposalView,
   DetectionView,
   InvoiceView,
+  RePreviewView,
+  SiteAcceptanceMetric,
+  SiteAcceptanceView,
+  SiteAdjustmentView,
   SitePreviewPayload,
   SiteView,
   WorklistRow,
@@ -310,7 +316,8 @@ export function assuranceSite(overrides: Partial<AssuranceSite> = {}): Assurance
     },
     deviation_rms_mm: 0.43,
     deviation_p90_mm: 0.71,
-    gate: { level: "ready", actions: [] },
+    // the run's own words, and they still describe the pose that shipped
+    gate: { level: "ready", actions: [], stale: false },
     clamp: { requested_mm: 0.2, applied_mm: 0.2, clamped: false, reason: null },
     production_note: null,
     stale_metrics: [],
@@ -330,6 +337,9 @@ export function assuranceSite(overrides: Partial<AssuranceSite> = {}): Assurance
           source: "alignment-algorithm-survey addendum",
         },
         note: null,
+        // the catalog's own thresholds, so "how much room is left" is answered
+        // from a cited number and never from a tolerance this app holds
+        bands: { pass: 0.5, review: 1.6 },
       },
     },
     ...overrides,
@@ -348,6 +358,7 @@ export function flaggedAssuranceSite(
       actions: [
         "The cap's ROTATION could not be verified — visually check the coded features.",
       ],
+      stale: false,
     },
     rotation: {
       deg: null,
@@ -384,6 +395,11 @@ export function reworkedAssuranceSite(
       residual_rms_mm: 0.08,
     },
     stale_metrics: ["rim_agreement_mm", "guidance"],
+    // the rework re-derived the measurements and could not re-derive the gate, so
+    // the words beside this row predate it — the server says so, the surface reads
+    // it (gap ``re-preview-a-site-without-applying-a-tool``)
+    gate: { level: "attention", actions: ["Re-read this site over its new panes."],
+            stale: true },
     ...overrides,
   });
 }
@@ -450,6 +466,135 @@ export function invoiceView(overrides: Partial<InvoiceView> = {}): InvoiceView {
     ],
     total_cents: 4800,
     paid: null,
+    ...overrides,
+  };
+}
+
+/** One acceptance metric as the catalog evaluated it for a single site
+ * (bff/resources/deliver.SiteAcceptanceView) — the measured value, the band it
+ * falls in, and the band's OWN thresholds beside its cited industry reference. */
+export function siteAcceptanceMetric(
+  overrides: Partial<SiteAcceptanceMetric> = {},
+): SiteAcceptanceMetric {
+  return {
+    key: "deviation_rms_mm",
+    label: "Surface deviation map — RMS",
+    unit: "mm",
+    audience: "doctor",
+    value: 0.43,
+    display: "0.43 mm",
+    band: "review",
+    bands: { pass: 0.2, review: 0.5 },
+    industry_ref: {
+      value: "±0.5 mm map convention; 200 µm misfit-acceptability line",
+      source: "alignment-perfection-strategy §1; PMC10756734",
+    },
+    note: "the same scalar printed on the deviation map (shared stats source)",
+    ...overrides,
+  };
+}
+
+/** One site's acceptance evaluation as the workspace reads it. NOT the design's
+ * three-lever budget: every number here is measured over real mesh and every
+ * threshold is the catalog's, not a tolerance held in the browser. */
+export function siteAcceptanceView(
+  overrides: Partial<SiteAcceptanceView> = {},
+): SiteAcceptanceView {
+  return {
+    tooth: 19,
+    run_id: "20260727-120000-abc123",
+    overall_band: "review",
+    missing: [],
+    metrics: [
+      siteAcceptanceMetric(),
+      siteAcceptanceMetric({
+        key: "rim_agreement_mm",
+        label: "Rim seating agreement (p90)",
+        value: 0.07,
+        display: "0.07 mm",
+        band: "pass",
+        bands: { pass: 0.5, review: 1.6 },
+        note: null,
+      }),
+    ],
+    stale_metrics: [],
+    context: {},
+    ...overrides,
+  };
+}
+
+/** One act on the case's narrative. Never constructed by the app in production —
+ * the BFF appends these inside the write that lands each act. */
+export function activityEntry(
+  overrides: Partial<ActivityEntryView> = {},
+): ActivityEntryView {
+  return {
+    at: "2026-07-31T09:15:00+00:00",
+    event: "run-authorized",
+    detail: "run 20260727-120000-abc123 authorized over 2 reviewed sites",
+    tooth: null,
+    ...overrides,
+  };
+}
+
+/** One entry off a site's shipped record, as the worker wrote it — `who` carries
+ * its own disclaimer verbatim. */
+export function siteAdjustment(
+  overrides: Partial<SiteAdjustmentView> = {},
+): SiteAdjustmentView {
+  return {
+    tooth: 19,
+    at: "2026-07-31T09:22:41",
+    operation: "rotation",
+    who: "operator (no identity is captured)",
+    detail: "rotated +5.0° about the part axis",
+    ...overrides,
+  };
+}
+
+/** The case's narrative as the BFF serves it: newest first, bounded, and honest
+ * about what the window does not hold (`recorded` vs `window`). */
+export function caseActivityView(
+  overrides: Partial<CaseActivityView> = {},
+): CaseActivityView {
+  return {
+    case_id: "case-a",
+    entries: [
+      activityEntry({
+        event: "site-adjusted",
+        detail: "rotation — rotated +5.0° about the part axis",
+        tooth: 19,
+        at: "2026-07-31T09:22:41+00:00",
+      }),
+      activityEntry({
+        event: "run-landed",
+        detail: "run 20260727-120000-abc123 completed — verdicts written for 2 sites, 1 flagged",
+        at: "2026-07-31T09:16:04+00:00",
+      }),
+      activityEntry(),
+    ],
+    recorded: 3,
+    window: 40,
+    run_id: "20260727-120000-abc123",
+    site_adjustments: [siteAdjustment()],
+    ...overrides,
+  };
+}
+
+/** WHAT A RE-READ FOUND, with nothing having moved: the row still describes the
+ * pose on disk. `changed` is the server's answer, never a comparison made here. */
+export function rePreviewView(
+  overrides: Partial<RePreviewView> = {},
+): RePreviewView {
+  return {
+    tooth: 19,
+    run_id: "20260727-120000-abc123",
+    changed: false,
+    rederived: { deviation_rms_mm: 0.43, deviation_p90_mm: 0.71 },
+    previous: { deviation_rms_mm: 0.43, deviation_p90_mm: 0.71 },
+    stale_metrics: [],
+    pane_payload: sitePreviewPayload(),
+    case: caseSessionDetail(),
     ...overrides,
   };
 }

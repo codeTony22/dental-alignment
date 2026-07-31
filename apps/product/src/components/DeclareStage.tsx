@@ -35,10 +35,13 @@ import {
   isReachable,
 } from "../domain/flow";
 import {
+  VIEW_PRESETS,
   activeSiteFrom,
+  alignmentStats,
   attestationSummary,
   declareQueueSummary,
   declaredLabel,
+  siteIdentity,
   siteStateSentence,
   resetCount,
   runKeyFor,
@@ -49,6 +52,8 @@ import {
   recordedAtWords,
   variantShelves,
   type VariantCard,
+  type ViewPresetId,
+  type WorkspaceStat,
 } from "../domain/declare";
 import { captureChipLabel } from "../domain/intake";
 import { DeclarePanes } from "./DeclarePanes";
@@ -256,6 +261,122 @@ function VariantCardButton({ card, declared, archived, onDeclare }: VariantCardB
   );
 }
 
+export interface WorkspaceToolbarProps {
+  readonly tooth: number | null;
+  readonly systemModel: string | null;
+  /** The active site's rung, rendered VERBATIM — the server's word, never ours. */
+  readonly status: string | null;
+  readonly stats: readonly WorkspaceStat[];
+  /** The named viewpoints. Rendered only when `onSelectView` is supplied: a preset
+   *  that cannot reach a camera is a control that lies about what a click does. */
+  readonly viewPreset?: ViewPresetId;
+  readonly onSelectView?: (preset: ViewPresetId) => void;
+  /** False before a seated pose exists — the off-axis presets need the measured clock
+   *  reference (domain/declare.presetFrame), and occlusal alone stays live. */
+  readonly viewPresetsAvailable?: boolean;
+  /** A stage's own control that belongs on this strip (Declare's arch opener) — so
+   *  the stage keeps ONE row of chrome above the panes rather than two. */
+  readonly children?: ReactNode;
+}
+
+/**
+ * THE WORKSPACE TOOLBAR — the identity anchor the pane-dominant layout cost us.
+ *
+ * Declare and Adjust share a workspace and had no shared toolbar: Adjust had none at
+ * all, Declare's held exactly one control (the arch dialog opener). Meanwhile the
+ * tooth number lived only in the work column's panel headings and the queue rows —
+ * every one of which SCROLLS (workbench__work-scroll) — so on a long case an operator
+ * could have three live panes up and nothing on screen naming whose site they showed.
+ *
+ * It is exported from this module rather than split into its own file so the two
+ * stages cannot drift into two different toolbars; the natural later home is
+ * components/WorkspaceToolbar.tsx once something outside Declare/Adjust wants it.
+ *
+ * WHAT DOES NOT PORT (design flow.dc.html 206-266): the design's strip colours its
+ * chip from a client-side `verdict()` and its MAX DEV from a client-side
+ * `deviation()` against a client-side `tolerance`. Here the chip is the server's
+ * `SiteView.status` string and the numbers are the run's own published figures — this
+ * component computes nothing it displays.
+ */
+export function WorkspaceToolbar({
+  tooth,
+  systemModel,
+  status,
+  stats,
+  viewPreset = "occlusal",
+  onSelectView,
+  viewPresetsAvailable = true,
+  children,
+}: WorkspaceToolbarProps) {
+  const identity = siteIdentity(tooth, systemModel);
+  return (
+    <div
+      data-role="workspace-toolbar"
+      className="stage-toolbar workspace-toolbar"
+      role="group"
+      aria-label="Workspace"
+    >
+      <span data-role="site-chip" className="workspace-toolbar__site">
+        <span aria-hidden="true">⊞</span> {identity.tooth}
+        <span className="workspace-toolbar__site-system">{identity.system}</span>
+      </span>
+      {children}
+      {onSelectView !== undefined && (
+        <span
+          className="workspace-toolbar__views"
+          role="group"
+          aria-label="Named viewpoints"
+        >
+          {VIEW_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              data-role="view-preset"
+              data-preset={preset.id}
+              aria-pressed={viewPreset === preset.id}
+              /* occlusal IS each pane's own framing, so it survives a missing pose;
+                 the off-axis two need the measured roll and say nothing without it */
+              disabled={!viewPresetsAvailable && preset.id !== "occlusal"}
+              title={
+                viewPresetsAvailable || preset.id === "occlusal"
+                  ? preset.title
+                  : "Needs this site's seated pose — nothing has measured its clock yet."
+              }
+              className={`button button--ghost button--small${
+                viewPreset === preset.id ? " button--active" : ""
+              }`}
+              onClick={() => onSelectView(preset.id)}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </span>
+      )}
+      <span data-role="alignment-strip" className="workspace-toolbar__metrics">
+        <span className="workspace-toolbar__metrics-label">ALIGNMENT</span>
+        <span
+          data-role="toolbar-status"
+          data-status={status ?? "none"}
+          className="chip chip--status"
+        >
+          {status ?? "no site selected"}
+        </span>
+        {stats.map((stat) => (
+          <span
+            key={stat.id}
+            data-role="alignment-stat"
+            data-stat={stat.id}
+            className="workspace-toolbar__stat"
+          >
+            <span className="workspace-toolbar__stat-key">{stat.label}</span>
+            <span className="workspace-toolbar__stat-value">{stat.value}</span>
+          </span>
+        ))}
+      </span>
+    </div>
+  );
+}
+
 export interface DeclareStageViewProps {
   readonly detail: CaseSessionDetail;
   readonly activeTooth: number | null;
@@ -284,6 +405,12 @@ export interface DeclareStageViewProps {
   readonly onConfirmSwitch: () => void;
   readonly onCancelSwitch: () => void;
   readonly onDeclare: (variantId: string) => void;
+  /** THE NAMED VIEWPOINTS (gap `named-view-presets`). Passed through to the toolbar,
+   * which renders the control group only when a handler exists — see the note on the
+   * stage's toolbar below for why this stage supplies none yet. */
+  readonly viewPreset?: ViewPresetId;
+  readonly onSelectView?: (preset: ViewPresetId) => void;
+  readonly viewPresetsAvailable?: boolean;
   /** The three live panes + the review tick (5b) — the container passes the
    * DeclarePanes container; View tests may omit it (the panes have their own). */
   readonly panesSlot?: ReactNode;
@@ -309,6 +436,9 @@ export function DeclareStageView({
   onConfirmSwitch,
   onCancelSwitch,
   onDeclare,
+  viewPreset,
+  onSelectView,
+  viewPresetsAvailable,
   panesSlot,
 }: DeclareStageViewProps) {
   const facts = factsFromCaseSession(detail);
@@ -569,7 +699,24 @@ export function DeclareStageView({
             surface it existed to orient. As a dialog the arch costs one click when
             wanted and zero pixels when not, and the WebGL viewer only MOUNTS while
             open, which is one fewer live context the three panes compete with. */}
-        <div className="stage-toolbar">
+        {/* THE STRIP CARRIES THE SITE NOW, not just the arch opener (gaps
+            `workspace-toolbar-site-chip` + `alignment-metrics-strip`). The chip is
+            the SERVER's rung and the numbers are the run's own rows — the same rows
+            the queue's sentences read — so this surface adds a location, never a
+            claim. The named view presets stay dark here: applying one has to reach
+            the three pane cameras, and that seam is `useSitePaneScene`'s frame
+            construction in components/SitePanes.tsx, which this change does not
+            touch. The moment it grows a frame override, `onSelectView` is the one
+            prop to pass. */}
+        <WorkspaceToolbar
+          tooth={active?.tooth ?? null}
+          systemModel={detail.system.effective_model}
+          status={active?.status ?? null}
+          stats={alignmentStats(runRows, active?.tooth ?? null, active?.declared_variant ?? null)}
+          viewPreset={viewPreset}
+          onSelectView={onSelectView}
+          viewPresetsAvailable={viewPresetsAvailable}
+        >
           <button
             type="button"
             data-role="arch-open"
@@ -578,7 +725,7 @@ export function DeclareStageView({
           >
             ⊞ Arch context — the whole scan
           </button>
-        </div>
+        </WorkspaceToolbar>
         {panesSlot}
       </div>
       {archOpen && (
@@ -643,6 +790,9 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
   const [forkSaving, setForkSaving] = useState<ForkSaving>("idle");
   const [forkError, setForkError] = useState<string | null>(null);
   const [runRows, setRunRows] = useState<ReadonlyArray<Record<string, unknown>>>([]);
+  // THE NAMED VIEWPOINT (gap `named-view-presets`), held by the STAGE so one click
+  // moves all three panes — a per-pane preset would just be three orbits again.
+  const [viewPreset, setViewPreset] = useState<ViewPresetId>("occlusal");
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -794,6 +944,8 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
 
   return (
     <DeclareStageView
+      viewPreset={viewPreset}
+      onSelectView={setViewPreset}
       detail={detail}
       activeTooth={activeTooth}
       pendingSwitch={pendingSwitch}
@@ -817,6 +969,7 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
           detail={detail}
           site={activeSiteFrom(detail.sites, activeTooth)}
           onDetail={onDetail}
+          viewPreset={viewPreset}
         />
       }
     />

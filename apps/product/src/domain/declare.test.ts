@@ -43,6 +43,11 @@ import {
   systemCards,
   variantMeshUrl,
   variantShelves,
+  alignmentStats,
+  presetFrame,
+  siteIdentity,
+  VIEW_PRESETS,
+  type PaneFrame,
   type PostPreviewFn,
   type PreviewSlots,
 } from "./declare";
@@ -926,5 +931,151 @@ describe("siteStateSentence — the row's state in words, and the RUN's own numb
       expect(words.toLowerCase()).not.toContain("in tolerance");
       expect(words.toLowerCase()).not.toContain("pass");
     }
+  });
+});
+
+// --- the workspace toolbar's rules (gaps `workspace-toolbar-site-chip`,
+// --- `alignment-metrics-strip`, `named-view-presets`) --------------------------------
+
+describe("siteIdentity — WHICH site the three panes are showing", () => {
+  it("names the tooth and the effective system", () => {
+    expect(siteIdentity(19, "conical-4x4")).toEqual({
+      tooth: "Tooth 19",
+      system: "conical-4x4",
+    });
+  });
+
+  it("with no site selected it says so rather than printing a bare dash", () => {
+    expect(siteIdentity(null, "conical-4x4").tooth).toBe("No site selected");
+  });
+
+  it("with no effective system it says so — a blank would read as 'no system needed'", () => {
+    expect(siteIdentity(19, null).system).toBe("no system declared");
+  });
+});
+
+describe("alignmentStats — the strip's facts, every one the SERVER's", () => {
+  const rows = [
+    {
+      tooth: 19,
+      deviation_rms_mm: 0.0412,
+      deviation_p90_mm: 0.0871,
+      clocking: { notch_shift_deg: -1.42 },
+      correspondence: { pairs: 3, max_pairs: 8 },
+    },
+    { tooth: 30 },
+  ];
+  const statOf = (
+    stats: readonly { readonly id: string; readonly value: string }[],
+    id: string,
+  ): string => stats.find((s) => s.id === id)!.value;
+
+  it("reads the run row's deviation, clocking and pairs verbatim", () => {
+    const stats = alignmentStats(rows, 19, "5020");
+    expect(statOf(stats, "variant")).toBe("5020");
+    expect(statOf(stats, "dev-rms")).toBe("0.041 mm");
+    expect(statOf(stats, "dev-p90")).toBe("0.087 mm");
+    expect(statOf(stats, "rotation")).toBe("-1.4°");
+    expect(statOf(stats, "pairs")).toBe("3 / 8");
+  });
+
+  it("a positive clocking residual carries its sign — the direction IS the fact", () => {
+    const stats = alignmentStats([{ tooth: 19, clocking: { notch_shift_deg: 2.5 } }], 19, null);
+    expect(statOf(stats, "rotation")).toBe("+2.5°");
+  });
+
+  it("PAIRS is '—' while the row carries no correspondence — never an invented 0 / 8", () => {
+    const stats = alignmentStats(rows, 30, "5020");
+    expect(statOf(stats, "pairs")).toBe("—");
+    expect(statOf(stats, "pairs")).not.toContain("0");
+  });
+
+  it("a correspondence with no server cap renders the count alone, not a guessed bound", () => {
+    const stats = alignmentStats([{ tooth: 19, correspondence: { pairs: 4 } }], 19, null);
+    expect(statOf(stats, "pairs")).toBe("4");
+  });
+
+  it("pre-run every measured field is '—' and no field is fabricated", () => {
+    const stats = alignmentStats([], 19, "5020");
+    expect(statOf(stats, "variant")).toBe("5020");
+    for (const id of ["dev-rms", "dev-p90", "rotation", "pairs"]) {
+      expect(statOf(stats, id)).toBe("—");
+    }
+  });
+
+  it("an undeclared site's VARIANT is a dash, never the suggestion", () => {
+    expect(statOf(alignmentStats([], null, null), "variant")).toBe("—");
+  });
+
+  it("no stat is a verdict: nothing here says pass, fail or in tolerance", () => {
+    const words = alignmentStats(rows, 19, "5020")
+      .map((s) => `${s.label} ${s.value}`)
+      .join(" ")
+      .toLowerCase();
+    for (const verdict of ["pass", "fail", "in tolerance", "ok", "within"]) {
+      expect(words).not.toContain(verdict);
+    }
+  });
+});
+
+describe("presetFrame — the named viewpoints, in each pane's OWN basis", () => {
+  /* The canonical part frame: look down +z with up +x (partCameraFrame's own
+     directions), which is the same reference the seated pose's x_axis is. */
+  const base: PaneFrame = {
+    center: [1, 2, 3],
+    radiusMm: 9,
+    viewDirection: [0, 0, 1],
+    up: [1, 0, 0],
+  };
+
+  it("offers exactly the design's three named directions", () => {
+    expect(VIEW_PRESETS.map((p) => p.id)).toEqual(["occlusal", "buccal", "mesial"]);
+  });
+
+  it("occlusal IS the pane's own framing — down the seated axis, unchanged", () => {
+    expect(presetFrame(base, "occlusal")).toEqual(base);
+  });
+
+  it("buccal looks down the third basis vector with the axis standing up on screen", () => {
+    const frame = presetFrame(base, "buccal")!;
+    expect(frame.viewDirection).toEqual([0, 1, 0]); // z × x
+    expect(frame.up).toEqual([0, 0, 1]); // the cap's own axis points up
+    // the pane keeps its own subject: only the camera moved
+    expect(frame.center).toEqual(base.center);
+    expect(frame.radiusMm).toBe(base.radiusMm);
+  });
+
+  it("mesial looks down the shared clock reference, the axis still up", () => {
+    const frame = presetFrame(base, "mesial")!;
+    expect(frame.viewDirection).toEqual([1, 0, 0]);
+    expect(frame.up).toEqual([0, 0, 1]);
+  });
+
+  it("normalises whatever the pose supplied — a wire axis is not a unit vector", () => {
+    const scaled: PaneFrame = { ...base, viewDirection: [0, 0, 4], up: [3, 0, 0] };
+    const frame = presetFrame(scaled, "buccal")!;
+    expect(frame.viewDirection![0]).toBeCloseTo(0, 12);
+    expect(frame.viewDirection![1]).toBeCloseTo(1, 12);
+    expect(frame.up![2]).toBeCloseTo(1, 12);
+  });
+
+  it("without a measured roll there is no off-axis view — null, never a guessed clock", () => {
+    // pre-preview panes 2/3 frame down the jaw's occlusal PROXY with up = null
+    // (siteFrameFor): a buccal view would need a roll nothing has measured.
+    const proxy: PaneFrame = { ...base, up: null };
+    expect(presetFrame(proxy, "buccal")).toBeNull();
+    expect(presetFrame(proxy, "mesial")).toBeNull();
+    // occlusal still works: it is exactly the framing the pane already has
+    expect(presetFrame(proxy, "occlusal")).toEqual(proxy);
+  });
+
+  it("a degenerate basis (axis parallel to its roll) yields no view rather than NaNs", () => {
+    const degenerate: PaneFrame = { ...base, viewDirection: [0, 0, 1], up: [0, 0, 2] };
+    expect(presetFrame(degenerate, "buccal")).toBeNull();
+  });
+
+  it("no frame in, no frame out", () => {
+    expect(presetFrame(null, "occlusal")).toBeNull();
+    expect(presetFrame(null, "buccal")).toBeNull();
   });
 });

@@ -734,6 +734,19 @@ export interface AssuranceClamp {
 export interface AssuranceGate {
   level: string;
   actions: string[];
+  /**
+   * WHETHER THESE WORDS STILL DESCRIBE THE POSE THAT SHIPPED (2026-07-31).
+   *
+   * A rework re-derives the row's measurements and cannot re-derive its guidance —
+   * the gate stands on a dozen run-time inputs the shipped record does not carry —
+   * so after a successful rework the rung moves while `actions` still describes the
+   * pre-rework fit. The SERVER decides this (bff/resources/deliver.AssuranceGate);
+   * a surface renders the flag, it never works the staleness out for itself.
+   *
+   * Optional on the wire only because a payload sealed before the field existed
+   * carries no such key; the current BFF always sends it.
+   */
+  stale?: boolean;
 }
 
 /** One acceptance-catalog pairing (case_prep.domain.acceptance, verbatim): the
@@ -747,6 +760,11 @@ export interface AssuranceReference {
   band: string;
   industry_ref: { value: string; source: string };
   note: string | null;
+  /** THE BAND'S OWN THRESHOLDS — value ≤ `pass` passes, ≤ `review` reviews, beyond
+   * fails. Null on a metric whose verdict is not a scalar comparison. This is what
+   * "how much room is left" is measured against, and it is the CATALOG's number
+   * with a cited source, never a tolerance this app holds. */
+  bands?: { pass: number; review: number } | null;
 }
 
 export interface AssuranceSite {
@@ -1079,6 +1097,92 @@ export async function fetchSeated(
   return fetchJson<SitePreviewPayload>(siteActionPath(caseId, tooth, "seated"));
 }
 
+/**
+ * WHAT A RE-READ FOUND (POST .../sites/{tooth}/re-preview — gap
+ * `re-preview-a-site-without-applying-a-tool`, 2026-07-31). Measurements and names,
+ * never a verdict.
+ *
+ * `rederived` is what the panes' instrument reads at the pose on disk; `previous` is
+ * what the run row said before; `changed` is the SERVER's answer to whether anything
+ * moved — the row was judged by it, and no comparison happens here.
+ *
+ * `stale_metrics` is the row's existing staleness, untouched: a re-read moves
+ * nothing, so nothing becomes stale through it, and it cannot clear what an earlier
+ * rework left behind either (only a full run re-derives those).
+ */
+export interface RePreviewView {
+  tooth: number;
+  run_id: string;
+  changed: boolean;
+  rederived: Record<string, number | null>;
+  previous: Record<string, number | null>;
+  stale_metrics: string[];
+  pane_payload: SitePreviewPayload;
+  case: CaseSessionDetail;
+}
+
+/**
+ * RE-READ A SITE WITHOUT APPLYING A TOOL. Body-less: everything the server reads is
+ * in the run directory, so there is nothing to send.
+ *
+ * A CONTROL THAT CALLS THIS MAY PROMISE A RE-READ AND NEVER AN OUTCOME. The design
+ * prototype labels its own re-preview button with the verdict it expects ("this will
+ * pass"); that is a client-side verdict, and this app does not make them. Label the
+ * act, render what comes back.
+ */
+export async function postRePreview(
+  caseId: string,
+  tooth: number,
+): Promise<ApiResult<RePreviewView>> {
+  return fetchJson<RePreviewView>(siteActionPath(caseId, tooth, "re-preview"), {
+    method: "POST",
+  });
+}
+
+/** One acceptance metric for a single site, as the catalog evaluated it. The same
+ * shape `AssuranceReference` carries on a Deliver row — one catalog, one wire
+ * shape — plus the audience the domain assigns it ("doctor" | "lab"). */
+export interface SiteAcceptanceMetric extends AssuranceReference {
+  audience: string;
+}
+
+/**
+ * ONE SITE'S ACCEPTANCE NUMBERS, for the workspace (GET .../sites/{tooth}/acceptance
+ * — gap `deviation-budget-in-workspace`, 2026-07-31): each measured value beside the
+ * band it falls in and the band's own thresholds, so Declare and Adjust can answer
+ * "how much room is left, and on which metric?" from the numbers the pipeline already
+ * computes and cites.
+ *
+ * NOT the design's three-lever budget: that divides a rotation error, a diameter
+ * error and a residual scatter by a tolerance the browser holds. None of those exist
+ * here, the product's deviation is measured over real mesh, and a tolerance
+ * comparison never happens in this app.
+ *
+ * 404 without a done current run — pre-run there is genuinely nothing measured, which
+ * is what a "no run yet" note is for, not something to fill with zeros.
+ */
+export interface SiteAcceptanceView {
+  tooth: number;
+  run_id: string;
+  /** The catalog's own worst evaluated band over this row. */
+  overall_band: string;
+  /** Metric keys this row could not measure — never counted as passes. */
+  missing: string[];
+  metrics: SiteAcceptanceMetric[];
+  /** Which of these numbers predate a rework (the row's own naming). */
+  stale_metrics: string[];
+  context: Record<string, unknown>;
+}
+
+export async function fetchSiteAcceptance(
+  caseId: string,
+  tooth: number,
+): Promise<ApiResult<SiteAcceptanceView>> {
+  return fetchJson<SiteAcceptanceView>(
+    siteActionPath(caseId, tooth, "acceptance"),
+  );
+}
+
 function adjustTool(
   caseId: string,
   tooth: number,
@@ -1237,5 +1341,61 @@ export async function postCaseReset(
   return fetchJson<CaseSessionDetail>(
     `/api/case-sessions/${encodeURIComponent(caseId)}/reset`,
     { method: "POST" },
+  );
+}
+
+// --- the case's narrative (gap `session-activity-log`, 2026-07-31) --------------------
+//
+// THERE IS NO POST HERE, AND THERE NEVER WILL BE. The log is appended SERVER-SIDE
+// inside the same write that lands each act (bff/session.record_activity), so an entry
+// exists exactly when the act it names landed. The design prototype keeps its log in a
+// browser array; a list this app maintained — or one the BFF would accept — would read
+// as an audit trail while proving nothing, which is the same class of untruth as a
+// client-claimed status.
+
+/** One act, verbatim. No actor: this stack authenticates nobody, and `at` is the fact
+ * the act genuinely produced. `tooth` is null on case-level acts. */
+export interface ActivityEntryView {
+  at: string;
+  event: string;
+  detail: string;
+  tooth: number | null;
+}
+
+/** One entry off a site's shipped record in the run directory, as the WORKER wrote it
+ * (`case_prep.application.adjust._finish_adjustment`). `who` reads "operator (no
+ * identity is captured)" — carried verbatim, disclaimer included, because dropping it
+ * would leave the word "operator" looking like an identity. */
+export interface SiteAdjustmentView {
+  tooth: number;
+  at: string;
+  operation: string;
+  who: string;
+  detail: string;
+}
+
+/**
+ * The case's narrative. `entries` arrive NEWEST FIRST, ordered by the server.
+ *
+ * IT IS A WINDOW, NOT AN AUDIT TRAIL, and the shape says so: `recorded` counts every
+ * act ever recorded while `window` is how many the log keeps, so a surface can say
+ * "the last 40 of 137" rather than implying it is showing everything. The session
+ * document is re-read per request and its size is pinned, which is why the log is
+ * bounded at all.
+ */
+export interface CaseActivityView {
+  case_id: string;
+  entries: ActivityEntryView[];
+  recorded: number;
+  window: number;
+  run_id: string | null;
+  site_adjustments: SiteAdjustmentView[];
+}
+
+export async function fetchActivity(
+  caseId: string,
+): Promise<ApiResult<CaseActivityView>> {
+  return fetchJson<CaseActivityView>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/activity`,
   );
 }

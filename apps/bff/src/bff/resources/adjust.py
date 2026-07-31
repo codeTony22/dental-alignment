@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -61,15 +61,16 @@ from case_prep.application.adjust import (AdjustInvalid, AdjustOutcome, AdjustRe
                                           AlreadyOptimal, Correspondence,
                                           align_to_correspondence, align_to_mark,
                                           best_fit_site, clock_landmarks, load_site,
-                                          rotate_site, seated_payload)
+                                          rederived_reading, rotate_site,
+                                          seated_payload)
 from case_prep.application.cases import CaseRecord
 from case_prep.application.catalog import UnknownSelection
 from case_prep.application.detection import ScanUnreadable
 
 from .. import status
 from ..config import Settings
-from ..session import (CaseSession, RunSession, SessionStore, SiteStatus,
-                       clear_confirmation)
+from ..session import (ACT_SITE_ADJUSTED, ACT_SITE_RE_READ, CaseSession, RunSession,
+                       SessionStore, SiteStatus, clear_confirmation, record_activity)
 from .case_sessions import (CaseSessionDetail, _case_or_404, _context, _detail,
                             _mutate_session, _require_known_tooth)
 # ONE home for the run directory's path shape (the disclosure edge's) — two spellings
@@ -240,6 +241,31 @@ class AdjustOutcomeView(BaseModel):
     residual_rms_mm: Optional[float] = None
     click_azimuth_deg: Optional[float] = None
     matched_feature_azimuth_deg: Optional[float] = None
+
+
+class RePreviewView(BaseModel):
+    """WHAT A RE-READ FOUND (gap ``re-preview-a-site-without-applying-a-tool``,
+    2026-07-31). Every field is a measurement or a name, never a verdict.
+
+    ``rederived`` is what the panes' own instrument reads at the pose on disk;
+    ``previous`` is what the run row said before this read. ``changed`` is the
+    server's answer to the only question the act asks — did anything move? — and it
+    is what the row itself was judged by, not a comparison a browser made.
+
+    ``stale_metrics`` is the row's EXISTING staleness, verbatim and untouched. A
+    re-read moves nothing, so nothing becomes stale through it; anything an earlier
+    rework already left behind stays named. See the route for why a re-read cannot
+    clear it either."""
+
+    tooth: int
+    run_id: str
+    changed: bool
+    rederived: Dict[str, Optional[float]]
+    previous: Dict[str, Optional[float]]
+    stale_metrics: List[str] = Field(default_factory=list)
+    # the panes' payload, response-only like every other pose read on this resource
+    pane_payload: dict
+    case: CaseSessionDetail
 
 
 class AdjustResultView(BaseModel):
@@ -425,6 +451,12 @@ def _land(store: SessionStore, case: CaseRecord, tooth: int, run_id: str,
         # fits moved is not confirmed any more, and a release over the old evidence
         # is retired with it.
         clear_confirmation(session)
+        # THE NARRATIVE (gap ``session-activity-log``): the run directory's own
+        # append-only ``adjustments`` list already records the geometry; this records
+        # the SESSION act beside it, so "why is tooth 13 adjusted?" is answerable
+        # without opening a run directory. The application's own sentence, verbatim.
+        record_activity(session, ACT_SITE_ADJUSTED,
+                        f"{outcome.operation} — {outcome.detail}", tooth=tooth)
 
     try:
         return _mutate_session(store, case.id, apply)
@@ -541,6 +573,89 @@ def site_landmarks(case_id: str, tooth: int, request: Request) -> List[dict]:
         return clock_landmarks(load_site(case, run_dir, tooth).template)
     except (AdjustInvalid, AdjustRefused, UnknownSelection, ScanUnreadable) as exc:
         _refuse(exc)
+
+
+# --- the re-read (gap ``re-preview-a-site-without-applying-a-tool``, 2026-07-31) -------------
+
+
+@router.post("/{case_id}/sites/{tooth}/re-preview", response_model=RePreviewView)
+def post_re_preview(case_id: str, tooth: int, request: Request) -> RePreviewView:
+    """RE-READ THIS SITE. Applies nothing, proposes nothing, moves no rung.
+
+    THE GAP THIS CLOSES. ``_fold_outcome`` re-derives every pose-dependent number on
+    the run's summary row — but only an APPLIED TOOL ever calls it. An operator who
+    wanted the row re-checked against the geometry actually on disk had to pretend to
+    adjust something (a 0° nudge still writes a pose, a proof and a rung), and a
+    measure-only best-fit deliberately folds nothing at all. So the row could sit
+    describing a pose the run directory no longer holds with no honest way to notice.
+    This route is the measurement half of an adjustment, without the adjustment.
+
+    BODY-LESS, and structurally so (the allowlist carries the reason): everything it
+    reads is the run directory's, so there is nothing a client could claim with. The
+    design's own re-preview control pre-announces its verdict in the button label —
+    "this will pass". That is exactly the client-side verdict the product forbids: a
+    label may promise a re-READ; what the read FOUND comes back from here.
+
+    WHAT IT RE-DERIVES, AND WHAT IT REFUSES TO. ``rederived_reading`` — the same
+    function the tools' own landing uses, so a re-read and a rework cannot produce
+    different numbers from the same instrument. What it does NOT touch is
+    ``STALE_AFTER_REWORK``'s two: ``rim_agreement_mm`` was anchored on run-time data
+    the shipped record does not carry, and ``guidance`` is a function of a dozen
+    inputs it does not carry either. Re-deriving either here would put a DIFFERENT
+    number under the same name — the exact failure the stale-metrics naming exists to
+    prevent. It cannot CLEAR those markers either: a re-read proves the deviation
+    scalars are current, and proves nothing whatever about a rim circle nobody
+    re-fitted. Only a full run re-derives them, and only a full run clears them.
+
+    THE EVIDENCE BOUNDARY fires only when something actually moved: the assurance
+    projection reads this row verbatim and the confirmation seals it, so a row whose
+    numbers changed retires the confirmation (``clear_confirmation``) exactly as a
+    tool's landing does. A re-read that finds the row already true costs the operator
+    nothing — which is the point of being able to ask."""
+    settings, store, case, run, run_dir = _tool_context(request, case_id, tooth)
+    run_id = run.run_id or run.job_id
+    try:
+        # OUTSIDE the mutation, like every tool's physics: it parses meshes, and a CAS
+        # retry must never re-run it
+        payload = seated_payload(case, run_dir, tooth)
+    except (AdjustInvalid, AdjustRefused, UnknownSelection, ScanUnreadable) as exc:
+        _refuse(exc)
+    rederived = rederived_reading(payload)
+    found: dict = {}
+
+    def apply(session: CaseSession) -> None:
+        fresh = _require_verdict(session, case.id, tooth)
+        if (fresh.run_id or fresh.job_id) != run_id:
+            raise HTTPException(409, f"case {case_id!r} changed while the site was "
+                                     f"being re-read — that run is no longer the "
+                                     f"case's current one; re-read the case")
+        # non-None by construction: ``_require_verdict`` above refuses a tooth the
+        # run never aligned, and it re-judges the FRESH document
+        row = _summary_row(fresh, tooth)
+        assert row is not None
+        previous = {key: row.get(key) for key in rederived}
+        changed = previous != rederived
+        if changed:
+            row.update(rederived)
+            # the sealed row moved, so nothing signed over the old one stands
+            clear_confirmation(session)
+        found["previous"] = previous
+        found["changed"] = changed
+        found["stale_metrics"] = [
+            str(m) for m in ((row.get("rework") or {}).get("stale_metrics") or [])]
+        record_activity(
+            session, ACT_SITE_RE_READ,
+            "re-read at the shipped pose — the row's deviation numbers moved"
+            if changed else
+            "re-read at the shipped pose — the row still describes what is on disk",
+            tooth=tooth)
+
+    session = _mutate_session(store, case.id, apply)
+    return RePreviewView(
+        tooth=tooth, run_id=run_id, changed=found["changed"],
+        rederived=rederived, previous=found["previous"],
+        stale_metrics=found["stale_metrics"],
+        pane_payload=payload, case=_detail(case, session, settings))
 
 
 # --- the four tools -------------------------------------------------------------------------

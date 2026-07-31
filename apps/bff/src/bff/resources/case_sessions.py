@@ -54,13 +54,18 @@ from case_prep.application.preview import (PreviewRefused, PreviewSelection,
 from .. import status
 from ..config import Settings
 from ..ports.worker import JobState, WorkerPort
-from ..session import (AdjustDecisionRecord, CaseChoices, CaseSession,
+from ..session import (ACT_ADJUST_DECISION, ACT_CHOICES_SET, ACT_DETECTED,
+                       ACT_RUN_AUTHORIZED, ACT_RUN_LANDED, ACT_RUN_REFUSED,
+                       ACT_RUN_WITHDRAWN, ACT_SITE_DECLARED, ACT_SITE_MARKED,
+                       ACT_SITE_PREVIEWED, ACT_SITE_REVIEW_WITHDRAWN,
+                       ACT_SITE_REVIEWED, ACT_SYSTEM_DECLARED,
+                       AdjustDecisionRecord, CaseChoices, CaseSession,
                        DetectedProposal, DetectionRecord, RunSession,
                        SeatedSelection, SessionConflict, SessionStore, SiteSession,
                        SiteStatus, clear_current_run,
                        confirmation_covers_bundle_shape, confirmation_covers_fork,
-                       release_matches_confirmation, released_teeth_of,
-                       split_released_files, summary_teeth_of)
+                       record_activity, release_matches_confirmation,
+                       released_teeth_of, split_released_files, summary_teeth_of)
 
 router = APIRouter(prefix="/api/case-sessions", tags=["case-sessions"])
 
@@ -990,6 +995,9 @@ def detect_case(case_id: str, request: Request, fresh: bool = False) -> CaseSess
 
         def apply(fresh_session: CaseSession) -> None:
             fresh_session.detection = record
+            record_activity(fresh_session, ACT_DETECTED,
+                            f"detection found {len(record.proposals)} cap proposal"
+                            f"{'' if len(record.proposals) == 1 else 's'}")
 
         session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)
@@ -1057,6 +1065,22 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
             # ``clear_current_run`` is that boundary's one home: the adjust decision
             # was made over these verdicts and falls with them
             clear_current_run(session)
+        # THE LOG RECORDS A CHANGE, NOT A SUBMIT. This is a PUT of the whole panel and
+        # the UI re-submits it whenever anything in it moves, so a byte-identical
+        # re-PUT is not an act — recording it would spend the log's bounded window on
+        # entries that describe nothing, pushing real acts out. The reset boundary's
+        # own guard (``effective_changed``) is not the right test here: pinning a
+        # suggestion changes the raw document without moving the effective one, and
+        # "the lab chose this explicitly" is worth a line even though it retires
+        # nothing. What the entry then states is the CONSEQUENCE — whether previews
+        # fell — because that is the thing an operator later asks about.
+        if replacement != session.choices:
+            record_activity(session, ACT_CHOICES_SET,
+                            "case choices set — the previews and the current run were "
+                            "retired (they described a different shipped part)"
+                            if effective_changed else
+                            "case choices set — the effective selection did not move, "
+                            "so nothing was retired")
         session.choices = replacement
 
     session = _mutate_session(store, case_id, apply)
@@ -1093,6 +1117,12 @@ def put_system(case_id: str, body: SystemIn, request: Request) -> CaseSessionDet
             # the run boundary (5c): a run of the old system — and the fork
             # decided over its verdicts (see ``clear_current_run``)
             clear_current_run(session)
+            record_activity(session, ACT_SYSTEM_DECLARED,
+                            f"implant system switched to {body.model!r} — every site "
+                            f"dropped its variant and returned to detected")
+        else:
+            record_activity(session, ACT_SYSTEM_DECLARED,
+                            f"implant system declared {body.model!r}")
         session.system = body.model
 
     session = _mutate_session(store, case_id, apply)
@@ -1152,6 +1182,11 @@ def put_declaration(case_id: str, tooth: int, body: DeclarationIn,
             # longer declares — the pointer clears (the run dir stays, as history),
             # and the fork decided over its verdicts goes with it
             clear_current_run(session)
+            # only a REAL declaration is recorded: a re-declaration of the same
+            # variant changes nothing, and a log entry for it would be noise the
+            # window then charges a real act for
+            record_activity(session, ACT_SITE_DECLARED,
+                            f"variant {body.variant!r} declared", tooth=tooth)
         session.sites[str(tooth)] = site
 
     session = _mutate_session(store, case_id, apply)
@@ -1248,6 +1283,10 @@ def preview_site_action(case_id: str, tooth: int, request: Request) -> dict:
         site.seat_method = seat.get("seat_method")
         site.rim_agreement_mm = seat.get("rim_agreement_mm")
         site.seated_selection = seated
+        record_activity(session, ACT_SITE_PREVIEWED,
+                        f"previewed on {selection.variant!r} — "
+                        f"{site.seat_method or 'no seat method reported'}",
+                        tooth=tooth)
 
     try:
         _mutate_session(store, case_id, apply)
@@ -1293,6 +1332,9 @@ def post_marked_site(case_id: str, body: MarkedSiteIn,
                      f"existing site would retire its preview and its review")
         session.sites[str(body.tooth)] = SiteSession(
             marked_center=[float(c) for c in body.center])
+        record_activity(session, ACT_SITE_MARKED,
+                        "healing cap centre marked by hand — detection missed this "
+                        "site", tooth=body.tooth)
 
     session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)
@@ -1316,6 +1358,8 @@ def post_review(case_id: str, tooth: int, request: Request) -> CaseSessionDetail
         site = session.sites.get(str(tooth), SiteSession())
         site.status = status.review_ready(site.status)
         session.sites[str(tooth)] = site
+        record_activity(session, ACT_SITE_REVIEWED,
+                        "reviewed over the live panes", tooth=tooth)
 
     try:
         session = _mutate_session(store, case_id, apply)
@@ -1339,6 +1383,9 @@ def delete_review(case_id: str, tooth: int, request: Request) -> CaseSessionDeta
         site = session.sites.get(str(tooth), SiteSession())
         site.status = status.withdraw_review(site.status)
         session.sites[str(tooth)] = site
+        record_activity(session, ACT_SITE_REVIEW_WITHDRAWN,
+                        "review withdrawn — the panes stand, the attestation does "
+                        "not", tooth=tooth)
 
     try:
         session = _mutate_session(store, case_id, apply)
@@ -1452,6 +1499,11 @@ def _withdraw_queued_receipt(store: SessionStore, case_id: str, run_id: str) -> 
         run = session.run
         if run is not None and run.job_id == run_id and run.state == "queued":
             clear_current_run(session)
+            # a run that vanishes with no verdict is exactly the thing an operator
+            # later cannot explain — the narrative says the receipt was withdrawn
+            record_activity(session, ACT_RUN_WITHDRAWN,
+                            f"run {run_id} reached no verdict — its queued receipt "
+                            f"was withdrawn so the case stays runnable")
 
     try:
         _mutate_session(store, case_id, clear)
@@ -1496,6 +1548,10 @@ def run_case_action(case_id: str, request: Request) -> CaseSessionDetail:
         # verdicts this run is about to replace (client 2026-07-27's fork, keyed to
         # the run — see session.AdjustDecisionRecord)
         session.adjust_decision = None
+        record_activity(session, ACT_RUN_AUTHORIZED,
+                        f"run {run_id} authorized over "
+                        f"{len(submitted['selection']['variants'])} reviewed site"
+                        f"{'' if len(submitted['selection']['variants']) == 1 else 's'}")
 
     _mutate_session(store, case_id, claim)
     # From here on a ``queued`` receipt is on disk, and EVERY exit that cannot land
@@ -1533,6 +1589,8 @@ def run_case_action(case_id: str, request: Request) -> CaseSessionDetail:
             if outcome.state is JobState.REFUSED:
                 session.run = RunSession(job_id=job_id, run_id=run_id, state="refused",
                                          refusal=outcome.refusal)
+                record_activity(session, ACT_RUN_REFUSED,
+                                f"run {run_id} refused — {outcome.refusal}")
                 return
             summary = worker.result(job_id)
             session.run = RunSession(
@@ -1547,6 +1605,14 @@ def run_case_action(case_id: str, request: Request) -> CaseSessionDetail:
                     # "attention"/"action-needed": the run's evidence flags the site —
                     # the ladder's fork (plan §2), through the machine like every move
                     site.status = status.flag(site.status)
+            rows = summary.get("sites") or []
+            flagged = [r for r in rows
+                       if (r.get("guidance") or {}).get("level") != "ready"]
+            record_activity(
+                session, ACT_RUN_LANDED,
+                f"run {run_id} completed — verdicts written for {len(rows)} site"
+                f"{'' if len(rows) == 1 else 's'}"
+                + (f", {len(flagged)} flagged" if flagged else ", none flagged"))
 
         try:
             session = _mutate_session(store, case_id, land)
@@ -1610,6 +1676,9 @@ def post_adjust_decision(case_id: str, body: AdjustDecisionIn,
         session.adjust_decision = AdjustDecisionRecord(
             decision=body.decision, at=_now_iso(),
             run_id=run.run_id or run.job_id)
+        record_activity(session, ACT_ADJUST_DECISION,
+                        f"the fork was taken: {body.decision!r} — recorded over run "
+                        f"{run.run_id or run.job_id}")
 
     session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)

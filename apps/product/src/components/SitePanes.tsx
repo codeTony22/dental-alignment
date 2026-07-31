@@ -24,7 +24,15 @@
  * contexts is the cost the control exists to spend elsewhere), and the link-orbits
  * toggle.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type ReactNode,
+} from "react";
 import {
   CAP_REGION_RADIUS_MM,
   CONTACTS_MAX_MM,
@@ -43,9 +51,13 @@ import {
   deviationTickLabels,
   loadStlPositions,
   paletteHex,
+  paneAxisLabel,
+  paneScaleBar,
   scanPositionsFor,
   triangleCount,
   type DeviationScaleId,
+  type PaneScaleBar,
+  type PaneViewReadout,
   type Vec3,
   type VerifyLayerGeometry,
   type VerifyMarker,
@@ -53,6 +65,7 @@ import {
 import {
   scanUrlFor,
   type CaseSessionDetail,
+  type PreviewPose,
   type SitePreviewPayload,
   type SiteView,
 } from "../api/client";
@@ -60,7 +73,9 @@ import {
   indicesFrom,
   partCameraFrame,
   positionsFrom,
+  presetFrame,
   siteFrameFor,
+  type ViewPresetId,
   variantMeshUrl,
 } from "../domain/declare";
 
@@ -298,6 +313,221 @@ function ColorbarHud({
   );
 }
 
+/* ==========================================================================================
+ * THE MEASURED LAYOUT (client direction 2026-07-31, gaps measured-pane-layout-and-solo-
+ * fallback + tiny-stage-chrome-steps-aside).
+ *
+ * Nothing in this app had ever measured itself: the pane sizes were CSS arithmetic in a
+ * comment, and that comment computed for ONE row of three while the ≤1600px rule has been
+ * producing TWO rows since the Adjust slice. Measured in the running app, Declare stage,
+ * on the .verify-panels__grid box:
+ *
+ *   1280x800 — grid 563px → panes 394x276 → stage 221px, which is min-height:220px
+ *              OVERFLOWING its row by ~6px and being clipped by .verify-panel's overflow:hidden
+ *   1280x720 — grid 497px → panes 394x243 → stage clipped by 38px
+ *   1280x620 — grid 397px → panes 394x220 → stage clipped by 61px
+ *
+ * and on that stage the chrome measures: layer HUD 59px (the union's two rows) + colorbar
+ * strip 76px = 135px, i.e. 61% OF THE 1280x800 STAGE sitting on the cap being judged.
+ *
+ * So there are two different failures and they need two different answers:
+ *
+ *   - below a stage that can hold a cap at all, three panes are three unusable panes. One
+ *     pane at the whole height, with the 1/2/3 switcher that already exists, is strictly
+ *     better — the SOLO FALLBACK.
+ *   - above that but still short, the geometry is fine and only the chrome is wrong. It
+ *     steps aside: compact metrics first, then the layer HUD leaves the glass for a header
+ *     toggle. Nothing is REMOVED at any size — every control stays reachable.
+ * ========================================================================================== */
+
+/** What the pane box costs its stage: 8px padding top, a two-line header, the 6px gap and
+ *  8px padding bottom. MEASURED (pane 276px → stage top offset 53px → 61px of chrome), not
+ *  computed from the stylesheet — the stylesheet's own arithmetic was stale. */
+export const PANE_STAGE_CHROME_PX = 61;
+
+/** .verify-panels__grid's gap. */
+export const PANE_GRID_GAP_PX = 12;
+
+/** Below this a stage cannot show a cap AND its chrome, so the layout stops trying to show
+ *  three of them. 170px is the point at which the measured chrome bands (a HUD row, the
+ *  colorbar strip) leave nothing for the geometry; it is also below .verify-panel__stage's
+ *  own floor, so reaching it always means panes were already being clipped. */
+export const SOLO_FALLBACK_STAGE_PX = 170;
+
+/** Below this the chrome shrinks (1280x800 lands here — 214px of stage under 135px of HUD
+ *  and colorbar). */
+export const COMPACT_STAGE_PX = 260;
+
+/** Below this the layer HUD stops defending its own floor on top of the cap and moves
+ *  behind a header toggle (1280x720 lands here). */
+export const TINY_STAGE_PX = 190;
+
+/** How much room the chrome may take on this stage. Never a capability difference — a
+ *  "tiny" pane still offers every control, one click further away. */
+export type PaneChrome = "full" | "compact" | "tiny";
+
+/** What the panes measure about themselves. `viewportW` and not the grid's own width
+ *  because the column count is decided by MEDIA queries, which key off the viewport. */
+export interface PaneStageMetrics {
+  readonly availH: number;
+  readonly viewportW: number;
+}
+
+export interface PaneLayoutPlan {
+  /** false until the first observation — and an unmeasured plan is exactly today's layout,
+   *  so a surface that never measures (every static test) renders unchanged. */
+  readonly measured: boolean;
+  readonly columns: 1 | 2 | 3;
+  readonly rows: 1 | 2 | 3;
+  /** The height .verify-panel__stage will actually get, in px. */
+  readonly stageH: number;
+  /** The multi-pane layout cannot carry a usable stage — show one pane at full height. */
+  readonly solo: boolean;
+  readonly chrome: PaneChrome;
+}
+
+export const UNMEASURED_PANE_LAYOUT: PaneLayoutPlan = {
+  measured: false,
+  columns: 3,
+  rows: 1,
+  stageH: 0,
+  solo: false,
+  chrome: "full",
+};
+
+/**
+ * How many panes sit across, MIRRORING styles.css: `@media (max-width: 1600px)` puts the
+ * grid on two columns (:3273) and `@media (max-width: 1180px)` collapses the whole shell
+ * (:2782). Duplicated here on purpose and pinned by a test: the height half of the layout
+ * cannot be computed without knowing the column count, and reading it back off the computed
+ * style would be circular — the solo fallback itself rewrites the grid's columns.
+ */
+export function paneColumns(viewportW: number): 1 | 2 | 3 {
+  if (viewportW <= 1180) return 1;
+  if (viewportW <= 1600) return 2;
+  return 3;
+}
+
+/**
+ * The whole layout decision, as one pure function of what was measured.
+ *
+ * `solo` is deliberately judged on the MULTI-pane arithmetic even while solo is already in
+ * effect. Judging it on the resulting stage would oscillate: solo enlarges the stage, the
+ * enlarged stage looks roomy, the fallback releases, the panes shrink, and so on forever.
+ */
+export function planPaneLayout(metrics: PaneStageMetrics, maximized: boolean): PaneLayoutPlan {
+  const { availH, viewportW } = metrics;
+  if (!(availH > 0)) return UNMEASURED_PANE_LAYOUT;
+  const columns = paneColumns(viewportW);
+  const rows: 1 | 2 | 3 = columns === 1 ? 3 : columns === 2 ? 2 : 1;
+  const multiRowH = Math.floor((availH - PANE_GRID_GAP_PX * (rows - 1)) / rows);
+  const multiStageH = multiRowH - PANE_STAGE_CHROME_PX;
+  const solo = !maximized && multiStageH < SOLO_FALLBACK_STAGE_PX;
+  const stageH = maximized || solo ? availH - PANE_STAGE_CHROME_PX : multiStageH;
+  const chrome: PaneChrome =
+    stageH < TINY_STAGE_PX ? "tiny" : stageH < COMPACT_STAGE_PX ? "compact" : "full";
+  return { measured: true, columns, rows, stageH, solo, chrome };
+}
+
+/** Measure the grid the panes live in. A ResizeObserver rather than a window listener alone
+ *  because the grid's height moves when the arch strip folds, which no resize event reports. */
+function usePaneLayoutPlan(maximized: boolean): {
+  readonly gridRef: MutableRefObject<HTMLDivElement | null>;
+  readonly plan: PaneLayoutPlan;
+} {
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const [metrics, setMetrics] = useState<PaneStageMetrics>({ availH: 0, viewportW: 0 });
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (grid === null || typeof ResizeObserver === "undefined") return undefined;
+    /* MEASURE OUTSIDE THE UPDATER. Reading layout inside a setState updater put the plan a
+       whole resize behind the DOM (seen live 2026-07-31: a 477px grid still wearing the
+       plan for 577px, and the solo fallback only arriving on the NEXT resize) — React may
+       run an updater at a moment of its own choosing, and a DOM read there is not the read
+       the observer was reporting. */
+    const read = () => {
+      const availH = Math.round(grid.getBoundingClientRect().height);
+      const viewportW = window.innerWidth;
+      setMetrics((now) =>
+        // Ignore sub-pixel churn: a re-render per scrollbar rounding is a re-render for nothing.
+        Math.abs(now.availH - availH) < 2 && now.viewportW === viewportW
+          ? now
+          : { availH, viewportW },
+      );
+    };
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(grid);
+    window.addEventListener("resize", read);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", read);
+    };
+  }, []);
+  return { gridRef, plan: planPaneLayout(metrics, maximized) };
+}
+
+/**
+ * THE FOOTER BAND: how big the thing on screen is, and where the camera is looking from.
+ *
+ * The axis half is where the design prototype had to be overruled. It prints a fixed
+ * `st.view.toUpperCase()` — "OCCLUSAL" — on panes 2 and 3, but those panes frame down the
+ * seated pose axis ONCE and then orbit freely, so that caption starts lying on the operator's
+ * first drag. `axis` here is a live reading against the axis the pane framed on (see
+ * viewer/paneReadout.paneAxisLabel): "down the seated pose axis" while it is, "37° off the
+ * seated pose axis" once it is not.
+ *
+ * The bar half is likewise a measurement, not a decoration: a perspective camera's
+ * millimetres-per-pixel changes with every dolly, so it comes from the live scene and the
+ * pane ships NO bar rather than a stale one when no round step reads.
+ */
+export function PaneFoot({
+  axis,
+  bar,
+  raised = false,
+}: {
+  readonly axis: string | null;
+  readonly bar: PaneScaleBar | null;
+  /** The union pane's bottom strip belongs to the colorbar — sit above it, like the hint. */
+  readonly raised?: boolean;
+}) {
+  if (axis === null && bar === null) return null;
+  return (
+    <div
+      data-role="pane-foot"
+      className={`verify-panel__foot${raised ? " verify-panel__foot--raised" : ""}`}
+    >
+      {axis !== null ? (
+        <span data-role="pane-axis" className="verify-panel__foot-axis">
+          {axis}
+        </span>
+      ) : (
+        <span />
+      )}
+      {bar !== null && (
+        <span
+          data-role="pane-scale"
+          className="verify-panel__foot-scale"
+          title="at the focus plane — a perspective camera measures larger nearer to it"
+        >
+          <span className="verify-panel__foot-bar" style={{ width: `${bar.px}px` }} />
+          {bar.label}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * WHICH AXIS PANES 2/3 FRAMED ON, in the operator's words — the same rule
+ * domain/declare.siteFrameFor uses to pick one, so the label can never name an axis the
+ * camera was not pointed down. The distinction is the demo's honesty story: the occlusal
+ * proxy sat 6.2°-42.0° off the real axis across the fleet, the pose is exact by construction.
+ */
+export function siteAxisLabel(pose: PreviewPose | null): string {
+  return pose !== null && pose.axis.length === 3 ? "the seated pose axis" : "the occlusal proxy";
+}
+
 interface PaneShellProps {
   readonly role: string;
   readonly title: string;
@@ -331,6 +561,12 @@ interface PaneShellProps {
    *  the top-of-cap view down the seated pose's axis, with the shared clock reference
    *  that makes a cutout land at the same screen angle in all three. */
   readonly onResetView?: (() => void) | null;
+  /** How much room this stage can spare its chrome — see the measured-layout block above. */
+  readonly chrome?: PaneChrome;
+  /** false parks the layer HUD behind the header toggle (only ever on a tiny stage). */
+  readonly showHud?: boolean;
+  /** Offered only when the HUD is parked AND this pane has layers worth un-parking. */
+  readonly onToggleHud?: (() => void) | null;
 }
 
 /** One pane in the demo's verify-panel clothes: header (title + one-line caption),
@@ -350,12 +586,33 @@ function PaneShell({
   maximized = false,
   onToggleMaximized = null,
   onResetView = null,
+  chrome = "full",
+  showHud = true,
+  onToggleHud = null,
 }: PaneShellProps) {
   return (
     <section data-role={role} aria-label={title} className="verify-panel">
       <header className="verify-panel__header">
         <div className="verify-panel__heading">
           <h4 className="verify-panel__title">{title}</h4>
+          {onToggleHud !== null && (
+            /* THE PARKED HUD'S WAY BACK. On a stage this short the layer rows and the
+               colorbar together covered 61% of the cap (measured 2026-07-31 at 1280x800),
+               so the rows step off the glass — but nothing is removed: this is the same
+               controls, one click away, and it is in the header because the glass is
+               precisely what has run out. */
+            <button
+              type="button"
+              data-role="pane-hud-toggle"
+              className="verify-panel__hudtoggle"
+              aria-pressed={showHud}
+              aria-label={showHud ? `Hide the layers of ${title}` : `Show the layers of ${title}`}
+              title={showHud ? "Hide the layer controls" : "Show the layer controls"}
+              onClick={onToggleHud}
+            >
+              {showHud ? "◧" : "◫"}
+            </button>
+          )}
           {onResetView !== null && (
             <button
               type="button"
@@ -395,8 +652,14 @@ function PaneShell({
           </p>
         )}
       </header>
-      <div className="verify-panel__stage">
+      <div
+        className={`verify-panel__stage${
+          chrome === "full" ? "" : ` verify-panel__stage--${chrome}`
+        }`}
+      >
         {viewer}
+        {/* `hud` is already the parked/unparked answer — the colorbar is NOT parked with the
+            layer rows: it is the union pane's verdict legend, not a control panel. */}
         {hud}
         {busy && (
           <div className="verify-panel__overlay" role="status" aria-live="polite">
@@ -475,6 +738,13 @@ export interface SitePanesViewProps {
   readonly onSelectScale?: (id: DeviationScaleId) => void;
   /** What sits UNDER the panes: Declare's attestation bar, Adjust's toolbox. */
   readonly footer?: ReactNode;
+  /** The measured layout. Omitted, the view measures its own grid; a node test injects one
+   *  so every window size this app has to survive is renderable without a browser. */
+  readonly layoutPlan?: PaneLayoutPlan;
+  /** Which pane becomes the stage when the window cannot carry three. Pane 2 by default:
+   *  it is the one pane that always has geometry on BOTH stages (pane 1 waits on a
+   *  declaration, pane 3 on a payload), so the fallback never lands on an empty pane. */
+  readonly soloPane?: PaneId;
 }
 
 /** The panes' whole surface, pure props → markup — statically testable (the viewer
@@ -506,18 +776,34 @@ export function SitePanesView({
   scaleId = "signed",
   onSelectScale,
   footer,
+  layoutPlan,
+  soloPane = "scan",
 }: SitePanesViewProps) {
+  const measured = usePaneLayoutPlan(maximizedId !== null);
+  const plan = layoutPlan ?? measured.plan;
+  /* THE SOLO FALLBACK. Below a stage that can hold a cap at all, three panes are three
+     unusable panes; one pane at the whole height plus the 1/2/3 switcher is strictly more
+     of the product. An explicit maximize always wins over the fallback. */
+  const stageId: PaneId | null = maximizedId ?? (plan.solo ? soloPane : null);
+  /* The layer rows leave the glass only where the glass has run out, and only where there
+     are rows to park: a pane with no layers gets no toggle for nothing. */
+  const [hudOpen, setHudOpen] = useState(false);
+  const parked = plan.chrome === "tiny" && !hudOpen;
+  const hasLayers = (pane: PaneId): boolean =>
+    layers !== undefined && layers[pane].length > 0;
   const hudFor = (pane: PaneId): ReactNode =>
-    layers !== undefined && layers[pane].length > 0 ? (
+    hasLayers(pane) && !parked ? (
       <LayerHud
         pane={pane}
-        layers={layers[pane]}
+        layers={layers![pane]}
         onToggleLayer={onToggleLayer}
         onChangeOpacity={onChangeOpacity}
       />
     ) : null;
+  const hudToggleFor = (pane: PaneId): (() => void) | null =>
+    plan.chrome === "tiny" && hasLayers(pane) ? () => setHudOpen((now) => !now) : null;
   /** Maximised, the other two panes are UNMOUNTED, not hidden (the demo's rule). */
-  const showPane = (pane: PaneId): boolean => maximizedId === null || maximizedId === pane;
+  const showPane = (pane: PaneId): boolean => stageId === null || stageId === pane;
   const maximizeFor = (pane: PaneId): (() => void) | null =>
     onToggleMaximized !== undefined ? () => onToggleMaximized(pane) : null;
   /* THE SWITCHER (client 2026-07-30). Maximizing was built; MOVING was not — going from
@@ -526,11 +812,18 @@ export function SitePanesView({
      different pane, so the whole fix is three buttons on the existing setter. It shows
      only while a pane IS the stage: with all three on screen there is nothing to
      switch between. */
-  const switching = maximizedId !== null && onToggleMaximized !== undefined;
+  const switching = stageId !== null && onToggleMaximized !== undefined;
   return (
     <div data-role="declare-panes" className="verify-panels">
       {(onToggleLinked !== undefined || switching) && (
         <div className="verify-panels__toolbar">
+          {plan.solo && maximizedId === null && (
+            /* SAY WHY only one pane is on screen. A surface that silently drops two of the
+               three panes it is named for reads as a bug, not as a fallback. */
+            <p data-role="pane-solo-note" className="verify-panels__note">
+              too short for three panes — one at a time
+            </p>
+          )}
           {switching && (
             <div
               className="verify-panels__switch"
@@ -543,12 +836,12 @@ export function SitePanesView({
                   type="button"
                   data-role="pane-switch"
                   data-pane={pane}
-                  aria-pressed={maximizedId === pane}
+                  aria-pressed={stageId === pane}
                   className={`button button--ghost button--small${
-                    maximizedId === pane ? " button--active" : ""
+                    stageId === pane ? " button--active" : ""
                   }`}
                   title={
-                    maximizedId === pane
+                    stageId === pane
                       ? `${PANE_TITLES[pane]} — back to all three panels`
                       : `Show ${PANE_TITLES[pane]} on the whole stage`
                   }
@@ -559,7 +852,10 @@ export function SitePanesView({
               ))}
             </div>
           )}
-          {maximizedId !== null && onToggleMaximized !== undefined && (
+          {/* Not offered while the FALLBACK is what put one pane on screen: there is no
+              all-three to go back to, and a control that cannot do what it says is worse
+              than no control. */}
+          {maximizedId !== null && !plan.solo && onToggleMaximized !== undefined && (
             <button
               type="button"
               className="button button--ghost button--small"
@@ -573,10 +869,10 @@ export function SitePanesView({
               type="button"
               className={`button button--ghost button--small${linked ? " button--active" : ""}`}
               aria-pressed={linked}
-              disabled={maximizedId !== null}
+              disabled={stageId !== null}
               onClick={onToggleLinked}
               title={
-                maximizedId !== null
+                stageId !== null
                   ? "Linking needs more than one panel on screen"
                   : "Rotate all three panels together (same angles and zoom, each around its own content)"
               }
@@ -587,8 +883,9 @@ export function SitePanesView({
         </div>
       )}
       <div
+        ref={measured.gridRef}
         className={`verify-panels__grid${
-          maximizedId !== null ? " verify-panels__grid--maximized" : ""
+          stageId !== null ? " verify-panels__grid--maximized" : ""
         }`}
       >
         {showPane("library") && (
@@ -602,7 +899,10 @@ export function SitePanesView({
             viewer={libraryViewer}
             hud={hudFor("library")}
             hint={hints.library ?? null}
-            maximized={maximizedId === "library"}
+            chrome={plan.chrome}
+            showHud={!parked}
+            onToggleHud={hudToggleFor("library")}
+            maximized={stageId === "library"}
             onToggleMaximized={maximizeFor("library")}
             onResetView={onResetView === null ? null : () => onResetView("library")}
           />
@@ -618,7 +918,10 @@ export function SitePanesView({
             viewer={scanViewer}
             hud={hudFor("scan")}
             hint={hints.scan ?? null}
-            maximized={maximizedId === "scan"}
+            chrome={plan.chrome}
+            showHud={!parked}
+            onToggleHud={hudToggleFor("scan")}
+            maximized={stageId === "scan"}
             onToggleMaximized={maximizeFor("scan")}
             onResetView={onResetView === null ? null : () => onResetView("scan")}
           />
@@ -649,7 +952,10 @@ export function SitePanesView({
             /* the colorbar owns this pane's bottom strip whenever a payload is on
                screen — the hint sits above it rather than under it */
             hintRaised={payload !== null}
-            maximized={maximizedId === "union"}
+            chrome={plan.chrome}
+            showHud={!parked}
+            onToggleHud={hudToggleFor("union")}
+            maximized={stageId === "union"}
             onToggleMaximized={maximizeFor("union")}
             onResetView={onResetView === null ? null : () => onResetView("union")}
           />
@@ -730,6 +1036,15 @@ export interface SitePaneSceneOptions {
    * this control exists to stop telling. Omitted, no pane claims to be armed.
    */
   readonly armed?: Partial<Record<PaneId, boolean>>;
+  /**
+   * THE NAMED VIEWPOINT the workspace toolbar is asking all three panes to take
+   * (gap `named-view-presets`, 2026-07-31). Applied to whatever frame each pane
+   * already computed, so every pane keeps its own centre and radius and only the
+   * direction moves — which is what makes one click mean the same thing in three
+   * panes. Omitted or "occlusal" leaves every frame exactly as it was, so a caller
+   * that does not offer the control pays nothing.
+   */
+  readonly viewPreset?: ViewPresetId;
 }
 
 export function useSitePaneScene(
@@ -769,6 +1084,28 @@ export function useSitePaneScene(
   const onToggleMaximized = useCallback((pane: PaneId) => {
     setMaximizedId((now) => (now === pane ? null : pane));
   }, []);
+
+  /* THE FOOTER BAND'S FEED (gap pane-footer-scale-bar-and-axis-label). One reading per pane,
+     pushed by that pane's own scene whenever its camera moves — the scene gates the stream
+     (viewReadoutChanged) so a damped flick is a handful of updates, not sixty. The callbacks
+     are memoized because an unstable identity re-subscribes, and subscribing emits. */
+  const [readouts, setReadouts] = useState<Readonly<Record<PaneId, PaneViewReadout | null>>>({
+    library: null,
+    scan: null,
+    union: null,
+  });
+  const onLibraryView = useCallback(
+    (r: PaneViewReadout) => setReadouts((now) => ({ ...now, library: r })),
+    [],
+  );
+  const onScanView = useCallback(
+    (r: PaneViewReadout) => setReadouts((now) => ({ ...now, scan: r })),
+    [],
+  );
+  const onUnionView = useCallback(
+    (r: PaneViewReadout) => setReadouts((now) => ({ ...now, union: r })),
+    [],
+  );
 
   const [layerToggles, setLayerToggles] =
     useState<Readonly<Record<string, LayerToggle>>>(LAYER_DEFAULTS);
@@ -882,20 +1219,26 @@ export function useSitePaneScene(
     };
   }, [payload, scaleId]);
 
-  const partFrame = useMemo(
-    () =>
-      partCameraFrame(
-        partPositions !== null ? computePartFrame(partPositions) : null,
-      ),
-    [partPositions],
-  );
+  // THE PRESET IS A ROTATION OF THE FRAME EACH PANE ALREADY HAS, never a frame of
+  // its own — see domain/declare.presetFrame. It returns null for the off-axis views
+  // whenever the roll is unmeasured (pre-preview, panes 2/3 frame down the jaw's
+  // occlusal PROXY with no clock reference), and `?? base` then leaves the pane on
+  // its own framing rather than dropping it to nothing.
+  const viewPreset = options.viewPreset ?? "occlusal";
+  const partFrame = useMemo(() => {
+    const base = partCameraFrame(
+      partPositions !== null ? computePartFrame(partPositions) : null,
+    );
+    return presetFrame(base, viewPreset) ?? base;
+  }, [partPositions, viewPreset]);
 
   const occlusal = useMemo(() => {
     if (scanPositions === null) return null;
     return (computeAnatomyFrame(scanPositions)?.occlusal ?? null) as Vec3 | null;
   }, [scanPositions]);
-  const siteFrame = siteFrameFor(siteCenter, payload?.pose ?? null, occlusal,
-                                 CAP_REGION_RADIUS_MM);
+  const siteFrameBase = siteFrameFor(siteCenter, payload?.pose ?? null, occlusal,
+                                     CAP_REGION_RADIUS_MM);
+  const siteFrame = presetFrame(siteFrameBase, viewPreset) ?? siteFrameBase;
 
   const layers: PaneLayers = {
     library: [
@@ -934,6 +1277,29 @@ export function useSitePaneScene(
     ],
   };
 
+  /* THE FOOTER BAND, PER PANE. It rides inside the viewer node rather than being a prop of
+     the view: the band is a reading of THIS pane's camera, so it belongs with the canvas it
+     reads — and that way both stages get it from the one place that builds the canvases,
+     instead of each stage having to remember to thread a readout through. */
+  const siteAxis = siteAxisLabel(payload?.pose ?? null);
+  const footFor = (
+    pane: PaneId,
+    reference: readonly [number, number, number] | null,
+    label: string,
+    hasGeometry: boolean,
+    raised = false,
+  ): ReactNode => {
+    if (!hasGeometry) return null;
+    const readout = readouts[pane];
+    return (
+      <PaneFoot
+        axis={paneAxisLabel(readout, reference, label)}
+        bar={readout === null ? null : paneScaleBar(readout.mmPerPixel)}
+        raised={raised}
+      />
+    );
+  };
+
   const linkGroup = linkGroupRef.current;
   return {
     partBusy,
@@ -958,6 +1324,7 @@ export function useSitePaneScene(
     resetNonce,
     onResetView,
     libraryViewer: (
+      <>
       <VerifyViewer
         frameNonce={resetNonce.library}
         layers={[
@@ -973,10 +1340,15 @@ export function useSitePaneScene(
         markers={options.markers?.library}
         onPick={options.onPick?.library ?? null}
         armed={options.armed?.library ?? false}
+        onViewChange={onLibraryView}
         ariaLabel="The declared library part"
       />
+      {footFor("library", partFrame?.viewDirection ?? null, "the part's own axis",
+               partGeometry !== null)}
+      </>
     ),
     scanViewer: (
+      <>
       <VerifyViewer
         frameNonce={resetNonce.scan}
         layers={[
@@ -992,10 +1364,14 @@ export function useSitePaneScene(
         markers={options.markers?.scan}
         onPick={options.onPick?.scan ?? null}
         armed={options.armed?.scan ?? false}
+        onViewChange={onScanView}
         ariaLabel="The scanned cap region"
       />
+      {footFor("scan", siteFrame?.viewDirection ?? null, siteAxis, scanGeometry !== null)}
+      </>
     ),
     unionViewer: (
+      <>
       <VerifyViewer
         frameNonce={resetNonce.union}
         layers={[
@@ -1019,8 +1395,14 @@ export function useSitePaneScene(
         markers={options.markers?.union}
         onPick={options.onPick?.union ?? null}
         armed={options.armed?.union ?? false}
+        onViewChange={onUnionView}
         ariaLabel="The scan and the previewed cap overlaid, coloured by deviation"
       />
+      {/* raised whenever the colorbar owns this pane's bottom strip — the same rule the
+          on-glass hint follows, for the same reason */}
+      {footFor("union", siteFrame?.viewDirection ?? null, siteAxis,
+               scanGeometry !== null || deviationGeometry !== null, payload !== null)}
+      </>
     ),
   };
 }

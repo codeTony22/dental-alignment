@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 
 from .config import Settings, default_settings
 from .ports.worker import InProcessWorker
-from .resources import adjust, case_sessions, deliver, library
+from .resources import activity, adjust, case_sessions, deliver, library
 from .session import SessionStore
 
 
@@ -56,6 +56,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     # the same reason deliver is — its multi-segment per-site paths must never shadow
     # the single-segment detail route
     app.include_router(adjust.router)
+    # the case's narrative (gap ``session-activity-log``): GET-only, mounted after
+    # case_sessions for the same path-shadowing reason as the two above
+    app.include_router(activity.router)
     app.include_router(library.router)
 
     @app.exception_handler(RequestValidationError)

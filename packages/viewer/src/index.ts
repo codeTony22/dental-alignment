@@ -33,8 +33,22 @@ export { Viewer3D, VIEWER_PART_COLOR, VIEWER_SCAN_COLOR } from "./viewer/Viewer3
 export type { Viewer3DHandle } from "./viewer/Viewer3D";
 
 // The three-panel verify pane: scene, orbit link, React shell.
-export { OrbitLinkGroup, VerifyScene, loadStlPositions } from "./viewer/verifyScene";
+export {
+  OrbitLinkGroup,
+  VerifyScene,
+  armedViewerClassName,
+  loadStlPositions,
+} from "./viewer/verifyScene";
 export type { VerifyLayerGeometry, VerifyMarker, VerifyOrbit } from "./viewer/verifyScene";
+// What a pane may honestly say about its own camera — the footer band's scale bar and
+// live axis label (the design's static "OCCLUSAL" caption would start lying on first drag).
+export {
+  mmPerPixelAtFocus,
+  paneAxisLabel,
+  paneScaleBar,
+  viewReadoutChanged,
+} from "./viewer/paneReadout";
+export type { PaneScaleBar, PaneViewReadout } from "./viewer/paneReadout";
 export { VerifyViewer } from "./viewer/VerifyViewer";
 export type { VerifyViewerLayer } from "./viewer/VerifyViewer";
 

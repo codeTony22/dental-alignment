@@ -812,3 +812,204 @@ export function recordedAtWords(iso: string): string {
   const m = iso.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
   return m ? `${m[1]} ${m[2]} UTC` : iso;
 }
+
+// --- the workspace toolbar (gaps `workspace-toolbar-site-chip`, ----------------------
+// --- `alignment-metrics-strip`, `named-view-presets`; design flow.dc.html 206-266) ---
+//
+// WHY THESE RULES ARE HERE AND NOT IN THE COMPONENTS: Declare and Adjust show one
+// operator the same three panes of the same site, and the client made those panes
+// dominate the stage (2026-07-27, styles.css --split). What that cost was the site's
+// own identity — the tooth number lives in the work column's headings and the queue
+// rows, and all of those SCROLL. So both stages grow one toolbar, and it must say the
+// same thing in both: one rule module, two callers.
+
+/** The identity chip's two halves — WHICH site, under WHICH implant system. */
+export interface SiteIdentity {
+  readonly tooth: string;
+  readonly system: string;
+}
+
+/** Both halves say what is missing rather than going blank: an empty slot beside a
+ * live 3D pane reads as "nothing to say here", which is the opposite of the truth. */
+export function siteIdentity(
+  tooth: number | null,
+  systemModel: string | null,
+): SiteIdentity {
+  return {
+    tooth: tooth === null ? "No site selected" : `Tooth ${tooth}`,
+    system: systemModel ?? "no system declared",
+  };
+}
+
+/** One cell of the ALIGNMENT strip: a stable id for the markup, the operator's label,
+ * and the value already formatted (formatting is presentation; the NUMBER is the
+ * server's). */
+export interface WorkspaceStat {
+  readonly id: string;
+  readonly label: string;
+  readonly value: string;
+}
+
+/** The absence, once — and deliberately a dash rather than a zero or a blank: the
+ * strip is a row of numbers, and a blank cell in a row of numbers reads as zero. */
+const NO_FIGURE = "—";
+
+function mmWords(value: unknown): string {
+  return typeof value === "number" ? `${value.toFixed(3)} mm` : NO_FIGURE;
+}
+
+function blockOf(row: Record<string, unknown> | undefined, key: string) {
+  const block = row?.[key];
+  return typeof block === "object" && block !== null
+    ? (block as Record<string, unknown>)
+    : undefined;
+}
+
+/**
+ * THE ALWAYS-VISIBLE ALIGNMENT READOUT (gap `alignment-metrics-strip`; design's
+ * selStats, flow.dc.html:1356-1363).
+ *
+ * Every one of these facts already existed and every one was somewhere else: the
+ * deviation only inside the union pane's FOLDED legend, the clocking residual only
+ * inside Adjust's rotation TAB, the pairs only inside the fit-by-points TAB. An
+ * operator on the mark-trench tab could not see how many pairs were placed; one on
+ * the rotation tab could not see the deviation. This re-sites them; it fetches
+ * nothing new and derives nothing new.
+ *
+ * WHAT DOES NOT PORT: the design computes MAX DEV from its own client-side
+ * `deviation()` and colours it against a client-side `tolerance`. This product
+ * derives deviations, tolerances and verdicts SERVER-side, so the strip carries the
+ * two figures the run actually published — `deviation_rms_mm` and `deviation_p90_mm`
+ * — under the labels they truly are. Naming p90 "MAX DEV" would be a client-side
+ * claim about a number the server never made.
+ *
+ * `rows` is the current run's verdict rows (GET /{id}/run), read defensively: they
+ * arrive wire-untyped, exactly like the catalog's.
+ */
+export function alignmentStats(
+  rows: ReadonlyArray<Record<string, unknown>>,
+  tooth: number | null,
+  declaredVariant: string | null,
+): readonly WorkspaceStat[] {
+  const row = tooth === null ? undefined : rows.find((r) => r["tooth"] === tooth);
+  const shift = blockOf(row, "clocking")?.["notch_shift_deg"];
+  // The MEASURED notch residual at the shipped pose (adjust._fold_outcome writes it),
+  // not the operator's cumulative nudge — they answer different questions, and this
+  // strip asks "is it clocked right?".
+  const rotation =
+    typeof shift === "number"
+      ? `${shift > 0 ? "+" : ""}${shift.toFixed(1)}°`
+      : NO_FIGURE;
+  const correspondence = blockOf(row, "correspondence");
+  const pairs = correspondence?.["pairs"];
+  const maxPairs = correspondence?.["max_pairs"];
+  // "3 / 8" only where the SERVER supplied the cap. A hard-coded 8 here would be a
+  // second copy of a bound the wire already carries (deliver.AssuranceCorrespondence),
+  // and "0 / 8" on a site nobody has fit by points would be an invented fact.
+  const pairsWords =
+    typeof pairs !== "number"
+      ? NO_FIGURE
+      : typeof maxPairs === "number"
+        ? `${pairs} / ${maxPairs}`
+        : `${pairs}`;
+  return [
+    { id: "variant", label: "VARIANT", value: declaredVariant ?? NO_FIGURE },
+    { id: "dev-rms", label: "DEV RMS", value: mmWords(row?.["deviation_rms_mm"]) },
+    { id: "dev-p90", label: "DEV P90", value: mmWords(row?.["deviation_p90_mm"]) },
+    { id: "rotation", label: "ROTATION", value: rotation },
+    { id: "pairs", label: "PAIRS", value: pairsWords },
+  ];
+}
+
+/** The three named viewpoints (design viewTabs, flow.dc.html:1224-1226). */
+export type ViewPresetId = "occlusal" | "buccal" | "mesial";
+
+export const VIEW_PRESETS: readonly {
+  readonly id: ViewPresetId;
+  readonly label: string;
+  /** What the direction MEANS, since "buccal" on a pane is only meaningful once the
+   *  operator knows it is measured off this site's own seated axis. */
+  readonly title: string;
+}[] = [
+  {
+    id: "occlusal",
+    label: "occlusal",
+    title: "Straight down the seated axis — the top of the cap, each pane's own framing.",
+  },
+  {
+    id: "buccal",
+    label: "buccal",
+    title:
+      "Side on, a quarter turn off the shared clock reference — the cap's axis stands " +
+      "up on screen.",
+  },
+  {
+    id: "mesial",
+    label: "mesial",
+    title:
+      "Side on, down the shared clock reference itself — the cap's axis stands up on " +
+      "screen.",
+  },
+];
+
+const norm = (
+  v: readonly [number, number, number],
+): readonly [number, number, number] | null => {
+  const len = Math.hypot(v[0], v[1], v[2]);
+  // 1e-9 is "the wire sent us noise", not a tolerance on anything physical
+  return len < 1e-9 ? null : [v[0] / len, v[1] / len, v[2] / len];
+};
+
+const cross = (
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+): readonly [number, number, number] => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+];
+
+/**
+ * A NAMED VIEWPOINT, IN THE PANE'S OWN BASIS (gap `named-view-presets`).
+ *
+ * The panes had per-pane ⌖ home and free orbit and nothing else, so "look at this
+ * from the buccal" was a freehand drag repeated three times — and the memory note
+ * `verify-ui-directives` is explicit that the panes ARE the product and rotation IS a
+ * verdict, which makes a viewpoint the operator can RETURN to worth having.
+ *
+ * The rule is one rotation, applied to whatever frame the pane already computed, so
+ * each pane keeps its own centre and its own radius (the library part is framed in
+ * its file frame at its own p97 radius; panes 2/3 at the site's centre). The basis is
+ * the frame's own: z' = the direction it looks down (the seated axis, or the part's
+ * +z), x' = its up-vector (the pose's x_axis, or the part's +x — the SAME reference,
+ * which is exactly why a coded cutout reads at one clock angle in all three panes).
+ * y' = z' × x' completes it.
+ *
+ *   occlusal — z' (the framing the pane already has, returned unchanged)
+ *   buccal   — look down y', axis up
+ *   mesial   — look down x', axis up
+ *
+ * NULL WHERE THE ROLL IS NOT MEASURED. Before a preview exists panes 2/3 frame down
+ * the jaw's occlusal PROXY with `up: null` (siteFrameFor) — the proxy sat 6.2°-42.0°
+ * off the real axis across the fleet, and it carries no clock reference at all. An
+ * off-axis view built on it would be a made-up angle wearing an anatomical name, so
+ * there is none: the caller offers occlusal and says the rest need the seated pose.
+ */
+export function presetFrame(
+  base: PaneFrame | null,
+  preset: ViewPresetId,
+): PaneFrame | null {
+  if (base === null) return null;
+  if (preset === "occlusal") return base;
+  const axis = base.viewDirection === null ? null : norm(base.viewDirection);
+  const clock = base.up === null ? null : norm(base.up);
+  if (axis === null || clock === null) return null;
+  const third = norm(cross(axis, clock));
+  if (third === null) return null; // the roll is parallel to the axis: no basis
+  return {
+    center: base.center,
+    radiusMm: base.radiusMm,
+    viewDirection: preset === "buccal" ? third : clock,
+    up: axis,
+  };
+}

@@ -4582,3 +4582,305 @@ button.package-files__link:hover {
   color: var(--color-text-muted);
   text-wrap: pretty;
 }
+
+/* ============================================================================
+   ArTech End-to-End Flow — design import, round 3 (2026-07-31)
+   ============================================================================ */
+/* ===== toolbar ===== */
+/* ==== THE WORKSPACE TOOLBAR (gaps `workspace-toolbar-site-chip`,
+   `alignment-metrics-strip`, `named-view-presets`) ======================================
+
+   The client made the three panes dominate both stages (2026-07-27, the --split
+   arithmetic above). What that cost was the site's own identity and its numbers: the
+   tooth appears only in the work column's panel headings and the queue rows, and every
+   one of those lives inside `workbench__work-scroll`. Both stages now carry one strip
+   above the panes that names the site and repeats the run's own figures.
+
+   THIS TAKES .stage-toolbar BACK OUT OF ABSOLUTE POSITIONING. The 2026-07-30 rule
+   floated it over the free LEFT half of the panes' own toolbar row, which was right
+   while the strip held one arch button — but `.verify-panels__toolbar` right-aligns the
+   link-views controls, and a full metrics row laid over them would collide. The strip
+   goes back in flow and is held to one tight line; that line is the price of the anchor.
+   Both stages use --split now, so one rule covers both. */
+.workbench__stage--split .stage-toolbar,
+.workbench__stage .stage-toolbar {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 9px;
+  min-width: 0;
+}
+
+/* WHICH site the three panes are showing — the anchor, first on the row. */
+.workspace-toolbar__site {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+/* The system is context for the tooth, not a second heading — quieter weight. */
+.workspace-toolbar__site-system {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.workspace-toolbar__views {
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+/* THE READOUT sits at the far end: the identity and the stage's own controls read
+   left-to-right once, the numbers are what the eye returns to between clicks. */
+.workspace-toolbar__metrics {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.workspace-toolbar__metrics-label {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.workspace-toolbar__stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  white-space: nowrap;
+}
+
+.workspace-toolbar__stat-key {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+/* tabular-nums deliberately: this is a row of figures that changes under the operator
+   as tools are applied, and proportional digits make it jitter sideways as it does. */
+.workspace-toolbar__stat-value {
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The toolbar's status chip is the SAME chip the queue rows wear, one size down: it is
+   a repeat of the server's word in a second place, never a second, louder claim. */
+.workspace-toolbar .chip--status {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+/* Narrow: let the readout wrap onto its own line rather than squeezing the figures —
+   the identity chip keeps the first line to itself. */
+@media (max-width: 1100px) {
+  .workspace-toolbar__metrics {
+    margin-left: 0;
+  }
+}
+
+/* ===== pane-geom ===== */
+/* ---- THE PANE FOOTER BAND (gap pane-footer-scale-bar-and-axis-label, 2026-07-31) ------
+   Nothing on a pane said how big the thing on screen was, or where the camera had ended up
+   after a drag. Both are readings of the live camera (see viewer/paneReadout.ts), so this
+   band styles a MEASUREMENT — the bar's width is set inline in px because it is data.
+
+   pointer-events: none for the same reason .verify-panel__hint has it: a strip printed over
+   this stage once swallowed exactly the click it was inviting (review 2026-07-26). */
+.verify-panel__foot {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: #4c6076;
+  pointer-events: none;
+  /* no plate behind it: the band sits over the 3D and a box here would cost the cap more
+     pixels than the words do. A white halo keeps it legible over both scan and ramp. */
+  text-shadow:
+    0 0 3px rgba(255, 255, 255, 0.95),
+    0 0 6px rgba(255, 255, 255, 0.8);
+}
+
+/* The union pane's bottom strip belongs to the colorbar (.verify-panel__hud--scale, measured
+   76px + its 8px inset = 84px). Same lift the hint takes, one step higher. */
+.verify-panel__foot--raised {
+  bottom: 92px;
+}
+
+.verify-panel__foot-axis {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.verify-panel__foot-scale {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.verify-panel__foot-bar {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  background: #4c6076;
+}
+
+/* The parked HUD's way back onto the glass — the header's third control, sized like the
+   maximize beside it. */
+.verify-panel__hudtoggle {
+  flex: 0 0 auto;
+  margin-left: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  cursor: pointer;
+  padding: 1px 7px;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--color-text-muted);
+}
+
+.verify-panel__hudtoggle[aria-pressed="true"] {
+  border-color: var(--color-accent-green);
+  background: #eafaf0;
+}
+
+/* The solo fallback's reason, at the left of the toolbar beside the 1/2/3 switcher it
+   explains. */
+.verify-panels__note {
+  margin: 0 8px 0 0;
+  align-self: center;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* ---- the chrome steps aside on a stage too small to carry it -------------------------
+   (gap tiny-stage-chrome-steps-aside). Measured in the running app 2026-07-31, union pane
+   at 1280x800: layer HUD 59px + colorbar strip 76px = 135px of a 221px stage — 61% of the
+   pane covering the cap being judged. The tiers are decided in SitePanes.planPaneLayout
+   (JS, because the row height it predicts cannot be read back off the DOM without going
+   circular through the solo fallback); these rules are what "compact" and "tiny" LOOK like.
+
+   Nothing is removed at any tier — a tiny pane still offers every control, one click away. */
+.verify-panel__stage--compact .verify-panel__hud,
+.verify-panel__stage--tiny .verify-panel__hud {
+  padding: 4px 6px;
+}
+
+.verify-panel__stage--compact .verify-layer,
+.verify-panel__stage--tiny .verify-layer {
+  gap: 4px;
+  font-size: 10px;
+}
+
+.verify-panel__stage--compact .verify-layer__eye,
+.verify-panel__stage--tiny .verify-layer__eye {
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+.verify-panel__stage--compact .verify-layer__percent,
+.verify-panel__stage--tiny .verify-layer__percent {
+  width: 28px;
+}
+
+.verify-panel__stage--compact .verify-colorbar,
+.verify-panel__stage--tiny .verify-colorbar {
+  gap: 2px;
+}
+
+/* A TINY STAGE CANNOT CARRY BOTH THE CHROME AND THE GEOMETRY (measured 2026-07-31:
+   a 59px colorbar over a 177px canvas took 37% of the union pane, and at any view
+   where the cap's silhouette is tall — buccal, mesial — the cap sat behind it).
+   This is the design's own rule (`rampFull: !tiny`, flow.dc.html:1220): below the
+   tiny threshold the ramp keeps its bar and its two end labels and sheds the
+   fold-out — the scale chooser, the ticks, the legend and the union stats. None of
+   it is lost: maximize, or the 1/2/3 switcher, gives the pane the whole run and
+   every control comes back. Geometry wins the stage it cannot share. */
+.verify-panel__stage--tiny .verify-colorbar__scales,
+.verify-panel__stage--tiny .verify-colorbar__ticks,
+.verify-panel__stage--tiny .verify-colorbar__detail {
+  display: none;
+}
+
+.verify-panel__stage--compact .verify-colorbar__scale,
+.verify-panel__stage--tiny .verify-colorbar__scale {
+  padding: 1px 4px;
+  font-size: 9px;
+}
+
+.verify-panel__stage--compact .verify-colorbar__bar,
+.verify-panel__stage--tiny .verify-colorbar__bar {
+  height: 7px;
+}
+
+.verify-panel__stage--compact .verify-colorbar__ticks,
+.verify-panel__stage--tiny .verify-colorbar__ticks,
+.verify-panel__stage--compact .verify-colorbar__detail,
+.verify-panel__stage--tiny .verify-colorbar__detail {
+  font-size: 9px;
+}
+
+/* The compact strip measures 59px rather than 76px (measured after the rules above), so the
+   union pane's band follows it down rather than floating in the middle of the cap. */
+.verify-panel__stage--compact .verify-panel__foot--raised {
+  bottom: 78px;
+}
+
+/* TINY: the band goes too. At this height the words and the cap are competing for the same
+   170 pixels, and the cap is the product. */
+.verify-panel__stage--tiny .verify-panel__foot {
+  display: none;
+}
+
+/* ---- the stage stops fighting its own row (gap measured-pane-layout-and-solo-fallback) --
+   min-height: 220px above was the LAST line of defence, and it lost: measured 2026-07-31,
+   the two-row layout gives a 1280x800 pane 214px and a 1280x720 pane 181px, so the floor
+   overflowed the pane and .verify-panel's overflow:hidden CLIPPED the stage — by 38px at
+   720p and 61px at 620p. A floor that cannot be honoured only hides the geometry.
+
+   The guarantee moved to where it can be kept: SitePanes' solo fallback puts ONE pane on
+   the whole height as soon as a row cannot carry a cap (below 170px of stage). This floor
+   now sits under that trigger, so it never binds before the fallback does. */
+.verify-panel__stage {
+  min-height: 150px;
+}
+
+/* The hint clears the footer band beneath it (the design prototype's own 26px offset). Its
+   raised form already clears the colorbar and sits below the raised band. */
+.verify-panel__hint {
+  bottom: 26px;
+}

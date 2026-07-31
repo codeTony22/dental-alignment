@@ -37,9 +37,11 @@ from ..config import Settings
 from ..evidence import (BUNDLE_VERSION, canonical_bundle, qc_image_hashes,
                         write_bundle)
 from ..pricing import InvoicePaymentView, InvoiceView, price_invoice
-from ..session import (CaseSession, ConfirmationRecord, PaymentRecord,
-                       ReleaseRecord, RunSession, SessionConflict, SessionStore,
-                       adjustments_of, release_matches_confirmation,
+from ..session import (ACT_CASE_RESET, ACT_CONFIRMED, ACT_DELIVERY_RESET,
+                       ACT_PAYMENT_AUTHORIZED, ACT_RELEASED, CaseSession,
+                       ConfirmationRecord, PaymentRecord, ReleaseRecord, RunSession,
+                       SessionConflict, SessionStore, adjustments_of,
+                       record_activity, release_matches_confirmation,
                        released_teeth_of, split_released_files, summary_teeth_of,
                        tooth_of_file)
 from .case_sessions import (CaseSessionDetail, _case_or_404, _context, _detail,
@@ -224,10 +226,28 @@ class AssuranceClamp(BaseModel):
 
 class AssuranceGate(BaseModel):
     """The run's guidance verdict verbatim — the level and the exact action words
-    the operator confirms over."""
+    the operator confirms over.
+
+    ``stale`` IS THE ONE THING THIS MODEL ADDS TO THE WORKER'S WORDS (gap
+    ``re-preview-a-site-without-applying-a-tool``, 2026-07-31), and it adds it
+    BESIDE them rather than to them. ``_fold_outcome`` re-derives every
+    pose-dependent number after a rework and cannot re-derive this one — guidance
+    is a function of a dozen run-time inputs the shipped record does not carry, so
+    the application NAMES it stale instead (``STALE_AFTER_REWORK``). The naming
+    reached the wire on ``AssuranceSite.stale_metrics`` and nowhere near the gate
+    itself, and Deliver's assurance table renders ``actions`` for every row: after
+    a successful rework the rung moved (flagged → adjusted → ready) while the
+    words beside it still described the pre-rework fit, with nothing on the gate
+    saying so.
+
+    DERIVED SERVER-SIDE, deliberately, though the client could compute it from a
+    list it already receives: "are these words still true?" is a judgment about
+    evidence, and this codebase does not make those in a browser. The LEVEL and the
+    ACTIONS stay untouched — the projection annotates, it never rewrites."""
 
     level: str
     actions: List[str] = Field(default_factory=list)
+    stale: bool = False
 
 
 class AssuranceCorrespondence(BaseModel):
@@ -414,6 +434,7 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession,
     # the domain's evaluation — each numeric beside its industry reference, in the
     # backend's own words; a pure function of the row (no new physics)
     metrics = {m["key"]: m for m in evaluate_acceptance(row)["metrics"]}
+    stale_metrics = [str(m) for m in (rework.get("stale_metrics") or [])]
     return AssuranceSite(
         tooth=tooth,
         status=(site.status.value if site is not None else None),
@@ -433,6 +454,10 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession,
         gate=AssuranceGate(
             level=str(guidance.get("level") or "attention"),
             actions=[str(a) for a in (guidance.get("actions") or [])],
+            # ONE reading of the row's own staleness naming — the same list the
+            # field below carries, so the gate's flag and the site's list can
+            # never describe different rows
+            stale="guidance" in stale_metrics,
         ),
         clamp=AssuranceClamp(
             requested_mm=production.get("gingival_offset_requested_mm"),
@@ -441,7 +466,7 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession,
             reason=production.get("clamp_reason"),
         ),
         production_note=production.get("note"),
-        stale_metrics=[str(m) for m in (rework.get("stale_metrics") or [])],
+        stale_metrics=stale_metrics,
         matching_diameter_mm=best_fit.get("matching_diameter_mm"),
         correspondence=(AssuranceCorrespondence(**{
             k: correspondence.get(k)
@@ -525,6 +550,103 @@ def case_assurance(case_id: str, request: Request) -> AssuranceView:
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
     return derive_assurance(case, store.load(case_id))
+
+
+# --- one site's acceptance numbers, for the WORKSPACE ------------------------------------
+#
+# (gap ``deviation-budget-in-workspace``, 2026-07-31.)
+#
+# Declare and Adjust could not answer the operator's actual question — how much room is
+# left, and on which metric — because nothing measurement-against-threshold reached
+# them: the acceptance evaluation existed one stage away, folded into the assurance
+# table Deliver renders. This serves the same evaluation for ONE site.
+#
+# WHAT IS DELIBERATELY NOT PORTED: the design's three-lever budget (flow.dc.html
+# 1363-1372) divides a rotation error, a diameter error and a residual scatter each by a
+# tolerance the BROWSER holds, and draws three bars. None of those three quantities
+# exists here — they are a synthetic sum over the prototype's own state — and the
+# product's deviation is MEASURED over real mesh, against bands the domain cites to
+# published sources. Porting the formula would have invented physics AND computed a
+# tolerance comparison client-side, which is two doctrines broken for one widget.
+#
+# It lives beside the assurance rather than in the Adjust resource because it is the
+# SAME projection over the same row, and two homes for "what does the catalog say about
+# this site?" would be two answers waiting to disagree. EVIDENCE class like the
+# assurance and for the same reason: an operator must be able to read the numbers
+# before, not after, the work they inform. Reading it writes nothing.
+
+class SiteAcceptanceView(BaseModel):
+    """One site's acceptance evaluation (``case_prep.domain.acceptance``), verbatim.
+
+    ``metrics`` are the catalog's own rows — worker/domain-shaped like the catalog
+    views elsewhere on this wire (the domain payload IS the schema): key, label,
+    unit, audience, ``industry_ref``, ``bands`` (the band's own ``pass``/``review``
+    thresholds — what "how much room is left" is measured against), ``note``, plus
+    the measured ``value``, its preformatted ``display`` and the ``band`` it falls
+    in. A metric this row could not measure reads band ``missing`` and is listed in
+    ``missing`` — never silently counted as a pass.
+
+    ``stale_metrics`` is the row's own naming of what predates a rework, carried
+    here for the same reason it rides on the assurance row: a workspace reading
+    these numbers must know which of them describe the pose that is actually
+    seated."""
+
+    tooth: int
+    run_id: str
+    # the catalog's worst evaluated band over this row ("pass"|"review"|"fail", or
+    # "missing" when nothing could be measured) — the domain's own rollup, never a
+    # count this module invents
+    overall_band: str
+    missing: List[str] = Field(default_factory=list)
+    metrics: List[dict] = Field(default_factory=list)
+    stale_metrics: List[str] = Field(default_factory=list)
+    # the catalog's standing caveat about click precision, verbatim
+    context: dict = Field(default_factory=dict)
+
+
+def _summary_row_for(run: RunSession, tooth: int) -> Optional[dict]:
+    """One site's row out of the run's summary, read defensively.
+
+    A near-twin of ``adjust._summary_row`` and deliberately not shared: the adjust
+    resource imports THIS module (``_run_dir``), so the dependency can only point one
+    way, and a five-line row lookup is not worth a third module to hold it. If a
+    third caller ever appears, ``bff/session.py`` is where it goes — that is already
+    the home for derivations two resources must agree on."""
+    for row in (run.summary or {}).get("sites") or []:
+        try:
+            if int(row.get("tooth", -1)) == tooth:
+                return row
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+@router.get("/{case_id}/sites/{tooth}/acceptance", response_model=SiteAcceptanceView)
+def site_acceptance(case_id: str, tooth: int, request: Request) -> SiteAcceptanceView:
+    """The acceptance catalog's reading of THIS site. 404 without a done current run
+    — pre-run Declare genuinely has nothing to measure, and a zero-filled table would
+    claim otherwise; 404 for a tooth this run never aligned, in the same words the
+    Adjust precondition uses."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+    session = store.load(case_id)
+    run = _require_done_run(session, case_id)
+    row = _summary_row_for(run, tooth)
+    if row is None:
+        raise HTTPException(404, f"tooth {tooth} carries no verdict from case "
+                                 f"{case.id!r}'s current run — there is nothing "
+                                 f"measured to hold against the acceptance bands")
+    evaluation = evaluate_acceptance(row)
+    rework = row.get("rework") if isinstance(row.get("rework"), dict) else {}
+    return SiteAcceptanceView(
+        tooth=tooth,
+        run_id=run.run_id or run.job_id,
+        overall_band=str(evaluation["overall"]["band"]),
+        missing=[str(k) for k in evaluation["overall"]["missing"]],
+        metrics=list(evaluation["metrics"]),
+        stale_metrics=[str(m) for m in (rework.get("stale_metrics") or [])],
+        context=dict(evaluation.get("context") or {}),
+    )
 
 
 # --- the invoice (design payLines/payTotal 1475-1480) ------------------------------------
@@ -960,6 +1082,15 @@ def confirm_case(case_id: str, body: ConfirmIn,
             # re-hashing the run's QC bytes to find out
             bundle_version=BUNDLE_VERSION,
         )
+        withheld = sorted(int(t) for t, act in dispositions.items()
+                          if act == "withhold")
+        record_activity(
+            session, ACT_CONFIRMED,
+            f"confirmation sealed over run {run.run_id or run.job_id} — "
+            f"{len(teeth) - len(withheld)} site"
+            f"{'' if len(teeth) - len(withheld) == 1 else 's'} to release"
+            + (f", {len(withheld)} withheld" if withheld else "")
+            + f"; terms {TERMS_VERSION} accepted")
 
     session = _mutate_signing(store, case_id, apply, "confirmation",
                               lambda s: s.confirmation)
@@ -1071,6 +1202,14 @@ def authorize_payment(case_id: str, body: PaymentIn,
                                         currency=invoice.currency,
                                         rate_card_version=invoice.rate_card_version,
                                         turnaround=invoice.turnaround)
+        # the AMOUNT is in the narrative because it can legitimately differ from
+        # today's invoice (a turnaround change reprices going forward and fires no
+        # boundary) — "what was charged, and when" must be readable in its own terms
+        record_activity(session, ACT_PAYMENT_AUTHORIZED,
+                        f"payment authorized (stub) — {invoice.total_cents} "
+                        f"{invoice.currency} cents at rate card "
+                        f"{invoice.rate_card_version}, {invoice.turnaround} "
+                        f"turnaround")
 
     session = _mutate_signing(store, case_id, apply, "payment",
                               lambda s: s.payment)
@@ -1102,15 +1241,29 @@ def reset_case(case_id: str, request: Request) -> CaseSessionDetail:
     and "reset" would quietly come to mean "reset the fields someone remembered".
     The CAS version is carried FORWARD (not reset to 0) so a rival writer holding the
     pre-reset document still loses its save — a reset must not become a way to make
-    a stale write look current."""
+    a stale write look current.
+
+    THE ACTIVITY LOG IS CARRIED FORWARD TOO (2026-07-31), and it is the one exception
+    to the paragraph above, so it is named here rather than discovered later. A log
+    whose erasure erased the record of the erasure would hide the single act nobody
+    could otherwise see — "why is this case back at intake?" is exactly the question a
+    narrative exists to answer. The reset is appended to the log it survives. Nothing
+    else survives: the log holds words about acts, never the acts' own records, so
+    carrying it forward returns no state to the case."""
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
 
     def apply(session: CaseSession) -> None:
         fresh = CaseSession(case_id=session.case_id, tenant_id=session.tenant_id,
-                            version=session.version)
+                            version=session.version,
+                            activity=list(session.activity),
+                            activity_recorded=session.activity_recorded)
         for field in CaseSession.model_fields:   # on the CLASS (pydantic 2.11+)
             setattr(session, field, getattr(fresh, field))
+        record_activity(session, ACT_CASE_RESET,
+                        "the case was reset to fresh intake — no system, no "
+                        "declarations, no previews, no run, no signatures; the "
+                        "landed run directories survive as history")
 
     session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)
@@ -1153,6 +1306,10 @@ def delivery_reset(case_id: str, request: Request) -> CaseSessionDetail:
         session.confirmation = None
         session.payment = None
         session.release = None
+        record_activity(session, ACT_DELIVERY_RESET,
+                        "the confirmation, the payment and the release were "
+                        "withdrawn together so the delivery flow can be walked "
+                        "again — the run and every site rung stand where they were")
 
     session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)
@@ -1281,6 +1438,11 @@ def release_case(case_id: str, request: Request) -> CaseSessionDetail:
             # the display half must read the identical set off the same map
             released_teeth=released_teeth_of(confirmation.dispositions),
         )
+        released = session.release.released_teeth
+        record_activity(session, ACT_RELEASED,
+                        f"artifacts released for run {run.run_id or run.job_id} — "
+                        + (", ".join(f"tooth {t}" for t in released)
+                           if released else "no site released"))
 
     session = _mutate_signing(store, case_id, apply, "release",
                               lambda s: s.release)

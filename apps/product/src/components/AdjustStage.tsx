@@ -84,9 +84,17 @@ import {
   type PairSlot,
   type SeatedPhase,
 } from "../domain/adjust";
-import { skipConsequenceWords } from "../domain/declare";
+import {
+  alignmentStats,
+  skipConsequenceWords,
+  type ViewPresetId,
+  type WorkspaceStat,
+} from "../domain/declare";
 import { blockedReason, factsFromCaseSession } from "../domain/flow";
 import { SitePanesView, useSitePaneScene, type PaneId } from "./SitePanes";
+/* ONE toolbar for both stages, not two that drift — see WorkspaceToolbar's own note
+   on why it is exported from Declare rather than sitting in its own module. */
+import { WorkspaceToolbar } from "./DeclareStage";
 
 /** What the surface is waiting on — named, so it never freezes silently. */
 export type ToolPhase = "idle" | "working";
@@ -164,6 +172,18 @@ export interface AdjustStageViewProps {
   readonly deliverBlockedReason?: string | null;
   readonly onBack?: () => void;
   readonly onForward?: () => void;
+  /** THE WORKSPACE TOOLBAR (gaps `workspace-toolbar-site-chip`,
+   *  `alignment-metrics-strip`). Adjust had no stage toolbar at all, so the site's
+   *  identity and every alignment figure lived inside the scrolling work column —
+   *  and each figure inside ONE tool's tab. `stats` arrives already formatted from
+   *  domain/declare.alignmentStats over the run's own rows: this component holds no
+   *  number it did not receive. Optional with empty defaults: static callers predate
+   *  the strip. */
+  readonly systemModel?: string | null;
+  readonly stats?: readonly WorkspaceStat[];
+  readonly viewPreset?: ViewPresetId;
+  readonly onSelectView?: (preset: ViewPresetId) => void;
+  readonly viewPresetsAvailable?: boolean;
 }
 
 function ToolTabs({
@@ -400,6 +420,11 @@ export function AdjustStageView({
   deliverBlockedReason = null,
   onBack = () => undefined,
   onForward = () => undefined,
+  systemModel = null,
+  stats = [],
+  viewPreset,
+  onSelectView,
+  viewPresetsAvailable,
 }: AdjustStageViewProps) {
   const active = entries.find((e) => e.tooth === activeTooth) ?? null;
   const busy = phase === "working";
@@ -881,7 +906,23 @@ export function AdjustStageView({
           </div>
         </div>
       </div>
-      <div className="workbench__stage">{panes}</div>
+      {/* THE STAGE GETS DECLARE'S TOOLBAR (design template 206-266). Adjust's own
+          identity problem was worse than Declare's: the tooth appeared only in the
+          toolbox heading ("Tools — tooth N") and the queue rows, both inside the
+          scroll box, and the alignment facts were each locked in one tool's TAB.
+          Same strip, same rules, same server facts. */}
+      <div className="workbench__stage workbench__stage--split">
+        <WorkspaceToolbar
+          tooth={activeTooth}
+          systemModel={systemModel}
+          status={activeStatus}
+          stats={stats}
+          viewPreset={viewPreset}
+          onSelectView={onSelectView}
+          viewPresetsAvailable={viewPresetsAvailable}
+        />
+        {panes}
+      </div>
 
       {/* THE GATE'S WORDS, ON DEMAND (client 2026-07-29). Same dialog chrome as
           Deliver's report — backdrop, card, scrolling body — so the product has one
@@ -1269,10 +1310,19 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
     [handlePick],
   );
 
+  // THE NAMED VIEWPOINT (gap `named-view-presets`). Held by the stage, not the pane,
+  // because one click has to move all three — which is the whole point of naming a
+  // direction rather than dragging one pane to it.
+  const [viewPreset, setViewPreset] = useState<ViewPresetId>("occlusal");
   const scene = useSitePaneScene(detail, activeSite, payload, {
     markers,
     onPick: pickHandlers,
+    viewPreset,
   });
+  // The off-axis presets need a MEASURED roll. Before a preview lands, panes 2/3 frame
+  // down the jaw's occlusal proxy with no clock reference, so buccal/mesial would be a
+  // guessed angle wearing an anatomical name — the toolbar greys them instead.
+  const viewPresetsAvailable = payload?.pose != null;
 
   const notices = adjustPaneNotices({
     site: activeEntry,
@@ -1349,6 +1399,9 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
 
   return (
     <AdjustStageView
+      viewPreset={viewPreset}
+      onSelectView={setViewPreset}
+      viewPresetsAvailable={viewPresetsAvailable}
       entries={entries}
       activeTooth={activeTooth}
       onSelectSite={handleSelectSite}
@@ -1398,6 +1451,12 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
          `siteFlagged` is the BFF's rollup. Navigation only — no POST, no status. */
       flaggedCount={facts.siteFlagged}
       deliverBlockedReason={blockedReason("deliver", facts)}
+      /* The strip's facts, all of them the run's own row for THIS site — the same
+         rows the queue's flag reasons come from, so the toolbar and the queue cannot
+         describe one site two ways. PAIRS reads the row's `correspondence` block and
+         renders a dash where the server wrote none (never an invented 0 / 8). */
+      systemModel={detail.system.effective_model}
+      stats={alignmentStats(rows, activeTooth, activeSite?.declared_variant ?? null)}
       onBack={() => navigate(`/case/${caseId}/declare`)}
       onForward={() => navigate(`/case/${caseId}/deliver`)}
     />

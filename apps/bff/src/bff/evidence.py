@@ -89,7 +89,14 @@ ROUND_DECIMALS = 6
 
 # The canonical payload's SHAPE, named. Dated rather than numbered so a reader can
 # place it against this repo's own history without a changelog lookup.
-BUNDLE_VERSION = "2026-07-31"
+#
+# BUMPED to "-b" the same day (gap ``re-preview-a-site-without-applying-a-tool``):
+# ``AssuranceGate`` gained ``stale``, so ``sealed_facts()`` emits a key it did not
+# before and every bundle on disk is restaged. The suffix, not a new date, because the
+# date is the honest one — two shape moves landed on 2026-07-31 and pretending the
+# second happened tomorrow would misplace it in exactly the history this string exists
+# to let a reader reconstruct.
+BUNDLE_VERSION = "2026-07-31-b"
 
 # the run directory's evidence store: runs/<run_id>/evidence/<sha256>.json
 EVIDENCE_DIRNAME = "evidence"

@@ -22,6 +22,7 @@
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { mmPerPixelAtFocus, viewReadoutChanged, type PaneViewReadout } from "./paneReadout";
 
 /** The pane background — the same light-blue backdrop the main viewer uses, so the dialog's
  *  panes and the workflow's stage read as one application. */
@@ -30,6 +31,10 @@ const BACKGROUND_COLOR = 0xd8e8f2;
 /** How much of the framed radius the camera pulls back to: 2.6x reads as "the whole thing, with
  *  air around it" at the 45 degree FOV both viewers use. */
 const FRAME_DISTANCE_FACTOR = 2.6;
+
+/** The perspective camera's vertical field of view. Named because the pane's scale bar
+ *  divides by its tangent — the number is no longer only a look, it is a measurement. */
+const CAMERA_FOV_DEG = 45;
 
 /** The orbit state mirrored between panes: two spherical angles and a distance RELATIVE to each
  *  pane's own framing (so a 6mm part and a 20mm scan region stay equally filled). */
@@ -116,6 +121,23 @@ function labelTexture(label: string, color: number): THREE.Texture {
   return texture;
 }
 
+/**
+ * THE ARMED PANE SAYS SO UNDER THE POINTER (client 2026-07-30).
+ *
+ * A pane with a pick listener installed behaves completely differently from its
+ * neighbours — a click PLACES a point instead of doing nothing — and until this there
+ * was no tell on the glass at all: the operator learned a pane was live by clicking it.
+ * The cursor is the cheapest honest signal, and it belongs to the container (cursor
+ * inherits, so the canvas inside it follows) rather than to an inline style, so the
+ * product's stylesheet keeps the decision.
+ *
+ * A pure function because VerifyScene itself is browser-only (WebGLRenderer in the
+ * constructor); this is the half a node test can hold.
+ */
+export function armedViewerClassName(armed: boolean): string {
+  return armed ? "verify-viewer verify-viewer--armed" : "verify-viewer";
+}
+
 /** Fetch + parse one STL into a flat, non-indexed position stream. The single IO edge here; the
  *  dialog calls it once per distinct file (through the app's blob cache) and slices the result. */
 export async function loadStlPositions(url: string): Promise<Float32Array> {
@@ -188,6 +210,12 @@ export class VerifyScene {
    *  event is not echoed back to the panes that sent it (which would ping-pong forever). */
   private applyingOrbit = false;
   private orbitListener: ((orbit: VerifyOrbit) => void) | null = null;
+  /** The footer band's source (gap pane-footer-scale-bar-and-axis-label): the pane can only
+   *  say how big the subject is and where the camera is looking if the SCENE says so — no
+   *  amount of CSS knows a perspective camera's distance. Gated by viewReadoutChanged
+   *  because "change" fires every damped frame. */
+  private viewListener: ((readout: PaneViewReadout) => void) | null = null;
+  private lastView: PaneViewReadout | null = null;
 
   constructor(private readonly container: HTMLDivElement) {
     this.scene = new THREE.Scene();
@@ -195,7 +223,7 @@ export class VerifyScene {
 
     const width = Math.max(container.clientWidth, 1);
     const height = Math.max(container.clientHeight, 1);
-    this.camera = new THREE.PerspectiveCamera(45, width / height, 0.05, 5000);
+    this.camera = new THREE.PerspectiveCamera(CAMERA_FOV_DEG, width / height, 0.05, 5000);
     this.camera.position.set(0, 0, 60);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -240,9 +268,16 @@ export class VerifyScene {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
+    // mm-per-pixel is per PIXEL: the same camera over a shorter pane measures differently,
+    // so a resize invalidates the scale bar exactly as an orbit does.
+    this.emitView();
   }
 
   private handleControlsChange = (): void => {
+    // The view readout fires even for an APPLIED orbit: a pane mirrored from its sibling has
+    // genuinely moved, and its footer would otherwise keep describing where it used to be.
+    // Only the orbit BROADCAST is suppressed, which is what stops the ping-pong.
+    this.emitView();
     if (this.applyingOrbit || this.orbitListener === null) return;
     this.orbitListener(this.getOrbit());
   };
@@ -485,6 +520,7 @@ export class VerifyScene {
     this.settleControls();
     // the framing IS the marker scale's unit — re-size them with it
     this.applyMarkerScale();
+    this.emitView();
   }
 
   /** Frame everything currently loaded (the library part, which has no site centre of its own). */
@@ -540,8 +576,45 @@ export class VerifyScene {
     this.orbitListener = listener;
   }
 
+  /**
+   * WHAT THE PANE MAY SAY ABOUT ITSELF RIGHT NOW: the direction the camera is looking from
+   * and the millimetres one CSS pixel covers at the focus plane.
+   *
+   * mmPerPixel is null-able through mmPerPixelAtFocus and collapses to 0 here only when the
+   * container has not been laid out yet; the surface treats a non-positive value as "no bar",
+   * which is the point — a scale bar that is wrong is worse than a pane with no scale bar.
+   */
+  getViewReadout(): PaneViewReadout {
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const distance = offset.length();
+    const direction = distance > 1e-9 ? offset.divideScalar(distance) : new THREE.Vector3(0, 0, 1);
+    const mmPerPixel = mmPerPixelAtFocus(distance, CAMERA_FOV_DEG, this.container.clientHeight);
+    return {
+      viewDirection: [direction.x, direction.y, direction.z],
+      mmPerPixel: mmPerPixel ?? 0,
+    };
+  }
+
+  /** Subscribe to the readout. Fires once immediately on subscribe so a freshly mounted pane
+   *  does not sit label-less until the operator happens to touch it. */
+  onViewChange(listener: ((readout: PaneViewReadout) => void) | null): void {
+    this.viewListener = listener;
+    this.lastView = null;
+    if (listener !== null) this.emitView();
+  }
+
+  private emitView(): void {
+    const listener = this.viewListener;
+    if (listener === null) return;
+    const next = this.getViewReadout();
+    if (!viewReadoutChanged(this.lastView, next)) return;
+    this.lastView = next;
+    listener(next);
+  }
+
   dispose(): void {
     this.disposed = true;
+    this.viewListener = null;
     cancelAnimationFrame(this.animationHandle);
     this.resizeObserver.disconnect();
     this.controls.removeEventListener("change", this.handleControlsChange);

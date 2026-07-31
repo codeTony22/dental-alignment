@@ -2,9 +2,11 @@ import { useEffect, useRef } from "react";
 import {
   OrbitLinkGroup,
   VerifyScene,
+  armedViewerClassName,
   type VerifyLayerGeometry,
   type VerifyMarker,
 } from "./verifyScene";
+import type { PaneViewReadout } from "./paneReadout";
 import type { Vec3 } from "../domain/types";
 
 /** One layer as the PANE is asked to show it: geometry (null until it has loaded), plus the
@@ -51,6 +53,25 @@ interface VerifyViewerProps {
   /** Arms click-to-place on this pane's geometry (the fit-by-points flow's scan half).
    *  Omitted, the pane stays read-only and a click is only ever an orbit. */
   readonly onPick?: ((point: [number, number, number]) => void) | null;
+  /**
+   * Does this pane WANT a click right now — the crosshair cursor (client 2026-07-30:
+   * the panes never said they were armed).
+   *
+   * Deliberately NOT derived from `onPick`. The Adjust stage installs ONE pick router on
+   * all three panes for the whole stage and decides inside it whether the click means
+   * anything (AdjustStage.handlePick returns early when no slot is open), so a listener
+   * being present says nothing about whether a click would land. Defaults to false: a
+   * caller that has not thought about it gets the ordinary cursor rather than a
+   * crosshair promising a placement that will be ignored.
+   */
+  readonly armed?: boolean;
+  /**
+   * The pane's footer band, fed (gap pane-footer-scale-bar-and-axis-label): where the camera
+   * is looking from and how many millimetres a pixel covers, re-read whenever the camera
+   * moves. MEMOIZE IT — an unstable identity re-subscribes on every render, and the scene
+   * fires once on subscribe, so the readout would churn state forever.
+   */
+  readonly onViewChange?: ((readout: PaneViewReadout) => void) | null;
   readonly ariaLabel: string;
 }
 
@@ -75,6 +96,8 @@ export function VerifyViewer({
   linkGroup,
   markers = NO_MARKERS,
   onPick = null,
+  armed = false,
+  onViewChange = null,
   ariaLabel,
 }: VerifyViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -170,6 +193,15 @@ export function VerifyViewer({
     return () => scene.onPick(null);
   }, [onPick]);
 
+  // The footer's feed. Subscribing emits once, so the band is populated before the operator
+  // touches anything; the scene gates the stream so a damped flick is not 60 state updates.
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return undefined;
+    scene.onViewChange(onViewChange ?? null);
+    return () => scene.onViewChange(null);
+  }, [onViewChange]);
+
   // Re-frame only on a genuine target change (a new site, or the first geometry landing) —
   // never on an opacity/visibility re-render, which would yank the operator's own orbit back.
   const frameKey = `${frameNonce}#${
@@ -192,5 +224,12 @@ export function VerifyViewer({
     // owns uploads, so re-running this on a layer change is intentional and cheap.
   }, [frameKey, frame, layers]);
 
-  return <div ref={containerRef} className="verify-viewer" role="img" aria-label={ariaLabel} />;
+  return (
+    <div
+      ref={containerRef}
+      className={armedViewerClassName(armed)}
+      role="img"
+      aria-label={ariaLabel}
+    />
+  );
 }

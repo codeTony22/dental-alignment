@@ -43,6 +43,7 @@ import {
   type PreviewPhase,
   type PreviewSlots,
   type ReviewTickState,
+  type ViewPresetId,
 } from "../domain/declare";
 import { SitePanesView, useSitePaneScene, type PaneId, type PaneLayers } from "./SitePanes";
 
@@ -238,6 +239,9 @@ export interface DeclarePanesProps {
   /** Injectable transport (5b review M1): defaults to the real client fn; the async
    * guards it feeds are pure and tested in domain/declare.test.ts with a fake. */
   readonly postPreview?: PostPreviewFn;
+  /** The named viewpoint DeclareStage's toolbar is asking all three panes to take
+   *  (gap `named-view-presets`). Omitted leaves every pane on its own framing. */
+  readonly viewPreset?: ViewPresetId;
 }
 
 /** The container: the shared pane scene, the auto-fired preview slots, the tick's two
@@ -247,6 +251,7 @@ export function DeclarePanes({
   site,
   onDetail,
   postPreview: postPreviewFn = postPreview,
+  viewPreset,
 }: DeclarePanesProps) {
   const caseId = detail.case.id;
   const tooth = site?.tooth ?? null;
@@ -306,7 +311,7 @@ export function DeclarePanes({
         ? "ready"
         : slot.state;
 
-  const scene = useSitePaneScene(detail, site, payload);
+  const scene = useSitePaneScene(detail, site, payload, { viewPreset });
 
   // THE TICK'S TWO REQUESTS — both body-less; the response detail replaces the
   // payload whole and the queue chip and rail react to it.

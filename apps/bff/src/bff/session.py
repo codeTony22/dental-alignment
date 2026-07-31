@@ -31,6 +31,7 @@ worker — cross-PROCESS CAS remains the SQLite/phase-2 story (plan §3).
 """
 from __future__ import annotations
 
+import datetime
 import enum
 import os
 import threading
@@ -352,6 +353,93 @@ class ReleaseRecord(BaseModel):
     released_teeth: List[int] = Field(default_factory=list)
 
 
+# --- THE ACTIVITY LOG (design flow.dc.html pushLog 736-1489 / logRows 1373-1374; gap
+# ``session-activity-log``, 2026-07-31) ---------------------------------------------------
+#
+# The product had no readable narrative of what happened to a case. Every terminal
+# record above carries an ``at``, but they are the ENDS of the flow: "when was the run
+# authorized?", "when was tooth 13 re-reviewed?", "why is this site adjusted?" were
+# unanswerable from the session at all. The per-site rework provenance the worker keeps
+# on disk (the run directory's ``<case>-<tooth>-implant.json`` ``adjustments`` list) was
+# never read back either.
+#
+# THE HONESTY QUESTION, DECIDED FIRST, because the design answers it wrongly: its
+# ``pushLog`` is a BROWSER array. A list a client maintains — or worse, one a client
+# could POST — is a channel for writing claims into the record, and it would read as an
+# audit trail while proving nothing. So no route accepts an entry: ``record_activity``
+# is called INSIDE the same CAS mutation that lands each act, so an entry exists exactly
+# when the act it names actually landed, and a lost CAS race discards the entry with the
+# act it belonged to.
+#
+# AND IT IS A WINDOW, NOT AN AUDIT TRAIL, stated in the shape rather than the prose:
+# the store re-reads this document on every request and a size test pins it
+# (test_run_resource), so the list is capped at ``ACTIVITY_WINDOW`` and
+# ``activity_recorded`` counts every act ever recorded. A surface can then say "the last
+# 40 of 137" instead of implying the window is everything. A real audit trail is an
+# append-only store of its own, and that is phase-2's story beside real identity —
+# claiming one here with a bounded list would be the same fabrication the design's
+# browser array is.
+
+ACTIVITY_WINDOW = 40
+
+# The event vocabulary, in ONE place: the wire's words are these, so a surface groups
+# and filters on a server fact rather than parsing a sentence. Each act names itself in
+# the past tense — a log says what HAPPENED, never what is true now.
+ACT_DETECTED = "detected"
+ACT_CHOICES_SET = "choices-set"
+ACT_SYSTEM_DECLARED = "system-declared"
+ACT_SITE_MARKED = "site-marked"
+ACT_SITE_DECLARED = "site-declared"
+ACT_SITE_PREVIEWED = "site-previewed"
+ACT_SITE_REVIEWED = "site-reviewed"
+ACT_SITE_REVIEW_WITHDRAWN = "site-review-withdrawn"
+ACT_RUN_AUTHORIZED = "run-authorized"
+ACT_RUN_LANDED = "run-landed"
+ACT_RUN_REFUSED = "run-refused"
+ACT_RUN_WITHDRAWN = "run-withdrawn"
+ACT_SITE_ADJUSTED = "site-adjusted"
+ACT_SITE_RE_READ = "site-re-read"
+ACT_ADJUST_DECISION = "adjust-decision"
+ACT_CONFIRMED = "confirmed"
+ACT_PAYMENT_AUTHORIZED = "payment-authorized"
+ACT_RELEASED = "released"
+ACT_DELIVERY_RESET = "delivery-reset"
+ACT_CASE_RESET = "case-reset"
+
+
+class ActivityEntry(BaseModel):
+    """One act, as it landed. ``at`` is UTC-ISO like every other record here.
+
+    NO ACTOR, for the reason stated above the three signed records: this layer
+    authenticates nobody, and a name would be invented. ``tooth`` is present on
+    per-site acts and None on case-level ones — never a placeholder, so a reader
+    can group by site without guessing which entries belong to no site at all."""
+
+    at: str
+    event: str
+    detail: str
+    tooth: Optional[int] = None
+
+
+def record_activity(session: "CaseSession", event: str, detail: str,
+                    tooth: Optional[int] = None) -> None:
+    """Append one act to the case's narrative, inside the caller's mutation.
+
+    Called at the point an act LANDS — after its gates have passed, beside the state
+    change it describes — so the log and the state it narrates are written by one CAS
+    save or by neither. The stamp is minted here rather than by each caller: one clock
+    reading per act, and no route can record a time it chose.
+
+    Oldest entries fall out of the window; ``activity_recorded`` keeps counting, so the
+    dropped ones are visible as a number even when their words are gone."""
+    session.activity.append(ActivityEntry(
+        at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        event=event, detail=detail, tooth=tooth))
+    session.activity_recorded += 1
+    if len(session.activity) > ACTIVITY_WINDOW:
+        del session.activity[:len(session.activity) - ACTIVITY_WINDOW]
+
+
 class CaseSession(BaseModel):
     case_id: str
     # the CAS version (slice 5a): bumped by every save; a save whose loaded version
@@ -383,6 +471,12 @@ class CaseSession(BaseModel):
     # the disclosure act (slice 8); validity against the CURRENT run is judged at
     # read time by the artifact endpoints, never assumed from the record existing
     release: Optional[ReleaseRecord] = None
+    # THE CASE'S NARRATIVE (2026-07-31) — the newest ``ACTIVITY_WINDOW`` acts, oldest
+    # first, appended only by ``record_activity`` from inside a landing mutation
+    activity: List[ActivityEntry] = Field(default_factory=list)
+    # every act ever recorded, including the ones the window has dropped: the log is
+    # a window, and this number is what stops it being read as the whole history
+    activity_recorded: int = 0
 
     @property
     def payment_authorized(self) -> bool:

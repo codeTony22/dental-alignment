@@ -455,3 +455,101 @@ describe("the DeclareStage container, statically (effects do not run)", () => {
     expect(html).not.toContain('data-role="declare-error"');
   });
 });
+
+/**
+ * THE WORKSPACE TOOLBAR (gaps `workspace-toolbar-site-chip`, `alignment-metrics-strip`,
+ * `named-view-presets`). The panes were deliberately made to dominate this stage
+ * (client 2026-07-27), and what that cost was the site's own identity: the tooth
+ * number lives in the work column's headings and the queue rows, and all of those
+ * scroll. The strip must therefore be OUTSIDE the scroll area, name the site, and
+ * carry the server's own facts — never a verdict of ours.
+ */
+describe("the workspace toolbar over the panes", () => {
+  it("names the tooth and the effective system beside the panes", () => {
+    const html = view({ activeTooth: 30 });
+    expect(html).toContain('data-role="workspace-toolbar"');
+    expect(html).toContain('data-role="site-chip"');
+    expect(html).toContain("Tooth 30");
+    expect(html).toContain("conical-4x4");
+  });
+
+  it("the status chip renders the SERVER's rung verbatim — no locally computed verdict", () => {
+    const html = view({ activeTooth: 19 });
+    expect(html).toMatch(
+      /data-role="toolbar-status"[^>]*data-status="declared"[^>]*>declared</,
+    );
+  });
+
+  it("the ALIGNMENT strip carries variant, both published deviations, rotation, pairs", () => {
+    const html = view({
+      activeTooth: 19,
+      runRows: [
+        {
+          tooth: 19,
+          deviation_rms_mm: 0.0412,
+          deviation_p90_mm: 0.0871,
+          clocking: { notch_shift_deg: -1.42 },
+          correspondence: { pairs: 3, max_pairs: 8 },
+        },
+      ],
+    });
+    expect(html).toContain('data-role="alignment-strip"');
+    expect(html).toContain("ALIGNMENT");
+    expect(html).toContain("0.041 mm");
+    expect(html).toContain("0.087 mm");
+    expect(html).toContain("-1.4°");
+    expect(html).toContain("3 / 8");
+  });
+
+  it("PAIRS is a dash while the server carries no correspondence for the site", () => {
+    const html = view({ activeTooth: 19, runRows: [{ tooth: 19 }] });
+    expect(html).toMatch(/data-stat="pairs"[\s\S]{0,200}?—<\/span>/);
+    expect(html).not.toContain("0 / 8");
+  });
+
+  it("the strip states no tolerance and no pass/fail — those are server-derived", () => {
+    const html = view({ activeTooth: 19, runRows: [{ tooth: 19, deviation_rms_mm: 0.9 }] });
+    expect(html).not.toContain("in tolerance");
+    expect(html).not.toContain("out of tolerance");
+  });
+
+  it("the arch dialog opener rides IN the toolbar — one strip of chrome, not two", () => {
+    const html = view();
+    const toolbar = html.slice(html.indexOf('data-role="workspace-toolbar"'));
+    expect(toolbar.slice(0, toolbar.indexOf("</div>") + 6)).toContain(
+      'data-role="arch-open"',
+    );
+  });
+
+  it("the named view presets render only where the stage can actually apply them", () => {
+    // Dead controls are worse than absent ones: with no handler the group is not
+    // rendered at all (see DeclareStageView's note on the pane-camera seam).
+    expect(view()).not.toContain('data-role="view-preset"');
+    const wired = view({ onSelectView: () => undefined, viewPreset: "buccal" });
+    expect(wired).toMatch(/data-role="view-preset"[^>]*data-preset="occlusal"/);
+    expect(wired).toMatch(
+      /data-role="view-preset"[^>]*data-preset="buccal"[^>]*aria-pressed="true"/,
+    );
+    expect(wired).toMatch(/data-role="view-preset"[^>]*data-preset="mesial"/);
+  });
+
+  it("off-axis presets are inert until a seated pose supplies the clock reference", () => {
+    const html = view({ onSelectView: () => undefined, viewPresetsAvailable: false });
+    expect(html).toMatch(
+      /data-role="view-preset"[^>]*data-preset="buccal"[^>]*disabled=""/,
+    );
+    // occlusal is exactly the framing the pane already has, so it always works
+    expect(html).not.toMatch(
+      /data-role="view-preset"[^>]*data-preset="occlusal"[^>]*disabled=""/,
+    );
+  });
+
+  it("the toolbar is NOT inside the work column's scroll box — that is the whole point", () => {
+    const html = view();
+    const scroll = html.indexOf("workbench__work-scroll");
+    const toolbar = html.indexOf('data-role="workspace-toolbar"');
+    const scrollEnd = html.indexOf("workbench__work-footer");
+    expect(toolbar).toBeGreaterThan(scrollEnd);
+    expect(scroll).toBeLessThan(scrollEnd);
+  });
+});

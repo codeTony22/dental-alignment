@@ -613,3 +613,62 @@ describe("a flagged site's OTHER way out (the act itself lives on Deliver)", () 
     );
   });
 });
+
+/**
+ * THE WORKSPACE TOOLBAR ON ADJUST (gaps `workspace-toolbar-site-chip`,
+ * `alignment-metrics-strip`, `named-view-presets`). Adjust had NO stage toolbar at
+ * all: the tooth number appeared only in the toolbox heading and the queue rows, both
+ * inside the scrolling work column. Worse, every alignment fact was tool-scoped — an
+ * operator on the mark-trench tab could not see the pairs, one on the rotation tab
+ * could not see the deviation. The same strip Declare grew answers both.
+ */
+describe("the workspace toolbar over the panes", () => {
+  it("names the active tooth and the effective system", () => {
+    const html = view({ systemModel: "conical-4x4" });
+    expect(html).toContain('data-role="workspace-toolbar"');
+    expect(html).toContain('data-role="site-chip"');
+    expect(html).toContain("Tooth 13");
+    expect(html).toContain("conical-4x4");
+  });
+
+  it("the status chip is the SERVER's rung for the active site, verbatim", () => {
+    expect(view()).toMatch(
+      /data-role="toolbar-status"[^>]*data-status="flagged"[^>]*>flagged</,
+    );
+  });
+
+  it("the deviation is on screen while a rotation tool is selected", () => {
+    // the whole gap: the deviation lived in the union pane's FOLDED legend, so the
+    // operator steering the clock could not see what they were steering toward
+    const html = view({
+      tool: "rotation",
+      stats: [
+        { id: "dev-rms", label: "DEV RMS", value: "0.041 mm" },
+        { id: "pairs", label: "PAIRS", value: "3 / 8" },
+      ],
+    });
+    expect(html).toContain('data-role="alignment-strip"');
+    expect(html).toContain("0.041 mm");
+    expect(html).toContain("3 / 8");
+  });
+
+  it("with no site selected the chip says so rather than going blank", () => {
+    const html = view({ activeTooth: null, activeStatus: null });
+    expect(html).toContain("No site selected");
+    expect(html).toContain('data-role="workspace-toolbar"');
+  });
+
+  it("the toolbar sits with the PANES, not inside the scrolling work column", () => {
+    const html = view();
+    const footer = html.indexOf("workbench__work-footer");
+    expect(html.indexOf('data-role="workspace-toolbar"')).toBeGreaterThan(footer);
+  });
+
+  it("named view presets render only when a handler can apply them", () => {
+    expect(view()).not.toContain('data-role="view-preset"');
+    const wired = view({ onSelectView: () => undefined, viewPreset: "occlusal" });
+    expect(wired).toMatch(
+      /data-role="view-preset"[^>]*data-preset="occlusal"[^>]*aria-pressed="true"/,
+    );
+  });
+});

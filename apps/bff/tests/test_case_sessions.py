@@ -1447,6 +1447,15 @@ class TestStatusesAreNeverClientWritable:
         ("POST", "/api/case-sessions/{case_id}/sites/{tooth}/mark-trench"),
         ("POST", "/api/case-sessions/{case_id}/sites/{tooth}/fit-by-points"),
         ("POST", "/api/case-sessions/{case_id}/sites/{tooth}/best-fit"),
+        # THE RE-READ (gap ``re-preview-a-site-without-applying-a-tool``,
+        # 2026-07-31) — body-less, like detect/preview/run, and for the same
+        # reason: everything it reads is on disk in the run directory, so there
+        # is nothing a client could claim with. It applies no tool, moves no
+        # rung, and what it writes onto the row is what the SERVER measured over
+        # the pose that shipped. A body here could only ever carry the outcome
+        # the design's own re-preview label pre-announces, which is exactly the
+        # client-side verdict this allowlist exists to make unexpressible.
+        ("POST", "/api/case-sessions/{case_id}/sites/{tooth}/re-preview"),
     }
     STATUS_SHAPED = {"status", "state", "verdict", "gate", "flagged", "ready",
                      "confirmed"}
