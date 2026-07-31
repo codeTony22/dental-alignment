@@ -56,6 +56,7 @@ function view(overrides: Partial<Parameters<typeof AdjustStageView>[0]> = {}) {
       drafts={[]}
       onStartPair={() => undefined}
       onRemovePair={() => undefined}
+      onRemovePoint={() => undefined}
       onApplyPairs={() => undefined}
       panes={<div data-role="stub-panes" />}
       activeStatus="flagged"

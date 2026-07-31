@@ -3520,3 +3520,51 @@ button.package-files__link:hover {
   color: var(--color-text);
   border-color: var(--color-text-muted);
 }
+
+/* ---- the stage's top row collapses to ONE line (client 2026-07-30: "look how much
+   white space is at the top") -------------------------------------------------------
+   The arch button sat on its own row above the panes' own toolbar (link views), two
+   stacked strips of chrome before any 3D. The stage is now the positioning context and
+   the arch button floats INTO the panes' toolbar row, left side — one line of chrome,
+   and the row was already there. */
+.workbench__stage--split {
+  position: relative;
+}
+
+.workbench__stage--split .stage-toolbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+}
+
+/* ---- tighter vertical rhythm (Declare AND Adjust: "longer panels") --------------- */
+.workbench__stage {
+  gap: 6px;
+}
+
+.verify-panels__toolbar {
+  margin-bottom: 6px;
+}
+
+.workbench__work-footer {
+  margin-top: 6px;
+  padding-top: 8px;
+}
+
+/* ---- the scroll boundary announces itself (client 2026-07-30: the variants card
+   "cut off and weird scroll") -------------------------------------------------------
+   The work column clipped mid-card with nothing saying "there is more below" — the cut
+   read as broken rather than scrollable. A sticky fade at the bottom of the scroll box
+   says it: content dissolves INTO the edge instead of being guillotined by it. */
+.workbench__work-scroll::after {
+  content: "";
+  position: sticky;
+  bottom: 0;
+  display: block;
+  flex: 0 0 auto;
+  height: 22px;
+  margin-top: -22px;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--color-bg));
+  pointer-events: none;
+}

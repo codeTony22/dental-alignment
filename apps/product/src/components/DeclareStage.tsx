@@ -43,6 +43,7 @@ import {
   skipConsequenceWords,
   switchWords,
   systemCards,
+  recordedAtWords,
   variantShelves,
   type VariantCard,
 } from "../domain/declare";
@@ -487,9 +488,8 @@ export function DeclareStageView({
                 <p data-role="fork-recorded" className="panel__hint">
                   Recorded: {decided.decision === "skip"
                     ? "adjustments skipped"
-                    : "adjustments taken up"} at {decided.at}. This rides into the
-                  evidence the case is confirmed over — and a different choice here
-                  simply replaces it.
+                    : "adjustments taken up"} · {recordedAtWords(decided.at)} — rides
+                  into the evidence; a different choice here replaces it.
                 </p>
               )}
               {forkError !== null && (

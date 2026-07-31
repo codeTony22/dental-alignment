@@ -67,6 +67,16 @@ session store's allowlist test enforces that no request body carries a status-sh
 - `docs/engagement/product-runbook.md` — how to run and demo the product app.
 - `reports/product/<case>/runs/<run_id>/` — immutable run dirs. Never mutate a landed run.
 
+## The typecheck trap
+
+`apps/product/tsconfig.json` is a REFERENCES SHELL (`"files": []`). Running
+`tsc --noEmit -p apps/product/tsconfig.json` exits 0 having checked NOTHING — it did so
+for a whole session while two wrong-shaped API handlers sat in the tree. The real check:
+
+```bash
+cd apps/product && ./node_modules/.bin/tsc --noEmit -p tsconfig.app.json
+```
+
 ## Conventions
 
 - React tests use `renderToStaticMarkup` in the **node** environment — there is no jsdom.

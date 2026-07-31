@@ -673,7 +673,9 @@ export function attestationSummary(
  */
 export function skipConsequenceWords(flaggedCount: number): string {
   if (flaggedCount === 0) {
-    return "Nothing is flagged — there are no fits waiting to be reworked.";
+    // One clause (client 2026-07-30: the footer must condense) — "no fits waiting to
+    // be reworked" restated what the flag count already says.
+    return "Nothing is flagged — adjusting is optional.";
   }
   const sites = `${flaggedCount} flagged site${flaggedCount === 1 ? "" : "s"}`;
   return (
@@ -682,4 +684,19 @@ export function skipConsequenceWords(flaggedCount: number): string {
     `site without its own acknowledgment on the row — acknowledge it there, or ` +
     `withhold it and leave the site open.`
   );
+}
+
+/**
+ * A recorded instant, for humans (client 2026-07-30). The wire's
+ * "2026-07-31T01:17:18.636748+00:00" was rendered verbatim into the fork's recorded
+ * note — microseconds and all — which is machine text on an operator surface.
+ *
+ * Deliberately a SLICE of the ISO string, not a Date round trip: the store writes
+ * UTC, and formatting through the browser's locale would show a different wall time
+ * per machine while the evidence bundle carries the original — two clocks for one
+ * act. Minute precision, labelled UTC, deterministic in tests.
+ */
+export function recordedAtWords(iso: string): string {
+  const m = iso.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+  return m ? `${m[1]} ${m[2]} UTC` : iso;
 }

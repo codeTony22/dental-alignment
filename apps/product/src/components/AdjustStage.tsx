@@ -119,10 +119,11 @@ export interface AdjustStageViewProps {
   readonly panes: React.ReactNode;
   /** The site's rung, for the re-confirm nudge after an applied tool. */
   readonly activeStatus: string | null;
-  /** The re-confirmation act, offered where the fit was changed (client 2026-07-29). */
-  readonly onReconfirm: () => void;
-  readonly reconfirmSaving: boolean;
-  readonly reconfirmError: string | null;
+  /** The re-confirmation act, offered where the fit was changed (client 2026-07-29).
+   *  Optional with inert defaults: static tests predate the trio. */
+  readonly onReconfirm?: () => void;
+  readonly reconfirmSaving?: boolean;
+  readonly reconfirmError?: string | null;
   /** The seated pose, for the pre-flight span caution (client 2026-07-29). Null until
    *  a payload has landed; the caution simply stays quiet then. */
   readonly pose?: { readonly origin: readonly number[]; readonly axis: readonly number[] } | null;
@@ -336,9 +337,9 @@ export function AdjustStageView({
   onApplyPairs,
   panes,
   activeStatus,
-  onReconfirm,
-  reconfirmSaving,
-  reconfirmError,
+  onReconfirm = () => undefined,
+  reconfirmSaving = false,
+  reconfirmError = null,
   pose = null,
   reasonsFor = null,
   onOpenReasons = () => undefined,
@@ -847,6 +848,9 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   const [autoMarkLandmarks, setAutoMarkLandmarks] =
     useState<readonly LandmarkView[]>([]);
   const [autoMarkPhase, setAutoMarkPhase] = useState<SeatedPhase>("idle");
+  /** Monotone id for the landmarks read — a result is stale only when a NEWER request
+   *  exists, never merely because the phase moved (see the fetch effect's note). */
+  const autoMarkRequestRef = useRef(0);
   const [autoMarkError, setAutoMarkError] = useState<string | null>(null);
   const drafts = tool === "auto-mark" ? autoDrafts : fitDrafts;
   const setDrafts = tool === "auto-mark" ? setAutoDrafts : setFitDrafts;
@@ -915,11 +919,18 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
     if (tool !== "auto-mark" || activeTooth === null || autoMarkPhase !== "idle") {
       return;
     }
-    let cancelled = false;
+    /* SUPERSESSION, NOT CLEANUP-CANCELLATION (client 2026-07-30: "Auto-mark stays
+       stuck"). The first version cancelled the fetch in the effect's cleanup — but
+       `autoMarkPhase` is a dependency, so setting it to "loading" re-ran the effect
+       and the cleanup CANCELLED ITS OWN REQUEST: the 200 arrived 0.4s later and was
+       discarded, and the phase stayed "loading" forever. A result is stale only when
+       a NEWER request has been minted (a site/tool switch), never merely because the
+       phase moved — which is exactly what a monotone request id expresses. */
+    const request = ++autoMarkRequestRef.current;
     setAutoMarkPhase("loading");
     setAutoMarkError(null);
     void fetchLandmarks(caseId, activeTooth).then((result) => {
-      if (cancelled || !mountedRef.current) return;
+      if (autoMarkRequestRef.current !== request || !mountedRef.current) return;
       if (result.kind === "ok") {
         setAutoMarkLandmarks(result.data);
         setAutoMarkPhase("ready");
@@ -933,9 +944,6 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
         setAutoMarkPhase("error");
       }
     });
-    return () => {
-      cancelled = true;
-    };
   }, [tool, caseId, activeTooth, autoMarkPhase]);
 
   // Switching sites clears the half-built work: a draft pair belongs to the site whose
@@ -1129,11 +1137,18 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
     setReconfirmError(null);
     void postReview(detail.case.id, activeTooth).then((result) => {
       setReconfirmSaving(false);
-      if (result.ok) {
-        onDetail(result.value);
+      /* ApiResult is a {kind} union — the first version tested `result.ok` and read
+         `result.value`/`result.error`, none of which EXIST on this shape. The click
+         landed server-side (the rung flipped to ready) and the response was then
+         thrown away reading `.detail` off undefined, so the surface never moved:
+         "I cant click" was a click that worked and was never shown. Found live; the
+         typechecker that should have caught it was checking zero files (the root
+         tsconfig is a references shell with files: []) — fixed alongside. */
+      if (result.kind === "ok") {
+        onDetail(result.data);
         return;
       }
-      setReconfirmError(result.error.detail);
+      setReconfirmError(result.detail);
     });
   }, [activeTooth, detail.case.id, onDetail]);
 

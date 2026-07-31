@@ -382,9 +382,10 @@ export interface SitePanesViewProps {
   readonly unionBusy: boolean;
   readonly unionBusyMessage: string | null;
   readonly payload: SitePreviewPayload | null;
-  /** The three live canvases — the container passes VerifyViewers; tests pass stubs. */
-  readonly resetNonce: Readonly<Record<PaneId, number>>;
-  readonly onResetView: (pane: PaneId) => void;
+  /** The three live canvases — the container passes VerifyViewers; tests pass stubs.
+   *  (resetNonce is NOT a view prop: the hook threads it into the viewers it builds,
+   *  so the view never sees it — an earlier edit landed it here by mistake and the
+   *  fake root tsconfig hid the resulting type break for a whole session.) */
   readonly libraryViewer: ReactNode;
   readonly scanViewer: ReactNode;
   readonly unionViewer: ReactNode;
@@ -559,6 +560,11 @@ const LAYER_DEFAULTS: Readonly<Record<string, LayerToggle>> = {
 };
 
 export interface SitePaneScene {
+  /** Per-pane re-frame requests + the act that bumps one — the panes' way home
+   *  (client 2026-07-29). The hook threads the nonces into the viewers it builds;
+   *  callers only ever hand `onResetView` to the view's reset control. */
+  readonly resetNonce: Readonly<Record<PaneId, number>>;
+  readonly onResetView: (pane: PaneId) => void;
   readonly partBusy: boolean;
   readonly scanBusy: boolean;
   readonly partError: string | null;

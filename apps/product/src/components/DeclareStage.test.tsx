@@ -263,8 +263,13 @@ describe("the moment of moving forward — the set faced, the fork explicit", ()
     });
     expect(html).toContain('data-role="fork-recorded"');
     expect(html).toContain("adjustments skipped");
-    expect(html).toContain("2026-07-28T09:00:00+00:00");
-    expect(html).toContain("evidence the case is confirmed over");
+    // Retargeted 2026-07-30: the raw ISO instant (microseconds and all) was machine
+    // text on an operator surface — the note now renders the minute, labelled UTC.
+    expect(html).toContain("2026-07-28 09:00 UTC");
+    expect(html).not.toContain("2026-07-28T09:00:00+00:00");
+    // ...and the consequence in one clause (the old three-line version was part of
+    // the footer bloat the client called out)
+    expect(html).toContain("rides into the evidence");
   });
 
   it("a refused decision keeps the operator here, in the BFF's words", () => {

@@ -540,14 +540,16 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
     setMarkError(null);
     void postMarkedSite(caseId, tooth, markPending).then((result) => {
       setMarkSaving(false);
-      if (result.ok) {
-        onDetail(result.value);
+      // ApiResult is a {kind} union — same wrong-shape bug as the reconfirm handler
+      // (result.ok/.value/.error exist on nothing), caught in the same sweep
+      if (result.kind === "ok") {
+        onDetail(result.data);
         resetMark();
         return;
       }
       // the BFF's own words — a 409 on an existing tooth explains itself better
       // than anything this layer could summarise
-      setMarkError(result.error.detail);
+      setMarkError(result.detail);
     });
   }, [caseId, markPending, markTooth, onDetail, resetMark]);
   const mountedRef = useRef(true);
