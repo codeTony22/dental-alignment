@@ -353,7 +353,7 @@ class TestTheLanding:
         client, _ = tooled(settings, product_root, monkeypatch)
         client.post(f"{BASE}/13/rotation", json={"step_deg": 1.0})
         res = client.post(f"/api/case-sessions/{CASE}/confirm",
-                          json={"acknowledged_flags": [4]})
+                          json={"acknowledged_flags": [4], "terms_accepted": True})
         assert res.status_code == 422
         assert "tooth 13" in res.json()["detail"]
         assert "adjusted" in res.json()["detail"]
@@ -369,7 +369,8 @@ class TestTheLanding:
                            ).status_code == 200
         assert site_status(product_root, 13) == "ready"
         assert client.post(f"/api/case-sessions/{CASE}/confirm",
-                           json={"acknowledged_flags": [4]}).status_code == 200
+                           json={"acknowledged_flags": [4],
+                                "terms_accepted": True}).status_code == 200
 
     def test_the_alignment_proof_joins_the_runs_package_files(
             self, settings, product_root, monkeypatch):
@@ -421,7 +422,7 @@ class TestTheLanding:
 class TestAnAdjustmentRetiresTheConfirmation:
     def _confirmed(self, client):
         assert client.post(f"/api/case-sessions/{CASE}/confirm", json={
-            "acknowledged_flags": [4]}).status_code == 200
+            "acknowledged_flags": [4], "terms_accepted": True}).status_code == 200
         assert client.post(f"/api/case-sessions/{CASE}/payment",
                            json={"authorize": True}).status_code == 200
         assert client.post(f"/api/case-sessions/{CASE}/release").status_code == 200
@@ -489,7 +490,8 @@ class TestRefusalsChangeNothing:
         wearing the first one's clothes."""
         client, _ = tooled(settings, product_root, monkeypatch)
         assert client.post(f"/api/case-sessions/{CASE}/confirm",
-                           json={"acknowledged_flags": [4]}).status_code == 200
+                           json={"acknowledged_flags": [4],
+                                "terms_accepted": True}).status_code == 200
         stub_tools(monkeypatch, raises=AdjustRefused("the rim band would leave the scan"))
         assert client.post(f"{BASE}/4/rotation",
                            json={"step_deg": 30.0}).status_code == 409
@@ -531,7 +533,8 @@ class TestMeasureOnlyLandsNothing:
             stability_excess_mm=None, pane_payload=None,
             best_fit={"roi_mean_before_mm": 0.21, "roi_mean_after_mm": 0.19}))
         assert client.post(f"/api/case-sessions/{CASE}/confirm",
-                           json={"acknowledged_flags": [4]}).status_code == 200
+                           json={"acknowledged_flags": [4],
+                                "terms_accepted": True}).status_code == 200
         res = client.post(f"{BASE}/4/best-fit",
                           json={"matching_diameter_mm": 0.3, "apply": False})
         assert res.status_code == 200

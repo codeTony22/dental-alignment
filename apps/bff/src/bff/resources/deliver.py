@@ -46,6 +46,31 @@ from .case_sessions import (CaseSessionDetail, _case_or_404, _context, _detail,
 router = APIRouter(prefix="/api/case-sessions", tags=["deliver"])
 
 
+# --- the terms (plan §10-A) ---------------------------------------------------------------
+#
+# Client, verbatim: "Delivery should be confirm and accept alginment and term and
+# conditions, payment, and released artifacts." The agreement moves OFF Declare's
+# per-site ticks and onto this one commercial signature — plan §10-A: "This can be
+# at the time of payment … as a Terms and Conditions or more explicit saying someone
+# reviewed the alignment changes and they agree to proceed."
+#
+# THE TEXT BELOW IS A PLACEHOLDER. It is NOT contractual language this codebase is
+# entitled to invent — the real terms are the client's to supply, and until they do,
+# this string stands in, marked as a placeholder both here and on screen
+# (DeliverStage.tsx renders it inside an unmissable "PLACEHOLDER" banner). Swapping
+# it for the client's real text is a ONE-STRING change; bump ``TERMS_VERSION``
+# alongside it so a confirmation sealed over the old text reads honestly as having
+# accepted THAT text, never silently reinterpreted as covering the new one.
+TERMS_VERSION = "placeholder-v1"
+
+TERMS_TEXT_PLACEHOLDER = (
+    "PLACEHOLDER — pending the client's final Terms and Conditions text. "
+    "I have reviewed the alignment for all N sites in this case, including the "
+    "assurance report and its QC images. I accept the alignment as shown and "
+    "authorize release of the deliverables."
+)
+
+
 # --- response models --------------------------------------------------------------------
 
 class AssuranceRotation(BaseModel):
@@ -93,6 +118,20 @@ class AssuranceSite(BaseModel):
     deviation_p90_mm: Optional[float]
     gate: AssuranceGate
     clamp: AssuranceClamp
+    # THE DISCLOSURE GAP THIS FIELD CLOSES (finding, 2026-07-28; plan §10-E). One
+    # construction part is case-level while the variant is per-site (ARCHITECTURE.md
+    # §7's own stated limit); when a case's sites identify DIFFERENT variants, one
+    # shared part cannot match all of them, and the worker already says so —
+    # auto_flow.py writes ``"single construction part shared across sites
+    # identifying N distinct variants — per-variant construction parts needed"``
+    # into ``row["production"]["note"]``. Until this field existed, this read
+    # picked the clamp fields out of that SAME block and dropped the note: a
+    # two-variant case showed per-site GREEN verdicts with nothing said, and the
+    # client confirmed and paid against that surface. Verbatim from the worker —
+    # no rewriting, no new physics — beside the clamp story it already stands next
+    # to in the production block. None on every single-variant case (the worker
+    # never writes the key when there is nothing to disclose).
+    production_note: Optional[str] = None
     # THE NUMBERS IN THIS ROW THAT PREDATE AN OPERATOR REWORK (review 2026-07-28,
     # finding E). Adjust re-derives what it can over the new pose — the deviation
     # scalars and the clocking — and NAMES what it cannot: the rim agreement was
@@ -220,20 +259,55 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession,
             clamped=bool(production.get("clamped")),
             reason=production.get("clamp_reason"),
         ),
+        production_note=production.get("note"),
         stale_metrics=[str(m) for m in (rework.get("stale_metrics") or [])],
         qc_images=_site_qc_images(run, case_id, tooth),
         references={key: metrics[key] for key in _REFERENCE_KEYS if key in metrics},
     )
 
 
+def _needs_acknowledgment(site: AssuranceSite) -> bool:
+    """AM-12's acknowledgment gate applies whenever EITHER of two things is true:
+    the run's own guidance flagged the site (the session ladder's rung), or the
+    PRODUCTION block disclosed a fact the operator must weigh before releasing —
+    today, exactly the shared-construction-part conflict ``production_note``
+    carries (plan §10-E, finding 2026-07-28).
+
+    THE FLAG-VS-ANNOTATE DECISION, made here: a multi-variant case FLAGS rather
+    than merely displaying the note quietly. The note's own words are "cannot
+    match", not "differs slightly" — the worker is not hedging, it is naming a
+    geometry that will not fit some of what was declared. An operator who can
+    confirm and pay without ever having to acknowledge that sentence is exactly
+    the disclosure gap this fix closes; annotating it INTO the row without also
+    gating on it would have fixed the reading experience and left the trust
+    architecture's own doctrine ("screen order is not a control") unmet for the
+    one row that most needs it. This predicate is the ONE place that doctrine is
+    applied — the sort below and ``confirm_case``'s acknowledgment gate both call
+    it, so a row can never look pinned-first without also being blocked, or vice
+    versa."""
+    return site.status == "flagged" or site.production_note is not None
+
+
 def _sort_worst_first(sites: List[AssuranceSite]) -> List[AssuranceSite]:
-    """AM-12: flagged rows pinned first, then the worse gate, then tooth for a
-    stable order across reloads. An unknown gate word sorts as worst — a vocabulary
-    the sorter does not know is a reason to look, never to bury."""
+    """AM-12: rows needing acknowledgment pinned first (``_needs_acknowledgment``
+    — the session's flagged rung OR a production disclosure), then the worse
+    gate, then tooth for a stable order across reloads. An unknown gate word
+    sorts as worst — a vocabulary the sorter does not know is a reason to look,
+    never to bury.
+
+    A production note escalates the SORT position without rewriting the
+    worker's own gate word: ``AssuranceGate`` stays verbatim (the docstring's own
+    promise — "the run's guidance verdict verbatim"), so the escalation lives only
+    in this local severity used for ordering, never written back onto the site.
+    It ranks at least as urgent as "action-needed" even on a row the run itself
+    called ready — the shared-part conflict is a fact about what ships, not
+    about how well this one site's geometry seated."""
     def key(site: AssuranceSite):
-        flagged = 0 if site.status == "flagged" else 1
+        pinned = 0 if _needs_acknowledgment(site) else 1
         severity = _GATE_SEVERITY.get(site.gate.level, len(_GATE_SEVERITY))
-        return (flagged, -severity, site.tooth)
+        if site.production_note is not None:
+            severity = max(severity, _GATE_SEVERITY["action-needed"])
+        return (pinned, -severity, site.tooth)
     return sorted(sites, key=key)
 
 
@@ -336,13 +410,23 @@ class ConfirmIn(BaseModel):
     Deliver is a case being delivered; withholding is the exceptional act, and the
     only one that must be SAID. What is NOT relaxed: a flagged site that is released
     still needs its own row acknowledgment (AM-12 — the client's own assurance
-    rule), which is exactly what the refusals now name."""
+    rule), which is exactly what the refusals now name.
+
+    ``terms_accepted`` is the agreement itself, moved here from Declare's per-site
+    ticks (plan §10-A). Required, like ``PaymentIn.authorize`` — a default would
+    let the act happen by omission, and the whole point of moving the agreement to
+    the commercial moment is that it is given, not assumed. There is no
+    ``terms_version`` field on the wire: the server names which text was shown
+    (``TERMS_VERSION``) — a client cannot accept a version it did not ask to see,
+    and inventing one here would be a claim ``dispositions`` never gets to make
+    either."""
 
     model_config = ConfigDict(extra="forbid")
 
     dispositions: Dict[str, Literal["release", "withhold"]] = Field(
         default_factory=dict)
     acknowledged_flags: List[int] = Field(default_factory=list)
+    terms_accepted: bool
 
 
 class PaymentIn(BaseModel):
@@ -413,17 +497,26 @@ def _derive_evidence_sha(case: CaseRecord, session: CaseSession,
     as it stands NOW, the QC images' bytes as they are NOW, and the adjust decision
     as it stands NOW — hashed by the same canonical rule the confirmation sealed. A
     missing QC image counts as drift — evidence that cannot be re-covered no longer
-    matches anything."""
+    matches anything.
+
+    ``terms_version`` is read off the STANDING CONFIRMATION, not re-derived —
+    unlike the fork, there is no separate act that can move it independently of
+    confirming itself (the agreement is confirm's own act, plan §10-A), so the
+    only "current" answer that means anything is what the confirmation being
+    checked actually recorded. A case with no confirmation at all has nothing to
+    re-derive against anyway (both callers refuse first on that)."""
     assurance = derive_assurance(case, session)
     try:
         hashes = qc_image_hashes(_run_dir(settings, case_id=case.id, run=run),
                                  _qc_image_names(run))
     except FileNotFoundError:
         return "evidence-incomplete"   # never equals a sha256 hex digest
+    terms_version = (session.confirmation.terms_version
+                     if session.confirmation is not None else None)
     # ONE read of the fork: the projection served it, and the bundle's own key
     # restates that same value — the two can never describe different decisions
     return canonical_bundle(assurance.sealed_facts(), hashes,
-                            assurance.adjustments).sha256
+                            assurance.adjustments, terms_version).sha256
 
 
 # the two file-attribution rules live in bff/session.py now: the Deliver surface
@@ -465,24 +558,36 @@ def _require_every_site_resolved(assurance: AssuranceView) -> None:
 @router.post("/{case_id}/confirm", response_model=CaseSessionDetail)
 def confirm_case(case_id: str, body: ConfirmIn,
                  request: Request) -> CaseSessionDetail:
-    """Seal the confirmation over the evidence as it stands NOW.
+    """Seal the confirmation over the evidence as it stands NOW — and, since plan
+    §10-A, accept the terms in the same act: "confirm and accept terms" is ONE
+    signature, not two. ``body.terms_accepted`` must be literally true (the
+    ``PaymentIn.authorize`` pattern — a default would let the act happen by
+    omission), checked FIRST and outside the CAS mutation: a refusal that stands
+    regardless of session state costs no load.
 
-    Refuses unless: a done current run; EVERY SITE STANDS ON A VERDICT
-    (``_require_every_site_resolved`` — slice 6's ADJUSTED rung made flow.ts's
-    client-side rule reachable, so it lives here now); every FLAGGED site headed for
-    release appears in ``acknowledged_flags`` (AM-12 — row by row, never in bulk; an
-    acknowledgment of an unflagged site is refused too, a claim about nothing).
-    A MISSING DISPOSITION IS NO LONGER A REFUSAL (client 2026-07-27 #4: "What is
+    Refuses unless: terms accepted; a done current run; EVERY SITE STANDS ON A
+    VERDICT (``_require_every_site_resolved`` — slice 6's ADJUSTED rung made
+    flow.ts's client-side rule reachable, so it lives here now); every site
+    ``_needs_acknowledgment`` heading for release appears in
+    ``acknowledged_flags`` (AM-12 — row by row, never in bulk; an acknowledgment
+    of a site that needs none is refused too, a claim about nothing). A MISSING
+    DISPOSITION IS NO LONGER A REFUSAL (client 2026-07-27 #4: "What is
     disposition release vs withhold") — every unnamed site defaults to release,
-    resolved once below, so the flag acknowledgment is the only thing this route
-    can be short of. On success, INSIDE
-    the CAS mutation: re-derive the assurance, hash the QC images' bytes, build and
-    WRITE the evidence bundle — a failed write REFUSES the whole confirmation
-    (AM-10's transactional half; the content-addressed write is idempotent, so the
+    resolved once below, so the acknowledgment demand is the only thing this
+    route can be short of besides the terms. On success, INSIDE the CAS
+    mutation: re-derive the assurance, hash the QC images' bytes, build and
+    WRITE the evidence bundle (now carrying ``TERMS_VERSION`` beside the fork's
+    word — plan §10-A: "recorded with its timestamp and the evidence hash it was
+    given over") — a failed write REFUSES the whole confirmation (AM-10's
+    transactional half; the content-addressed write is idempotent, so the
     mutation's one CAS retry re-writes the same bytes harmlessly) — then persist
     the record."""
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
+    if not body.terms_accepted:
+        raise HTTPException(422, "confirming requires accepting the current "
+                                 "terms — the act is {\"terms_accepted\": true} "
+                                 "beside the dispositions, or no act at all")
 
     def apply(session: CaseSession) -> None:
         run = _require_done_run_for_act(session, case_id, "confirm")
@@ -502,8 +607,14 @@ def confirm_case(case_id: str, body: ConfirmIn,
         # never re-guessed by each reader.
         dispositions = {str(t): body.dispositions.get(str(t), "release")
                         for t in teeth}
+        # AM-12's acknowledgment gate, extended (plan §10-E, 2026-07-28): a site
+        # needs its own row acknowledgment when the session ladder flagged it OR
+        # the production block disclosed a shared-construction-part conflict
+        # (``_needs_acknowledgment`` — the one predicate the sort above and this
+        # gate both read, so a row can never look pinned-first without also
+        # being blocked here).
         flagged = {site.tooth for site in assurance.sites
-                   if site.status == "flagged"}
+                   if _needs_acknowledgment(site)}
         acknowledged = set(body.acknowledged_flags)
         unacknowledged = [t for t in sorted(flagged)
                           if dispositions.get(str(t)) == "release"
@@ -533,7 +644,7 @@ def confirm_case(case_id: str, body: ConfirmIn,
                                      f"package claims a QC image that is not on "
                                      f"disk to seal: {exc}")
         bundle = canonical_bundle(assurance.sealed_facts(), hashes,
-                                  assurance.adjustments)
+                                  assurance.adjustments, TERMS_VERSION)
         try:
             write_bundle(run_dir, bundle)
         except OSError as exc:
@@ -552,6 +663,13 @@ def confirm_case(case_id: str, body: ConfirmIn,
             # used — so the display half can notice a fork re-clicked after
             # release without re-hashing the run's QC bytes to find out
             adjustments=assurance.adjustments,
+            # the acceptance, recorded WITH its timestamp (``at`` above) and the
+            # evidence hash it was given over (``evidence_sha256`` above) — plan
+            # §10-A's own words. ``body.terms_accepted`` is guaranteed True here
+            # (refused above otherwise), so the record states the act, not the
+            # wire value.
+            terms_accepted=True,
+            terms_version=TERMS_VERSION,
         )
 
     session = _mutate_signing(store, case_id, apply, "confirmation",
@@ -567,7 +685,18 @@ def authorize_payment(case_id: str, body: PaymentIn,
     """Record the stubbed payment authorization — fail-closed (absence of this
     record IS "not authorized") and honest (``provider: "stub"`` marks the session
     permanently; when a real provider lands, its adapter replaces this route's
-    body, and stub-authorized history stays tellable from paid history)."""
+    body, and stub-authorized history stays tellable from paid history).
+
+    GATED ON THE TERMS (plan §10-A: "Payment (and therefore release) is gated on
+    it") — a REAL server-side precondition, not the progression's screen order:
+    payment refuses 409 unless a standing confirmation exists AND its own
+    ``terms_accepted`` is true. Reading the CONFIRMATION's flag rather than
+    re-checking anything here is deliberate: terms acceptance is confirm's own
+    act (``ConfirmIn.terms_accepted``, required there), so a standing
+    confirmation already proves it — and a confirmation sealed before the
+    concept existed reads ``terms_accepted=False`` honestly (the same
+    under-claiming precedent ``adjustments``/``payment_authorized`` already
+    follow), refusing until it is re-confirmed under the current terms."""
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
     if not body.authorize:
@@ -576,10 +705,57 @@ def authorize_payment(case_id: str, body: PaymentIn,
                                  "all")
 
     def apply(session: CaseSession) -> None:
+        confirmation = session.confirmation
+        if confirmation is None or not confirmation.terms_accepted:
+            raise HTTPException(409, f"payment requires a confirmation that "
+                                     f"accepted the terms — confirm case "
+                                     f"{case_id!r} (and accept the terms) before "
+                                     f"authorizing payment")
         session.payment = PaymentRecord(payment_authorized=True, provider="stub",
                                         at=_now())
 
     session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
+# --- the checkout return leg (plan §10-A: "a checkout screen and a return") -------------
+
+class CheckoutReturnIn(BaseModel):
+    """THE RETURN LEG'S ONLY FIELD, and it carries no claim. A real payment
+    provider's redirect-back always carries an identifier (a checkout/session id)
+    so the app can ask "what happened over there?" — ``reference`` stands in for
+    that identifier. There is deliberately no ``status``, no ``paid``, no
+    ``outcome`` field: ``extra="forbid"`` makes it structurally impossible to
+    smuggle one, which is the whole point (see ``checkout_return`` below) — a
+    browser round trip is the most forgeable channel there is, so the wire shape
+    itself must be unable to say "success"."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reference: str = Field(min_length=1)
+
+
+@router.post("/{case_id}/checkout/return", response_model=CaseSessionDetail)
+def checkout_return(case_id: str, body: CheckoutReturnIn,
+                    request: Request) -> CaseSessionDetail:
+    """THE SECURITY RULE, stated where it is enforced: this route asserts
+    NOTHING about payment. ``body.reference`` is accepted and read by nobody —
+    it exists on the wire only because a real provider's return always carries
+    one, and pretending otherwise would misdescribe the shape a real
+    integration will need. The route MUTATES NOTHING: it re-reads the session
+    and returns the SAME detail a plain GET would, because "the return from
+    checkout" means exactly that — re-read this case — and nothing more.
+
+    Whether payment actually happened is decided ENTIRELY by whether
+    ``POST .../payment`` was separately called and landed a ``PaymentRecord``
+    (``CaseSession.payment_authorized`` — the one and only source of truth).
+    There is no code path from this request to that record: a forged
+    ``{"reference": "evt_fake", "status": "success"}`` 422s on the extra field
+    before it is even parsed, and a well-formed ``{"reference": "..."}`` changes
+    nothing it could not have learned from GET."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+    session = store.load(case_id)
     return _detail(case, session, settings)
 
 

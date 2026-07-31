@@ -12,6 +12,7 @@ import {
   fetchAssurance,
   fetchCaseSession,
   fetchRun,
+  postCheckoutReturn,
   postConfirm,
   postDetect,
   postPayment,
@@ -280,6 +281,7 @@ describe("the Deliver calls (slice 8) — no actor rides on any of them", () => 
     await postConfirm("case-a", {
       dispositions: { "30": "release", "19": "withhold" },
       acknowledged_flags: [30],
+      terms_accepted: true,
     });
     expect(calls[0]!.url).toBe("/api/case-sessions/case-a/confirm");
     expect(calls[0]!.init?.method).toBe("POST");
@@ -287,6 +289,7 @@ describe("the Deliver calls (slice 8) — no actor rides on any of them", () => 
     expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({
       dispositions: { "30": "release", "19": "withhold" },
       acknowledged_flags: [30],
+      terms_accepted: true,
     });
   });
 
@@ -307,6 +310,16 @@ describe("the Deliver calls (slice 8) — no actor rides on any of them", () => 
     expect(calls[0]!.init?.method).toBe("POST");
     expect(calls[0]!.init?.body).toBeUndefined();
     expect(calls[0]!.init?.headers).toBeUndefined();
+  });
+
+  it("the checkout return POSTs only the reference — no field could claim success", async () => {
+    const calls = capturingFetch();
+    await postCheckoutReturn("case-a", "chk_abc123");
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/checkout/return");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({
+      reference: "chk_abc123",
+    });
   });
 
   it("the artifact list GETs behind the release gate alone — even listing is disclosure", async () => {

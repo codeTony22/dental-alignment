@@ -219,6 +219,76 @@ class TestAssuranceProjection:
         assert store.load("neodent-gm").version == version_before
 
 
+# --- the disclosure gap: production.note (plan §10-E, finding 2026-07-28) ---------------
+
+SHARED_PART_NOTE = ("single construction part shared across sites identifying 2 "
+                    "distinct variants — per-variant construction parts needed")
+
+
+def with_note(r):
+    r["production"]["note"] = SHARED_PART_NOTE
+    return r
+
+
+class TestTheProductionNoteSurfaces:
+    """auto_flow.py already computes ``"single construction part shared across
+    sites identifying N distinct variants — per-variant construction parts
+    needed"`` into ``row["production"]["note"]`` on a multi-variant case. Before
+    this fix the assurance read picked the clamp fields out of that same block
+    and DROPPED the note — a two-variant case showed per-site GREEN verdicts
+    with nothing said. This surfaces it, verbatim, beside the clamp story."""
+
+    def test_the_note_rides_beside_the_clamp_fields(
+            self, settings, product_root):
+        client = landed_client(settings, product_root,
+                               [with_note(row(4)), with_note(row(13))])
+        body = client.get("/api/case-sessions/neodent-gm/assurance").json()
+        for site in body["sites"]:
+            assert site["production_note"] == SHARED_PART_NOTE
+            # the CLAMP fields the row already carried are untouched — the note
+            # sits BESIDE them, not instead of them
+            assert "clamp" in site
+
+    def test_a_single_variant_case_carries_no_note_at_all(
+            self, settings, product_root):
+        client = landed_client(settings, product_root, [row(4), row(13)])
+        body = client.get("/api/case-sessions/neodent-gm/assurance").json()
+        assert all(s["production_note"] is None for s in body["sites"])
+
+    def test_the_gate_word_stays_the_workers_own_verbatim(
+            self, settings, product_root):
+        """The escalation this finding demands lives in SORTING and in the
+        confirmation's acknowledgment gate (test_deliver.py) — never by
+        rewriting what the worker itself said the guidance was. ``AssuranceGate``
+        keeps its own documented promise: "the run's guidance verdict verbatim"."""
+        client = landed_client(settings, product_root,
+                               [with_note(row(4, level="ready")), row(13)])
+        body = client.get("/api/case-sessions/neodent-gm/assurance").json()
+        site = next(s for s in body["sites"] if s["tooth"] == 4)
+        assert site["gate"]["level"] == "ready"
+        assert site["gate"]["actions"] == []
+
+    def test_a_production_noted_row_sorts_pinned_first_even_though_ready(
+            self, settings, product_root):
+        """THE FLAG DECISION, made visible in ordering: a production-noted site
+        is at least as urgent as "action-needed" and pins ABOVE a clean ready
+        row — even though the run itself called it ready. The note's own words
+        are "cannot match", not "differs slightly"."""
+        client = landed_client(settings, product_root,
+                               [row(4, level="ready"),
+                                with_note(row(13, level="ready"))])
+        body = client.get("/api/case-sessions/neodent-gm/assurance").json()
+        assert [s["tooth"] for s in body["sites"]] == [13, 4]
+
+    def test_a_production_noted_row_still_outranks_a_merely_attention_row(
+            self, settings, product_root):
+        client = landed_client(settings, product_root,
+                               [row(4, level="attention"),
+                                with_note(row(13, level="ready"))])
+        body = client.get("/api/case-sessions/neodent-gm/assurance").json()
+        assert [s["tooth"] for s in body["sites"]] == [13, 4]
+
+
 # --- the fork, on the document the operator reads ---------------------------------------
 
 class TestTheAssuranceShowsTheFork:

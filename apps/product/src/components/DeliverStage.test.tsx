@@ -50,6 +50,8 @@ const CONFIRMED = {
     evidence_sha256: "c0ffee".padEnd(64, "0"),
     dispositions: { "30": "release", "19": "release" },
     acknowledged_flags: [30],
+    terms_accepted: true,
+    terms_version: "placeholder-v1",
   },
   release_preview: {
     file_count: 4,
@@ -284,9 +286,16 @@ describe("the delivery progression — Confirmed, Paid, Released (#6)", () => {
   it("the payment control names the case, the site count AND its stub nature", () => {
     const html = view({ detail: deliverableDetail(CONFIRMED) });
     expect(html).toContain('data-role="payment-stub"');
-    expect(html).toContain("Authorize payment (stub) — 2 sites on case case-a");
+    expect(html).toContain("Pay (stub) — 2 sites on case case-a");
     expect(html).toContain('data-role="payment-stub-note"');
     expect(html).toContain("no provider is contacted and no money moves");
+  });
+
+  it("the checkout screen shows a placeholder amount, never a real number (#10-A)", () => {
+    const html = view({ detail: deliverableDetail(CONFIRMED) });
+    expect(html).toContain('data-role="checkout-screen"');
+    expect(html).toContain('data-role="checkout-price"');
+    expect(html).toContain("PLACEHOLDER — pricing not yet defined");
   });
 
   it("once paid, the record's provider and time show, and release becomes current", () => {
@@ -316,6 +325,49 @@ describe("the delivery progression — Confirmed, Paid, Released (#6)", () => {
     expect(html.indexOf('data-role="release-disclosure"')).toBeLessThan(
       html.indexOf('data-role="release"'),
     );
+  });
+});
+
+describe("the agreement — confirm and accept terms is one act (plan §10-A)", () => {
+  it("the checkbox and its PLACEHOLDER banner sit right above the confirm button", () => {
+    const html = view({ acknowledged: [30] });
+    expect(html).toContain('data-role="terms-acceptance"');
+    expect(html).toContain('data-role="terms-placeholder-banner"');
+    expect(html).toContain("PLACEHOLDER");
+    expect(html).toContain('data-role="terms-checkbox"');
+    expect(html.indexOf('data-role="terms-acceptance"')).toBeLessThan(
+      html.indexOf('data-role="confirm"'),
+    );
+  });
+
+  it("the terms text names the case's own site count", () => {
+    const html = view();
+    expect(html).toContain("all 2 sites in this case");
+  });
+
+  it("unaccepted terms block confirming even over a clean, acknowledged table", () => {
+    const html = view({ acknowledged: [30], termsAccepted: false });
+    expect(html).toMatch(/data-role="confirm"[^>]*disabled/);
+    expect(html).toContain("the terms — read and accept them before confirming");
+  });
+
+  it("accepted terms plus a clean table arms the confirm", () => {
+    const html = view({ acknowledged: [30], termsAccepted: true });
+    expect(html).toMatch(/data-role="confirm"(?![^>]*disabled)/);
+    expect(html).not.toContain("read and accept them before confirming");
+  });
+
+  it("the checkbox reflects the accepted state either way", () => {
+    const unchecked = view({ termsAccepted: false });
+    expect(unchecked).not.toMatch(/data-role="terms-checkbox"[^>]*checked/);
+    const checked = view({ termsAccepted: true });
+    expect(checked).toMatch(/data-role="terms-checkbox"[^>]*checked/);
+  });
+
+  it("the modal footer carries the SAME agreement — one checkbox, stated twice", () => {
+    const html = view({ reportOpen: true, acknowledged: [30] });
+    const banners = html.match(/data-role="terms-acceptance"/g) ?? [];
+    expect(banners.length).toBe(2); // the progression's Confirmed step, the modal footer
   });
 });
 
@@ -432,6 +484,65 @@ describe("a reworked row says which of its numbers predate the rework (finding E
 
   it("a row the run produced carries no such line at all", () => {
     expect(view({ reportOpen: true })).not.toContain('data-role="stale-metrics"');
+  });
+});
+
+describe("the production note — a disclosure gap closed (plan §10-E)", () => {
+  const NOTE =
+    "single construction part shared across sites identifying 2 distinct " +
+    "variants — per-variant construction parts needed";
+
+  it("rides in the ROW beside the clamp story, verbatim from the worker", () => {
+    const html = view({
+      reportOpen: true,
+      assurance: {
+        kind: "ok",
+        data: assuranceView({
+          sites: [assuranceSite({ tooth: 19, production_note: NOTE })],
+        }),
+      },
+    });
+    expect(html).toContain('data-role="production-note"');
+    expect(html).toContain(NOTE);
+  });
+
+  it("also rides in the row-expand detail, beside the relief clamp", () => {
+    const html = view({
+      reportOpen: true,
+      expanded: [19],
+      assurance: {
+        kind: "ok",
+        data: assuranceView({
+          sites: [assuranceSite({ tooth: 19, production_note: NOTE })],
+        }),
+      },
+    });
+    expect(html).toContain('data-role="production-note-detail"');
+  });
+
+  it("a noted row offers the withhold control and demands acknowledgment even though it reads ready", () => {
+    // THE FLAG DECISION, visible in the UI: the row is NOT status "flagged" —
+    // it is the shared-part note alone earning the same AM-12 treatment
+    const html = view({
+      reportOpen: true,
+      assurance: {
+        kind: "ok",
+        data: assuranceView({
+          sites: [assuranceSite({ tooth: 19, status: "ready", production_note: NOTE })],
+        }),
+      },
+    });
+    expect(html).toMatch(/data-tooth="19"[^>]*data-status="ready"/);
+    expect(html).toContain('data-role="disposition-withhold"');
+    expect(html).toContain('data-role="acknowledge-flag"');
+    expect(html).toContain(
+      "tooth 19 shares a construction part with a differently-declared variant",
+    );
+  });
+
+  it("a clean row carries no production note at all", () => {
+    const html = view({ reportOpen: true });
+    expect(html).not.toContain('data-role="production-note"');
   });
 });
 

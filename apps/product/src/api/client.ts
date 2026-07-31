@@ -193,6 +193,11 @@ export interface ConfirmationView {
   /** tooth-as-string → "release" | "withhold" (JSON object keys are strings). */
   dispositions: Record<string, string>;
   acknowledged_flags: number[];
+  /** The agreement's new home (plan §10-A): confirm and accept terms is ONE
+   * act. False on a confirmation sealed before the concept existed — never
+   * implied true. */
+  terms_accepted: boolean;
+  terms_version: string | null;
 }
 
 /** The payment stub's record: provider "stub" keeps it honest forever. */
@@ -689,6 +694,16 @@ export interface AssuranceSite {
   deviation_p90_mm: number | null;
   gate: AssuranceGate;
   clamp: AssuranceClamp;
+  /** THE DISCLOSURE GAP THIS FIELD CLOSES (plan §10-E, finding 2026-07-28): the
+   * worker's own note when one construction part is shared across sites that
+   * declared DIFFERENT variants — "single construction part shared across
+   * sites identifying N distinct variants — per-variant construction parts
+   * needed". Verbatim from ``row["production"]["note"]``; null on every
+   * single-variant case. A site carrying this note needs its OWN row
+   * acknowledgment before it can be released, the same AM-12 rule a flagged
+   * site earns (domain/deliver.ackRequired) — the note's own words are "cannot
+   * match", not "differs slightly". */
+  production_note: string | null;
   /** The numbers in this row that PREDATE an operator rework (the BFF's own list).
    * Adjust re-derives the deviation scalars and the clocking over the new pose; the
    * rim agreement and the guidance cannot be re-derived from the shipped record, so
@@ -736,10 +751,13 @@ export function qcImageUrl(caseId: string, filename: string): string {
 // identity; the acts themselves are the record now, and real identity arrives with
 // real auth (plan §8 / phase-2). Deliberate — do not re-add it as a missing header.
 
-/** The confirmation's wire body: dispositions keyed tooth-as-string. */
+/** The confirmation's wire body: dispositions keyed tooth-as-string, plus the
+ * terms acceptance (plan §10-A) — required, mirroring the payment stub's
+ * ``authorize`` shape: the act happens by being SAID, never assumed. */
 export interface ConfirmBody {
   dispositions: Record<string, "release" | "withhold">;
   acknowledged_flags: number[];
+  terms_accepted: boolean;
 }
 
 export async function postConfirm(
@@ -780,6 +798,29 @@ export async function postRelease(
   return fetchJson<CaseSessionDetail>(
     `/api/case-sessions/${encodeURIComponent(caseId)}/release`,
     { method: "POST" },
+  );
+}
+
+/**
+ * THE RETURN FROM CHECKOUT (plan §10-A: "a checkout screen and a return").
+ * ``reference`` is an opaque identifier only — this call asserts NOTHING about
+ * payment, and the response is the SAME whole-detail shape every other action
+ * returns: re-read the case, trust nothing the return leg itself claimed. The
+ * actual authorization comes from ``postPayment`` alone; this exists so the UI
+ * can model "coming back" without ever needing to interpret a "success" value
+ * from an untrusted redirect.
+ */
+export async function postCheckoutReturn(
+  caseId: string,
+  reference: string,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/checkout/return`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reference }),
+    },
   );
 }
 

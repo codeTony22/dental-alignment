@@ -35,6 +35,7 @@ import {
   fetchArtifactBlob,
   fetchArtifacts,
   fetchAssurance,
+  postCheckoutReturn,
   postConfirm,
   postPayment,
   postRelease,
@@ -55,9 +56,11 @@ import {
   formatBytes,
   groupArtifacts,
   isEvidenceDrift409,
+  needsAcknowledgment,
   releaseDisclosureWords,
   releaseSteps,
   staleMetricsWords,
+  termsText,
   withholdOffered,
   type Disposition,
   type DispositionMap,
@@ -114,6 +117,43 @@ function AdjustmentsNote({ words }: { readonly words: string }) {
   );
 }
 
+/** THE AGREEMENT, WHEREVER THE CONFIRM IS (plan §10-A: "confirm and accept
+ * terms" is one act). Same discipline as ``ConfirmBlockers``/``AdjustmentsNote``
+ * — one derivation, one renderer, beside each of the two places the surface
+ * offers to sign, so the checkbox and the button can never be in the same
+ * place. The placeholder banner is UNMISSABLE on purpose (client 2026-07-27's
+ * own rule for the payment stub, applied to the terms text too): the real
+ * legal language is the client's to supply. */
+function TermsAcceptance({
+  siteCount,
+  accepted,
+  disabled,
+  onChange,
+}: {
+  readonly siteCount: number;
+  readonly accepted: boolean;
+  readonly disabled: boolean;
+  readonly onChange: (accepted: boolean) => void;
+}) {
+  return (
+    <div data-role="terms-acceptance" className="terms-block">
+      <p data-role="terms-placeholder-banner" className="terms-block__placeholder">
+        PLACEHOLDER — pending the client&rsquo;s final Terms and Conditions text.
+      </p>
+      <label className="terms-block__label">
+        <input
+          type="checkbox"
+          data-role="terms-checkbox"
+          checked={accepted}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+        <span data-role="terms-text">{termsText(siteCount)}</span>
+      </label>
+    </div>
+  );
+}
+
 interface AssuranceRowProps {
   readonly caseId: string;
   readonly site: AssuranceSite;
@@ -153,7 +193,10 @@ function AssuranceRow({
         data-tooth={site.tooth}
         data-status={site.status ?? "unknown"}
         data-flagged={site.status === "flagged"}
-        className={site.status === "flagged" ? "assurance-row--flagged" : undefined}
+        data-needs-acknowledgment={needsAcknowledgment(site)}
+        className={
+          needsAcknowledgment(site) ? "assurance-row--flagged" : undefined
+        }
       >
         <td>
           <strong>Tooth {site.tooth}</strong>{" "}
@@ -236,6 +279,17 @@ function AssuranceRow({
             {stale !== null && (
               <span data-role="stale-metrics" className="assurance-sub assurance-stale">
                 {stale}
+              </span>
+            )}
+            {/* THE DISCLOSURE GAP THIS CLOSES (plan §10-E): a shared construction
+                part across differently-declared variants, verbatim from the
+                worker. Beside the clamp story, not instead of it — and it rides
+                in the ROW like ``stale-metrics`` does, because the acknowledgment
+                this earns (``needsAcknowledgment``) applies whether or not the
+                report is ever opened. */}
+            {site.production_note !== null && (
+              <span data-role="production-note" className="chip chip--production-note">
+                {site.production_note}
               </span>
             )}
           </div>
@@ -332,6 +386,12 @@ function AssuranceRow({
                     <dd>{site.clamp.reason ?? "no reason recorded"}</dd>
                   </>
                 )}
+                {site.production_note !== null && (
+                  <>
+                    <dt>Production</dt>
+                    <dd data-role="production-note-detail">{site.production_note}</dd>
+                  </>
+                )}
               </dl>
               <div className="verification-panel__images">
                 {site.qc_images.map((name) => (
@@ -365,6 +425,9 @@ export interface DeliverStageViewProps {
   /** The report modal's own state (client 2026-07-27 #5) — the container owns it so
    * Esc and the backdrop can close it; the View renders it. */
   readonly reportOpen?: boolean;
+  /** The agreement (plan §10-A) — false until the operator ticks it; the
+   * container owns it so it can be reset on a re-confirm cycle. */
+  readonly termsAccepted?: boolean;
   readonly phase?: DeliverPhase;
   /** A refusal that is NOT the drift 409 — rendered in the backend's words. */
   readonly actionError?: string | null;
@@ -379,6 +442,7 @@ export interface DeliverStageViewProps {
   readonly onToggleExpand: (tooth: number) => void;
   readonly onOpenReport?: () => void;
   readonly onCloseReport?: () => void;
+  readonly onTermsChange?: (accepted: boolean) => void;
   readonly onConfirm: () => void;
   readonly onPay: () => void;
   readonly onRelease: () => void;
@@ -395,6 +459,10 @@ export function DeliverStageView({
   acknowledged,
   expanded,
   reportOpen = false,
+  // Defaults TRUE, mirroring domain/deliver.confirmBlockers's own default
+  // (plan §10-A): every test written before the terms step existed keeps its
+  // prior behavior unchanged; the container passes the real checkbox state.
+  termsAccepted = true,
   phase = "idle",
   actionError = null,
   staleWords = null,
@@ -405,6 +473,7 @@ export function DeliverStageView({
   onToggleExpand,
   onOpenReport = () => undefined,
   onCloseReport = () => undefined,
+  onTermsChange = () => undefined,
   onConfirm,
   onPay,
   onRelease,
@@ -416,7 +485,7 @@ export function DeliverStageView({
   // ONE derivation, read by the stage's confirm and the modal footer's alike
   const blockers =
     assurance.kind === "ok"
-      ? confirmBlockers(assurance.data, dispositions, acknowledged)
+      ? confirmBlockers(assurance.data, dispositions, acknowledged, termsAccepted)
       : [];
   const confirmable = assurance.kind === "ok" && blockers.length === 0 && phase === "idle";
   // ONE reading of the fork too — the stage's copy and the modal's are the same string
@@ -487,6 +556,15 @@ export function DeliverStageView({
                     <>
                       {/* what the signature is about to seal, before it is given */}
                       {forkWords !== null && <AdjustmentsNote words={forkWords} />}
+                      {/* THE AGREEMENT (plan §10-A): confirm and accept terms is
+                          one act — the checkbox sits directly above the button
+                          it gates. */}
+                      <TermsAcceptance
+                        siteCount={detail.sites.length}
+                        accepted={termsAccepted}
+                        disabled={phase !== "idle"}
+                        onChange={onTermsChange}
+                      />
                       <div className="release-step__actions">
                         {confirmButton("step-confirm")}
                       </div>
@@ -500,24 +578,37 @@ export function DeliverStageView({
 
                   {step.id === "paid" && step.state === "current" && (
                     <div className="release-step__actions">
-                      {/* labelled AS a stub, in words, on the control itself —
-                          the record says provider "stub" for the same reason */}
-                      <button
-                        type="button"
-                        data-role="payment-stub"
-                        className="button button--secondary"
-                        disabled={phase !== "idle"}
-                        onClick={onPay}
-                      >
-                        Authorize payment (stub) — {detail.sites.length} site
-                        {detail.sites.length === 1 ? "" : "s"} on case{" "}
-                        {detail.case.id}
-                      </button>
-                      <p data-role="payment-stub-note" className="panel__hint">
-                        A STUB: no provider is contacted and no money moves. The record
-                        says so permanently (provider “stub”), so a stub-authorized
-                        case stays tellable from a paid one once a real provider lands.
-                      </p>
+                      {/* THE CHECKOUT SCREEN (plan §10-A: "a checkout screen and
+                          a return"). Pricing is a PLACEHOLDER on purpose — this
+                          codebase must never render a number a lab could mistake
+                          for a real quote. */}
+                      <div data-role="checkout-screen" className="checkout-screen">
+                        <p data-role="checkout-price" className="checkout-screen__price">
+                          Amount due: <strong>PLACEHOLDER — pricing not yet defined</strong>
+                        </p>
+                        {/* labelled AS a stub, in words, on the control itself —
+                            the record says provider "stub" for the same reason */}
+                        <button
+                          type="button"
+                          data-role="payment-stub"
+                          className="button button--secondary"
+                          disabled={phase !== "idle"}
+                          onClick={onPay}
+                        >
+                          Pay (stub) — {detail.sites.length} site
+                          {detail.sites.length === 1 ? "" : "s"} on case{" "}
+                          {detail.case.id}
+                        </button>
+                        <p data-role="payment-stub-note" className="panel__hint">
+                          A STUB: no provider is contacted and no money moves. The
+                          record says so permanently (provider “stub”), so a
+                          stub-authorized case stays tellable from a paid one once
+                          a real provider lands. Clicking this simulates BOTH legs
+                          of a real checkout: the authorization itself, then the
+                          return — which asserts nothing and simply re-reads this
+                          case's true state.
+                        </p>
+                      </div>
                     </div>
                   )}
 
@@ -802,6 +893,15 @@ export function DeliverStageView({
                 {/* the fork rides in that seal, so it is legible beside the act —
                     the table shows the run's facts, this shows what was DONE */}
                 <AdjustmentsNote words={adjustmentsWords(assurance.data)} />
+                {/* the agreement, beside the act here too (plan §10-A) — the
+                    footer is the other place a confirm (or a re-confirm) fires
+                    from, so it needs the same checkbox the stage does */}
+                <TermsAcceptance
+                  siteCount={detail.sites.length}
+                  accepted={termsAccepted}
+                  disabled={phase !== "idle"}
+                  onChange={onTermsChange}
+                />
                 <ConfirmBlockers blockers={blockers} />
               </div>
               <div className="decode-ack__actions">
@@ -839,6 +939,11 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
   const [dispositions, setDispositions] = useState<DispositionMap>({});
   const [acknowledged, setAcknowledged] = useState<readonly number[]>([]);
   const [expanded, setExpanded] = useState<readonly number[]>([]);
+  // THE AGREEMENT (plan §10-A): unticked until the operator explicitly checks
+  // it — never pre-filled, the same posture every effective choice already
+  // takes (ARCHITECTURE.md §6: the lab chooses, the software never chooses
+  // for them).
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [phase, setPhase] = useState<DeliverPhase>("idle");
   const [actionError, setActionError] = useState<string | null>(null);
@@ -868,9 +973,11 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
     setAssurance({ kind: "loading" });
     setStaleWords(null);
     // stale acts must not survive a reload: the operator re-reads what is
-    // actually there and dispositions again (the re-confirm flow's honesty)
+    // actually there, re-accepts the terms, and dispositions again (the
+    // re-confirm flow's honesty)
     setDispositions({});
     setAcknowledged([]);
+    setTermsAccepted(false);
     void fetchAssurance(caseId).then((result) => {
       if (mountedRef.current) setAssurance(result);
     });
@@ -945,12 +1052,37 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
     // the report closes on a confirmation: the reading is done, and the progression
     // the operator just advanced is on the stage behind it
     setReportOpen(false);
-    void postConfirm(caseId, confirmWireBody(dispositions, acknowledged)).then(settle);
-  }, [caseId, dispositions, acknowledged, settle]);
+    void postConfirm(
+      caseId,
+      confirmWireBody(dispositions, acknowledged, termsAccepted),
+    ).then(settle);
+  }, [caseId, dispositions, acknowledged, termsAccepted, settle]);
 
+  const handleTermsChange = useCallback((accepted: boolean) => {
+    setTermsAccepted(accepted);
+  }, []);
+
+  /**
+   * THE CHECKOUT + RETURN (plan §10-A). Authorizing is the trusted act
+   * (``postPayment`` — the stand-in for a provider's own confirmation); the
+   * RETURN LEG that follows carries only a locally-made identifier and
+   * asserts nothing — its response is what actually settles the UI, modeling
+   * "you're back, here is what is actually true" rather than trusting
+   * whatever brought the browser back. If authorization itself refuses,
+   * there is no checkout to "return" from, so it settles right there.
+   */
   const handlePay = useCallback(() => {
     setPhase("paying");
-    void postPayment(caseId).then(settle);
+    void postPayment(caseId).then((result) => {
+      if (result.kind !== "ok") {
+        settle(result);
+        return;
+      }
+      const reference = `chk_${Date.now().toString(36)}_${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      void postCheckoutReturn(caseId, reference).then(settle);
+    });
   }, [caseId, settle]);
 
   const handleRelease = useCallback(() => {
@@ -1009,6 +1141,7 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
       acknowledged={acknowledged}
       expanded={expanded}
       reportOpen={reportOpen}
+      termsAccepted={termsAccepted}
       phase={phase}
       actionError={actionError}
       staleWords={staleWords}
@@ -1019,6 +1152,7 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
       onToggleExpand={handleToggleExpand}
       onOpenReport={() => setReportOpen(true)}
       onCloseReport={() => setReportOpen(false)}
+      onTermsChange={handleTermsChange}
       onConfirm={handleConfirm}
       onPay={handlePay}
       onRelease={handleRelease}

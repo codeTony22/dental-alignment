@@ -1337,6 +1337,15 @@ class TestStatusesAreNeverClientWritable:
         # the payment stub (slice 8, AM-11): {"authorize": true} — the explicit
         # act, fail-closed, provider recorded as "stub"; no other field exists
         ("POST", "/api/case-sessions/{case_id}/payment"),
+        # THE CHECKOUT RETURN LEG (plan §10-A: "a checkout screen and a return").
+        # An operator ACT in this allowlist's structural sense even though it
+        # mutates nothing: it is a non-GET route, so the doctrine still applies —
+        # every non-GET sits on this list, named, with its body checked for a
+        # status-shaped field like every other. {"reference": "..."} is an
+        # opaque identifier, never a claimed outcome; there is no field this body
+        # COULD carry a "payment succeeded" claim in, which is the whole point
+        # (bff/resources/deliver.checkout_return's own docstring).
+        ("POST", "/api/case-sessions/{case_id}/checkout/return"),
         # release = disclosure (slice 8, AM-1): body-less — everything it consumes
         # (confirmation, dispositions, payment) is already the session's; validity
         # is judged by RE-DERIVING the evidence, never by trusting the record

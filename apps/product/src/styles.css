@@ -3415,3 +3415,74 @@ button.package-files__link:hover {
   font-size: 11px;
   color: var(--color-text-muted);
 }
+
+/* THE AGREEMENT (plan §10-A): confirm and accept terms, at the commercial moment.
+   The placeholder banner is deliberately UNMISSABLE — dashed, red-toned — so nobody
+   mistakes stand-in copy for the client's real legal text on screen. */
+.terms-block {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.terms-block__placeholder {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-danger);
+  background: #fdecea;
+  border: 1px dashed var(--color-danger);
+  border-radius: var(--radius-md);
+}
+
+.terms-block__label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.terms-block__label input[type="checkbox"] {
+  margin-top: 2px;
+}
+
+/* THE CHECKOUT SCREEN (plan §10-A: "a checkout screen and a return"). The price
+   line is a PLACEHOLDER, always — this app must never render a number a lab could
+   mistake for a real quote. */
+.checkout-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.checkout-screen__price {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: var(--color-amber-bg);
+  border: 1px dashed var(--color-amber-border);
+  border-radius: var(--radius-md);
+  color: var(--color-amber);
+}
+
+/* THE DISCLOSURE GAP CLOSED (plan §10-E): a shared-construction-part conflict,
+   worn like the relief-clamp chip beside it — amber, a fact to weigh, not yet a
+   refusal. */
+.chip--production-note {
+  display: inline-block;
+  max-width: 100%;
+  white-space: normal;
+  background: var(--color-amber-bg);
+  color: var(--color-amber);
+  border: 1px solid var(--color-amber-border);
+}

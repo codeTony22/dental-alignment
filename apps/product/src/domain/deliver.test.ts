@@ -19,10 +19,12 @@ import {
   formatBytes,
   groupArtifacts,
   isEvidenceDrift409,
+  needsAcknowledgment,
   releaseBlockers,
   releaseDisclosureWords,
   releaseSteps,
   staleMetricsWords,
+  termsText,
   withholdOffered,
 } from "./deliver";
 import {
@@ -91,11 +93,92 @@ describe("ackRequired — which rows render the acknowledgment tick", () => {
 });
 
 describe("confirmWireBody — the acts, wire-shaped", () => {
-  it("keys dispositions by tooth-as-string and lists acknowledged flags", () => {
-    expect(confirmWireBody({ 30: "release", 19: "withhold" }, [30])).toEqual({
+  it("keys dispositions by tooth-as-string, lists acknowledged flags, states terms", () => {
+    expect(confirmWireBody({ 30: "release", 19: "withhold" }, [30], true)).toEqual({
       dispositions: { "30": "release", "19": "withhold" },
       acknowledged_flags: [30],
+      terms_accepted: true,
     });
+  });
+
+  it("a false acceptance rides the wire honestly too — the server is the real gate", () => {
+    expect(confirmWireBody({}, [], false)).toEqual({
+      dispositions: {},
+      acknowledged_flags: [],
+      terms_accepted: false,
+    });
+  });
+});
+
+describe("needsAcknowledgment — AM-12 extended to a production disclosure (plan §10-E)", () => {
+  it("a flagged site needs it, same as always", () => {
+    expect(needsAcknowledgment(flaggedAssuranceSite())).toBe(true);
+  });
+
+  it("a clean ready site needs nothing", () => {
+    expect(needsAcknowledgment(assuranceSite())).toBe(false);
+  });
+
+  it("a READY site carrying a production_note needs it too — the flag decision", () => {
+    // the note's own words are "cannot match", not "differs slightly": a
+    // multi-variant case FLAGS rather than merely annotating (plan §10-E)
+    const noted = assuranceSite({
+      status: "ready",
+      production_note:
+        "single construction part shared across sites identifying 2 distinct " +
+        "variants — per-variant construction parts needed",
+    });
+    expect(needsAcknowledgment(noted)).toBe(true);
+    expect(withholdOffered(noted)).toBe(true);
+    expect(ackRequired(noted, "release")).toBe(true);
+    expect(ackRequired(noted, "withhold")).toBe(false);
+  });
+
+  it("the blocker names the true reason, never an unfired flag", () => {
+    const noted = assuranceSite({
+      tooth: 4,
+      status: "ready",
+      production_note: "single construction part shared across sites …",
+    });
+    const view = assuranceView({ sites: [noted] });
+    const blockers = confirmBlockers(view, {}, []);
+    expect(blockers).toEqual([
+      "tooth 4 shares a construction part with a differently-declared variant" +
+        " — releasing it needs its own acknowledgment",
+    ]);
+    expect(blockers[0]).not.toContain("is flagged");
+  });
+});
+
+describe("confirmBlockers — the terms are the first blocker (plan §10-A)", () => {
+  it("an unaccepted terms checkbox blocks confirming even over a clean table", () => {
+    const clean = assuranceView({ sites: [assuranceSite()] });
+    expect(confirmBlockers(clean, {}, [], false)).toEqual([
+      "the terms — read and accept them before confirming",
+    ]);
+  });
+
+  it("accepted terms plus a clean table is confirmable", () => {
+    const clean = assuranceView({ sites: [assuranceSite()] });
+    expect(confirmBlockers(clean, {}, [], true)).toEqual([]);
+  });
+
+  it("omitting the argument defaults to accepted — every pre-existing caller", () => {
+    const clean = assuranceView({ sites: [assuranceSite()] });
+    expect(confirmBlockers(clean, {}, [])).toEqual([]);
+  });
+});
+
+describe("termsText — the placeholder (owed: the client's real legal text)", () => {
+  it("names the case's own site count", () => {
+    expect(termsText(2)).toContain("all 2 sites in this case");
+    expect(termsText(1)).toContain("all 1 site in this case");
+    expect(termsText(1)).not.toContain("1 sites");
+  });
+
+  it("says what accepting means", () => {
+    expect(termsText(3)).toContain("I accept the alignment as shown");
+    expect(termsText(3)).toContain("authorize release of the deliverables");
   });
 });
 
