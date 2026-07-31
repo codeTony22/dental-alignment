@@ -15,6 +15,7 @@ import type {
   AdjustResultView,
   ApiResult,
   CorrespondencePairBody,
+  LandmarkView,
   SitePreviewPayload,
   SiteStatus,
   SiteView,
@@ -22,7 +23,12 @@ import type {
 
 // --- the toolbox ---------------------------------------------------------------------
 
-export type AdjustToolId = "fit-by-points" | "best-fit" | "rotation" | "mark-trench";
+export type AdjustToolId =
+  | "fit-by-points"
+  | "best-fit"
+  | "rotation"
+  | "mark-trench"
+  | "auto-mark";
 
 export interface AdjustToolInfo {
   readonly id: AdjustToolId;
@@ -31,8 +37,8 @@ export interface AdjustToolInfo {
   readonly oneLiner: string;
 }
 
-/** The four tools in the plan's own order — fit by points, best fit, rotation dial,
- * mark trench. One is visible at a time; the others are one click away. */
+/** The five tools in the plan's own order — fit by points, best fit, rotation dial,
+ * mark trench, auto-mark. One is visible at a time; the others are one click away. */
 export const ADJUST_TOOLS: readonly AdjustToolInfo[] = [
   {
     id: "fit-by-points",
@@ -61,6 +67,13 @@ export const ADJUST_TOOLS: readonly AdjustToolInfo[] = [
     oneLiner:
       "Click the coded trench on the scan; the cap turns so its nearest code " +
       "feature lands there.",
+  },
+  {
+    id: "auto-mark",
+    label: "Auto-mark",
+    oneLiner:
+      "The software marks the points on the library part — you match the same spot " +
+      "on the scan, in order. Every proposed point already has a valid lever arm.",
   },
 ];
 
@@ -378,6 +391,75 @@ export function applyBlockedReason(drafts: readonly PairDraft[]): string | null 
     }.`;
   }
   return null;
+}
+
+// --- auto-mark: the software proposes the part half (client 2026-07-29, item 3) ------
+//
+// "We also need another tool where we automatically mark the points in the library and
+// the client has to match the same points on the scan." The worker already offers this
+// read (GET .../sites/{tooth}/landmarks → `clock_landmarks`, best lever arm first,
+// filtered to features that pass `PartFeature.defines_rotation`) — this half turns each
+// proposed landmark into a PairDraft whose PART half is already filled, reusing every
+// existing pair mechanic (`withPick`, `pairSlot`, `pairPrompt`, `pairBody`,
+// `applyBlockedReason`) rather than inventing a second one.
+//
+// THIS STRUCTURALLY PREVENTS THE SCAN-SIDE LEVER REFUSAL (the worker's
+// `require_clock_lever`, the guard `spanLeverCaution` above can only WARN about for a
+// free click): every proposed point already passed `PartFeature.defines_rotation`, so
+// its lever arm can never be inside the axis. A pair built on a served landmark cannot
+// become the diametral span across the screw access that guard exists to catch — not
+// because the operator was careful, but because no landmark offered here could ever
+// seed one. The operator's whole remaining job is finding the SAME feature in a noisy
+// scan: the one half only a human can do.
+
+/**
+ * One draft per proposed landmark, the part half already filled from the worker's own
+ * feature geometry — in the part's CANONICAL frame, the same frame a pane-1 click would
+ * produce (`clock_landmarks`' own contract). `pairSlot` therefore reads these drafts as
+ * already past "part" the moment they exist: the operator's next click is always the
+ * scan half, in the SAME order the landmarks were served (best lever arm first).
+ */
+export function autoMarkDrafts(landmarks: readonly LandmarkView[]): PairDraft[] {
+  return landmarks.map((landmark) => ({
+    id: `auto-${landmark.id}`,
+    span: false,
+    partPoint: [...landmark.point],
+    scanPoint: null,
+    scanPointEnd: null,
+  }));
+}
+
+/** One proposed landmark's own identity, in words — WHAT it is and how far out on the
+ * part it sits, so the operator knows why this is the one being asked for. */
+export function landmarkLabel(landmark: LandmarkView): string {
+  return `${landmark.kind} — lever arm ${landmark.lever_arm_mm.toFixed(2)}mm`;
+}
+
+/** Which proposed landmark seeded this draft, in words — null for a draft auto-mark did
+ * not create (the fit-by-points flow's own drafts carry no server identity to show, and
+ * this must render nothing for them rather than guessing). */
+export function autoMarkSourceLabel(
+  draft: PairDraft,
+  landmarks: readonly LandmarkView[],
+): string | null {
+  const landmark = landmarks.find((l) => `auto-${l.id}` === draft.id);
+  return landmark !== undefined ? landmarkLabel(landmark) : null;
+}
+
+/** The auto-mark tool's own header line — a count and the order promise, or the honest
+ * word when the declared part carries nothing to propose (a template with no coded
+ * relief at all: `clock_landmarks` filters everything out rather than guessing one). */
+export function autoMarkSummary(landmarks: readonly LandmarkView[]): string {
+  if (landmarks.length === 0) {
+    return (
+      "This part carries no rotation-defining landmarks to propose — try fit by " +
+      "points instead."
+    );
+  }
+  return (
+    `${landmarks.length} landmark${landmarks.length === 1 ? "" : "s"} proposed, best ` +
+    `lever arm first — match each one on the scan, in the same order they are numbered.`
+  );
 }
 
 /** One pair's own line in the list: what it is, and what it still needs. */

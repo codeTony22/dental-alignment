@@ -8,8 +8,15 @@ Four tools, all the same shape: a GATED PROPOSAL over one site's shipped pose.
   - ``POST .../sites/{tooth}/fit-by-points`` {pairs}          — incl. the TWO-POINT SPAN
   - ``POST .../sites/{tooth}/best-fit``      {matching_diameter_mm, apply}
 
-plus the read the panes open on: ``GET .../sites/{tooth}/seated`` — the shipped pose's
-own deviation colouring, the same payload shape Declare's preview serves.
+plus the reads the panes open on: ``GET .../sites/{tooth}/seated`` — the shipped pose's
+own deviation colouring, the same payload shape Declare's preview serves — and
+``GET .../sites/{tooth}/landmarks`` — AUTO-MARK's proposal (client 2026-07-29, item 3:
+"another tool where we automatically mark the points in the library and the client has
+to match the same points on the scan"). The part half of a correspondence pair has
+always been the easy half; this route serves it, best clock evidence first
+(``case_prep.application.adjust.clock_landmarks``), so ``fit-by-points`` gains a mode
+where the operator's whole job is finding the SAME feature in the scan — a pair built
+on a served landmark cannot fail the part-side lever rule by construction.
 
 WHAT THIS RESOURCE OWNS, AND WHAT IT REFUSES TO OWN. Every millimetre, gate and
 refusal sentence is ``case_prep.application.adjust``'s (plan §1.3: presentation may not
@@ -53,7 +60,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from case_prep.application.adjust import (AdjustInvalid, AdjustOutcome, AdjustRefused,
                                           AlreadyOptimal, Correspondence,
                                           align_to_correspondence, align_to_mark,
-                                          best_fit_site, rotate_site, seated_payload)
+                                          best_fit_site, clock_landmarks, load_site,
+                                          rotate_site, seated_payload)
 from case_prep.application.cases import CaseRecord
 from case_prep.application.catalog import UnknownSelection
 from case_prep.application.detection import ScanUnreadable
@@ -448,6 +456,31 @@ def site_seated(case_id: str, tooth: int, request: Request) -> dict:
     _settings, _store, case, _run, run_dir = _tool_context(request, case_id, tooth)
     try:
         return seated_payload(case, run_dir, tooth)
+    except (AdjustInvalid, AdjustRefused, UnknownSelection, ScanUnreadable) as exc:
+        _refuse(exc)
+
+
+@router.get("/{case_id}/sites/{tooth}/landmarks")
+def site_landmarks(case_id: str, tooth: int, request: Request) -> List[dict]:
+    """AUTO-MARK'S PROPOSAL (client 2026-07-29, item 3) — the part half of every
+    correspondence pair, read off the site's declared template instead of hunted for by
+    eye. Best clock evidence FIRST (``clock_landmarks`` sorts by lever arm descending):
+    the operator's first click buys the most.
+
+    Every landmark served here has already passed ``PartFeature.defines_rotation``, so
+    a pair built on one cannot fail the part-side lever rule — and STRUCTURALLY, not by
+    a warning, it also cannot become the diametral span the scan-side lever guard
+    (``require_clock_lever``) exists to catch: a landmark drawn from the coded band
+    never sits near the axis, so the pair it seeds never can either. The operator's
+    whole remaining job is recognising the SAME feature in a noisy scan — the one half
+    only a human can do.
+
+    A pure read, GET-only like ``seated`` (no allowlist entry needed: the allowlist
+    governs writes). It stands on the same precondition — a done run, a verdict for
+    this tooth, a site on ready|flagged|adjusted — and writes nothing at all."""
+    _settings, _store, case, _run, run_dir = _tool_context(request, case_id, tooth)
+    try:
+        return clock_landmarks(load_site(case, run_dir, tooth).template)
     except (AdjustInvalid, AdjustRefused, UnknownSelection, ScanUnreadable) as exc:
         _refuse(exc)
 

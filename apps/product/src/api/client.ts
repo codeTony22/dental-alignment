@@ -979,3 +979,34 @@ export async function postMarkedSite(
     body: JSON.stringify({ tooth, center: [...center] }),
   });
 }
+
+// --- Auto-mark (client 2026-07-29, item 3): the software proposes the part half -------
+
+/**
+ * ONE PROPOSED LANDMARK (GET .../sites/{tooth}/landmarks), the worker's own
+ * ``clock_landmarks`` row verbatim: ``point`` is already in the part's CANONICAL
+ * frame — the same frame pane 1 renders and a pane-1 click would produce — so it can
+ * fill a correspondence pair's part half exactly as a free click does. Served best
+ * lever arm FIRST: rotation error scales as 1/lever, so the first landmark is the one
+ * whose match buys the most.
+ */
+export interface LandmarkView {
+  id: string;
+  kind: string;
+  point: number[];
+  lever_arm_mm: number;
+  azimuth_deg: number;
+}
+
+/**
+ * AUTO-MARK'S READ: the site's declared part's rotation-defining landmarks, filtered
+ * and ordered by the worker (``PartFeature.defines_rotation``, lever arm descending).
+ * A pure read, on the same precondition as every other Adjust tool — a 404/409/422
+ * renders through the same `ApiResult` refusal path as everywhere else on this surface.
+ */
+export async function fetchLandmarks(
+  caseId: string,
+  tooth: number,
+): Promise<ApiResult<LandmarkView[]>> {
+  return fetchJson<LandmarkView[]>(siteActionPath(caseId, tooth, "landmarks"));
+}
