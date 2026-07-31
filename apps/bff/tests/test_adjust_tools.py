@@ -1,7 +1,9 @@
 """THE FOUR ADJUST TOOLS' ENDPOINTS (plan §4 Adjust, §5; slice 6) — the rework surface.
 
-``POST .../sites/{tooth}/{rotation|mark-trench|fit-by-points|best-fit}`` plus the read
-the panes open on, ``GET .../sites/{tooth}/seated``.
+``POST .../sites/{tooth}/{rotation|mark-trench|fit-by-points|best-fit}`` plus the reads
+the panes open on, ``GET .../sites/{tooth}/seated`` and ``GET .../sites/{tooth}/landmarks``
+(client 2026-07-29, item 3 — AUTO-MARK: "another tool where we automatically mark the
+points in the library and the client has to match the same points on the scan").
 
 The PHYSICS is pinned worker-side (apps/worker/tests/test_adjust.py — the gates, the
 span maths, the refusal sentences, against a real shipped run). What these tests own is
@@ -23,6 +25,8 @@ in test_case_sessions: the fixture tree's STLs are empty on purpose (these tests
 milliseconds) and no mesh may be parsed to prove a status transition.
 """
 from __future__ import annotations
+
+from types import SimpleNamespace
 
 import pytest
 
@@ -564,3 +568,88 @@ class TestSeatedRead:
         before = (SessionStore(product_root).load(CASE)).version
         client.get(f"{BASE}/4/seated")
         assert (SessionStore(product_root).load(CASE)).version == before
+
+
+class TestLandmarksRead:
+    """AUTO-MARK'S PROPOSAL (client 2026-07-29, item 3): the part half of every
+    correspondence pair, read off the site's declared template instead of hunted for
+    by eye. ``clock_landmarks`` and ``load_site`` are the worker's own, pinned in
+    ``apps/worker/tests/test_adjust.py`` — best clock evidence first, filtered to
+    features that pass ``PartFeature.defines_rotation``. What this resource owns is
+    the same thing ``seated`` owns: the precondition, the load, and the refusal split,
+    nothing more — so the double here is a stub of ``load_site`` + ``clock_landmarks``,
+    exactly like ``seated_payload`` is stubbed above."""
+
+    @staticmethod
+    def _stub_template(monkeypatch, landmarks, *, template=None):
+        template = template if template is not None else object()
+        recorded: dict = {}
+
+        def fake_load_site(case, run_dir, tooth):
+            recorded["case"] = case.id
+            recorded["run_dir"] = run_dir
+            recorded["tooth"] = tooth
+            return SimpleNamespace(template=template)
+
+        def fake_clock_landmarks(t):
+            recorded["template"] = t
+            return landmarks
+
+        monkeypatch.setattr(adjust_resource, "load_site", fake_load_site)
+        monkeypatch.setattr(adjust_resource, "clock_landmarks", fake_clock_landmarks)
+        return recorded, template
+
+    def test_it_serves_the_proposed_landmarks_best_lever_first(
+            self, settings, product_root, monkeypatch):
+        landmarks = [
+            {"id": "notch-a", "kind": "notch", "point": [1.5, 0.0, 2.0],
+             "lever_arm_mm": 1.5, "azimuth_deg": 0.0},
+            {"id": "notch-b", "kind": "notch", "point": [0.0, 0.9, 2.0],
+             "lever_arm_mm": 0.9, "azimuth_deg": 90.0},
+        ]
+        recorded, template = self._stub_template(monkeypatch, landmarks)
+        client, _ = tooled(settings, product_root, monkeypatch)
+        res = client.get(f"{BASE}/4/landmarks")
+        assert res.status_code == 200
+        assert res.json() == landmarks
+        # the template that reached clock_landmarks is the SITE's own — load_site's
+        # read, not a mesh this resource conjured itself
+        assert recorded["template"] is template
+        assert recorded["case"] == CASE
+        assert recorded["tooth"] == 4
+
+    def test_it_stands_on_the_same_precondition_as_the_tools(
+            self, settings, product_root, monkeypatch):
+        self._stub_template(monkeypatch, [])
+        client, _ = tooled(settings, product_root, monkeypatch, rows=[row(13)])
+        assert client.get(f"{BASE}/4/landmarks").status_code == 422
+
+    def test_reading_landmarks_writes_nothing(self, settings, product_root, monkeypatch):
+        self._stub_template(monkeypatch, [])
+        client, _ = tooled(settings, product_root, monkeypatch)
+        before = (SessionStore(product_root).load(CASE)).version
+        client.get(f"{BASE}/4/landmarks")
+        assert (SessionStore(product_root).load(CASE)).version == before
+
+    def test_a_shipped_variant_that_left_the_library_refuses_in_the_applications_words(
+            self, settings, product_root, monkeypatch):
+        def boom(case, run_dir, tooth):
+            raise AdjustRefused(
+                "shipped variant 'gone' is not in the current neodent-gm library — "
+                "cannot re-pose")
+        monkeypatch.setattr(adjust_resource, "load_site", boom)
+        client, _ = tooled(settings, product_root, monkeypatch)
+        res = client.get(f"{BASE}/4/landmarks")
+        assert res.status_code == 409
+        assert "cannot re-pose" in res.text
+
+    def test_a_run_with_no_shipped_pose_is_a_422_in_the_applications_words(
+            self, settings, product_root, monkeypatch):
+        def boom(case, run_dir, tooth):
+            raise AdjustInvalid("tooth 4 has no shipped pose in this run — nothing to "
+                                "adjust")
+        monkeypatch.setattr(adjust_resource, "load_site", boom)
+        client, _ = tooled(settings, product_root, monkeypatch)
+        res = client.get(f"{BASE}/4/landmarks")
+        assert res.status_code == 422
+        assert "nothing to adjust" in res.text

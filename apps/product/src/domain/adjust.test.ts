@@ -4,7 +4,12 @@
  * one NARROWING that keeps a pass from wearing a refusal's clothes.
  */
 import { describe, expect, it } from "vitest";
-import type { AdjustOutcomeView, AdjustResultView, ApiResult } from "../api/client";
+import type {
+  AdjustOutcomeView,
+  AdjustResultView,
+  ApiResult,
+  LandmarkView,
+} from "../api/client";
 import {
   ADJUST_TOOLS,
   MAX_PAIRS,
@@ -13,8 +18,12 @@ import {
   adjustUnionCaption,
   alreadyOptimalFrom,
   applyBlockedReason,
+  autoMarkDrafts,
+  autoMarkSourceLabel,
+  autoMarkSummary,
   gateActions,
   isComplete,
+  landmarkLabel,
   needsReconfirm,
   newPairDraft,
   observationWords,
@@ -388,18 +397,80 @@ describe("what a rework leaves behind on the run's report", () => {
 });
 
 describe("the toolbox", () => {
-  it("offers exactly the plan's four tools, in its order", () => {
+  it("offers exactly the plan's five tools, in its order", () => {
     expect(ADJUST_TOOLS.map((t) => t.id)).toEqual([
       "fit-by-points",
       "best-fit",
       "rotation",
       "mark-trench",
+      "auto-mark",
     ]);
   });
 
   it("the best-fit's one-liner states the pass BEFORE the operator meets it", () => {
     const bestFit = ADJUST_TOOLS.find((t) => t.id === "best-fit")!;
     expect(bestFit.oneLiner).toContain("PASS");
+  });
+});
+
+describe("auto-mark — the software proposes the part half (client 2026-07-29)", () => {
+  const landmarks: LandmarkView[] = [
+    { id: "notch-a", kind: "notch", point: [1.5, 0, 2], lever_arm_mm: 1.5,
+      azimuth_deg: 0 },
+    { id: "notch-b", kind: "notch", point: [0, 0.9, 2], lever_arm_mm: 0.9,
+      azimuth_deg: 90 },
+  ];
+
+  it("turns each landmark into a draft with the PART half already filled", () => {
+    const drafts = autoMarkDrafts(landmarks);
+    expect(drafts).toHaveLength(2);
+    expect(drafts[0]!.partPoint).toEqual([1.5, 0, 2]);
+    expect(drafts[0]!.scanPoint).toBeNull();
+    expect(drafts[0]!.span).toBe(false);
+  });
+
+  it("a draft with its part half filled is already past the part slot", () => {
+    // pairSlot is the EXISTING pair machinery — auto-mark seeds no new state machine,
+    // it only pre-fills the same PairDraft withPick already understands
+    const [draft] = autoMarkDrafts(landmarks);
+    expect(pairSlot(draft!)).toBe("scan");
+    expect(pairPrompt(draft!)).toContain("Click the same spot on the SCAN");
+  });
+
+  it("keeps every landmark's identity distinct even across an empty proposal", () => {
+    expect(autoMarkDrafts([])).toEqual([]);
+  });
+
+  it("applying a landmark draft to the wire sends the served point, untouched", () => {
+    // the same pairBody the manual flow uses — no second wire encoder for this tool
+    const draft = withPick(autoMarkDrafts(landmarks)[0]!, "scan", [9, 9, 9]);
+    expect(pairBody(draft)).toEqual({ part_point: [1.5, 0, 2], scan_point: [9, 9, 9] });
+  });
+
+  it("names a landmark by what it is and how far out it sits", () => {
+    expect(landmarkLabel(landmarks[0]!)).toBe("notch — lever arm 1.50mm");
+  });
+
+  it("traces a draft back to the landmark that seeded it", () => {
+    const [draft] = autoMarkDrafts(landmarks);
+    expect(autoMarkSourceLabel(draft!, landmarks)).toBe("notch — lever arm 1.50mm");
+  });
+
+  it("says nothing for a draft auto-mark did not create", () => {
+    expect(autoMarkSourceLabel(newPairDraft("p1", false), landmarks)).toBeNull();
+  });
+
+  it("summarises the count and the order promise", () => {
+    expect(autoMarkSummary(landmarks)).toContain("2 landmarks proposed");
+    expect(autoMarkSummary(landmarks)).toContain("best lever arm first");
+  });
+
+  it("a singular landmark reads as singular, not '1 landmarks'", () => {
+    expect(autoMarkSummary([landmarks[0]!])).toContain("1 landmark proposed");
+  });
+
+  it("a part with nothing to propose says so honestly rather than an empty list", () => {
+    expect(autoMarkSummary([])).toContain("no rotation-defining landmarks to propose");
   });
 });
 

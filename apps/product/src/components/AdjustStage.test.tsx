@@ -8,8 +8,8 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AdjustStageView } from "./AdjustStage";
-import { newPairDraft, withPick, type AdjustQueueEntry } from "../domain/adjust";
-import type { AdjustOutcomeView } from "../api/client";
+import { autoMarkDrafts, newPairDraft, withPick, type AdjustQueueEntry } from "../domain/adjust";
+import type { AdjustOutcomeView, LandmarkView } from "../api/client";
 
 const ACTION =
   "The cap's ROTATION could not be verified — visually check the coded features " +
@@ -121,9 +121,15 @@ describe("the queue", () => {
 });
 
 describe("the toolbox", () => {
-  it("offers all four tools with one selected — the others one click away", () => {
+  it("offers all five tools with one selected — the others one click away", () => {
     const html = view();
-    for (const tool of ["fit-by-points", "best-fit", "rotation", "mark-trench"]) {
+    for (const tool of [
+      "fit-by-points",
+      "best-fit",
+      "rotation",
+      "mark-trench",
+      "auto-mark",
+    ]) {
       expect(html).toContain(`data-tool="${tool}"`);
     }
     expect(html).toContain('data-tool="rotation" aria-selected="true"');
@@ -238,6 +244,102 @@ describe("fit by points", () => {
     const html = view({ tool: "fit-by-points", drafts: [complete] });
     expect(html).toContain("Apply the fit");
     expect(html).not.toContain("Place at least one complete pair");
+  });
+
+  it("a hand-built pair carries no server-side source label", () => {
+    // fit-by-points passes no `sourceLabelFor` to PairsList — a pair the operator
+    // started by hand has no landmark identity to show
+    const html = view({
+      tool: "fit-by-points",
+      drafts: [newPairDraft("p1", false)],
+    });
+    expect(html).not.toContain('data-role="pair-source"');
+  });
+});
+
+describe("auto-mark — the software proposes the part half (client 2026-07-29)", () => {
+  const LANDMARKS: LandmarkView[] = [
+    { id: "notch-a", kind: "notch", point: [1.5, 0, 2], lever_arm_mm: 1.5,
+      azimuth_deg: 0 },
+    { id: "notch-b", kind: "notch", point: [0, 0.9, 2], lever_arm_mm: 0.9,
+      azimuth_deg: 90 },
+  ];
+
+  it("says it is reading the proposal while the request is in flight", () => {
+    const html = view({ tool: "auto-mark", autoMarkPhase: "loading" });
+    expect(html).toContain('data-role="auto-mark-loading"');
+  });
+
+  it("a refusal from the landmarks read renders VERBATIM, like every other refusal", () => {
+    const html = view({
+      tool: "auto-mark",
+      autoMarkPhase: "error",
+      autoMarkError: "tooth 4 has no shipped pose in this run — nothing to adjust",
+    });
+    expect(html).toContain('data-role="auto-mark-error"');
+    expect(html).toContain("nothing to adjust");
+  });
+
+  it("the ready state numbers the proposal and promises the matching order", () => {
+    const html = view({
+      tool: "auto-mark",
+      autoMarkPhase: "ready",
+      autoMarkLandmarks: LANDMARKS,
+      drafts: autoMarkDrafts(LANDMARKS),
+    });
+    expect(html).toContain('data-role="auto-mark-summary"');
+    expect(html).toContain("2 landmarks proposed");
+    expect(html).toContain("best lever arm first");
+    // the PART half is already filled server-side — the prompt asks for the SCAN half
+    expect(html).toContain('data-role="pair-prompt"');
+    expect(html).toContain("Click the same spot on the SCAN");
+  });
+
+  it("a part with nothing to propose says so rather than showing an empty list", () => {
+    const html = view({
+      tool: "auto-mark",
+      autoMarkPhase: "ready",
+      autoMarkLandmarks: [],
+      drafts: [],
+    });
+    expect(html).toContain("no rotation-defining landmarks to propose");
+    expect(html).not.toContain('data-role="pair-prompt"');
+  });
+
+  it("never offers the manual start-pair buttons — the pairs are the server's proposal", () => {
+    const html = view({
+      tool: "auto-mark",
+      autoMarkPhase: "ready",
+      autoMarkLandmarks: LANDMARKS,
+      drafts: autoMarkDrafts(LANDMARKS),
+    });
+    expect(html).not.toContain('data-role="start-point-pair"');
+    expect(html).not.toContain('data-role="start-span-pair"');
+  });
+
+  it("each row names WHICH landmark seeded it — kind and lever arm", () => {
+    const html = view({
+      tool: "auto-mark",
+      autoMarkPhase: "ready",
+      autoMarkLandmarks: LANDMARKS,
+      drafts: autoMarkDrafts(LANDMARKS),
+    });
+    expect(html).toContain('data-role="pair-source"');
+    expect(html).toContain("notch — lever arm 1.50mm");
+    expect(html).toContain("notch — lever arm 0.90mm");
+  });
+
+  it("reuses the SAME pair-list and apply control fit-by-points renders", () => {
+    // structural check: no second Apply mechanism exists for this tool
+    const html = view({
+      tool: "auto-mark",
+      autoMarkPhase: "ready",
+      autoMarkLandmarks: LANDMARKS,
+      drafts: autoMarkDrafts(LANDMARKS),
+    });
+    expect(html).toContain('data-role="pair-list"');
+    expect(html).toContain('data-role="apply-pairs"');
+    expect(html).toContain("Place at least one complete pair");
   });
 });
 

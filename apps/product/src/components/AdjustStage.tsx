@@ -27,6 +27,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FREE_POINT_COLOR, type VerifyMarker } from "viewer";
 import {
+  fetchLandmarks,
   fetchRun,
   fetchSeated,
   postBestFit,
@@ -38,6 +39,7 @@ import {
   type AdjustResultView,
   type ApiResult,
   type CaseSessionDetail,
+  type LandmarkView,
   type SitePreviewPayload,
   type SiteView,
 } from "../api/client";
@@ -52,6 +54,9 @@ import {
   adjustUnionCaption,
   alreadyOptimalFrom,
   applyBlockedReason,
+  autoMarkDrafts,
+  autoMarkSourceLabel,
+  autoMarkSummary,
   isComplete,
   needsReconfirm,
   newPairDraft,
@@ -128,6 +133,16 @@ export interface AdjustStageViewProps {
   readonly reasonsFor?: number | null;
   readonly onOpenReasons?: (tooth: number) => void;
   readonly onCloseReasons?: () => void;
+  /** AUTO-MARK (client 2026-07-29, item 3): the site's proposed landmarks, best lever
+   *  arm first, and the read's own lifecycle. `drafts` above already carries the pairs
+   *  they seeded — this is only the landmarks' own identity, for the summary line and
+   *  each row's source label. OPTIONAL with an idle/empty default: static callers
+   *  predate this tool. */
+  readonly autoMarkLandmarks?: readonly LandmarkView[];
+  readonly autoMarkPhase?: SeatedPhase;
+  /** A refusal from the landmarks read, VERBATIM — same posture as every other
+   *  refusal on this surface. */
+  readonly autoMarkError?: string | null;
 }
 
 function ToolTabs({
@@ -158,6 +173,140 @@ function ToolTabs({
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * THE PAIR LIST AND ITS APPLY CONTROL — the drafts a correspondence tool is building,
+ * each broken into the marks it is made of, plus the one Apply act both tools share.
+ *
+ * Extracted (client 2026-07-29, item 3 / auto-mark) so fit-by-points and auto-mark
+ * render the SAME pair mechanic rather than two copies that could drift: a pair is a
+ * pair whether the operator started it by hand or the worker proposed its part half.
+ * `sourceLabelFor` is the one thing that differs — auto-mark names WHICH landmark
+ * seeded a draft (kind, lever arm), fit-by-points has no server identity to show and
+ * passes nothing.
+ */
+function PairsList({
+  drafts,
+  busy,
+  pose,
+  onRemovePair,
+  onRemovePoint,
+  onApplyPairs,
+  sourceLabelFor,
+}: {
+  readonly drafts: readonly PairDraft[];
+  readonly busy: boolean;
+  readonly pose: { readonly origin: readonly number[]; readonly axis: readonly number[] } | null;
+  readonly onRemovePair: (id: string) => void;
+  readonly onRemovePoint: (id: string, slot: PairSlot) => void;
+  readonly onApplyPairs: () => void;
+  readonly sourceLabelFor?: (draft: PairDraft) => string | null;
+}) {
+  const applyBlocked = applyBlockedReason(drafts);
+  return (
+    <>
+      <ul data-role="pair-list" className="adjust-pairs">
+        {drafts.map((draft, index) => (
+          <li key={draft.id} data-role="pair-row" data-span={draft.span}
+              data-slot={pairSlot(draft)} className="adjust-pairs__row">
+            {sourceLabelFor && sourceLabelFor(draft) !== null && (
+              /* WHICH proposed landmark this draft came from (auto-mark only) — the
+                 operator's answer to "why am I being asked for this one". */
+              <span data-role="pair-source" className="adjust-pairs__source">
+                {sourceLabelFor(draft)}
+              </span>
+            )}
+            <span className="adjust-pairs__words">
+              {pairWords(draft, index)}
+            </span>
+            {/* THE MARKS THIS PAIR IS MADE OF, named with their surface — so "two
+                points" is something the operator can SEE before starting, not
+                something they infer from one prompt at a time (client 2026-07-29). */}
+            <ol data-role="pair-slots" className="adjust-pairs__slots">
+              {pairSlots(draft).map((slot) => (
+                <li
+                  key={slot.key}
+                  data-role="pair-slot"
+                  data-slot={slot.key}
+                  data-placed={slot.placed}
+                  data-active={slot.active}
+                  className={`adjust-pairs__slot${
+                    slot.placed ? " adjust-pairs__slot--placed" : ""
+                  }${slot.active ? " adjust-pairs__slot--active" : ""}`}
+                >
+                  <span aria-hidden="true" className="adjust-pairs__slot-mark">
+                    {slot.placed ? "✓" : slot.active ? "→" : "○"}
+                  </span>
+                  <span className="adjust-pairs__slot-where">
+                    {slot.where}
+                    {slot.placed && (
+                      /* Per-MARK removal: losing the whole pair because the second
+                         click landed wrong was the only exit before 2026-07-29. */
+                      <button
+                        type="button"
+                        data-role="remove-point"
+                        data-pair={draft.id}
+                        data-slot={slot.key}
+                        className="adjust-pairs__slot-clear"
+                        aria-label={`Remove this mark on ${slot.where}`}
+                        title="Remove just this mark"
+                        disabled={busy}
+                        onClick={() => onRemovePoint(draft.id, slot.key)}
+                      >
+                        undo
+                      </button>
+                    )}
+                  </span>
+                  <span className="adjust-pairs__slot-label">{slot.label}</span>
+                </li>
+              ))}
+            </ol>
+            {spanLeverCaution(draft, pose) !== null && (
+              <p
+                data-role="span-caution"
+                role="status"
+                className="adjust-pairs__caution"
+              >
+                {spanLeverCaution(draft, pose)}
+              </p>
+            )}
+            <button
+              type="button"
+              data-role="remove-pair"
+              data-pair={draft.id}
+              className="button button--ghost button--small"
+              disabled={busy}
+              onClick={() => onRemovePair(draft.id)}
+            >
+              Remove
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="adjust-tool__row">
+        {applyBlocked === null ? (
+          <button
+            type="button"
+            data-role="apply-pairs"
+            className="button button--primary button--small"
+            disabled={busy}
+            onClick={onApplyPairs}
+          >
+            Apply the fit
+          </button>
+        ) : (
+          <span
+            data-role="apply-pairs"
+            aria-disabled="true"
+            className="button button--secondary button--blocked"
+          >
+            {applyBlocked}
+          </span>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -194,10 +343,12 @@ export function AdjustStageView({
   reasonsFor = null,
   onOpenReasons = () => undefined,
   onCloseReasons = () => undefined,
+  autoMarkLandmarks = [],
+  autoMarkPhase = "idle",
+  autoMarkError = null,
 }: AdjustStageViewProps) {
   const active = entries.find((e) => e.tooth === activeTooth) ?? null;
   const busy = phase === "working";
-  const applyBlocked = applyBlockedReason(drafts);
   const openDraft = drafts.find((d) => !isComplete(d)) ?? null;
   const toolInfo = ADJUST_TOOLS.find((t) => t.id === tool)!;
   const reworkNote = lastOutcome !== null ? reworkWords(lastOutcome) : null;
@@ -414,100 +565,58 @@ export function AdjustStageView({
                       Add a SPAN pair (both ends)
                     </button>
                   </div>
-                  <ul data-role="pair-list" className="adjust-pairs">
-                    {drafts.map((draft, index) => (
-                      <li key={draft.id} data-role="pair-row" data-span={draft.span}
-                          data-slot={pairSlot(draft)} className="adjust-pairs__row">
-                        <span className="adjust-pairs__words">
-                          {pairWords(draft, index)}
-                        </span>
-                        {/* THE MARKS THIS PAIR IS MADE OF, named with their surface —
-                            so "two points" is something the operator can SEE before
-                            starting, not something they infer from one prompt at a
-                            time (client 2026-07-29). */}
-                        <ol data-role="pair-slots" className="adjust-pairs__slots">
-                          {pairSlots(draft).map((slot) => (
-                            <li
-                              key={slot.key}
-                              data-role="pair-slot"
-                              data-slot={slot.key}
-                              data-placed={slot.placed}
-                              data-active={slot.active}
-                              className={`adjust-pairs__slot${
-                                slot.placed ? " adjust-pairs__slot--placed" : ""
-                              }${slot.active ? " adjust-pairs__slot--active" : ""}`}
-                            >
-                              <span aria-hidden="true" className="adjust-pairs__slot-mark">
-                                {slot.placed ? "✓" : slot.active ? "→" : "○"}
-                              </span>
-                              <span className="adjust-pairs__slot-where">
-                                {slot.where}
-                                {slot.placed && (
-                                  /* Per-MARK removal: losing the whole pair because the
-                                     second click landed wrong was the only exit before
-                                     2026-07-29. */
-                                  <button
-                                    type="button"
-                                    data-role="remove-point"
-                                    data-pair={draft.id}
-                                    data-slot={slot.key}
-                                    className="adjust-pairs__slot-clear"
-                                    aria-label={`Remove this mark on ${slot.where}`}
-                                    title="Remove just this mark"
-                                    disabled={busy}
-                                    onClick={() => onRemovePoint(draft.id, slot.key)}
-                                  >
-                                    undo
-                                  </button>
-                                )}
-                              </span>
-                              <span className="adjust-pairs__slot-label">{slot.label}</span>
-                            </li>
-                          ))}
-                        </ol>
-                        {spanLeverCaution(draft, pose) !== null && (
-                          <p
-                            data-role="span-caution"
-                            role="status"
-                            className="adjust-pairs__caution"
-                          >
-                            {spanLeverCaution(draft, pose)}
-                          </p>
-                        )}
-                        <button
-                          type="button"
-                          data-role="remove-pair"
-                          data-pair={draft.id}
-                          className="button button--ghost button--small"
-                          disabled={busy}
-                          onClick={() => onRemovePair(draft.id)}
-                        >
-                          Remove
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="adjust-tool__row">
-                    {applyBlocked === null ? (
-                      <button
-                        type="button"
-                        data-role="apply-pairs"
-                        className="button button--primary button--small"
-                        disabled={busy}
-                        onClick={onApplyPairs}
-                      >
-                        Apply the fit
-                      </button>
-                    ) : (
-                      <span
-                        data-role="apply-pairs"
-                        aria-disabled="true"
-                        className="button button--secondary button--blocked"
-                      >
-                        {applyBlocked}
-                      </span>
-                    )}
-                  </div>
+                  <PairsList
+                    drafts={drafts}
+                    busy={busy}
+                    pose={pose}
+                    onRemovePair={onRemovePair}
+                    onRemovePoint={onRemovePoint}
+                    onApplyPairs={onApplyPairs}
+                  />
+                </>
+              )}
+
+              {tool === "auto-mark" && (
+                /* AUTO-MARK (client 2026-07-29, item 3): "another tool where we
+                   automatically mark the points in the library and the client has to
+                   match the same points on the scan." The container has already turned
+                   each proposed landmark into a draft with its PART half filled
+                   (`autoMarkDrafts`), so `drafts` here is the SAME shape fit-by-points
+                   builds by hand — the whole tool reuses `PairsList` unchanged. The
+                   only thing added below is what a hand-built pair has no server
+                   identity for: which landmark this is, and how many are left. */
+                <>
+                  {autoMarkPhase === "loading" && (
+                    <p data-role="auto-mark-loading" className="adjust-tool__readout">
+                      Reading the library's proposed landmarks…
+                    </p>
+                  )}
+                  {autoMarkPhase === "error" && (
+                    <p data-role="auto-mark-error" role="alert" className="panel__error">
+                      {autoMarkError}
+                    </p>
+                  )}
+                  {autoMarkPhase === "ready" && (
+                    <>
+                      <p data-role="auto-mark-summary" className="panel__hint">
+                        {autoMarkSummary(autoMarkLandmarks)}
+                      </p>
+                      {autoMarkLandmarks.length > 0 && (
+                        <p data-role="pair-prompt" className="adjust-tool__readout">
+                          {pairPrompt(openDraft)}
+                        </p>
+                      )}
+                    </>
+                  )}
+                  <PairsList
+                    drafts={drafts}
+                    busy={busy}
+                    pose={pose}
+                    onRemovePair={onRemovePair}
+                    onRemovePoint={onRemovePoint}
+                    onApplyPairs={onApplyPairs}
+                    sourceLabelFor={(draft) => autoMarkSourceLabel(draft, autoMarkLandmarks)}
+                  />
                 </>
               )}
             </div>
@@ -727,7 +836,20 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   const [seatedError, setSeatedError] = useState<string | null>(null);
   const [diameterMm, setDiameterMm] = useState(DEFAULT_DIAMETER_MM);
   const [trenchArmed, setTrenchArmed] = useState(false);
-  const [drafts, setDrafts] = useState<readonly PairDraft[]>([]);
+  // AUTO-MARK (client 2026-07-29, item 3) keeps its OWN draft set, separate from
+  // fit-by-points' hand-built one: switching tabs must never silently discard a pair
+  // the operator is mid-way through building by hand, and the two mean different
+  // things — one the operator found, one the worker proposed. `drafts` below is the
+  // ACTIVE set for whichever tool is selected; every existing consumer (openDraft,
+  // markers, handlePick, apply) keeps reading through that one name unchanged.
+  const [fitDrafts, setFitDrafts] = useState<readonly PairDraft[]>([]);
+  const [autoDrafts, setAutoDrafts] = useState<readonly PairDraft[]>([]);
+  const [autoMarkLandmarks, setAutoMarkLandmarks] =
+    useState<readonly LandmarkView[]>([]);
+  const [autoMarkPhase, setAutoMarkPhase] = useState<SeatedPhase>("idle");
+  const [autoMarkError, setAutoMarkError] = useState<string | null>(null);
+  const drafts = tool === "auto-mark" ? autoDrafts : fitDrafts;
+  const setDrafts = tool === "auto-mark" ? setAutoDrafts : setFitDrafts;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -784,11 +906,47 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
     };
   }, [caseId, activeTooth]);
 
+  // AUTO-MARK'S READ (client 2026-07-29, item 3): the site's proposed landmarks,
+  // fetched once per site while the tool is open. `autoMarkPhase !== "idle"` gates the
+  // fetch so tabbing away and back does not re-ask — the landmarks are the declared
+  // template's own feature geometry, and that does not change under an operator's
+  // clicks; `handleSelectSite` and a successful apply are what put it back to "idle".
+  useEffect(() => {
+    if (tool !== "auto-mark" || activeTooth === null || autoMarkPhase !== "idle") {
+      return;
+    }
+    let cancelled = false;
+    setAutoMarkPhase("loading");
+    setAutoMarkError(null);
+    void fetchLandmarks(caseId, activeTooth).then((result) => {
+      if (cancelled || !mountedRef.current) return;
+      if (result.kind === "ok") {
+        setAutoMarkLandmarks(result.data);
+        setAutoMarkPhase("ready");
+        // seed the drafts only when this round has none yet — re-entering the tool
+        // after a partial match must not throw the operator's scan clicks away
+        setAutoDrafts((current) =>
+          current.length > 0 ? current : autoMarkDrafts(result.data),
+        );
+      } else {
+        setAutoMarkError(result.detail);
+        setAutoMarkPhase("error");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tool, caseId, activeTooth, autoMarkPhase]);
+
   // Switching sites clears the half-built work: a draft pair belongs to the site whose
   // panes it was placed over, and carrying it across would be a mark about nothing.
   const handleSelectSite = useCallback((tooth: number) => {
     setActiveTooth(tooth);
-    setDrafts([]);
+    setFitDrafts([]);
+    setAutoDrafts([]);
+    setAutoMarkLandmarks([]);
+    setAutoMarkPhase("idle");
+    setAutoMarkError(null);
     setTrenchArmed(false);
     setRefusal(null);
     setPass(null);
@@ -818,10 +976,14 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       setLastOutcome(result.data.outcome);
       if (result.data.pane_payload !== null) setPayload(result.data.pane_payload);
       onDetail(result.data.case);
-      setDrafts([]);
+      setFitDrafts([]);
+      // auto-mark's landmarks are static (the declared template's own geometry, not
+      // the pose) — re-seeding straight from what is already known starts a fresh
+      // round of matching without a second read the server would answer identically
+      setAutoDrafts(autoMarkDrafts(autoMarkLandmarks));
       setTrenchArmed(false);
     },
-    [onDetail],
+    [onDetail, autoMarkLandmarks],
   );
 
   const run = useCallback(
@@ -884,7 +1046,10 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
         current.map((d) => (d.id === openDraft.id ? withPick(d, pane, point) : d)),
       );
     },
-    [caseId, activeTooth, trenchArmed, openDraft, run],
+    // `tool` picks WHICH draft set `setDrafts` (derived above) actually writes to —
+    // omitting it would let this closure keep writing to the tool that was active
+    // when it last re-memoized, silently losing a click after a tab switch.
+    [caseId, activeTooth, trenchArmed, openDraft, run, tool],
   );
 
   /** The numbered marks, drawn where they were placed. Memoized by content: the
@@ -1047,6 +1212,9 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       reasonsFor={reasonsFor}
       onOpenReasons={setReasonsFor}
       onCloseReasons={() => setReasonsFor(null)}
+      autoMarkLandmarks={autoMarkLandmarks}
+      autoMarkPhase={autoMarkPhase}
+      autoMarkError={autoMarkError}
     />
   );
 }

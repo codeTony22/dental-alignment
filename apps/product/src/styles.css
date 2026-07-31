@@ -3406,3 +3406,12 @@ button.package-files__link:hover {
   border-left: 3px solid var(--color-amber-border);
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
+
+/* AUTO-MARK (client 2026-07-29, item 3): which proposed landmark seeded this pair,
+   sitting above the pair's own words — a fact fit-by-points' hand-built pairs carry
+   nothing for, so it earns its own quiet line rather than crowding .adjust-pairs__words. */
+.adjust-pairs__source {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
