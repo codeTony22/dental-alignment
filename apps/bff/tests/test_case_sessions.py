@@ -1405,7 +1405,13 @@ class TestStatusesAreNeverClientWritable:
         # set that does not match the evidence it derived itself.
         ("POST", "/api/case-sessions/{case_id}/confirm"),
         # the payment stub (slice 8, AM-11): {"authorize": true} — the explicit
-        # act, fail-closed, provider recorded as "stub"; no other field exists
+        # act, fail-closed, provider recorded as "stub". Its ONE other field is
+        # ``invoice_fingerprint`` (audit 2026-07-31), and it is admissible for
+        # exactly the reason a disposition is: it is an opaque digest of the
+        # document the SERVER served, echoed back as a precondition — "this is
+        # what I was shown", never "this is what I owe". No amount rides on this
+        # wire and none ever will; the server prices at authorization time and
+        # refuses when the two documents differ.
         ("POST", "/api/case-sessions/{case_id}/payment"),
         # THE CHECKOUT RETURN LEG (plan §10-A: "a checkout screen and a return").
         # An operator ACT in this allowlist's structural sense even though it

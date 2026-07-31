@@ -218,7 +218,13 @@ function TermsAcceptance({
 interface AssuranceRowProps {
   readonly caseId: string;
   readonly site: AssuranceSite;
+  /** ALREADY RESOLVED by `effectiveDisposition` — the operator's act, else the drop
+   *  recorded at Adjust, else release. The row never re-resolves it. */
   readonly disposition: Disposition;
+  /** Whether the release|withhold pair renders here — `withholdOffered` over the
+   *  EFFECTIVE disposition, so a row this screen is about to withhold is always
+   *  reversible on this screen. */
+  readonly offersWithhold: boolean;
   readonly acknowledged: boolean;
   readonly expanded: boolean;
   readonly onDisposition: (tooth: number, act: Disposition) => void;
@@ -233,6 +239,7 @@ function AssuranceRow({
   caseId,
   site,
   disposition,
+  offersWithhold,
   acknowledged,
   expanded,
   onDisposition,
@@ -255,6 +262,9 @@ function AssuranceRow({
         data-status={site.status ?? "unknown"}
         data-flagged={site.status === "flagged"}
         data-needs-acknowledgment={needsAcknowledgment(site)}
+        // the resolved disposition, IN THE MARKUP: a reviewer reading the row must
+        // be able to tell what confirming does with it (audit 2026-07-31)
+        data-disposition={disposition}
         className={
           needsAcknowledgment(site) ? "assurance-row--flagged" : undefined
         }
@@ -357,10 +367,14 @@ function AssuranceRow({
         </td>
         <td>
           <div className="assurance-controls">
-            {/* THE DISPOSITION CONTROL RENDERS ONLY ON A FLAGGED ROW (client
-                2026-07-27 #4). A clean site is released — the row SAYS so, quietly,
-                instead of asking a question with one sane answer. */}
-            {withholdOffered(site) ? (
+            {/* THE DISPOSITION CONTROL RENDERS ON A FLAGGED ROW (client 2026-07-27
+                #4) — a clean site headed for release SAYS so quietly instead of
+                asking a question with one sane answer — AND ON ANY ROW THIS SCREEN
+                IS ABOUT TO WITHHOLD (audit 2026-07-31). Gating it on the flag alone
+                made a cap dropped at Adjust a one-way door: the row printed the
+                literal word "released", confirming from it withheld the site and
+                every case-wide file, and the reversal existed only back on Adjust. */}
+            {offersWithhold ? (
               <span className="segmented">
                 <button
                   type="button"
@@ -691,6 +705,28 @@ export function DeliverStageView({
                     </>
                   )}
 
+                  {/* WHAT WAS ACTUALLY CHARGED, ON THE STEP THAT SAYS IT WAS PAID
+                      (audit 2026-07-31). The receipt lived inside the invoice block,
+                      and that whole block is gated on the paid step being CURRENT —
+                      so `releaseSteps` flipped the step to "done" the instant the
+                      payment landed and took the amount, the rate card and the
+                      turnaround away with it. The checkout dialog could not fill the
+                      gap either: `pay()` always closes it on the return leg. After
+                      payment no surface in the product stated the figure, while the
+                      BFF's activity log held the cents.
+
+                      Read off `session.payment` — the record itself — rather than
+                      the invoice: the invoice is the case's price NOW and can
+                      legitimately have moved (a turnaround change reprices going
+                      forward and fires no boundary). The receipt must describe the
+                      charge that happened. */}
+                  {step.id === "paid" && step.state === "done" &&
+                    receiptWords(session.payment) !== null && (
+                      <p data-role="paid-receipt" className="release-step__receipt">
+                        {receiptWords(session.payment)}
+                      </p>
+                    )}
+
                   {step.id === "paid" && step.state === "current" && (
                     <div className="release-step__actions">
                       {/* THE CHECKOUT SCREEN (plan §10-A: "a checkout screen and
@@ -1009,17 +1045,30 @@ export function DeliverStageView({
               {/* THE COMPACT SUMMARY (client 2026-07-27 #5): enough that opening the
                   report is a decision, not a hunt. Served order, verbatim. */}
               <ul data-role="evidence-summary" className="evidence-summary">
-                {evidenceSummary(assurance.data).map((line) => (
+                {evidenceSummary(assurance.data, dispositions).map((line) => (
                   <li
                     key={line.tooth}
                     data-role="evidence-line"
                     data-tooth={line.tooth}
                     data-flagged={line.flagged}
+                    data-disposition={line.disposition}
                     className={`evidence-summary__line${
                       line.flagged ? " evidence-summary__line--flagged" : ""
+                    }${
+                      line.disposition === "withhold"
+                        ? " evidence-summary__line--withheld"
+                        : ""
                     }`}
                   >
                     <span className="evidence-summary__site">Tooth {line.tooth}</span>{" "}
+                    {/* THE CONFIRM FIRES FROM THIS PANEL (audit 2026-07-31), so a
+                        cap the signature is about to drop cannot read here as an
+                        unremarkable line — the chip names it before the button. */}
+                    {line.disposition === "withhold" && (
+                      <span data-role="evidence-withheld" className="chip chip--withheld">
+                        withheld
+                      </span>
+                    )}{" "}
                     <span data-role="gate-level" className={gateChipClass(line.gate)}>
                       {line.gate}
                     </span>{" "}
@@ -1123,6 +1172,7 @@ export function DeliverStageView({
                         caseId={detail.case.id}
                         site={site}
                         disposition={effectiveDisposition(site, dispositions)}
+                        offersWithhold={withholdOffered(site, dispositions)}
                         acknowledged={acknowledged.includes(site.tooth)}
                         expanded={expanded.includes(site.tooth)}
                         onDisposition={onDisposition}
@@ -1442,7 +1492,14 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
             // this stage is rendering behind it (gap ``pay-modal-metric-signoff``),
             // and two fetches of the same document are two answers waiting to differ
             assurance={assurance.kind === "ok" ? assurance.data : null}
-            invoice={invoice.kind === "ok" ? invoice.data : null}
+            // THE FETCH STATE CROSSES THE BOUNDARY WHOLE (audit 2026-07-31).
+            // Flattening to `kind === "ok" ? data : null` here is what let a FAILED
+            // invoice render as "PLACEHOLDER — pricing not yet defined" over a live
+            // Pay button: the dialog could not tell a refusal from an absence.
+            invoice={invoice}
+            // and the same resolved dispositions the stage is signing over, so the
+            // checkout's strip cannot bill for a site the invoice beside it withholds
+            dispositions={dispositions}
             onDetail={onDetail}
             onClose={() => setCheckoutOpen(false)}
           />

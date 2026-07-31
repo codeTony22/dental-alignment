@@ -31,6 +31,8 @@ confirmation gate stands on), passed in here as counts.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -127,6 +129,36 @@ class InvoiceView(BaseModel):
     lines: List[InvoiceLine] = Field(default_factory=list)
     total_cents: int
     paid: Optional[InvoicePaymentView] = None
+    # THE DOCUMENT'S OWN IDENTITY (audit 2026-07-31, finding "nothing binds the price
+    # the operator READ to the price they are CHARGED"). ``turnaround`` is
+    # client-settable and fires no reset boundary, so a PUT from a second tab moves
+    # the server price from $32.00 to $48.00 while the sticky pay bar still reads
+    # $32.00 — and the POST then charged $48.00 and returned 200. ``_mutate_signing``
+    # cannot see it: that write landed BEFORE the authorization, so no CAS was lost.
+    #
+    # An OPAQUE DIGEST, deliberately, and never the amount: doctrine forbids an amount
+    # on the wire (a client that could POST one could pay $0 for a released case), and
+    # a digest asserts nothing — echoing it back says only "this is the document I was
+    # shown", which the server then re-derives and compares for itself.
+    fingerprint: str = ""
+
+
+# the fields that make an invoice the SAME PRICED DOCUMENT. ``paid`` is excluded
+# because it is a RECEIPT, not a price — it appears the moment payment lands and
+# would otherwise make every invoice its own fingerprint after the fact.
+_FINGERPRINT_EXCLUDES = {"fingerprint", "paid"}
+
+
+def invoice_fingerprint(view: "InvoiceView") -> str:
+    """A stable digest over everything that makes this the priced document it is —
+    the run, the rate card, the turnaround, every line and the total.
+
+    ``sort_keys`` + compact separators so the digest is a function of the VALUES and
+    not of pydantic's field order: a field added below must change the fingerprint
+    only when it changes what is being charged."""
+    payload = view.model_dump(mode="json", exclude=_FINGERPRINT_EXCLUDES)
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _plural(count: int, noun: str) -> str:
@@ -164,9 +196,13 @@ def price_invoice(*, case_id: str, run_id: str, turnaround: str,
             label=_plural(withheld, "withheld site") + ", not released",
             quantity=withheld, unit_amount_cents=None, amount_cents=0,
             billed=False))
-    return InvoiceView(
+    view = InvoiceView(
         case_id=case_id, run_id=run_id, currency=CURRENCY,
         rate_card_version=RATE_CARD_VERSION, status=RATE_CARD_STATUS,
         note=RATE_CARD_NOTE, turnaround=turnaround,
         turnaround_source=turnaround_source, lines=lines,
         total_cents=sum(line.amount_cents for line in lines), paid=paid)
+    # stamped LAST, over the finished document — the one place it is computed, so a
+    # surface and the payment gate can never fingerprint different things
+    view.fingerprint = invoice_fingerprint(view)
+    return view

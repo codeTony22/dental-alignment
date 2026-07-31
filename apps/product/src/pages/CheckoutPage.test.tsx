@@ -8,7 +8,12 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StaticRouter } from "react-router-dom";
 import { ADDABLE_CARDS, CheckoutView, SAVED_CARDS, nextAddableCard } from "./CheckoutPage";
-import { assuranceView, caseSessionDetail, invoiceView } from "../testing/fixtures";
+import {
+  assuranceSite,
+  assuranceView,
+  caseSessionDetail,
+  invoiceView,
+} from "../testing/fixtures";
 import type { CaseSessionDetail } from "../api/client";
 
 function confirmedDetail(): CaseSessionDetail {
@@ -251,7 +256,7 @@ describe("the metrics the money is being asked for (gap pay-modal-metric-signoff
 
 describe("the sealed responsibility sentence, echoed read-only", () => {
   it("restates what was signed — with NO checkbox to sign it again", () => {
-    const html = view(confirmedDetail(), { invoice: invoiceView() });
+    const html = view(confirmedDetail(), { invoice: { kind: "ok" as const, data: invoiceView() } });
     expect(html).toContain('data-role="sealed-attestation"');
     expect(html).toContain("clinical responsibility");
     expect(html).toContain("2 constructions");
@@ -261,12 +266,12 @@ describe("the sealed responsibility sentence, echoed read-only", () => {
   });
 
   it("resolves the version the confirmation actually sealed", () => {
-    const html = view(confirmedDetail(), { invoice: invoiceView() });
+    const html = view(confirmedDetail(), { invoice: { kind: "ok" as const, data: invoiceView() } });
     expect(html).toContain('href="/terms/placeholder-v0"');
   });
 
   it("says nothing about a signature on a case that has none", () => {
-    expect(view(caseSessionDetail(), { invoice: invoiceView() })).not.toContain(
+    expect(view(caseSessionDetail(), { invoice: { kind: "ok" as const, data: invoiceView() } })).not.toContain(
       'data-role="sealed-attestation"',
     );
   });
@@ -274,7 +279,7 @@ describe("the sealed responsibility sentence, echoed read-only", () => {
 
 describe("the order summary (gap invoice-on-the-surfaces)", () => {
   it("renders the served lines and the SERVER's total", () => {
-    const html = view(confirmedDetail(), { invoice: invoiceView() });
+    const html = view(confirmedDetail(), { invoice: { kind: "ok" as const, data: invoiceView() } });
     expect(html).toContain('data-role="invoice-line" data-key="released_sites"');
     expect(html).toContain("1 acknowledged exception, at half rate");
     expect(html).toContain('data-role="checkout-total"');
@@ -283,13 +288,13 @@ describe("the order summary (gap invoice-on-the-surfaces)", () => {
 
   it("the total is the server's, not the sum of what is on screen", () => {
     const html = view(confirmedDetail(), {
-      invoice: invoiceView({ total_cents: 12_345 }),
+      invoice: { kind: "ok" as const, data: invoiceView({ total_cents: 12_345 }) },
     });
     expect(html).toContain("$123.45");
   });
 
   it("KEEPS the placeholder banner and prints the rate note verbatim", () => {
-    const html = view(confirmedDetail(), { invoice: invoiceView() });
+    const html = view(confirmedDetail(), { invoice: { kind: "ok" as const, data: invoiceView() } });
     expect(html).toContain('data-role="invoice-placeholder"');
     expect(html).toContain("PLACEHOLDER RATES");
     expect(html).toContain("$32 per site standard, $48 rush, exceptions at half");
@@ -297,13 +302,13 @@ describe("the order summary (gap invoice-on-the-surfaces)", () => {
   });
 
   it("states the turnaround the rates key on", () => {
-    const html = view(confirmedDetail(), { invoice: invoiceView() });
+    const html = view(confirmedDetail(), { invoice: { kind: "ok" as const, data: invoiceView() } });
     expect(html).toContain('data-role="invoice-turnaround"');
     expect(html).toContain("Standard turnaround — the standing default.");
   });
 
   it("prices the pay button (design payLabel 1481-1482)", () => {
-    const html = view(confirmedDetail(), { invoice: invoiceView() });
+    const html = view(confirmedDetail(), { invoice: { kind: "ok" as const, data: invoiceView() } });
     expect(html).toContain("Pay $48.00 (demo)");
   });
 
@@ -314,7 +319,7 @@ describe("the order summary (gap invoice-on-the-surfaces)", () => {
       session: { ...base.session, payment_authorized: true },
     } as CaseSessionDetail;
     const html = view(paid, {
-      invoice: invoiceView({
+      invoice: { kind: "ok" as const, data: invoiceView({
         paid: {
           amount_cents: 6400,
           currency: "USD",
@@ -322,7 +327,7 @@ describe("the order summary (gap invoice-on-the-surfaces)", () => {
           turnaround: "rush",
           at: "2026-07-31T09:00:00+00:00",
         },
-      }),
+      }) },
     });
     expect(html).toContain('data-role="invoice-receipt"');
     expect(html).toContain("Charged $64.00");
@@ -338,5 +343,118 @@ describe("nextAddableCard", () => {
 
   it("returns null — never a repeat — once every pool card is held", () => {
     expect(nextAddableCard([...SAVED_CARDS, ...ADDABLE_CARDS])).toBeNull();
+  });
+});
+
+// --- what the dialog is allowed to say about money (audit 2026-07-31) ---------------
+
+describe("an invoice that FAILED is not a case with no price", () => {
+  const REFUSAL =
+    "the standing confirmation covers run 'run-a', but the case's current run is " +
+    "'run-b' — re-confirm over the current evidence";
+
+  it("renders the BFF's refusal instead of claiming pricing is undefined", () => {
+    const html = view(confirmedDetail(), {
+      invoice: { kind: "error" as const, detail: REFUSAL, status: 409 },
+    });
+    expect(html).toContain('data-role="checkout-invoice-error"');
+    expect(html).toContain("re-confirm over the current evidence");
+    expect(html).not.toContain("PLACEHOLDER — pricing not yet defined");
+  });
+
+  it("will not take the money over a price it cannot state", () => {
+    const html = view(confirmedDetail(), {
+      invoice: { kind: "error" as const, detail: REFUSAL, status: 409 },
+    });
+    // the button stayed live over "pricing not yet defined" and the POST then
+    // succeeded, recording a charge whose figure no surface ever displayed
+    expect(html).toMatch(/data-role="checkout-pay"[^>]*disabled/);
+    expect(html).toContain('data-role="checkout-unpriced"');
+    // and the express lane inherits the same refusal — it runs the same two legs
+    expect(html).toMatch(/data-wallet="apple-pay"[^>]*disabled/);
+  });
+
+  it("an in-flight invoice says so, and still holds the button", () => {
+    const html = view(confirmedDetail(), { invoice: { kind: "loading" as const } });
+    expect(html).toContain('data-role="checkout-invoice-loading"');
+    expect(html).toMatch(/data-role="checkout-pay"[^>]*disabled/);
+  });
+
+  it("reserves the placeholder wording for a genuine no-invoice answer", () => {
+    const html = view(confirmedDetail(), { invoice: null });
+    expect(html).toContain("PLACEHOLDER — pricing not yet defined");
+    expect(html).not.toContain('data-role="checkout-invoice-error"');
+  });
+});
+
+describe("the metric strip must classify what it charges for", () => {
+  /** The advertised scenario: a single-site case with tooth 29 dropped re-prices to
+   *  zero with a withheld line — while the strip's first sentence said the operator
+   *  was paying for site 29. */
+  const DROPPED_ONLY = assuranceView({
+    sites: [assuranceSite({ tooth: 29, status: "ready", withhold_intent: true })],
+  });
+
+  it("never heads a withheld row with 'paying for'", () => {
+    const html = view(confirmedDetail(), { assurance: DROPPED_ONLY });
+    expect(html).not.toContain("Alignment metrics you are paying for");
+    expect(html).toContain("Withheld — not released, not in this bill");
+    expect(html).toContain('data-role="signoff-withheld"');
+  });
+
+  it("still NAMES the withheld site — a dropped row is not a hidden row", () => {
+    const html = view(confirmedDetail(), { assurance: DROPPED_ONLY });
+    expect(html).toContain('data-tooth="29" data-disposition="withhold"');
+    expect(html).toContain("stays open");
+  });
+
+  it("an explicit release on this case's dispositions moves the row back", () => {
+    const html = view(confirmedDetail(), {
+      assurance: DROPPED_ONLY,
+      dispositions: { 29: "release" },
+    });
+    expect(html).toContain("Alignment metrics you are paying for");
+    expect(html).not.toContain('data-role="signoff-withheld"');
+  });
+
+  it("carries the production note the half-rate line is attributable to", () => {
+    const note =
+      "single construction part shared across sites identifying 2 distinct " +
+      "variants — per-variant construction parts needed";
+    const html = view(confirmedDetail(), {
+      assurance: assuranceView({
+        sites: [assuranceSite({ tooth: 19, status: "ready", production_note: note })],
+      }),
+      invoice: { kind: "ok" as const, data: invoiceView() },
+    });
+    expect(html).toContain('data-role="signoff-production-note"');
+    expect(html).toContain("per-variant construction parts needed");
+    // and the row wears the emphasis the confirm gate and derive_invoice give it,
+    // even though its ladder rung reads "ready"
+    expect(html).toContain("checkout-metric--flagged");
+  });
+});
+
+describe("the sticky bar carries its own qualifier", () => {
+  it("badges the placeholder rates beside the figure that is pinned on screen", () => {
+    // the bar is sticky; the DEMO banner, invoice.note and the receipt all scroll
+    // away behind it, so the figure most likely to be acted on was the one figure
+    // separated from every qualifier that exists
+    const html = view(confirmedDetail(), {
+      invoice: { kind: "ok" as const, data: invoiceView() },
+    });
+    const bar = html.slice(html.indexOf("checkout-page__actions"));
+    expect(bar).toContain('data-role="checkout-pay-placeholder"');
+    expect(bar).toContain("PLACEHOLDER RATES");
+    expect(bar.indexOf("PLACEHOLDER RATES")).toBeLessThan(
+      bar.indexOf("Pay $48.00 (demo)"),
+    );
+  });
+
+  it("drops the badge once the server stops calling the rates a placeholder", () => {
+    const html = view(confirmedDetail(), {
+      invoice: { kind: "ok" as const, data: invoiceView({ status: "final" }) },
+    });
+    expect(html).not.toContain('data-role="checkout-pay-placeholder"');
   });
 });

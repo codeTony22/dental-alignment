@@ -454,6 +454,27 @@ describe("the DeclareStage container, statically (effects do not run)", () => {
     expect(html).not.toContain('data-role="system-switch-confirm"');
     expect(html).not.toContain('data-role="declare-error"');
   });
+
+  /* R3's claim "buccal and mesial grey out before a preview exists" was FALSE on this
+     stage: the container rendered the toolbar without `viewPresetsAvailable` at all, so
+     the view's own default (true) enabled both. Effects do not run in a static render,
+     which is exactly the state this asserts — mounted, nothing previewed yet. */
+  it("greys the off-axis presets until a preview lands — no preview exists at mount", () => {
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/declare">
+        <DeclareStage detail={detail} onDetail={() => undefined} />
+      </StaticRouter>,
+    );
+    expect(html).toMatch(
+      /data-role="view-preset"[^>]*data-preset="side-a"[^>]*disabled=""/,
+    );
+    expect(html).toMatch(
+      /data-role="view-preset"[^>]*data-preset="side-b"[^>]*disabled=""/,
+    );
+    expect(html).not.toMatch(
+      /data-role="view-preset"[^>]*data-preset="occlusal"[^>]*disabled=""/,
+    );
+  });
 });
 
 /**
@@ -525,22 +546,41 @@ describe("the workspace toolbar over the panes", () => {
     // Dead controls are worse than absent ones: with no handler the group is not
     // rendered at all (see DeclareStageView's note on the pane-camera seam).
     expect(view()).not.toContain('data-role="view-preset"');
-    const wired = view({ onSelectView: () => undefined, viewPreset: "buccal" });
+    const wired = view({
+      onSelectView: () => undefined,
+      viewPreset: "side-a",
+      viewPresetsAvailable: true,
+    });
     expect(wired).toMatch(/data-role="view-preset"[^>]*data-preset="occlusal"/);
     expect(wired).toMatch(
-      /data-role="view-preset"[^>]*data-preset="buccal"[^>]*aria-pressed="true"/,
+      /data-role="view-preset"[^>]*data-preset="side-a"[^>]*aria-pressed="true"/,
     );
-    expect(wired).toMatch(/data-role="view-preset"[^>]*data-preset="mesial"/);
+    expect(wired).toMatch(/data-role="view-preset"[^>]*data-preset="side-b"/);
   });
 
   it("off-axis presets are inert until a seated pose supplies the clock reference", () => {
     const html = view({ onSelectView: () => undefined, viewPresetsAvailable: false });
     expect(html).toMatch(
-      /data-role="view-preset"[^>]*data-preset="buccal"[^>]*disabled=""/,
+      /data-role="view-preset"[^>]*data-preset="side-a"[^>]*disabled=""/,
     );
     // occlusal is exactly the framing the pane already has, so it always works
     expect(html).not.toMatch(
       /data-role="view-preset"[^>]*data-preset="occlusal"[^>]*disabled=""/,
+    );
+  });
+
+  /* THE SAFE DEFAULT IS THE ONE THAT CANNOT LIE (design review 2026-07-31). The flag
+     defaulted to TRUE, so the one caller that never supplied it — DeclareStage —
+     offered both off-axis presets before any preview existed: pane 1 swung side-on
+     (partCameraFrame always carries up:[1,0,0]) while panes 2/3 stayed on the occlusal
+     proxy, and the toolbar claimed the new view for all three. */
+  it("assumes NO clock reference until a caller says otherwise", () => {
+    const html = view({ onSelectView: () => undefined });
+    expect(html).toMatch(
+      /data-role="view-preset"[^>]*data-preset="side-a"[^>]*disabled=""/,
+    );
+    expect(html).toMatch(
+      /data-role="view-preset"[^>]*data-preset="side-b"[^>]*disabled=""/,
     );
   });
 
@@ -551,5 +591,38 @@ describe("the workspace toolbar over the panes", () => {
     const scrollEnd = html.indexOf("workbench__work-footer");
     expect(toolbar).toBeGreaterThan(scrollEnd);
     expect(scroll).toBeLessThan(scrollEnd);
+  });
+});
+
+/**
+ * THE STRIP AND THE PANE UNDER IT MUST NOT DISAGREE (design review 2026-07-31).
+ *
+ * On Declare before the run, every numeric cell of the strip labelled ALIGNMENT read
+ * "—" while the union pane below published the SAME site's RMS and p90 from
+ * `payload.stats`. A dash in a deviation column reads as a measured zero — which is
+ * precisely why the queue rows in the same commit say "no run has measured this fit
+ * yet" instead of one.
+ */
+describe("the ALIGNMENT strip before any run", () => {
+  it("says NO RUN YET rather than a dash, and names whose figures it is showing", () => {
+    const html = view({
+      activeTooth: 19,
+      previewFigures: {
+        poseAvailable: true,
+        rmsMm: 0.0861,
+        p90Mm: 0.1423,
+        source: "preview",
+      },
+    });
+    expect(html).toContain("0.086 mm");
+    expect(html).toContain("0.142 mm");
+    expect(html).toContain("DEV RMS (preview)");
+    // the preview measures no clocking residual and places no pairs
+    expect(html).toMatch(/data-stat="rotation"[\s\S]{0,200}?no run yet</);
+  });
+
+  it("with neither a run nor a preview it states the absence, not a number", () => {
+    const html = view({ activeTooth: 19 });
+    expect(html).toMatch(/data-stat="dev-rms"[\s\S]{0,200}?no run yet</);
   });
 });

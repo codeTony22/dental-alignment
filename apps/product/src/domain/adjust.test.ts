@@ -34,6 +34,9 @@ import {
   landmarkLabel,
   needsReconfirm,
   needsReconfirmStatus,
+  outcomeMovedTheRow,
+  paneArming,
+  reconfirmControl,
   newPairDraft,
   pairSetWords,
   observationWords,
@@ -757,5 +760,174 @@ describe("the flagged-exception pointer (the act lives on Deliver's row)", () =>
       expect(flaggedExceptionWords(other)).toBeNull();
     }
     expect(flaggedExceptionWords(null)).toBeNull();
+  });
+});
+
+/**
+ * THE ROW THE STRIP READS MOVED SERVER-SIDE (design review 2026-07-31).
+ *
+ * `adjust._fold_outcome` rewrites the run's summary row — clocking, deviation_*,
+ * correspondence — on every applied tool, and nothing in the response moves
+ * `run_state`. The container's run-rows effect keys off `run_state`, so without an
+ * explicit signal the ALIGNMENT strip kept printing the PRE-rework numbers beside an
+ * outcome panel describing the new pose: on one screen the rotation tab read the fresh
+ * residual (1.2°) and the toolbar cell the stale one (+7.4°).
+ */
+describe("outcomeMovedTheRow — when the run's summary row must be re-read", () => {
+  const okResult = (applied: boolean): ApiResult<AdjustResultView> => ({
+    kind: "ok",
+    data: {
+      outcome: {
+        tooth: 19,
+        operation: "rotation",
+        detail: "rotated",
+        applied,
+        files: [],
+        clocking: { notch_shift_deg: 1.2 },
+        deviation: null,
+        stale_metrics: [],
+        nudge: null,
+        applied_delta_deg: 5,
+        cumulative_deg: 5,
+        stability_excess_mm: null,
+        best_fit: null,
+        pairs: [],
+        residual_rms_mm: null,
+        click_azimuth_deg: null,
+        matched_feature_azimuth_deg: null,
+      },
+      pane_payload: null,
+      case: {} as AdjustResultView["case"],
+    },
+  });
+
+  it("an APPLIED tool moved the row — re-read it", () => {
+    expect(outcomeMovedTheRow(okResult(true))).toBe(true);
+  });
+
+  it("a measure-only call moved nothing — no re-read", () => {
+    expect(outcomeMovedTheRow(okResult(false))).toBe(false);
+  });
+
+  it("a refusal moved nothing — the fit on screen is the one that passed the gates", () => {
+    expect(
+      outcomeMovedTheRow({ kind: "error", status: 409, detail: "refused", refusal: null }),
+    ).toBe(false);
+  });
+});
+
+/**
+ * AN ATTESTATION NEEDS ITS EVIDENCE ON SCREEN (design review 2026-07-31).
+ *
+ * The re-confirmation rendered off the site's RUNG alone. With the seated read failed,
+ * pane 3 says "The shipped fit could not be read." while the block beside it said
+ * "confirm it again over the panes on the right" with an ENABLED button — and clicking
+ * it satisfied Deliver's every-site-resolved gate with an attestation whose evidence
+ * was never displayed.
+ */
+describe("reconfirmControl — the rung offers the act, the panes qualify it", () => {
+  it("offers and enables it once the shipped fit is on the panes", () => {
+    expect(reconfirmControl("adjusted", "ready", true)).toEqual({
+      offered: true,
+      enabled: true,
+      reason: null,
+    });
+  });
+
+  it("offers it but refuses the click while the shipped fit could not be read", () => {
+    const control = reconfirmControl("adjusted", "error", false);
+    expect(control.offered).toBe(true);
+    expect(control.enabled).toBe(false);
+    expect(control.reason).toContain("could not be read");
+  });
+
+  it("refuses it while the read is still in flight, with the honest reason", () => {
+    const control = reconfirmControl("adjusted", "loading", false);
+    expect(control.enabled).toBe(false);
+    expect(control.reason).toContain("reading");
+  });
+
+  it("refuses it before any read has been asked for", () => {
+    const control = reconfirmControl("adjusted", "idle", false);
+    expect(control.enabled).toBe(false);
+    expect(control.reason).not.toBeNull();
+  });
+
+  it("a READY phase with no payload is still no evidence — the panes are blank", () => {
+    expect(reconfirmControl("adjusted", "ready", false).enabled).toBe(false);
+  });
+
+  it("a site that is not on the rung is not offered the act at all", () => {
+    for (const status of ["ready", "flagged", "previewed", null] as const) {
+      const control = reconfirmControl(status, "ready", true);
+      expect(control.offered).toBe(false);
+      expect(control.enabled).toBe(false);
+    }
+  });
+});
+
+/**
+ * THE PANES SAY WHEN THEY ARE ARMED (client 2026-07-30, re-opened by the design review
+ * 2026-07-31: the props existed and the only stage that installs pick listeners never
+ * passed them, so the crosshair class and the on-glass hint were dead code).
+ *
+ * The router is the rule: a trench click is the SCAN's while the trench is armed;
+ * otherwise the open draft's next empty slot decides which pane wants a click. Every
+ * other pane must stay un-armed — arming all three for the whole stage is exactly the
+ * lie this control exists to stop telling.
+ */
+describe("paneArming — which pane wants the next click, and what it will do", () => {
+  it("arms nothing when no draft is open and the trench is not armed", () => {
+    const arming = paneArming(null, false);
+    expect(arming.armed).toEqual({ library: false, scan: false, union: false });
+    expect(arming.hints).toEqual({ library: null, scan: null, union: null });
+  });
+
+  it("arms the LIBRARY pane alone while the pair wants its part half", () => {
+    const arming = paneArming(newPairDraft("p1", false), false);
+    expect(arming.armed).toEqual({ library: true, scan: false, union: false });
+    expect(arming.hints.library).toContain("library part");
+    expect(arming.hints.scan).toBeNull();
+  });
+
+  it("arms BOTH scan panes once the part half is placed — either one may take it", () => {
+    const draft = withPick(newPairDraft("p1", false), "part", [0, 0, 1]);
+    const arming = paneArming(draft, false);
+    expect(arming.armed).toEqual({ library: false, scan: true, union: true });
+    expect(arming.hints.scan).toBe(arming.hints.union);
+    expect(arming.hints.scan).not.toBeNull();
+  });
+
+  it("a span's second scan click names the OTHER END, not the same spot again", () => {
+    const draft = withPick(
+      withPick(newPairDraft("p1", true), "part", [0, 0, 1]),
+      "scan",
+      [1, 0, 0],
+    );
+    const arming = paneArming(draft, false);
+    expect(arming.armed.scan).toBe(true);
+    expect(arming.hints.scan).toContain("OTHER END");
+  });
+
+  it("a complete pair arms nothing — a click nothing is waiting for is ignored", () => {
+    const draft = withPick(
+      withPick(newPairDraft("p1", false), "part", [0, 0, 1]),
+      "scan",
+      [1, 0, 0],
+    );
+    expect(paneArming(draft, false).armed).toEqual({
+      library: false,
+      scan: false,
+      union: false,
+    });
+  });
+
+  it("the armed trench takes the scan panes, exactly as the pick router does", () => {
+    const draft = newPairDraft("p1", false); // still waiting on its PART half
+    const arming = paneArming(draft, true);
+    expect(arming.armed).toEqual({ library: true, scan: true, union: true });
+    expect(arming.hints.scan).toContain("cutout");
+    // the part half is untouched by the trench — the router only diverts scan clicks
+    expect(arming.hints.library).toContain("library part");
   });
 });

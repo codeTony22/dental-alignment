@@ -204,9 +204,41 @@ describe("the scan-arrival statement", () => {
   });
 
   it("states the discovery rules a case is actually minted by", () => {
-    expect(prose).toContain("*.stl");
     expect(prose).toContain("The folder name is the case");
     expect(prose).toContain("lower"); // the jaw suggestion's one keyword
+  });
+
+  /**
+   * 2026-07-31: the first cut of this panel described a discovery that did not exist.
+   * Each claim below was reproduced against the real discover_cases before the copy was
+   * written; the worker tests named here are the other half of each pair.
+   */
+  it("does not claim the extension must be lowercase — .STL is discovered too", () => {
+    // Was "*.stl and nothing else" beside code that globbed case-sensitively, so a
+    // scanner's UPPER_JAW.STL produced no case while the panel said only a folder with
+    // no STL fails. The code now ignores extension case
+    // (worker test_application.py::test_an_uppercase_stl_extension_is_still_a_case);
+    // the copy must not re-introduce the lowercase rule.
+    expect(prose).toContain("upper or lower case");
+    expect(prose).not.toContain("*.stl");
+  });
+
+  it("admits that a folder of several STLs keeps only the first by name", () => {
+    // Reproduced: a folder holding upper_jaw.stl AND lower_jaw.stl yields ONE case; the
+    // other arch is dropped with no row and no warning. The panel cannot surface the
+    // dropped file (the worklist row carries no scan facts), so it must at least say the
+    // rule — a lab copying a complete two-arch export loses half of it otherwise.
+    expect(prose).toContain("first by name");
+    expect(prose).toContain("one folder per case");
+  });
+
+  it("says the doctor- strip is a PREFIX, matching what the code now does", () => {
+    // The copy always said "a leading doctor- is stripped"; the code stripped the first
+    // occurrence anywhere, so patient-doctor-4471 became case id patient-4471. The code
+    // moved to removeprefix (worker
+    // test_application.py::test_doctor_is_stripped_only_as_a_leading_prefix), so this
+    // claim is now true — keep it worded as a prefix.
+    expect(prose).toContain("leading");
   });
 
   it("refuses the prototype's PLY claim — discovery globs *.stl and nothing else", () => {

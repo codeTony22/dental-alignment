@@ -73,7 +73,7 @@ import {
   indicesFrom,
   partCameraFrame,
   positionsFrom,
-  presetFrame,
+  presetFraming,
   siteFrameFor,
   type ViewPresetId,
   variantMeshUrl,
@@ -247,10 +247,13 @@ function ColorbarHud({
   payload,
   scaleId = "signed",
   onSelectScale,
+  chrome = "full",
 }: {
   readonly payload: SitePreviewPayload;
   readonly scaleId?: DeviationScaleId;
   readonly onSelectScale?: (id: DeviationScaleId) => void;
+  /** A tiny stage sheds the CHOOSER; it may not shed the ramp's identity — see below. */
+  readonly chrome?: PaneChrome;
 }) {
   const clampMm = payload.scale.clamp_mm;
   const contacts = scaleId === "contacts";
@@ -261,8 +264,22 @@ function ColorbarHud({
   return (
     <div className="verify-panel__hud verify-panel__hud--scale">
       <div className="verify-colorbar">
-        {onSelectScale !== undefined && (
+        {chrome !== "tiny" && onSelectScale !== undefined && (
           <ScaleSelector scaleId={scaleId} onSelectScale={onSelectScale} />
+        )}
+        {chrome === "tiny" && (
+          /* THE RAMP KEEPS ITS IDENTITY AT EVERY SIZE (design review 2026-07-31).
+             The tiny rule hid the chooser, the ticks AND the fold, so the union pane
+             showed a deviation-coloured cap over a bare gradient: no numbers, no sign
+             convention, and no way to tell the SIGNED ramp from RealGUIDE's absolute
+             rainbow — on which red means either proud or sunk. Worse, on a
+             three-column stage maximizing yields the identical height (both are
+             availH − 61), so there was no route back to any of it. The chooser is a
+             control and may step aside; WHICH SCALE IS ON THE MESH is a caption, and
+             a coloured surface without it is not a measurement. */
+          <span data-role="colorbar-scale-name" className="verify-colorbar__scalename">
+            {contacts ? `contacts 0.00–${CONTACTS_MAX_MM.toFixed(2)} mm` : `signed ±${clampMm.toFixed(2)} mm`}
+          </span>
         )}
         <div
           className="verify-colorbar__bar"
@@ -383,6 +400,16 @@ export interface PaneLayoutPlan {
   readonly stageH: number;
   /** The multi-pane layout cannot carry a usable stage — show one pane at full height. */
   readonly solo: boolean;
+  /**
+   * THE SAME ARITHMETIC WITHOUT THE MAXIMIZE (design review 2026-07-31): could the
+   * multi-pane layout carry a stage if nothing were maximized?
+   *
+   * `solo` cannot answer that — it is forced false whenever `maximized` is true, which
+   * made the guard `maximizedId !== null && !plan.solo` dead code and put "⤡ show all
+   * three" on a stage that answers it with one pane and "too short for three panes".
+   * Any control promising the three-pane layout must ask THIS instead.
+   */
+  readonly soloIfUnmaximized: boolean;
   readonly chrome: PaneChrome;
 }
 
@@ -392,6 +419,7 @@ export const UNMEASURED_PANE_LAYOUT: PaneLayoutPlan = {
   rows: 1,
   stageH: 0,
   solo: false,
+  soloIfUnmaximized: false,
   chrome: "full",
 };
 
@@ -422,11 +450,12 @@ export function planPaneLayout(metrics: PaneStageMetrics, maximized: boolean): P
   const rows: 1 | 2 | 3 = columns === 1 ? 3 : columns === 2 ? 2 : 1;
   const multiRowH = Math.floor((availH - PANE_GRID_GAP_PX * (rows - 1)) / rows);
   const multiStageH = multiRowH - PANE_STAGE_CHROME_PX;
-  const solo = !maximized && multiStageH < SOLO_FALLBACK_STAGE_PX;
+  const soloIfUnmaximized = multiStageH < SOLO_FALLBACK_STAGE_PX;
+  const solo = !maximized && soloIfUnmaximized;
   const stageH = maximized || solo ? availH - PANE_STAGE_CHROME_PX : multiStageH;
   const chrome: PaneChrome =
     stageH < TINY_STAGE_PX ? "tiny" : stageH < COMPACT_STAGE_PX ? "compact" : "full";
-  return { measured: true, columns, rows, stageH, solo, chrome };
+  return { measured: true, columns, rows, stageH, solo, soloIfUnmaximized, chrome };
 }
 
 /** Measure the grid the panes live in. A ResizeObserver rather than a window listener alone
@@ -841,9 +870,15 @@ export function SitePanesView({
                     stageId === pane ? " button--active" : ""
                   }`}
                   title={
-                    stageId === pane
-                      ? `${PANE_TITLES[pane]} — back to all three panels`
-                      : `Show ${PANE_TITLES[pane]} on the whole stage`
+                    stageId !== pane
+                      ? `Show ${PANE_TITLES[pane]} on the whole stage`
+                      : plan.soloIfUnmaximized
+                        ? /* The tooltip used to promise "back to all three panels" while
+                             the note beside it said "too short for three panes" — one
+                             control, two contradictory sentences (design review
+                             2026-07-31). */
+                          `${PANE_TITLES[pane]} — the stage is too short for three panes`
+                        : `${PANE_TITLES[pane]} — back to all three panels`
                   }
                   onClick={() => onToggleMaximized?.(pane)}
                 >
@@ -852,10 +887,12 @@ export function SitePanesView({
               ))}
             </div>
           )}
-          {/* Not offered while the FALLBACK is what put one pane on screen: there is no
+          {/* Not offered while the stage could not carry all three ANYWAY: there is no
               all-three to go back to, and a control that cannot do what it says is worse
-              than no control. */}
-          {maximizedId !== null && !plan.solo && onToggleMaximized !== undefined && (
+              than no control. Judged on `soloIfUnmaximized` — `!plan.solo` was dead code
+              here, since planPaneLayout forces solo=false whenever a pane is maximized
+              (design review 2026-07-31). */}
+          {maximizedId !== null && !plan.soloIfUnmaximized && onToggleMaximized !== undefined && (
             <button
               type="button"
               className="button button--ghost button--small"
@@ -943,6 +980,7 @@ export function SitePanesView({
                     payload={payload}
                     scaleId={scaleId}
                     onSelectScale={onSelectScale}
+                    chrome={plan.chrome}
                   />
                 )}
               </>
@@ -1045,6 +1083,19 @@ export interface SitePaneSceneOptions {
    * that does not offer the control pays nothing.
    */
   readonly viewPreset?: ViewPresetId;
+  /**
+   * A VIEWPOINT MUST BE RETURNABLE TO (design review 2026-07-31).
+   *
+   * The preset button latched as selected, but re-clicking it produced the same
+   * `frameKey`, which VerifyViewer's `framedRef` guard short-circuits — so after any
+   * orbit the toolbar claimed a viewpoint the cameras had left and its own control was
+   * inert. The whole stated rationale for naming a direction is "a viewpoint the
+   * operator can RETURN to" (domain/declare.presetFraming's note), which that does not
+   * meet. The stage bumps this on EVERY preset click, re-selection included; it rides
+   * with each pane's own reset nonce, so either act re-frames and neither cancels the
+   * other.
+   */
+  readonly viewPresetNonce?: number;
 }
 
 export function useSitePaneScene(
@@ -1219,18 +1270,21 @@ export function useSitePaneScene(
     };
   }, [payload, scaleId]);
 
-  // THE PRESET IS A ROTATION OF THE FRAME EACH PANE ALREADY HAS, never a frame of
-  // its own — see domain/declare.presetFrame. It returns null for the off-axis views
-  // whenever the roll is unmeasured (pre-preview, panes 2/3 frame down the jaw's
-  // occlusal PROXY with no clock reference), and `?? base` then leaves the pane on
-  // its own framing rather than dropping it to nothing.
+  /* THE PRESET IS A ROTATION OF THE FRAME EACH PANE ALREADY HAS, never a frame of
+     its own — see domain/declare.presetFraming. It cannot apply where the roll is
+     unmeasured (pre-preview, panes 2/3 frame down the jaw's occlusal PROXY with no
+     clock reference), and the pane then keeps its own framing rather than dropping to
+     nothing — WITH its own axis label, which is the half that used to go missing:
+     reference and label came from different frames, so a side-on pane read "down the
+     seated pose axis" at exactly 90° off it (design review 2026-07-31). */
   const viewPreset = options.viewPreset ?? "occlusal";
-  const partFrame = useMemo(() => {
+  const partFraming = useMemo(() => {
     const base = partCameraFrame(
       partPositions !== null ? computePartFrame(partPositions) : null,
     );
-    return presetFrame(base, viewPreset) ?? base;
+    return presetFraming(base, viewPreset);
   }, [partPositions, viewPreset]);
+  const partFrame = partFraming.frame;
 
   const occlusal = useMemo(() => {
     if (scanPositions === null) return null;
@@ -1238,7 +1292,8 @@ export function useSitePaneScene(
   }, [scanPositions]);
   const siteFrameBase = siteFrameFor(siteCenter, payload?.pose ?? null, occlusal,
                                      CAP_REGION_RADIUS_MM);
-  const siteFrame = presetFrame(siteFrameBase, viewPreset) ?? siteFrameBase;
+  const siteFraming = presetFraming(siteFrameBase, viewPreset);
+  const siteFrame = siteFraming.frame;
 
   const layers: PaneLayers = {
     library: [
@@ -1281,7 +1336,11 @@ export function useSitePaneScene(
      the view: the band is a reading of THIS pane's camera, so it belongs with the canvas it
      reads — and that way both stages get it from the one place that builds the canvases,
      instead of each stage having to remember to thread a readout through. */
-  const siteAxis = siteAxisLabel(payload?.pose ?? null);
+  /* NAME THE DIRECTION THE PANE IS ACTUALLY ON. Under a preset that applied, that is
+     the preset's own viewpoint; otherwise it is the pane's own axis. The two can never
+     be sourced separately again — presetFraming returns them together. */
+  const siteAxis = siteFraming.presetLabel ?? siteAxisLabel(payload?.pose ?? null);
+  const partAxis = partFraming.presetLabel ?? "the part's own axis";
   const footFor = (
     pane: PaneId,
     reference: readonly [number, number, number] | null,
@@ -1300,6 +1359,10 @@ export function useSitePaneScene(
     );
   };
 
+  /* Either act is a request to re-frame this pane, and VerifyViewer folds this number
+     into its frame key — so a re-selected preset re-frames (which is what makes a named
+     viewpoint returnable to) without cancelling a per-pane ⌖. */
+  const presetNonce = options.viewPresetNonce ?? 0;
   const linkGroup = linkGroupRef.current;
   return {
     partBusy,
@@ -1326,7 +1389,7 @@ export function useSitePaneScene(
     libraryViewer: (
       <>
       <VerifyViewer
-        frameNonce={resetNonce.library}
+        frameNonce={resetNonce.library + presetNonce}
         layers={[
           {
             id: "part",
@@ -1343,14 +1406,14 @@ export function useSitePaneScene(
         onViewChange={onLibraryView}
         ariaLabel="The declared library part"
       />
-      {footFor("library", partFrame?.viewDirection ?? null, "the part's own axis",
+      {footFor("library", partFrame?.viewDirection ?? null, partAxis,
                partGeometry !== null)}
       </>
     ),
     scanViewer: (
       <>
       <VerifyViewer
-        frameNonce={resetNonce.scan}
+        frameNonce={resetNonce.scan + presetNonce}
         layers={[
           {
             id: "scan",
@@ -1373,7 +1436,7 @@ export function useSitePaneScene(
     unionViewer: (
       <>
       <VerifyViewer
-        frameNonce={resetNonce.union}
+        frameNonce={resetNonce.union + presetNonce}
         layers={[
           // the client's own defaults, kept: the scan half-transparent so the
           // coloured cap reads through it

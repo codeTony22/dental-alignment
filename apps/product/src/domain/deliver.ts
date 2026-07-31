@@ -19,7 +19,6 @@ import type {
   ChoicesView,
   ConfirmBody,
   ConfirmationView,
-  InvoicePaymentView,
   InvoiceView,
   SessionView,
 } from "../api/client";
@@ -93,7 +92,13 @@ export function confirmBlockers(
     // an untouched row needing acknowledgment is headed for release (the
     // default), so the demand shows immediately — withholding it is what
     // makes the demand go away
-    if (ackRequired(site, dispositions[site.tooth]) && !acked.has(site.tooth)) {
+    // the EFFECTIVE disposition, never the raw map lookup: a site dropped at
+    // Adjust is headed for withhold, and demanding an acknowledgment for a
+    // release that is not going to happen is a question about nothing
+    if (
+      ackRequired(site, effectiveDisposition(site, dispositions)) &&
+      !acked.has(site.tooth)
+    ) {
       blockers.push(
         `tooth ${site.tooth} ${acknowledgmentReason(site)} — releasing it ` +
           `needs its own acknowledgment`,
@@ -105,24 +110,51 @@ export function confirmBlockers(
 
 /**
  * WHETHER A ROW OFFERS THE WITHHOLD CONTROL AT ALL (client 2026-07-27 #4: the
- * release/withhold pair was friction on single-site cases — 7 of 9). Only a row
- * ``needsAcknowledgment`` can plausibly be held back, so only such a row renders
- * the control; a clean row is released, and says so quietly instead of asking a
- * question with one sane answer. The server agrees by construction: an omitted
- * disposition IS release.
+ * release/withhold pair was friction on single-site cases — 7 of 9). A row
+ * ``needsAcknowledgment`` can plausibly be held back, so it renders the control; a
+ * clean row that is going to release says so quietly instead of asking a question
+ * with one sane answer.
+ *
+ * AND A ROW ALREADY HEADED FOR WITHHOLD OFFERS IT TOO (audit 2026-07-31), because
+ * the alternative was a one-way door: a clean site dropped at Adjust rendered the
+ * literal word "released" — the control being gated on ``needsAcknowledgment``
+ * alone — while confirming from that screen withheld it and every case-wide file
+ * with it, and there was no way back short of navigating to Adjust. The rule is
+ * therefore stated over the EFFECTIVE disposition, not over the flag: any row this
+ * screen is about to withhold must be reversible on this screen.
  */
-export function withholdOffered(site: AssuranceSite): boolean {
-  return needsAcknowledgment(site);
+export function withholdOffered(
+  site: AssuranceSite,
+  dispositions: DispositionMap = {},
+): boolean {
+  return (
+    needsAcknowledgment(site) ||
+    effectiveDisposition(site, dispositions) === "withhold"
+  );
 }
 
-/** What a row's disposition actually IS: the operator's act, else release — the
- * server's own default, resolved here too so the surface never shows "undecided"
- * for a state that is not undecided. */
+/**
+ * WHAT A ROW'S DISPOSITION ACTUALLY IS — the one resolution this app makes, and it
+ * mirrors ``confirm_case``'s own precedence line exactly: the operator's act on this
+ * screen, else the DRAFT the server carries for the site (a cap dropped at Adjust —
+ * ``AssuranceSite.withhold_intent``), else release.
+ *
+ * The draft link is the whole fix for the 2026-07-31 coherence finding. The server
+ * resolved omissions against it — the invoice priced it, the attestation counted it,
+ * the confirmation sealed it — while this function resolved them straight to
+ * "release", so one screen said "released" about a site the very next click
+ * withheld. Reading the server's own field here means the surface and the seal
+ * resolve the same map from the same inputs. It is still not a client-side verdict:
+ * a disposition says what the OPERATOR does with a site, never what the site IS, and
+ * the server re-resolves and re-judges every one of these on confirm.
+ */
 export function effectiveDisposition(
   site: AssuranceSite,
   dispositions: DispositionMap,
 ): Disposition {
-  return dispositions[site.tooth] ?? "release";
+  return (
+    dispositions[site.tooth] ?? (site.withhold_intent === true ? "withhold" : "release")
+  );
 }
 
 /** Whether a row renders (and demands) its acknowledgment tick: it
@@ -274,9 +306,22 @@ export function turnaroundWords(invoice: InvoiceView): string {
  * forge it. A record persisted before amounts were kept says so rather than printing
  * a $0.00 nobody was charged.
  */
-export function receiptWords(paid: InvoicePaymentView | null): string | null {
+/** WHAT A RECEIPT LOOKS LIKE, whichever record it came off. The invoice's `paid`
+ *  block and the session's own `payment` carry the same five facts under the same
+ *  names, and the paid step reads the session's directly — the invoice block it used
+ *  to read vanishes with the "Paid" step the moment payment lands. Structural rather
+ *  than a union so a third carrier needs no change here. */
+export interface PaidRecordLike {
+  readonly amount_cents?: number | null;
+  readonly currency?: string | null;
+  readonly rate_card_version?: string | null;
+  readonly turnaround?: string | null;
+  readonly at: string;
+}
+
+export function receiptWords(paid: PaidRecordLike | null): string | null {
   if (paid === null) return null;
-  if (paid.amount_cents === null) {
+  if (paid.amount_cents == null) {
     return `Authorized at ${paid.at} — no amount was recorded with this payment.`;
   }
   const amount = formatMoney(paid.amount_cents, paid.currency ?? "USD");
@@ -391,10 +436,21 @@ export function attestationText(
  */
 export const CLINICAL_TERMS_VERSION = "clinical-responsibility-placeholder-v1";
 
+/*
+ * CORRECTED 2026-07-31. It read "against the dispositions actually confirmed", and
+ * that is false the whole time it matters most: with NO confirmation standing,
+ * ``_billing_dispositions`` takes its DRAFT branch and prices the caps dropped at
+ * Adjust (bff/resources/deliver.py) — so the counts above already describe drops
+ * nobody has signed. Naming only the confirmed half told a reader the sentence was
+ * lagging when it was in fact current, which is the wrong direction to be wrong in
+ * on the screen that signs.
+ */
 export const ATTESTATION_PENDING_CAVEAT =
-  "Withholding a site in the report removes it from this release. The statement " +
-  "above is re-derived server-side against the dispositions actually confirmed, " +
-  "and the checkout echoes the sealed wording.";
+  "Withholding a site removes it from this release. The statement above is " +
+  "re-derived server-side — against the standing confirmation's dispositions once " +
+  "there is one, and against the caps already dropped before that — so a withhold " +
+  "ticked here and not yet confirmed is the one thing still only in this browser. " +
+  "The checkout echoes the sealed wording.";
 
 // --- the metrics the checkout restates (gap ``pay-modal-metric-signoff``) -------------
 
@@ -408,7 +464,25 @@ export interface SignoffRow {
   /** The run's guidance level, verbatim — the second chip's word. */
   /** null when it would only repeat `status` — see `signoffRows`. */
   readonly gate: string | null;
+  /**
+   * Whether this row is one the confirm gate makes the operator acknowledge —
+   * ``needsAcknowledgment``, NOT ``status === "flagged"`` (audit 2026-07-31). The
+   * two diverge on exactly the row that most needs the emphasis: a shared-part
+   * conflict leaves the ladder rung at "ready" while the BFF pins the row first,
+   * demands its acknowledgment and bills it at HALF rate, so the checkout rendered
+   * "Site 19 · ready" with no emphasis over an Order line reading "1 acknowledged
+   * exception, at half rate" that no row on screen could be attributed to.
+   */
   readonly flagged: boolean;
+  /**
+   * THE THIRD FACT, and the missing one: the worker's shared-construction-part
+   * sentence, verbatim (``AssuranceSite.production_note``). It is the whole reason
+   * such a row is an exception; dropping it left the discount unattributable.
+   */
+  readonly productionNote: string | null;
+  /** What this site's money actually does — the same resolution the stage, the
+   *  confirm gate and the server's own invoice split stand on. */
+  readonly disposition: Disposition;
 }
 
 /**
@@ -424,7 +498,10 @@ export interface SignoffRow {
  * session ladder's rung, the run's guidance level), and the order is the BFF's served
  * order — this app never re-sorts evidence.
  */
-export function signoffRows(assurance: AssuranceView): readonly SignoffRow[] {
+export function signoffRows(
+  assurance: AssuranceView,
+  dispositions: DispositionMap = {},
+): readonly SignoffRow[] {
   return assurance.sites.map((site) => ({
     tooth: site.tooth,
     variant: site.declared_variant ?? "no cap declared",
@@ -438,7 +515,11 @@ export function signoffRows(assurance: AssuranceView): readonly SignoffRow[] {
     // 2026-07-31). Null here means "the same word twice", and the surface drops
     // it. It survives only where it DIVERGES, which is the case worth the room.
     gate: site.gate.level === (site.status ?? "unknown") ? null : site.gate.level,
-    flagged: site.status === "flagged",
+    // the predicate the rest of this module, the BFF's confirm gate and
+    // `derive_invoice` all stand on — see `SignoffRow.flagged`
+    flagged: needsAcknowledgment(site),
+    productionNote: site.production_note,
+    disposition: effectiveDisposition(site, dispositions),
   }));
 }
 
@@ -514,6 +595,15 @@ export interface EvidenceLine {
   /** True while ``note`` is the run's own sentence; false for the fallback. Rendered
    * as a data attribute so the distinction survives into the markup a reviewer reads. */
   readonly noteFromRun: boolean;
+  /**
+   * WHAT CONFIRMING DOES WITH THIS SITE (audit 2026-07-31). The stage's confirm
+   * button sits on this same panel, and a site dropped at Adjust appeared in this
+   * list as an unremarkable line — so the surface the operator actually reads before
+   * signing named every fact about the site except the one the signature decides.
+   * Resolved by ``effectiveDisposition``, like every other disposition on the two
+   * Deliver surfaces.
+   */
+  readonly disposition: Disposition;
 }
 
 /** The gate's own sentence where it raised one; otherwise a statement about the
@@ -537,7 +627,10 @@ function mm(value: number | null): string {
  * order (this app never re-sorts evidence), carrying the identity, the seat and the
  * deviation — the three numbers a reader scans for — beside the gate's own word.
  */
-export function evidenceSummary(assurance: AssuranceView): readonly EvidenceLine[] {
+export function evidenceSummary(
+  assurance: AssuranceView,
+  dispositions: DispositionMap = {},
+): readonly EvidenceLine[] {
   return assurance.sites.map((site) => {
     const why = evidenceNote(site);
     return {
@@ -550,6 +643,7 @@ export function evidenceSummary(assurance: AssuranceView): readonly EvidenceLine
         `RMS ${mm(site.deviation_rms_mm)} / p90 ${mm(site.deviation_p90_mm)}`,
       note: why.note,
       noteFromRun: why.fromRun,
+      disposition: effectiveDisposition(site, dispositions),
     };
   });
 }
@@ -624,10 +718,13 @@ export function acknowledgmentPolicyWords(
   dispositions: DispositionMap = {},
 ): string {
   const owed = assurance.sites.filter((site) =>
-    ackRequired(site, dispositions[site.tooth]),
+    ackRequired(site, effectiveDisposition(site, dispositions)),
   ).length;
+  // EVERY withheld site, not only the flagged ones (audit 2026-07-31): a clean cap
+  // dropped at Adjust does not release either, and a header reading "every row here
+  // releases as it stands" over one is the same lie the row itself used to tell
   const held = assurance.sites.filter(
-    (site) => needsAcknowledgment(site) && dispositions[site.tooth] === "withhold",
+    (site) => effectiveDisposition(site, dispositions) === "withhold",
   ).length;
   const heldClause =
     held === 0

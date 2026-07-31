@@ -823,6 +823,22 @@ export interface AssuranceSite {
    * site earns (domain/deliver.ackRequired) — the note's own words are "cannot
    * match", not "differs slightly". */
   production_note: string | null;
+  /**
+   * THE DISPOSITION THIS ROW IS STANDING ON, server-derived (audit 2026-07-31).
+   *
+   * A cap dropped at Adjust reached the invoice, the attestation sentence and the
+   * sealed confirmation — but not this row. The table therefore printed the literal
+   * word "released" over a dropped site, on the screen that signs it withheld, with
+   * no control on the row to change it back. It is the same field Adjust reads
+   * (`SiteView.withhold_intent`), projected onto the row that seals it, and
+   * `confirm_case` writes the resolved disposition back onto it — so after a
+   * confirmation this is not merely a draft, it is THE disposition.
+   *
+   * `domain/deliver.effectiveDisposition` resolves it exactly as the server does
+   * (an explicit act, else this draft, else release). Optional so every fixture and
+   * payload written before it existed keeps reading as "not dropped".
+   */
+  withhold_intent?: boolean;
   /** The numbers in this row that PREDATE an operator rework (the BFF's own list).
    * Adjust re-derives the deviation scalars and the clocking over the new pose; the
    * rim agreement and the guidance cannot be re-derived from the shipped record, so
@@ -908,6 +924,17 @@ export interface InvoiceView {
   lines: InvoiceLine[];
   total_cents: number;
   paid: InvoicePaymentView | null;
+  /**
+   * THE DOCUMENT'S OWN IDENTITY — an opaque server digest, echoed back when
+   * authorizing so the price READ and the price CHARGED are provably the same one
+   * (audit 2026-07-31: a rival `turnaround` PUT repriced the case between the render
+   * and the click, and the charge landed 200 at a figure no surface displayed).
+   *
+   * It is not an amount and must never become one: a client that could POST an
+   * amount could pay $0 for a released case. This says only "this is the document I
+   * was shown"; the server re-derives and compares for itself.
+   */
+  fingerprint?: string;
 }
 
 /** EVIDENCE class like the assurance: ungated, because an operator must be able to
@@ -956,17 +983,34 @@ export async function postConfirm(
   );
 }
 
-/** The payment STUB: {authorize: true} or nothing — the UI labels the button as a
- * stub, and the BFF records provider "stub" so it stays tellable. */
+/**
+ * The payment STUB: the explicit act, plus the PRECONDITION naming the priced
+ * document this browser displayed. The UI labels the button as a stub, and the BFF
+ * records provider "stub" so it stays tellable.
+ *
+ * `invoiceFingerprint` IS NOT AN AMOUNT (audit 2026-07-31). No body this app can
+ * send carries one and none ever will — a client that could POST an amount could
+ * pay $0 for a released case. What rides here is the opaque digest the invoice
+ * itself served, echoed back: the server re-derives the price at authorization time
+ * and refuses 409 ("the price moved since you read it") when the two documents
+ * differ. Without it, a `turnaround` PUT from a second tab moved the price from
+ * $32.00 to $48.00 between the render and the click, and the charge landed at a
+ * figure no surface ever displayed.
+ */
 export async function postPayment(
   caseId: string,
+  invoiceFingerprint?: string | null,
 ): Promise<ApiResult<CaseSessionDetail>> {
   return fetchJson<CaseSessionDetail>(
     `/api/case-sessions/${encodeURIComponent(caseId)}/payment`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ authorize: true }),
+      body: JSON.stringify(
+        invoiceFingerprint != null && invoiceFingerprint !== ""
+          ? { authorize: true, invoice_fingerprint: invoiceFingerprint }
+          : { authorize: true },
+      ),
     },
   );
 }

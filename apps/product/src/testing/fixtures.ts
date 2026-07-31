@@ -323,6 +323,9 @@ export function assuranceSite(overrides: Partial<AssuranceSite> = {}): Assurance
     gate: { level: "ready", actions: [], stale: false },
     clamp: { requested_mm: 0.2, applied_mm: 0.2, clamped: false, reason: null },
     production_note: null,
+    // nobody dropped this cap: the BFF's own default, and the field the row's
+    // disposition resolves against (audit 2026-07-31)
+    withhold_intent: false,
     stale_metrics: [],
     matching_diameter_mm: null,
     correspondence: null,
@@ -469,6 +472,9 @@ export function invoiceView(overrides: Partial<InvoiceView> = {}): InvoiceView {
     ],
     total_cents: 4800,
     paid: null,
+    // the document's own identity — the precondition the authorization echoes back
+    // so the price READ and the price CHARGED are provably the same one
+    fingerprint: "f".repeat(64),
     ...overrides,
   };
 }

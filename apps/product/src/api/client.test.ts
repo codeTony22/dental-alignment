@@ -303,6 +303,19 @@ describe("the Deliver calls (slice 8) — no actor rides on any of them", () => 
     });
   });
 
+  it("names the invoice it read — a DIGEST, never an amount (audit 2026-07-31)", async () => {
+    // nothing bound the price the operator READ to the price they were CHARGED: a
+    // rival turnaround PUT moved the server price between the render and the click
+    // and the charge landed 200 at a figure no surface displayed. The precondition
+    // is the document's opaque identity; an amount on this wire would let a client
+    // pay $0 for a released case.
+    const calls = capturingFetch();
+    await postPayment("case-a", "f".repeat(64));
+    const body = JSON.parse(calls[0]!.init?.body as string);
+    expect(body).toEqual({ authorize: true, invoice_fingerprint: "f".repeat(64) });
+    expect(Object.keys(body)).not.toContain("amount_cents");
+  });
+
   it("release POSTs body-less and header-less — everything it consumes is the session's", async () => {
     const calls = capturingFetch();
     await postRelease("case-a");

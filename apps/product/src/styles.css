@@ -5020,3 +5020,174 @@ button.package-files__link:hover {
 .adjust-drop [data-dropped="true"] {
   border-color: var(--color-accent-green);
 }
+
+/* ============================================================================
+   ArTech End-to-End Flow — closing the R2-R4 review findings (2026-07-31)
+   ============================================================================ */
+/* ===== deliver-coherence ===== */
+/* ---- ONE RESOLVED DISPOSITION, MADE VISIBLE (audit 2026-07-31) --------------------------
+
+   A cap dropped at Adjust reached the invoice, the attestation and the seal, but not
+   the surfaces that show it. These rules give the withheld state the same visual
+   weight the flagged state already has: findable while scrolling, and never merely
+   implied by the absence of something. Amber, not danger — withholding is a
+   deliberate operator act, not a failure. */
+
+/* the stage's compact line, where the stage's own confirm sits */
+.chip--withheld {
+  background: var(--color-amber-bg);
+  color: var(--color-amber);
+  border: 1px solid var(--color-amber-border);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* defined AFTER --flagged so a flagged row that is ALSO withheld reads as withheld:
+   the disposition is the stronger fact, because it decides whether the row ships */
+.evidence-summary__line--withheld {
+  border-left-color: var(--color-amber);
+  border-left-style: dashed;
+  background: transparent;
+}
+
+/* what was CHARGED, on the done "Paid" step — the whole invoice block vanishes with
+   that step's "current" state, and this is what has to survive it */
+.release-step__receipt {
+  display: block;
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- THE CHECKOUT'S CLASSIFIED STRIP ---------------------------------------------------
+
+   The strip listed every site under "Alignment metrics you are paying for", including
+   ones the invoice on the same dialog called withheld. The withheld now sit under
+   their own heading — named, never dropped — and read as excluded rather than as one
+   more thing being bought. */
+
+.checkout-section__title--withheld {
+  margin-top: 14px;
+  color: var(--color-amber);
+}
+
+.checkout-metric--withheld {
+  background: transparent;
+  color: var(--color-text-muted);
+  border-left: 3px dashed var(--color-amber-border);
+}
+
+/* the site number keeps its weight — it is still an identity, not a footnote — but
+   the metrics beside it lose their emphasis: nothing here is being charged for */
+.checkout-metric--withheld .checkout-metric__dev {
+  font-weight: 400;
+}
+
+/* THE THIRD FACT gets its own line: the row's flex puts the deviation hard right, so
+   a note appended inline would be squeezed between chips. It is a sentence, and a
+   sentence needs the width. */
+.checkout-metric__note {
+  flex: 1 0 100%;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--color-amber);
+}
+
+/* ---- A PRICE THAT CANNOT BE STATED ------------------------------------------------------
+
+   An errored invoice used to render "PLACEHOLDER — pricing not yet defined", which is
+   a false claim about the rate card. The refusal is the BFF's own words, and it wears
+   the refusal tone rather than the placeholder's. */
+
+.checkout-order__refusal {
+  display: block;
+  max-width: 34ch;
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 600;
+  text-align: right;
+  color: var(--color-danger);
+}
+
+/* said BESIDE the pinned bar, because the Order section carrying the refusal can be
+   entirely off-screen while the bar is stuck to the bottom */
+.checkout-page__unpriced {
+  position: sticky;
+  bottom: 52px;
+  z-index: 1;
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-amber);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+/* ---- THE QUALIFIER RIDES WITH THE FIGURE ------------------------------------------------
+
+   `.checkout-page__actions` is sticky, so the DEMO banner, `invoice.note` ("…are not
+   a quotation") and the receipt all scroll away behind it — the one figure most likely
+   to be acted on was the one separated from every qualifier that exists. The badge
+   sits IN the bar, ahead of the button, so the two cannot be read apart. */
+
+.checkout-pay__placeholder {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px dashed var(--color-amber-border);
+  border-radius: var(--radius-md);
+  background: var(--color-amber-bg);
+  color: var(--color-amber);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* on a narrow dialog the badge takes its own row rather than shrinking the button it
+   qualifies — a truncated "PLACEHOLDER RAT…" beside a live price is worse than none */
+@media (max-width: 460px) {
+  .checkout-page__actions {
+    flex-wrap: wrap;
+  }
+
+  .checkout-pay__placeholder {
+    flex-basis: 100%;
+    text-align: center;
+  }
+}
+
+/* ===== workspace-coherence ===== */
+/* ---- THE RAMP KEEPS ITS SCALE AT EVERY STAGE SIZE (design review 2026-07-31) --------
+   The tiny rule above hides `__scales`, `__ticks` AND `__detail` — but `__ticks` IS the
+   ramp's two END LABELS (SitePanes' ColorbarHud), so the union pane showed a
+   deviation-coloured cap over a bare gradient: no numbers, no sign convention, and
+   nothing to tell the signed ramp from RealGUIDE's absolute rainbow, on which red means
+   either proud or sunk. There was no route back to them either: on a three-column stage
+   maximizing yields the IDENTICAL height (both are availH − 61), so `chrome` stays tiny.
+
+   The CHOOSER is a control and may step aside; WHICH SCALE IS ON THE MESH is a caption,
+   and a coloured surface without one is not a measurement. SitePanes renders
+   [data-role="colorbar-scale-name"] in the chooser's place at tiny, and the end labels
+   come back. The legend fold stays parked — the RMS/p90 it carried are now on the
+   ALIGNMENT strip, which is outside the panes and visible at every size. */
+.verify-panel__stage--tiny .verify-colorbar__ticks {
+  display: flex;
+}
+
+.verify-colorbar__scalename {
+  font-size: 9px;
+  line-height: 1.2;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

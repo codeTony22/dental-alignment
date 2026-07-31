@@ -317,3 +317,129 @@ class TestTheRunIsUntouched:
         summary = client.get("/api/case-sessions/neodent-gm/run").json()
         assert sorted(s["tooth"] for s in summary["sites"]) == [4, 13]
         assert PACKAGE_FILES  # the package is untouched too
+
+
+# --- ONE resolved disposition, on every surface (audit 2026-07-31) ----------------------
+
+class TestTheDraftReachesTheRowItIsSignedOver:
+    """THE COHERENCE FINDING. The draft reached the invoice, the attestation and the
+    sealed confirmation — but not the ASSURANCE ROW, the one thing on screen at the
+    moment of signing. ``AssuranceSite`` carried no withhold field, so Deliver
+    rendered the literal word "released" over a clean dropped site, with no control
+    on the row to change it back, and confirming from that screen withheld the site
+    plus every case-wide file."""
+
+    def assurance(self, client):
+        res = client.get("/api/case-sessions/neodent-gm/assurance")
+        assert res.status_code == 200, res.text
+        return {s["tooth"]: s for s in res.json()["sites"]}
+
+    def test_a_clean_dropped_site_says_so_on_its_own_row(self, settings,
+                                                         product_root):
+        client = deliverable_client(settings, product_root)
+        assert self.assurance(client)[4]["withhold_intent"] is False
+        assert drop(client, tooth=4).status_code == 200
+        assert self.assurance(client)[4]["withhold_intent"] is True
+        # and the row's status is untouched: a drop buys no rung, it states an act
+        assert self.assurance(client)[4]["status"] == "ready"
+
+    def test_the_row_and_the_invoice_cannot_disagree(self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        drop(client, tooth=4)
+        rows = self.assurance(client)
+        withheld_rows = {t for t, s in rows.items() if s["withhold_intent"]}
+        invoice = client.get("/api/case-sessions/neodent-gm/invoice").json()
+        line = next(x for x in invoice["lines"] if x["key"] == "withheld_sites")
+        assert line["quantity"] == len(withheld_rows) == 1
+
+
+class TestConfirmingSettlesTheDisposition:
+    """"intent = withhold, standing confirmation = release" was reachable and then
+    PERMANENT: nothing wrote the signature back onto the site, and
+    ``put_withhold_intent`` judged the contradiction on the TRANSITION, so a second
+    DROP matched the intent already there and returned a silent 200 having retired
+    nothing. The cap shipped and was billed while Adjust rendered it dropped."""
+
+    def test_an_explicit_release_settles_the_drafted_withhold(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        assert drop(client).status_code == 200
+        assert confirm(client, confirm_body(
+            dispositions={"13": "release"})).status_code == 200
+        session = stored(product_root)
+        assert session.confirmation.dispositions["13"] == "release"
+        # the signature is the stronger act, so it is what the site now stands on —
+        # Adjust can no longer render "1 dropped" over a cap that is shipping
+        assert session.sites["13"].withhold_intent is False
+
+    def test_a_signed_withhold_settles_the_site_too(self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        assert confirm(client, confirm_body(
+            dispositions={"13": "withhold"})).status_code == 200
+        assert stored(product_root).sites["13"].withhold_intent is True
+
+    def test_dropping_again_after_a_contradicting_confirmation_retires_it(
+            self, settings, product_root):
+        """The walked failure, end to end: drop, confirm-with-explicit-release, drop
+        again. The operator's newest act must not be discarded — a 200 that retires
+        nothing sends a dropped cap to the mill at full price."""
+        client = deliverable_client(settings, product_root)
+        assert drop(client).status_code == 200
+        assert confirm(client, confirm_body(
+            dispositions={"13": "release"})).status_code == 200
+        assert stored(product_root).confirmation is not None
+        assert drop(client).status_code == 200
+        assert stored(product_root).confirmation is None
+
+    def test_the_contradiction_is_retired_even_from_a_hand_wedged_state(
+            self, settings, product_root):
+        """Judged against the STATE, not the transition. Wedge the very state the
+        write-back now prevents, then act: the equality must suppress only the
+        activity entry, never the retirement."""
+        client = deliverable_client(settings, product_root)
+        assert confirm(client, confirm_body(
+            dispositions={"13": "release"})).status_code == 200
+        store = SessionStore(product_root)
+        session = store.load("neodent-gm")
+        session.sites["13"].withhold_intent = True     # the unreachable state
+        store.save(session)
+        assert drop(client, withhold=True).status_code == 200
+        assert stored(product_root).confirmation is None
+
+
+class TestADispositionIsNotEvidence:
+    """The row grew a ``withhold_intent`` so the surface that signs it can state it —
+    and a projection field that reached the SEALED BYTES would make dropping a cap
+    look like evidence drift: release's 409 would fire on the operator's own decision
+    and tell them the case "changed since it was confirmed", which it did not.
+    Dispositions have always sat outside the hash by design (bff/evidence.py); this
+    keeps it that way now that one of them is visible on the projection."""
+
+    def test_dropping_a_cap_moves_no_sealed_byte(self, settings, product_root):
+        import json
+
+        from bff.resources.case_sessions import _case_or_404
+        from bff.resources.deliver import derive_assurance
+
+        client = deliverable_client(settings, product_root)
+        case = _case_or_404(settings, "neodent-gm")
+        store = SessionStore(product_root)
+        before = derive_assurance(case, store.load("neodent-gm")).sealed_facts()
+        assert drop(client, tooth=4).status_code == 200
+        after = derive_assurance(case, store.load("neodent-gm")).sealed_facts()
+        assert after == before
+        assert "withhold_intent" not in json.dumps(after)
+
+    def test_a_drop_after_a_confirmation_is_not_reported_as_drift(
+            self, settings, product_root):
+        """The operator's own act must never be described back to them as the case
+        changing underneath them. Dropping retires the confirmation deliberately
+        (clear_confirmation) — what it must NOT do is leave a standing confirmation
+        whose evidence no longer re-derives."""
+        client = deliverable_client(settings, product_root)
+        assert confirm(client, confirm_body(
+            dispositions={"13": "withhold"})).status_code == 200
+        sealed = stored(product_root).confirmation.evidence_sha256
+        assert drop(client, tooth=4).status_code == 200
+        assert confirm(client, confirm_body(dispositions={})).status_code == 200
+        assert stored(product_root).confirmation.evidence_sha256 == sealed

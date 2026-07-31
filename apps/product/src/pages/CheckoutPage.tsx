@@ -23,6 +23,7 @@ import {
   postPayment,
   type AssuranceView,
   type CaseSessionDetail,
+  type FetchState,
   type InvoiceView,
 } from "../api/client";
 import {
@@ -36,6 +37,7 @@ import {
   sealedTermsHref,
   signoffRows,
   turnaroundWords,
+  type DispositionMap,
 } from "../domain/deliver";
 
 type CheckoutPhase = "idle" | "paying" | "failed";
@@ -84,9 +86,24 @@ export interface CheckoutViewProps {
    * strip rather than an empty one.
    */
   readonly assurance?: AssuranceView | null;
-  /** The derived invoice (gap ``invoice-on-the-surfaces``) — the BFF's figures, and
-   *  the only source of any amount this page prints. */
-  readonly invoice?: InvoiceView | null;
+  /**
+   * THE DERIVED INVOICE'S FETCH STATE (gap ``invoice-on-the-surfaces``; audit
+   * 2026-07-31) — the BFF's figures, and the only source of any amount this page
+   * prints.
+   *
+   * A `FetchState`, NOT a flattened `InvoiceView | null`. Flattening at the dialog
+   * boundary collapsed "the invoice failed" and "the invoice is still in flight"
+   * into the same null as "this case has no invoice", so an ERRORED fetch rendered
+   * "PLACEHOLDER — pricing not yet defined" — a false claim about the rate card,
+   * pricing IS defined server-side — over a live Pay button that then authorized
+   * whatever the server priced. A checkout that cannot state the price must not take
+   * the money.
+   */
+  readonly invoice?: FetchState<InvoiceView> | null;
+  /** The operator's per-row acts, so the strip below can classify what it is
+   *  charging for — the SAME map the stage behind this dialog is resolving against
+   *  (gap ``pay-modal-metric-signoff``). */
+  readonly dispositions?: DispositionMap;
   readonly phase: CheckoutPhase;
   readonly error: string | null;
   readonly cards: readonly MockCard[];
@@ -139,11 +156,121 @@ function CheckoutNotice({
   );
 }
 
+/** One row of the strip. Split out because a withheld row and a billed row are the
+ *  SAME facts under different headings — two copies of this markup would be two
+ *  answers waiting to differ. */
+function SignoffMetric({
+  row,
+  withheld,
+}: {
+  readonly row: ReturnType<typeof signoffRows>[number];
+  readonly withheld: boolean;
+}) {
+  return (
+    <li
+      data-role="signoff-row"
+      data-tooth={row.tooth}
+      data-disposition={row.disposition}
+      className={`checkout-metric${row.flagged ? " checkout-metric--flagged" : ""}${
+        withheld ? " checkout-metric--withheld" : ""
+      }`}
+    >
+      <span className="checkout-metric__site">Site {row.tooth}</span>
+      <span className="checkout-metric__variant">{row.variant}</span>
+      <span className="checkout-metric__dev">RMS {row.deviation}</span>
+      <span className="checkout-metric__chip">{row.status}</span>
+      {/* only where the gate says something the status does not — see
+          `signoffRows`, which nulls it when the two words match */}
+      {row.gate !== null && (
+        <span className="checkout-metric__chip checkout-metric__chip--gate">
+          {row.gate}
+        </span>
+      )}
+      {/* THE THIRD FACT (audit 2026-07-31). A shared-construction-part conflict
+          leaves the ladder rung at "ready" while the BFF bills the row at HALF
+          rate as an acknowledged exception — so the discount on the Order lines
+          below was attributable to no row on this screen. The worker's own
+          sentence, verbatim. */}
+      {row.productionNote !== null && (
+        <span data-role="signoff-production-note" className="checkout-metric__note">
+          {row.productionNote}
+        </span>
+      )}
+    </li>
+  );
+}
+
+/**
+ * THE NUMBERS THE MONEY IS BEING ASKED FOR, SPLIT BY WHAT THE MONEY DOES (audit
+ * 2026-07-31).
+ *
+ * The strip listed EVERY assurance site under "Alignment metrics you are paying
+ * for", including ones the invoice on this same dialog said were withheld and not
+ * billed: a single-site case with tooth 29 dropped read "Site 29 · ready" under
+ * "paying for", then "$0.00", then "1 withheld site, not released". The first
+ * sentence on the screen contradicted the three below it.
+ *
+ * So the heading now only heads rows it is true of, and the withheld are NAMED
+ * rather than dropped — a checkout that silently omits a site is its own defect.
+ * The disposition is the same resolution the stage and the confirm gate stand on.
+ */
+function CheckoutMetrics({
+  assurance,
+  dispositions,
+  policy,
+}: {
+  readonly assurance: AssuranceView;
+  readonly dispositions: DispositionMap;
+  readonly policy: string;
+}) {
+  const rows = signoffRows(assurance, dispositions);
+  const billed = rows.filter((row) => row.disposition === "release");
+  const withheld = rows.filter((row) => row.disposition === "withhold");
+  return (
+    <section className="checkout-section">
+      {billed.length > 0 && (
+        <>
+          <h3 className="checkout-section__title">
+            Alignment metrics you are paying for
+          </h3>
+          <ul data-role="signoff-metrics" className="checkout-metrics">
+            {billed.map((row) => (
+              <SignoffMetric key={row.tooth} row={row} withheld={false} />
+            ))}
+          </ul>
+        </>
+      )}
+      {withheld.length > 0 && (
+        <>
+          <h3 className="checkout-section__title checkout-section__title--withheld">
+            Withheld — not released, not in this bill
+          </h3>
+          <ul data-role="signoff-withheld" className="checkout-metrics">
+            {withheld.map((row) => (
+              <SignoffMetric key={row.tooth} row={row} withheld />
+            ))}
+          </ul>
+          <p data-role="signoff-withheld-note" className="checkout-metrics__policy">
+            {withheld.length === 1 ? "This site stays" : "These sites stay"} open:
+            nothing is disclosed for {withheld.length === 1 ? "it" : "them"} and{" "}
+            {withheld.length === 1 ? "it is" : "they are"} not charged for.
+          </p>
+        </>
+      )}
+      {/* the design's toleranceLine, minus the tolerance it invented */}
+      <p data-role="case-policy" className="checkout-metrics__policy">
+        {policy}
+      </p>
+    </section>
+  );
+}
+
 /** Pure markup — statically testable; the container owns the flow. */
 export function CheckoutView({
   detail,
   assurance = null,
   invoice = null,
+  dispositions = {},
   phase,
   error,
   cards,
@@ -162,6 +289,10 @@ export function CheckoutView({
     detail.session.confirmation?.terms_accepted === true;
   const paid = detail.session.payment_authorized;
   const siteCount = detail.sites.length;
+  // the priced document, or null — and `null` here means exactly one thing: there is
+  // no figure to state. WHY there is none is a separate question the surface answers
+  // separately (a refusal in the BFF's words, a loading line, or a genuine absence).
+  const priced = invoice?.kind === "ok" ? invoice.data : null;
   // may be null: an empty card list is a state the type allows, and a checkout with
   // no method should say so rather than render a details panel about nothing
   const selected = cards.find((row) => row.id === card) ?? cards[0] ?? null;
@@ -203,39 +334,11 @@ export function CheckoutView({
           design's third chip read "in tolerance", built from a client-side
           comparison, and that verdict is the acceptance catalog's to make. */}
       {assurance !== null && (
-        <section className="checkout-section">
-          <h3 className="checkout-section__title">
-            Alignment metrics you are paying for
-          </h3>
-          <ul data-role="signoff-metrics" className="checkout-metrics">
-            {signoffRows(assurance).map((row) => (
-              <li
-                key={row.tooth}
-                data-role="signoff-row"
-                data-tooth={row.tooth}
-                className={`checkout-metric${
-                  row.flagged ? " checkout-metric--flagged" : ""
-                }`}
-              >
-                <span className="checkout-metric__site">Site {row.tooth}</span>
-                <span className="checkout-metric__variant">{row.variant}</span>
-                <span className="checkout-metric__dev">RMS {row.deviation}</span>
-                <span className="checkout-metric__chip">{row.status}</span>
-                {/* only where the gate says something the status does not — see
-                    `signoffRows`, which nulls it when the two words match */}
-                {row.gate !== null && (
-                  <span className="checkout-metric__chip checkout-metric__chip--gate">
-                    {row.gate}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-          {/* the design's toleranceLine, minus the tolerance it invented */}
-          <p data-role="case-policy" className="checkout-metrics__policy">
-            {casePolicyWords(detail.choices)}
-          </p>
-        </section>
+        <CheckoutMetrics
+          assurance={assurance}
+          dispositions={dispositions}
+          policy={casePolicyWords(detail.choices)}
+        />
       )}
 
       {/* THE SENTENCE ALREADY SIGNED, echoed READ-ONLY (gap
@@ -244,12 +347,12 @@ export function CheckoutView({
           into the evidence hash with its terms version — strictly stronger than a
           tick beside a card. So this restates what was sealed and offers no way to
           sign anything here. */}
-      {confirmed && invoice !== null && (
+      {confirmed && priced !== null && (
         <section className="checkout-section">
           <h3 className="checkout-section__title">What you signed</h3>
           <blockquote data-role="sealed-attestation" className="checkout-sealed">
             <p className="checkout-sealed__words">
-              {attestationText(invoice, siteCount)}
+              {attestationText(priced, siteCount)}
             </p>
             <p className="checkout-sealed__meta">
               Sealed at {detail.session.confirmation?.at}{" "}
@@ -284,8 +387,8 @@ export function CheckoutView({
             <dt>Deliverables</dt>
             <dd>Aligned parts + assurance report</dd>
           </div>
-          {invoice !== null &&
-            orderLines(invoice).map((line) => (
+          {priced !== null &&
+            orderLines(priced).map((line) => (
               <div
                 key={line.key}
                 data-role="invoice-line"
@@ -306,8 +409,30 @@ export function CheckoutView({
           <div className="checkout-order__row checkout-order__row--total">
             <dt>Amount due</dt>
             <dd data-role="checkout-price">
-              {invoice !== null ? (
-                <strong data-role="checkout-total">{orderTotal(invoice)}</strong>
+              {/* FOUR STATES, NOT TWO (audit 2026-07-31). "PLACEHOLDER — pricing not
+                  yet defined" is reserved for a genuine no-invoice answer; an
+                  ERRORED fetch renders the BFF's own refusal (the 409 when the
+                  standing confirmation names another run says exactly what to do),
+                  and an in-flight one says so. Rendering the placeholder over a
+                  failure asserted something false about the rate card while the Pay
+                  button stayed live. */}
+              {priced !== null ? (
+                <strong data-role="checkout-total">{orderTotal(priced)}</strong>
+              ) : invoice?.kind === "error" ? (
+                <span
+                  data-role="checkout-invoice-error"
+                  role="alert"
+                  className="checkout-order__refusal"
+                >
+                  {invoice.detail}
+                </span>
+              ) : invoice?.kind === "loading" ? (
+                <span
+                  data-role="checkout-invoice-loading"
+                  className="checkout-order__placeholder"
+                >
+                  Pricing the case…
+                </span>
               ) : (
                 <span className="checkout-order__placeholder">
                   PLACEHOLDER — pricing not yet defined
@@ -316,28 +441,28 @@ export function CheckoutView({
             </dd>
           </div>
         </dl>
-        {invoice !== null && (
+        {priced !== null && (
           <>
             <p data-role="invoice-turnaround" className="checkout-order__note">
-              {turnaroundWords(invoice)}
+              {turnaroundWords(priced)}
             </p>
             {/* THE BANNER STAYS while the server calls these rates a placeholder: a
                 total that reads like a quotation when it is not is worse than no
                 total. The note is the server's, printed verbatim. */}
-            {invoiceIsPlaceholder(invoice) && (
+            {invoiceIsPlaceholder(priced) && (
               <p
                 data-role="invoice-placeholder"
                 className="checkout-order__placeholder-banner"
               >
-                {invoice.note}
+                {priced.note}
               </p>
             )}
             {/* WHAT WAS ACTUALLY CHARGED, which may legitimately differ from the
                 figures above after a turnaround change — beside them, never instead
                 of them. */}
-            {receiptWords(invoice.paid) !== null && (
+            {receiptWords(priced.paid) !== null && (
               <p data-role="invoice-receipt" className="checkout-order__receipt">
-                {receiptWords(invoice.paid)}
+                {receiptWords(priced.paid)}
               </p>
             )}
           </>
@@ -385,7 +510,9 @@ export function CheckoutView({
                 data-role="wallet-pay"
                 data-wallet="apple-pay"
                 className="checkout-wallet checkout-wallet--apple"
-                disabled={busy}
+                // the express lane runs the SAME two-leg flow, so it inherits the
+                // same refusal: a wallet cannot authorize a figure nothing states
+                disabled={busy || priced === null}
                 onClick={() => onWalletPay("apple-pay")}
               >
                 {/* THE WORDS, not the logos. "" is an Apple-font private-use
@@ -402,7 +529,7 @@ export function CheckoutView({
                 data-role="wallet-pay"
                 data-wallet="google-pay"
                 className="checkout-wallet checkout-wallet--google"
-                disabled={busy}
+                disabled={busy || priced === null}
                 onClick={() => onWalletPay("google-pay")}
               >
                 <span className="checkout-wallet__word">Google Pay</span>
@@ -561,20 +688,54 @@ export function CheckoutView({
             </div>
           )}
 
+          {/* THE PRICE CANNOT BE STATED, SO SAY SO WHERE THE BUTTON IS. The dialog
+              scrolls (measured 2026-07-31: CTA bottom 644 vs bar top 582), so the
+              Order section carrying the refusal can be entirely off-screen while
+              this bar is pinned. */}
+          {priced === null && (
+            <p data-role="checkout-unpriced" className="checkout-page__unpriced">
+              {invoice?.kind === "error"
+                ? "This case cannot be priced right now, so there is nothing to " +
+                  "authorize — the refusal is in the Order section above."
+                : invoice?.kind === "loading"
+                  ? "Pricing the case…"
+                  : "No invoice has been derived for this case, so there is no " +
+                    "figure to authorize."}
+            </p>
+          )}
+
           {/* the actions sit in a footer bar: the primary act leads, the way out is
               always beside it */}
           <footer className="checkout-page__actions">
+            {/* THE QUALIFIER RIDES WITH THE FIGURE (audit 2026-07-31). This bar is
+                sticky; the DEMO banner, `invoice.note` ("…are not a quotation") and
+                the receipt line all scroll away behind it, so an operator picking a
+                card saw "Pay $48.00 (demo)" separated from every qualifier that
+                exists. The commit's stated invariant — "the placeholder-rates banner
+                rides with every figure" — is only true if it rides HERE too. */}
+            {priced !== null && invoiceIsPlaceholder(priced) && (
+              <span
+                data-role="checkout-pay-placeholder"
+                className="checkout-pay__placeholder"
+                title={priced.note}
+              >
+                PLACEHOLDER RATES
+              </span>
+            )}
             <button
               type="button"
               data-role="checkout-pay"
               className="button button--primary checkout-pay"
-              disabled={busy || selected === null}
+              // AND IT REFUSES WITHOUT A PRICE. `busy || selected === null` left the
+              // button live over "PLACEHOLDER — pricing not yet defined", and the
+              // POST then succeeded at a figure no surface had displayed.
+              disabled={busy || selected === null || priced === null}
               onClick={onPay}
             >
               {/* PRICED (design payLabel 1481-1482): a pay button that names the
                   amount is the last honest chance to notice a wrong figure. The
                   amount is the invoice's total, rendered — never assembled here. */}
-              {payButtonLabel(invoice, busy)}
+              {payButtonLabel(priced, busy)}
             </button>
             <button
               type="button"
@@ -604,15 +765,19 @@ export function CheckoutDialog({
   detail,
   assurance = null,
   invoice = null,
+  dispositions = {},
   onDetail,
   onClose,
 }: {
   readonly detail: CaseSessionDetail;
   /** The evidence and the price the stage already holds — handed down rather than
    *  re-fetched, so the dialog can never show a different case than the one behind
-   *  it (gaps ``pay-modal-metric-signoff`` / ``invoice-on-the-surfaces``). */
+   *  it (gaps ``pay-modal-metric-signoff`` / ``invoice-on-the-surfaces``). The
+   *  invoice keeps its FETCH STATE across this boundary: flattening it here is what
+   *  let an errored fetch render as "pricing not yet defined". */
   readonly assurance?: AssuranceView | null;
-  readonly invoice?: InvoiceView | null;
+  readonly invoice?: FetchState<InvoiceView> | null;
+  readonly dispositions?: DispositionMap;
   readonly onDetail: (next: CaseSessionDetail) => void;
   readonly onClose: () => void;
 }) {
@@ -628,7 +793,12 @@ export function CheckoutDialog({
   const pay = (method: string) => {
     setPhase("paying");
     setError(null);
-    void postPayment(detail.case.id).then((paid) => {
+    // THE PRECONDITION IS THE DOCUMENT THIS DIALOG DISPLAYED (audit 2026-07-31), not
+    // its amount — an amount on the wire is the money-shaped cousin of a claimed
+    // verdict. The server re-prices at authorization time and refuses 409 ("the price
+    // moved since you read it") when a rival `turnaround` PUT has moved it since.
+    const displayed = invoice?.kind === "ok" ? invoice.data.fingerprint : null;
+    void postPayment(detail.case.id, displayed).then((paid) => {
       if (paid.kind !== "ok") {
         setPhase("failed");
         setError(paid.detail);
@@ -662,6 +832,7 @@ export function CheckoutDialog({
             detail={detail}
             assurance={assurance}
             invoice={invoice}
+            dispositions={dispositions}
             phase={phase}
             error={error}
             cards={cards}

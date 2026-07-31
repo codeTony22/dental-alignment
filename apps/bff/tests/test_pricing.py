@@ -515,3 +515,98 @@ class TestTheChargeStandsOnWhatWasSigned:
         assert res.status_code == 409
         monkeypatch.undo()
         assert SessionStore(product_root).load("neodent-gm").payment is None
+
+
+# --- the price you READ is the price you are CHARGED (audit 2026-07-31) ----------------
+
+class TestTheAuthorizationNamesTheInvoiceItRead:
+    """Nothing bound the two together. ``turnaround`` is client-settable and fires no
+    reset boundary (deliver.py says so explicitly), so a PUT from a second tab or a
+    second operator after the checkout rendered moved the server price from standard
+    to rush while the sticky bar still read the standard figure — and the click
+    charged the rush figure and returned 200. ``_mutate_signing`` cannot see it: that
+    write landed BEFORE the POST, so no CAS was lost.
+
+    The precondition is a VERSION, never an amount (doctrine rightly forbids an
+    amount on the wire): the opaque digest the invoice itself served."""
+
+    def test_the_invoice_carries_a_fingerprint_and_no_amount_rides_the_wire(
+            self, settings, product_root):
+        from bff.resources.deliver import PaymentIn
+        client = landed_client(settings, product_root, [row(4)],
+                               files=PACKAGE_FILES)
+        assert len(invoice_of(client)["fingerprint"]) == 64
+        # the precondition is a DIGEST: nothing on this body can express an amount
+        assert set(PaymentIn.model_fields) == {"authorize", "invoice_fingerprint"}
+
+    def test_the_fingerprint_moves_when_the_price_moves(self, settings,
+                                                        product_root):
+        from test_deliver import deliverable_client
+        client = deliverable_client(settings, product_root)
+        before = invoice_of(client)
+        assert client.put("/api/case-sessions/neodent-gm/choices",
+                          json={"turnaround": "rush"}).status_code == 200
+        after = invoice_of(client)
+        assert after["total_cents"] != before["total_cents"]
+        assert after["fingerprint"] != before["fingerprint"]
+
+    def test_a_turnaround_change_after_the_dialog_rendered_refuses_the_charge(
+            self, settings, product_root):
+        """THE WALKED FAILURE. Read the invoice, have a rival PUT rush, click Pay
+        with the figure that was on screen: the charge must refuse rather than
+        silently bill the higher rate."""
+        from test_deliver import confirm, deliverable_client
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        displayed = invoice_of(client)["fingerprint"]
+        assert client.put("/api/case-sessions/neodent-gm/choices",
+                          json={"turnaround": "rush"}).status_code == 200
+        res = client.post("/api/case-sessions/neodent-gm/payment",
+                          json={"authorize": True,
+                                "invoice_fingerprint": displayed})
+        assert res.status_code == 409
+        assert "the price moved since you read it" in res.json()["detail"]
+        assert SessionStore(product_root).load("neodent-gm").payment is None
+
+    def test_the_matching_fingerprint_authorizes_at_that_figure(
+            self, settings, product_root):
+        from test_deliver import confirm, deliverable_client
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        displayed = invoice_of(client)
+        res = client.post("/api/case-sessions/neodent-gm/payment",
+                          json={"authorize": True,
+                                "invoice_fingerprint": displayed["fingerprint"]})
+        assert res.status_code == 200
+        record = SessionStore(product_root).load("neodent-gm").payment
+        assert record.amount_cents == displayed["total_cents"]
+
+    def test_the_fingerprint_is_checked_last_so_better_refusals_keep_their_words(
+            self, settings, product_root):
+        """A case that is unpayable for a stronger reason must still refuse in that
+        reason's own words — an operator told "the price moved" about a case with no
+        confirmation at all has been sent to fix the wrong thing."""
+        from test_deliver import deliverable_client
+        client = deliverable_client(settings, product_root)
+        res = client.post("/api/case-sessions/neodent-gm/payment",
+                          json={"authorize": True,
+                                "invoice_fingerprint": "0" * 64})
+        assert res.status_code == 409
+        assert "requires a confirmation" in res.json()["detail"]
+
+    def test_the_receipt_is_not_part_of_the_document_being_fingerprinted(
+            self, settings, product_root):
+        """``paid`` is a RECEIPT, not a price. Folding it in would make every
+        invoice its own fingerprint the moment payment landed, which says nothing
+        about whether the case was repriced."""
+        from test_deliver import confirm, deliverable_client
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        before = invoice_of(client)
+        res = client.post("/api/case-sessions/neodent-gm/payment",
+                          json={"authorize": True,
+                                "invoice_fingerprint": before["fingerprint"]})
+        assert res.status_code == 200
+        after = invoice_of(client)
+        assert after["paid"] is not None
+        assert after["fingerprint"] == before["fingerprint"]

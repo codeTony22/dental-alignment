@@ -491,6 +491,41 @@ describe("re-confirming a site reached ANY way (not only off a fresh outcome)", 
     }
   });
 
+  /* THE ATTESTATION NEEDS THE EVIDENCE ON SCREEN (design review 2026-07-31). With the
+     seated read failed, pane 3 says "The shipped fit could not be read." while this
+     block said "confirm it again over the panes on the right" beside an ENABLED
+     button — two sentences on one screen contradicting each other, and the click POSTs
+     /review and satisfies Deliver's every-site-resolved gate over a blank pane. */
+  it("refuses the act, with a reason, while the shipped fit is not on the panes", () => {
+    const html = view({
+      activeStatus: "adjusted",
+      lastOutcome: null,
+      seatedPhase: "error",
+      seatedPayloadPresent: false,
+    });
+    expect(html).toContain('data-role="reconfirm-tick"');
+    expect(html).toMatch(/data-role="reconfirm-tick"[^>]*disabled=""/);
+    expect(html).toContain('data-role="reconfirm-blocked"');
+    expect(html).toContain("could not be read");
+  });
+
+  it("enables it once the panes are actually showing the fit being attested", () => {
+    const html = view({
+      activeStatus: "adjusted",
+      lastOutcome: null,
+      seatedPhase: "ready",
+      seatedPayloadPresent: true,
+    });
+    expect(html).toMatch(/data-role="reconfirm-tick"(?![^>]*disabled)/);
+    expect(html).not.toContain('data-role="reconfirm-blocked"');
+  });
+
+  it("under-claims by default: a caller that says nothing about the panes gets no act", () => {
+    // the safe default is the one that cannot sign over evidence nobody showed
+    const html = view({ activeStatus: "adjusted", lastOutcome: null });
+    expect(html).toMatch(/data-role="reconfirm-tick"[^>]*disabled=""/);
+  });
+
   it("a refusal from another tool does not take the standing re-confirmation away", () => {
     // the site is still `adjusted`: whatever the last tool did or failed to do, the
     // pose on screen is one the earlier confirmation no longer describes

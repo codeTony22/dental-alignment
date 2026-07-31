@@ -169,7 +169,10 @@ describe("the scan-arrival panel", () => {
     const html = screenHtml({ kind: "ok", data: [worklistRow()] });
     expect(html).toContain('data-role="scan-arrival"');
     expect(html).toContain("How a new scan reaches this worklist");
-    expect(html).toContain("*.stl");
+    // the two rules an operator with a folder in hand needs, rendered (not just
+    // exported): what counts as the scan file, and what happens to the extras
+    expect(html).toContain("Discovery looks for STL files");
+    expect(html).toContain("first by name");
   });
 
   it("offers nothing that behaves like an upload", () => {

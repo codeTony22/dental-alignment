@@ -104,6 +104,51 @@ class TestDiscoverCases:
         (d / "upper_jaw.ply").touch()
         assert discover_cases(root) == []
 
+    def test_an_uppercase_stl_extension_is_still_a_case(self, tmp_path):
+        # 2026-07-31 discovery bug, reproduced against a TestClient before it was fixed:
+        # ``Path.glob("*.stl")`` is case-sensitive on POSIX, so a folder whose scanner
+        # exported ``UPPER_JAW.STL`` yielded NO case at all. The lab copies the folder in,
+        # reloads as the worklist's scan-arrival panel instructs, and sees nothing — while
+        # the panel says the only disqualifier is having no STL. Extension case is a
+        # scanner-export accident, never a statement about the file.
+        root = _tree(tmp_path)
+        _scan_folder(root, "doctor-shouty-neodent-gm", "UPPER_JAW.STL")
+        (case,) = discover_cases(root)
+        assert case.id == "shouty-neodent-gm"
+        assert case.scan.name == "UPPER_JAW.STL"
+
+    def test_several_stls_take_the_first_by_name_and_the_rest_are_ignored(self, tmp_path):
+        # A complete case folder (both arches) is the normal scanner export, and it becomes
+        # ONE case: the first STL by name is the scan and the others are dropped with no
+        # row and no diagnostic. That is the shipped behaviour and the product states it
+        # (apps/product domain/worklist.SCAN_ARRIVAL step "stl"); this test is what makes
+        # the statement true. Sorting is case-insensitive so "first by name" means what an
+        # operator reading the folder means by it.
+        root = _tree(tmp_path)
+        folder = _scan_folder(root, "doctor-both-neodent-gm", "UPPER_JAW.STL")
+        (folder / "lower_jaw.stl").touch()
+        (case,) = discover_cases(root)
+        assert case.scan.name == "lower_jaw.stl"
+        assert case.jaw == "lower"
+
+    def test_doctor_is_stripped_only_as_a_leading_prefix(self, tmp_path):
+        # 2026-07-31, reproduced: ``replace("doctor-", "", 1)`` strips the first occurrence
+        # ANYWHERE, so ``patient-doctor-4471`` became case id ``patient-4471``. The id keys
+        # reports/product/<case>/runs/…, so the immutable run dir stopped carrying the
+        # folder's name, and the scan-arrival panel's rule ("a leading doctor- is stripped")
+        # predicted the wrong id. The prefix form is what the rest of this code assumes.
+        root = _tree(tmp_path)
+        _scan_folder(root, "patient-doctor-4471")
+        (case,) = discover_cases(root)
+        assert case.id == "patient-doctor-4471"
+
+    def test_a_folder_named_only_doctor_keeps_its_own_name_as_the_id(self, tmp_path):
+        # Stripping the prefix must never mint an empty id.
+        root = _tree(tmp_path)
+        _scan_folder(root, "doctor-")
+        (case,) = discover_cases(root)
+        assert case.id == "doctor-"
+
     def test_jaw_is_a_suggestion_read_off_the_scan_filename(self, tmp_path):
         root = _tree(tmp_path)
         _scan_folder(root, "doctor-a-neodent-gm", "lower_jaw.stl")

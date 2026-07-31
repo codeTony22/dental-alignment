@@ -646,6 +646,146 @@ export function needsReconfirmStatus(status: string | null): boolean {
   return status !== null && needsReconfirm(status as SiteStatus);
 }
 
+/** The re-confirmation as the surface must render it: whether the act exists at all,
+ *  whether it may be performed right now, and — when it may not — why. */
+export interface ReconfirmControl {
+  readonly offered: boolean;
+  readonly enabled: boolean;
+  /** Present exactly when the act is offered and refused. */
+  readonly reason: string | null;
+}
+
+/**
+ * THE RUNG OFFERS THE ACT; THE PANES QUALIFY IT (design review 2026-07-31).
+ *
+ * The control rendered off `needsReconfirmStatus` alone, with no precondition on the
+ * evidence being on screen. With the seated read failed — a transport error, a 404 —
+ * pane 3 carries "The shipped fit could not be read." (adjustPaneNotices above) while
+ * this block said "confirm it again over the panes on the right" beside an ENABLED
+ * button: two sentences on one screen contradicting each other. Clicking POSTs /review,
+ * flips the rung adjusted→ready and satisfies Deliver's every-site-resolved gate with
+ * an attestation whose evidence was never displayed.
+ *
+ * The wording of the attestation is "over the panes", so the panes are a precondition,
+ * not a nicety. Declare's equivalent control has stated a reason when inert since 5b
+ * (declare.reviewTick); this is the same discipline on the same act. Under-claiming
+ * beats offering an attestation over a blank pane.
+ */
+export function reconfirmControl(
+  status: string | null,
+  seatedPhase: SeatedPhase,
+  hasPayload: boolean,
+): ReconfirmControl {
+  const offered = needsReconfirmStatus(status);
+  if (!offered) return { offered: false, enabled: false, reason: null };
+  if (seatedPhase === "ready" && hasPayload) {
+    return { offered: true, enabled: true, reason: null };
+  }
+  const reason =
+    seatedPhase === "error"
+      ? "The shipped fit could not be read, so the panes are not showing it — and this " +
+        "confirmation attests those panes. Reselect the site to read it again."
+      : seatedPhase === "loading"
+        ? "Still reading the shipped fit — the panes are not showing it yet."
+        : "The shipped fit has not been read for this site yet, so there is nothing on " +
+          "the panes to confirm.";
+  return { offered: true, enabled: false, reason };
+}
+
+/** Which panes want the next click, and what that click will do — one entry per pane,
+ *  in SitePanes' own keys (the shape both `armed` and `hints` are passed as). */
+export interface PaneArming {
+  readonly armed: {
+    readonly library: boolean;
+    readonly scan: boolean;
+    readonly union: boolean;
+  };
+  readonly hints: {
+    readonly library: string | null;
+    readonly scan: string | null;
+    readonly union: string | null;
+  };
+}
+
+/** The trench's one sentence, on the glass where the click goes. */
+const TRENCH_HINT = "Click the coded cutout — the cap rotates its nearest code feature to it.";
+
+/** What the open draft's next click is, said ON the pane rather than under it. The
+ *  toolbox's own prompt names the pane ("pane 2 or 3"); here the pane IS the answer. */
+function draftHint(draft: PairDraft): string | null {
+  switch (pairSlot(draft)) {
+    case "part":
+      return "Click the feature on the library part.";
+    case "scan":
+      return draft.span
+        ? "Click ONE END of that feature here."
+        : "Click the same spot here.";
+    case "scan-end":
+      return "Click the OTHER END of the feature here.";
+    case "complete":
+      return null;
+  }
+}
+
+/**
+ * WHICH PANE IS ARMED (client 2026-07-30; re-opened by the design review 2026-07-31 —
+ * the props existed on both SitePanes and VerifyViewer, the CSS existed, and the one
+ * stage that installs pick listeners passed neither, so the crosshair and the on-glass
+ * hint were dead code for the whole slice).
+ *
+ * This is exactly AdjustStage.handlePick's routing, read out loud: a scan click is the
+ * TRENCH's while the trench is armed, and otherwise fills the open draft's next empty
+ * slot. Deriving it from "has a pick listener" instead would arm all three panes for
+ * the whole stage — the precise lie the control exists to stop telling — because Adjust
+ * installs one router on all three and decides inside it.
+ *
+ * Both scan panes arm together: the router accepts the scan half from pane 2 or pane 3,
+ * and a pane that would accept a click must say so.
+ */
+export function paneArming(
+  openDraft: PairDraft | null,
+  trenchArmed: boolean,
+): PaneArming {
+  const slot = openDraft === null ? null : pairSlot(openDraft);
+  const wantsPart = slot === "part";
+  const wantsScan = slot === "scan" || slot === "scan-end";
+  const hint = openDraft === null ? null : draftHint(openDraft);
+  const scanHint = trenchArmed ? TRENCH_HINT : wantsScan ? hint : null;
+  return {
+    armed: {
+      library: wantsPart,
+      scan: trenchArmed || wantsScan,
+      union: trenchArmed || wantsScan,
+    },
+    hints: {
+      library: wantsPart ? hint : null,
+      scan: scanHint,
+      union: scanHint,
+    },
+  };
+}
+
+/**
+ * DID THIS TOOL MOVE THE RUN'S SUMMARY ROW (design review 2026-07-31)?
+ *
+ * `adjust._fold_outcome` (bff/resources/adjust.py:324-372) rewrites the row's
+ * `clocking`, `deviation_*` and `correspondence` on every applied tool — and nothing in
+ * the response moves `run_state`, which is what the container's run-rows effect keys
+ * off. So the ALIGNMENT strip kept printing PRE-rework numbers beside an outcome panel
+ * describing the new pose: on one screen the rotation tab read the fresh residual
+ * (1.2°) and the toolbar's ROTATION cell the stale one (+7.4°), both labelled as the
+ * run's. PAIRS was worse — the count was moved server-side precisely so it would
+ * survive a reload, and the strip still showed the old one immediately after the
+ * operator applied the pairs that produced it.
+ *
+ * The response cannot simply carry the new row: `_result` builds an AdjustResultView
+ * from the OUTCOME, not from the summary row, and the row is a server derivation over
+ * more than one act. So the honest signal is "re-read it", and this is the predicate.
+ */
+export function outcomeMovedTheRow(result: ApiResult<AdjustResultView>): boolean {
+  return result.kind === "ok" && result.data.outcome.applied;
+}
+
 /**
  * THE OTHER WAY OUT OF A FLAG, POINTED AT — never performed here (design review
  * 2026-07-31; the design's "accept as flagged exception" button, template 1348).

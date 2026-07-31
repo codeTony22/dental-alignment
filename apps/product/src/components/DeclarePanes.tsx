@@ -42,6 +42,7 @@ import {
   type PostPreviewFn,
   type PreviewPhase,
   type PreviewSlots,
+  type PreviewFigures,
   type ReviewTickState,
   type ViewPresetId,
 } from "../domain/declare";
@@ -242,6 +243,23 @@ export interface DeclarePanesProps {
   /** The named viewpoint DeclareStage's toolbar is asking all three panes to take
    *  (gap `named-view-presets`). Omitted leaves every pane on its own framing. */
   readonly viewPreset?: ViewPresetId;
+  /** Bumped by the stage on every preset click, re-selection included — see
+   *  SitePaneSceneOptions.viewPresetNonce. */
+  readonly viewPresetNonce?: number;
+  /**
+   * WHAT THE PREVIEW PUBLISHED, REPORTED UP (design review 2026-07-31).
+   *
+   * The preview payload lives here — it is client memory, per site, keyed on server
+   * facts — but two things ABOVE the panes need facts from it and had no way to reach
+   * them: the toolbar's off-axis presets need to know whether a seated pose exists
+   * (without it they rotated pane 1 alone while claiming all three), and the ALIGNMENT
+   * strip printed "—" for a deviation the union pane below was already showing.
+   *
+   * Reported rather than lifted: hoisting the whole slot map into DeclareStage would
+   * move the auto-fire, its double-POST guard and its stale-response rejection away
+   * from the component they were written for. Facts only, and every one the server's.
+   */
+  readonly onPreviewFigures?: (figures: PreviewFigures | null) => void;
 }
 
 /** The container: the shared pane scene, the auto-fired preview slots, the tick's two
@@ -252,6 +270,8 @@ export function DeclarePanes({
   onDetail,
   postPreview: postPreviewFn = postPreview,
   viewPreset,
+  viewPresetNonce,
+  onPreviewFigures,
 }: DeclarePanesProps) {
   const caseId = detail.case.id;
   const tooth = site?.tooth ?? null;
@@ -311,7 +331,30 @@ export function DeclarePanes({
         ? "ready"
         : slot.state;
 
-  const scene = useSitePaneScene(detail, site, payload, { viewPreset });
+  const scene = useSitePaneScene(detail, site, payload, { viewPreset, viewPresetNonce });
+
+  /* Reported on the PRIMITIVES, not on the payload object: the payload is replaced
+     wholesale on every settle, and an effect keyed on it would re-report identical
+     figures on every unrelated re-render of the slot map. */
+  const posePresent = payload?.pose != null;
+  const rmsMm = payload?.stats.rms_mm ?? null;
+  const p90Mm = payload?.stats.p90_mm ?? null;
+  const statsSource = payload?.stats.source ?? null;
+  const hasPayload = payload !== null;
+  useEffect(() => {
+    if (onPreviewFigures === undefined) return;
+    onPreviewFigures(
+      hasPayload
+        ? {
+            poseAvailable: posePresent,
+            rmsMm,
+            p90Mm,
+            // the payload's own word for what measured it, never one of ours
+            source: statsSource ?? "preview",
+          }
+        : null,
+    );
+  }, [onPreviewFigures, hasPayload, posePresent, rmsMm, p90Mm, statsSource]);
 
   // THE TICK'S TWO REQUESTS — both body-less; the response detail replaces the
   // payload whole and the queue chip and rail react to it.

@@ -1016,3 +1016,92 @@ describe("casePolicyWords — the design's toleranceLine, minus the tolerance", 
     expect(words).not.toContain("0.00 mm");
   });
 });
+
+// --- ONE resolved disposition, everywhere (audit 2026-07-31) --------------------------
+
+/** A CLEAN, READY site the operator dropped at Adjust — the exact row that used to
+ *  render the literal word "released" on the screen that signs it withheld. */
+function droppedCleanSite() {
+  return assuranceSite({ tooth: 4, status: "ready", withhold_intent: true });
+}
+
+describe("the dropped cap reaches the row it is signed over", () => {
+  it("resolves to withhold with no local act at all — the server's own precedence", () => {
+    // body → draft → release, exactly as confirm_case resolves it. Before this the
+    // browser resolved an untouched row straight to "release" while the server
+    // resolved the SAME row to "withhold", so one screen said both.
+    expect(effectiveDisposition(droppedCleanSite(), {})).toBe("withhold");
+    expect(effectiveDisposition(assuranceSite(), {})).toBe("release");
+  });
+
+  it("an explicit act on this screen still outranks the draft, both ways", () => {
+    expect(effectiveDisposition(droppedCleanSite(), { 4: "release" })).toBe("release");
+    expect(effectiveDisposition(assuranceSite({ tooth: 4 }), { 4: "withhold" })).toBe(
+      "withhold",
+    );
+  });
+
+  it("offers the control on the dropped row, so there is a way back from it", () => {
+    // the one-way door: the control was gated on needsAcknowledgment alone, so a
+    // clean dropped site had no `release` button — the reversal existed only on Adjust
+    expect(withholdOffered(droppedCleanSite(), {})).toBe(true);
+    expect(withholdOffered(assuranceSite(), {})).toBe(false);
+    expect(withholdOffered(assuranceSite({ tooth: 4 }), { 4: "withhold" })).toBe(true);
+  });
+
+  it("the policy header stops claiming every row releases as it stands", () => {
+    const view = assuranceView({ sites: [droppedCleanSite()] });
+    const words = acknowledgmentPolicyWords(view, {});
+    expect(words).not.toContain("every row here releases as it stands");
+    expect(words).toContain("withheld");
+  });
+
+  it("demands no acknowledgment for a flagged row already headed for withhold", () => {
+    const view = assuranceView({
+      sites: [flaggedAssuranceSite({ withhold_intent: true })],
+    });
+    expect(confirmBlockers(view, {}, [])).toEqual([]);
+  });
+
+  it("the caveat no longer claims the counts are the CONFIRMED dispositions only", () => {
+    // false whenever _billing_dispositions takes its draft branch — which is the
+    // whole pre-confirmation stretch of the flow
+    expect(ATTESTATION_PENDING_CAVEAT).not.toContain("actually confirmed");
+    expect(ATTESTATION_PENDING_CAVEAT).toContain("dropped");
+  });
+});
+
+describe("signoffRows — the checkout's row must classify what it charges for", () => {
+  it("marks the withheld site the invoice on the same dialog says is not billed", () => {
+    const rows = signoffRows(assuranceView({ sites: [droppedCleanSite()] }));
+    expect(rows[0]!.disposition).toBe("withhold");
+  });
+
+  it("carries the production note — the whole reason the row is an exception", () => {
+    const note =
+      "single construction part shared across sites identifying 2 distinct " +
+      "variants — per-variant construction parts needed";
+    const rows = signoffRows(
+      assuranceView({
+        sites: [assuranceSite({ tooth: 19, status: "ready", production_note: note })],
+      }),
+    );
+    expect(rows[0]!.productionNote).toBe(note);
+  });
+
+  it("flags on needsAcknowledgment, not on the ladder rung", () => {
+    // the divergent row: the run left the rung at "ready", the BFF pins it first,
+    // demands its acknowledgment and bills it at HALF rate. Rendering it as an
+    // unremarkable clean row left "1 acknowledged exception, at half rate"
+    // attributable to nothing on screen.
+    const rows = signoffRows(
+      assuranceView({
+        sites: [
+          assuranceSite({ tooth: 19, status: "ready", production_note: "shared part" }),
+        ],
+      }),
+    );
+    expect(rows[0]!.status).toBe("ready");
+    expect(rows[0]!.flagged).toBe(true);
+  });
+});

@@ -70,8 +70,9 @@ import {
   droppedRowWords,
   flaggedExceptionWords,
   isComplete,
-  needsReconfirmStatus,
   newPairDraft,
+  outcomeMovedTheRow,
+  paneArming,
   observationWords,
   outcomeWords,
   pairBody,
@@ -82,6 +83,7 @@ import {
   pairWords,
   queueSummary,
   reasonCountWords,
+  reconfirmControl,
   reworkWords,
   spanLeverCaution,
   withPick,
@@ -150,6 +152,16 @@ export interface AdjustStageViewProps {
   readonly onReconfirm?: () => void;
   readonly reconfirmSaving?: boolean;
   readonly reconfirmError?: string | null;
+  /**
+   * WHETHER THE EVIDENCE IS ON SCREEN — the re-confirmation's other precondition
+   * (design review 2026-07-31; see domain/adjust.reconfirmControl).
+   *
+   * Both default to the UNDER-claim: a caller that has said nothing about the panes
+   * gets an inert control with its reason, never an enabled attestation over a pane
+   * that may be showing "The shipped fit could not be read."
+   */
+  readonly seatedPhase?: SeatedPhase;
+  readonly seatedPayloadPresent?: boolean;
   /** The seated pose, for the pre-flight span caution (client 2026-07-29). Null until
    *  a payload has landed; the caution simply stays quiet then. */
   readonly pose?: { readonly origin: readonly number[]; readonly axis: readonly number[] } | null;
@@ -429,6 +441,8 @@ export function AdjustStageView({
   onReconfirm = () => undefined,
   reconfirmSaving = false,
   reconfirmError = null,
+  seatedPhase = "idle",
+  seatedPayloadPresent = false,
   pose = null,
   reasonsFor = null,
   onOpenReasons = () => undefined,
@@ -461,7 +475,11 @@ export function AdjustStageView({
      refuses a site it never previewed and Deliver refuses the case as "still
      unresolved", so that site was a dead end. The RUNG decides whether the act
      exists; `lastOutcome` decides only whether the outcome detail renders beside it. */
-  const reconfirmOffered = needsReconfirmStatus(activeStatus);
+  /* THE RUNG DECIDES THAT THE ACT EXISTS; THE PANES DECIDE THAT IT MAY BE PERFORMED
+     (design review 2026-07-31). Rendering off the rung alone let an operator sign "I
+     confirmed this fit over the panes" while pane 3 said the fit could not be read. */
+  const reconfirm = reconfirmControl(activeStatus, seatedPhase, seatedPayloadPresent);
+  const reconfirmOffered = reconfirm.offered;
   const exceptionWords = flaggedExceptionWords(activeStatus);
   const reasonsShown =
     reasonsFor === null
@@ -864,13 +882,21 @@ export function AdjustStageView({
                 type="button"
                 data-role="reconfirm-tick"
                 className="button button--primary"
-                disabled={reconfirmSaving}
+                disabled={reconfirmSaving || !reconfirm.enabled}
+                title={reconfirm.reason ?? undefined}
                 onClick={onReconfirm}
               >
                 {reconfirmSaving
                   ? "Recording the confirmation…"
                   : "Confirm this fit over the panes"}
               </button>
+              {reconfirm.reason !== null && (
+                /* The honest reason beside the inert control — Declare's tick has
+                   carried one since 5b, and this is the same act. */
+                <p data-role="reconfirm-blocked" className="adjust-outcome__note">
+                  {reconfirm.reason}
+                </p>
+              )}
               {reconfirmError !== null && (
                 <span
                   data-role="reconfirm-error"
@@ -1121,13 +1147,22 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
     };
   }, []);
 
-  // The run's verdict rows — the queue's reasons come from them, verbatim.
+  /* THE RUN'S VERDICT ROWS — the queue's reasons come from them, verbatim, and so do
+     the ALIGNMENT strip's five figures.
+
+     `rowsNonce` is why this effect can fire without the run state moving. An applied
+     tool rewrites this site's summary row SERVER-side (adjust._fold_outcome) and moves
+     no run state, so keying only on `run_state` froze `rows` for the rest of the
+     session: the toolbar kept printing the pre-rework clocking and pair count beside an
+     outcome panel describing the new pose, and `adjustQueue`'s gate reasons read the
+     same stale rows (design review 2026-07-31). */
+  const [rowsNonce, setRowsNonce] = useState(0);
   useEffect(() => {
     void fetchRun(caseId).then((result) => {
       if (!mountedRef.current) return;
       setRows(result.kind === "ok" ? result.data.sites : []);
     });
-  }, [caseId, detail.session.run_state]);
+  }, [caseId, detail.session.run_state, rowsNonce]);
 
   const entries = useMemo(() => adjustQueue(detail.sites, rows), [detail.sites, rows]);
   // The footer's facts: the SAME projection the rail judges, so Adjust's own door to
@@ -1244,6 +1279,10 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       }
       setRefusal(null);
       setLastOutcome(result.data.outcome);
+      // The row this site's strip reads was just rewritten server-side; ask for it
+      // again rather than let the toolbar describe the pose the operator moved away
+      // from. The PAYLOAD needs no such round trip — the response IS the new pose.
+      if (outcomeMovedTheRow(result)) setRowsNonce((n) => n + 1);
       if (result.data.pane_payload !== null) setPayload(result.data.pane_payload);
       onDetail(result.data.case);
       setFitDrafts([]);
@@ -1388,10 +1427,30 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   // because one click has to move all three — which is the whole point of naming a
   // direction rather than dragging one pane to it.
   const [viewPreset, setViewPreset] = useState<ViewPresetId>("occlusal");
+  /* EVERY preset click is a request to re-frame, re-selection included — that is what
+     makes a named viewpoint one the operator can RETURN to after orbiting away from it
+     (design review 2026-07-31). */
+  const [viewPresetNonce, setViewPresetNonce] = useState(0);
+  const handleSelectView = useCallback((preset: ViewPresetId) => {
+    setViewPreset(preset);
+    setViewPresetNonce((n) => n + 1);
+  }, []);
+  /* WHICH PANE WANTS THE NEXT CLICK, said ON the glass (client 2026-07-30). Adjust is
+     the only stage that installs pick listeners and it passed neither `armed` nor
+     `hints`, so the crosshair cursor and the on-glass hint were dead code and the
+     operator armed a tool, read "Library part · pane 1" in the scrolling work column,
+     and clicked into a pane that gave no tell. The rule is the pick router's own,
+     stated once in domain/adjust.paneArming. */
+  const arming = useMemo(
+    () => paneArming(openDraft, trenchArmed),
+    [openDraft, trenchArmed],
+  );
   const scene = useSitePaneScene(detail, activeSite, payload, {
     markers,
     onPick: pickHandlers,
+    armed: arming.armed,
     viewPreset,
+    viewPresetNonce,
   });
   // The off-axis presets need a MEASURED roll. Before a preview lands, panes 2/3 frame
   // down the jaw's occlusal proxy with no clock reference, so buccal/mesial would be a
@@ -1494,13 +1553,14 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       onResetView={scene.onResetView}
       scaleId={scene.scaleId}
       onSelectScale={scene.onSelectScale}
+      hints={arming.hints}
     />
   );
 
   return (
     <AdjustStageView
       viewPreset={viewPreset}
-      onSelectView={setViewPreset}
+      onSelectView={handleSelectView}
       viewPresetsAvailable={viewPresetsAvailable}
       entries={entries}
       activeTooth={activeTooth}
@@ -1539,6 +1599,8 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       onReconfirm={handleReconfirm}
       reconfirmSaving={reconfirmSaving}
       reconfirmError={reconfirmError}
+      seatedPhase={seatedPhase}
+      seatedPayloadPresent={payload !== null}
       pose={payload?.pose ?? null}
       reasonsFor={reasonsFor}
       onOpenReasons={setReasonsFor}

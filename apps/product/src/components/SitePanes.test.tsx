@@ -25,6 +25,8 @@ import {
   siteAxisLabel,
   type SitePanesViewProps,
 } from "./SitePanes";
+import { armedViewerClassName } from "viewer";
+import { newPairDraft, paneArming, withPick } from "../domain/adjust";
 import { sitePreviewPayload } from "../testing/fixtures";
 
 function view(overrides: Partial<SitePanesViewProps> = {}) {
@@ -312,6 +314,40 @@ describe("SitePanesView — the solo fallback says why", () => {
     expect(markup).not.toContain('data-role="pane-solo-note"');
     expect([...markup.matchAll(/class="verify-panel"/g)]).toHaveLength(3);
   });
+
+  /* THE GUARD WAS DEAD CODE (design review 2026-07-31). `maximizedId !== null &&
+     !plan.solo` can never be false: planPaneLayout forces solo=false whenever
+     maximized is true. So the moment the operator clicked a 1/2/3 switch on a stage
+     below the threshold, "⤡ show all three" appeared — and clicking it gave them ONE
+     pane plus "too short for three panes". `soloIfUnmaximized` is the arithmetic
+     without the maximize, which is the fact both controls actually need. */
+  it("still refuses 'show all three' after a 1/2/3 click on a too-short stage", () => {
+    const markup = view({
+      layoutPlan: planPaneLayout({ availH: 397, viewportW: 1280 }, true),
+      maximizedId: "scan",
+      onToggleMaximized: () => undefined,
+    });
+    expect(markup).not.toContain("show all three");
+  });
+
+  it("offers it again as soon as the stage could really carry three", () => {
+    const markup = view({
+      layoutPlan: planPaneLayout({ availH: 563, viewportW: 1600 }, true),
+      maximizedId: "scan",
+      onToggleMaximized: () => undefined,
+    });
+    expect(markup).toContain("show all three");
+  });
+
+  it("the pressed switch does not promise three panels the stage cannot show", () => {
+    const markup = view({
+      layoutPlan: planPaneLayout({ availH: 397, viewportW: 1280 }, true),
+      maximizedId: "scan",
+      onToggleMaximized: () => undefined,
+    });
+    expect(markup).not.toContain("back to all three panels");
+    expect(markup).toContain("too short for three panes");
+  });
 });
 
 describe("SitePanesView — the chrome steps aside on a stage too small to carry it", () => {
@@ -343,6 +379,38 @@ describe("SitePanesView — the chrome steps aside on a stage too small to carry
   it("offers no HUD toggle on a pane that has no layers to toggle", () => {
     const markup = view({ layoutPlan: planPaneLayout({ availH: 497, viewportW: 1280 }, false) });
     expect(markup).not.toContain('data-role="pane-hud-toggle"');
+  });
+
+  /* A RAMP WITH NO SCALE IS NOT A MEASUREMENT (design review 2026-07-31). The tiny
+     rule hid `__scales`, `__ticks` AND `__detail` — and `__ticks` IS the two end
+     labels, so the union pane showed a deviation-coloured cap over a bare gradient
+     with no numbers, no sign convention and no way to tell the signed ramp from the
+     absolute rainbow (where red means either proud or sunk). On a three-column stage
+     maximizing yields the identical height, so there was no route back to any of it.
+     The chooser may go; the ramp's IDENTITY may not. */
+  it("names the scale on a tiny stage, where the chooser cannot be shown", () => {
+    const markup = view({
+      layoutPlan: planPaneLayout({ availH: 497, viewportW: 1280 }, false),
+    });
+    expect(markup).toContain('data-role="colorbar-scale-name"');
+    expect(markup).toContain("signed ±0.50 mm");
+  });
+
+  it("names the ABSOLUTE ramp when that is the one on the mesh — red means two things", () => {
+    const markup = view({
+      scaleId: "contacts",
+      layoutPlan: planPaneLayout({ availH: 497, viewportW: 1280 }, false),
+    });
+    expect(markup).toContain('data-role="colorbar-scale-name"');
+    expect(markup).toContain("contacts");
+  });
+
+  it("says nothing extra where the chooser itself is on screen", () => {
+    const markup = view({
+      layoutPlan: planPaneLayout({ availH: 563, viewportW: 1280 }, false),
+      onSelectScale: () => undefined,
+    });
+    expect(markup).not.toContain('data-role="colorbar-scale-name"');
   });
 });
 
@@ -401,5 +469,46 @@ describe("scanPaneCaption", () => {
 
   it("groups the triangle count the way the operator reads it", () => {
     expect(scanPaneCaption(3, 20500, 9)).toContain("20,500 triangles");
+  });
+});
+
+/**
+ * THE ARMED TELL, END TO END (design review 2026-07-31).
+ *
+ * R2's headline "the panes say when they are armed" never reached the running app:
+ * AdjustStage — the only stage that installs pick listeners — passed neither `armed` to
+ * useSitePaneScene nor `hints` to SitePanesView, so `.verify-viewer--armed` and the
+ * whole on-glass hint path were dead. WebGL cannot enter a node test, so what is held
+ * here is every link of the chain except the React wiring: the pick router's rule, the
+ * class the cursor hangs off, and the hint the pane prints.
+ */
+describe("the pane that wants the click says so", () => {
+  it("puts the crosshair on the LIBRARY pane while the pair wants its part half", () => {
+    const armed = paneArming(newPairDraft("p1", false), false).armed;
+    expect(armedViewerClassName(armed.library)).toContain("verify-viewer--armed");
+    expect(armedViewerClassName(armed.scan)).not.toContain("verify-viewer--armed");
+    expect(armedViewerClassName(armed.union)).not.toContain("verify-viewer--armed");
+  });
+
+  it("moves it to BOTH scan panes once the part half is placed", () => {
+    const draft = withPick(newPairDraft("p1", false), "part", [0, 0, 1]);
+    const armed = paneArming(draft, false).armed;
+    expect(armedViewerClassName(armed.scan)).toContain("verify-viewer--armed");
+    expect(armedViewerClassName(armed.union)).toContain("verify-viewer--armed");
+    expect(armedViewerClassName(armed.library)).not.toContain("verify-viewer--armed");
+  });
+
+  it("prints that pane's hint ON the glass, where the click goes", () => {
+    const draft = withPick(newPairDraft("p1", true), "part", [0, 0, 1]);
+    const markup = view({ hints: paneArming(draft, false).hints });
+    expect(markup).toContain('data-role="pane-hint"');
+    expect(markup).toContain("Click ONE END of that feature here.");
+    // pane 1 is done with this pair: it says nothing
+    expect([...markup.matchAll(/data-role="pane-hint"/g)]).toHaveLength(2);
+  });
+
+  it("says nothing on any pane while nothing is armed", () => {
+    const markup = view({ hints: paneArming(null, false).hints });
+    expect(markup).not.toContain('data-role="pane-hint"');
   });
 });

@@ -314,6 +314,22 @@ class AssuranceSite(BaseModel):
     # to in the production block. None on every single-variant case (the worker
     # never writes the key when there is nothing to disclose).
     production_note: Optional[str] = None
+    # THE DISPOSITION THIS ROW IS STANDING ON (audit 2026-07-31, the coherence
+    # finding). A cap dropped at Adjust wrote ``SiteSession.withhold_intent``, the
+    # invoice priced against it, the attestation sentence counted it withheld and
+    # ``confirm_case`` sealed it withheld — but the ASSURANCE ROW, the one thing on
+    # screen at the moment of signing, carried no withhold field at all. Deliver's
+    # table therefore rendered the literal word "released" over a clean dropped site,
+    # with no control on the row to change it back, and confirming from that screen
+    # withheld the site plus every case-wide file. One surface, two answers.
+    #
+    # So the draft rides on the row it is signed over, DERIVED like every other field
+    # here (``withhold_intents_of`` — the same read confirm folds and the invoice
+    # prices against), never accepted from a client. ``confirm_case`` writes the
+    # resolved disposition back onto the same field, so after a confirmation this is
+    # not merely a draft: it is THE disposition, and Adjust, the invoice, the
+    # attestation and this row cannot disagree about it.
+    withhold_intent: bool = False
     # THE NUMBERS IN THIS ROW THAT PREDATE AN OPERATOR REWORK (review 2026-07-28,
     # finding E). Adjust re-derives what it can over the new pose — the deviation
     # scalars and the clocking — and NAMES what it cannot: the rim agreement was
@@ -359,10 +375,23 @@ class AssuranceView(BaseModel):
     sites: List[AssuranceSite]
 
     def sealed_facts(self) -> dict:
-        """The run's facts as the bundle seals them: this document minus the act.
+        """The run's facts as the bundle seals them: this document minus the ACTS.
         One method, so the confirm route and the release re-derivation cannot drop
-        different fields."""
-        return self.model_dump(mode="json", exclude={"adjustments"})
+        different fields.
+
+        TWO EXCLUSIONS, BOTH OPERATOR ACTS AND NEITHER AN OVERSIGHT. ``adjustments``
+        is the fork's word — the bundle states it as its own top-level key, beside
+        the run's facts, so the canonical bytes carry one statement and not two.
+        ``sites[*].withhold_intent`` is the per-site disposition draft, and it is
+        excluded for the reason the whole disposition map already is (bff/evidence.py):
+        a disposition says what the OPERATOR does with a site, never what the run
+        found. Folding it in would make dropping a cap look like evidence drift —
+        release's own 409 would fire on the operator's own decision and tell them the
+        case "changed since it was confirmed", which it did not."""
+        return self.model_dump(
+            mode="json",
+            exclude={"adjustments": True,
+                     "sites": {"__all__": {"withhold_intent"}}})
 
 
 # --- the projection ---------------------------------------------------------------------
@@ -466,6 +495,7 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession,
             reason=production.get("clamp_reason"),
         ),
         production_note=production.get("note"),
+        withhold_intent=(site.withhold_intent if site is not None else False),
         stale_metrics=stale_metrics,
         matching_diameter_mm=best_fit.get("matching_diameter_mm"),
         correspondence=(AssuranceCorrespondence(**{
@@ -852,14 +882,40 @@ class ConfirmIn(BaseModel):
 
 
 class PaymentIn(BaseModel):
-    """The stub's body: the explicit act, nothing else. ``authorize`` must be
-    literally true — the stub authorizes nothing implicitly, and there is no other
-    field because inventing amounts or references would fake deeper than AM-11
-    allows."""
+    """The stub's body: the explicit act, and the PRECONDITION naming the document
+    the operator read. ``authorize`` must be literally true — the stub authorizes
+    nothing implicitly.
+
+    ``invoice_fingerprint`` IS NOT AN AMOUNT AND MUST NEVER BECOME ONE (audit
+    2026-07-31). Nothing bound the price the operator READ to the price they were
+    CHARGED: the checkout renders an invoice fetched once, and ``authorize_payment``
+    re-derives at mutation time. ``turnaround`` is client-settable and fires no reset
+    boundary, so a ``PUT {"turnaround": "rush"}`` from a second tab after the dialog
+    rendered moved the server price from $32.00 to $48.00 while the sticky bar still
+    read "Pay $32.00 (demo)" — and the click charged $48.00 and returned 200.
+    ``_mutate_signing`` does not close this: it refuses a CAS loss DURING the
+    mutation, and that write landed before the POST.
+
+    So the precondition is a VERSION, not a figure — the opaque digest the invoice
+    served (``bff.pricing.invoice_fingerprint``), echoed back. It carries no claim: a
+    client cannot express "charge me $0" with it, only "this is the document I was
+    shown", which the server re-derives and compares for itself. The same shape as
+    the evidence-drift 409 the Deliver surface already handles.
+
+    OPTIONAL ON THE WIRE, and the reason is worth stating rather than discovering.
+    Every refusal this route already owns — no confirmation, a confirmation naming
+    another run, already paid — must keep its own 409 and its own words; a required
+    field would turn all three into a pydantic 422 before the route ever ran, and a
+    refusal that stops naming the real problem is a worse trade than the residual.
+    The product's own checkout always sends it (it cannot even offer to pay without a
+    fetched invoice — CheckoutPage disables the button on a loading or errored one),
+    so the walked failure is closed. What stays open is a hand-rolled client that
+    omits it, which is exactly the class of caller HTTP's own If-Match leaves open."""
 
     model_config = ConfigDict(extra="forbid")
 
     authorize: bool
+    invoice_fingerprint: Optional[str] = None
 
 
 # --- the gates' shared derivations ------------------------------------------------------
@@ -1109,6 +1165,21 @@ def confirm_case(case_id: str, body: ConfirmIn,
             # re-hashing the run's QC bytes to find out
             bundle_version=BUNDLE_VERSION,
         )
+        # THE RESOLVED DISPOSITION GOES BACK ONTO THE SITE (audit 2026-07-31). The
+        # draft fed this map; nothing fed the draft back, so "intent = withhold,
+        # signed = release" was a reachable and then PERMANENT state: Adjust went on
+        # rendering "1 dropped" and offering "bring this cap back" over a cap the
+        # confirmation had released, the invoice billed it at full rate, and a second
+        # DROP was a silent 200 no-op (``put_withhold_intent``'s equality early
+        # return fired before the contradiction was judged). Writing the signature
+        # back makes that state unreachable rather than merely detectable — the
+        # signature is the stronger act, so it is the one that settles the field.
+        # Every tooth here already has a SiteSession (``_require_every_site_resolved``
+        # refuses a site with no rung), so this creates nothing.
+        for tooth_key, act in dispositions.items():
+            site_session = session.sites.get(tooth_key)
+            if site_session is not None:
+                site_session.withhold_intent = (act == "withhold")
         withheld = sorted(int(t) for t, act in dispositions.items()
                           if act == "withhold")
         record_activity(
@@ -1223,6 +1294,20 @@ def authorize_payment(case_id: str, body: PaymentIn,
         # a later repricing (a turnaround change fires no boundary) leaves the
         # receipt readable instead of retroactively rewritten.
         invoice = derive_invoice(case, session)
+        # AND IT MUST BE THE DOCUMENT THE OPERATOR READ (audit 2026-07-31). Deriving
+        # fresh is correct doctrine; charging a figure no surface ever displayed is
+        # not. Compared LAST, after every gate above, so a case that is unpayable for
+        # a better reason still refuses in that reason's own words.
+        if (body.invoice_fingerprint is not None
+                and body.invoice_fingerprint != invoice.fingerprint):
+            raise HTTPException(
+                409, f"the price moved since you read it — case {case_id!r} now "
+                     f"prices as invoice {invoice.fingerprint!r} and the "
+                     f"authorization names {body.invoice_fingerprint!r}. Turnaround "
+                     f"and dispositions both reprice a case without moving its "
+                     f"evidence, so nothing here failed; re-read GET "
+                     f"/api/case-sessions/{case_id}/invoice and authorize again over "
+                     f"the figure it shows")
         session.payment = PaymentRecord(payment_authorized=True, provider="stub",
                                         at=_now(),
                                         amount_cents=invoice.total_cents,

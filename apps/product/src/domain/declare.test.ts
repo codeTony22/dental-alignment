@@ -45,6 +45,7 @@ import {
   variantShelves,
   alignmentStats,
   presetFrame,
+  presetFraming,
   siteIdentity,
   VIEW_PRESETS,
   type PaneFrame,
@@ -473,12 +474,30 @@ describe("reviewTick — enabled only over a preview (AM-8)", () => {
   });
 
   it("anything short of a preview is inert WITH its reason — a tick over nothing", () => {
-    for (const status of ["detected", "declared", "flagged", "adjusted"] as const) {
+    for (const status of ["detected", "declared"] as const) {
       const tick = reviewTick(siteView({ status }));
       expect(tick.enabled).toBe(false);
       expect(tick.reason).toContain("preview this site first");
     }
     expect(reviewTick(null).enabled).toBe(false);
+  });
+
+  /* A SITE THE RUN HAS ALREADY MEASURED IS NOT A SITE AWAITING A PREVIEW (design
+     review 2026-07-31). Both of these used to read "preview this site first" beside a
+     row that says "Flagged by the run — deviation RMS 0.214 mm": three sentences on
+     one screen, one of them false about work that has demonstrably happened. */
+  it("a flagged site is refused with the RUN's reason and pointed at Adjust", () => {
+    const tick = reviewTick(siteView({ status: "flagged" }));
+    expect(tick.enabled).toBe(false);
+    expect(tick.reason).toContain("Adjust");
+    expect(tick.reason).not.toContain("preview this site first");
+  });
+
+  it("a reworked site is sent back to the panes that show the fit that moved", () => {
+    const tick = reviewTick(siteView({ status: "adjusted" }));
+    expect(tick.enabled).toBe(false);
+    expect(tick.reason).toContain("Adjust");
+    expect(tick.reason).not.toContain("preview this site first");
   });
 });
 
@@ -875,6 +894,40 @@ describe("declareQueueSummary — how far through the declaration the operator i
   it("an empty queue says there is nothing to review, never '0 of 0'", () => {
     expect(declareQueueSummary([])).not.toContain("0 of 0");
   });
+
+  /* THREE POPULATIONS, THREE SENTENCES (design review 2026-07-31). Folding everything
+     that is not `ready` into "still to confirm over the panes" told an operator whose
+     run flagged one site that they had left work undone HERE — when the act that site
+     needs is in Adjust, and every site had already been confirmed before the run
+     fired. */
+  it("names the flagged population as Adjust's work, not as unconfirmed panes", () => {
+    const words = declareQueueSummary([
+      siteView({ tooth: 19, status: "ready" }),
+      siteView({ tooth: 30, status: "ready" }),
+      siteView({ tooth: 3, status: "flagged" }),
+    ]);
+    expect(words).toContain("2 of 3 sites reviewed");
+    expect(words).toContain("1 flagged");
+    expect(words).toContain("Adjust");
+    expect(words).not.toContain("still to confirm over the panes");
+  });
+
+  it("a reworked site is counted as needing re-confirmation, not as never confirmed", () => {
+    const words = declareQueueSummary([
+      siteView({ tooth: 19, status: "ready" }),
+      siteView({ tooth: 30, status: "adjusted" }),
+    ]);
+    expect(words).toContain("1 reworked");
+    expect(words).not.toContain("still to confirm over the panes");
+  });
+
+  it("keeps the pre-run sentence for sites that genuinely have no tick yet", () => {
+    const words = declareQueueSummary([
+      siteView({ tooth: 19, status: "ready" }),
+      siteView({ tooth: 30, status: "previewed" }),
+    ]);
+    expect(words).toContain("1 still to confirm over the panes");
+  });
 });
 
 describe("siteStateSentence — the row's state in words, and the RUN's own number", () => {
@@ -995,12 +1048,59 @@ describe("alignmentStats — the strip's facts, every one the SERVER's", () => {
     expect(statOf(stats, "pairs")).toBe("4");
   });
 
-  it("pre-run every measured field is '—' and no field is fabricated", () => {
+  /* NO RUN IS NOT A MEASUREMENT (design review 2026-07-31). The strip printed "—" in
+     every numeric cell before a run — the same dash the queue rows deliberately refuse
+     because "in a deviation column it reads as a measured zero". It says the absence
+     out loud instead, exactly as `measuredWords` already does one panel away. */
+  it("pre-run says NO RUN YET rather than a dash a reader takes for a zero", () => {
     const stats = alignmentStats([], 19, "5020");
     expect(statOf(stats, "variant")).toBe("5020");
     for (const id of ["dev-rms", "dev-p90", "rotation", "pairs"]) {
-      expect(statOf(stats, id)).toBe("—");
+      expect(statOf(stats, id)).toBe("no run yet");
     }
+  });
+
+  it("keeps the dash where a run row EXISTS but carries no figure — a different fact", () => {
+    const stats = alignmentStats(rows, 30, "5020");
+    expect(statOf(stats, "dev-rms")).toBe("—");
+    expect(statOf(stats, "pairs")).toBe("—");
+  });
+
+  /* THE PREVIEW'S OWN PUBLISHED FIGURES, WITH THEIR SOURCE NAMED. On Declare before
+     the run, the union pane's legend prints "RMS 0.086 mm · p90 0.142 mm" from
+     payload.stats while this strip said no figure existed. Both come from the server;
+     what differs is WHICH act measured, so the label carries it. */
+  it("falls back to the preview's server-published figures, naming them as the preview's", () => {
+    const stats = alignmentStats([], 19, "5020", {
+      poseAvailable: true,
+      rmsMm: 0.0861,
+      p90Mm: 0.1423,
+      source: "preview",
+    });
+    expect(statOf(stats, "dev-rms")).toBe("0.086 mm");
+    expect(statOf(stats, "dev-p90")).toBe("0.142 mm");
+    const label = (id: string) => stats.find((s) => s.id === id)!.label;
+    expect(label("dev-rms")).toContain("preview");
+    // the preview seats a cap; it measures no clocking residual and no pairs
+    expect(statOf(stats, "rotation")).toBe("no run yet");
+    expect(statOf(stats, "pairs")).toBe("no run yet");
+  });
+
+  it("the RUN's own figures say so too — a strip cell never hides which act measured it", () => {
+    const label = (id: string) =>
+      alignmentStats(rows, 19, "5020").find((s) => s.id === id)!.label;
+    expect(label("dev-rms")).toContain("run");
+    expect(label("dev-p90")).toContain("run");
+  });
+
+  it("a run row always wins over a preview still held in the browser", () => {
+    const stats = alignmentStats(rows, 19, "5020", {
+      poseAvailable: true,
+      rmsMm: 9.999,
+      p90Mm: 9.999,
+      source: "preview",
+    });
+    expect(statOf(stats, "dev-rms")).toBe("0.041 mm");
   });
 
   it("an undeclared site's VARIANT is a dash, never the suggestion", () => {
@@ -1028,16 +1128,27 @@ describe("presetFrame — the named viewpoints, in each pane's OWN basis", () =>
     up: [1, 0, 0],
   };
 
-  it("offers exactly the design's three named directions", () => {
-    expect(VIEW_PRESETS.map((p) => p.id)).toEqual(["occlusal", "buccal", "mesial"]);
+  it("offers three viewpoints, and NONE of the off-axis two wears an anatomical name", () => {
+    expect(VIEW_PRESETS.map((p) => p.id)).toEqual(["occlusal", "side-a", "side-b"]);
+    /* THE RENAME (design review 2026-07-31). The off-axis two were shipped as
+       "buccal"/"mesial" but they are built from the seated pose's `x_axis`, which the
+       worker publishes only "because it is what makes the three panes COMPARABLE"
+       (application/preview.py:119-124) — a shared clock reference, never an arch
+       direction. Nothing maps it to buccal/lingual or mesial/distal, so on tooth 29
+       "buccal" could look at the lingual wall. A name the product cannot justify is a
+       name the product does not use. */
+    const words = VIEW_PRESETS.map((p) => `${p.label} ${p.title}`).join(" ").toLowerCase();
+    for (const anatomy of ["buccal", "lingual", "mesial", "distal", "palatal"]) {
+      expect(words).not.toContain(anatomy);
+    }
   });
 
   it("occlusal IS the pane's own framing — down the seated axis, unchanged", () => {
     expect(presetFrame(base, "occlusal")).toEqual(base);
   });
 
-  it("buccal looks down the third basis vector with the axis standing up on screen", () => {
-    const frame = presetFrame(base, "buccal")!;
+  it("side A looks down the third basis vector with the axis standing up on screen", () => {
+    const frame = presetFrame(base, "side-a")!;
     expect(frame.viewDirection).toEqual([0, 1, 0]); // z × x
     expect(frame.up).toEqual([0, 0, 1]); // the cap's own axis points up
     // the pane keeps its own subject: only the camera moved
@@ -1045,15 +1156,15 @@ describe("presetFrame — the named viewpoints, in each pane's OWN basis", () =>
     expect(frame.radiusMm).toBe(base.radiusMm);
   });
 
-  it("mesial looks down the shared clock reference, the axis still up", () => {
-    const frame = presetFrame(base, "mesial")!;
+  it("side B looks down the shared clock reference itself, the axis still up", () => {
+    const frame = presetFrame(base, "side-b")!;
     expect(frame.viewDirection).toEqual([1, 0, 0]);
     expect(frame.up).toEqual([0, 0, 1]);
   });
 
   it("normalises whatever the pose supplied — a wire axis is not a unit vector", () => {
     const scaled: PaneFrame = { ...base, viewDirection: [0, 0, 4], up: [3, 0, 0] };
-    const frame = presetFrame(scaled, "buccal")!;
+    const frame = presetFrame(scaled, "side-a")!;
     expect(frame.viewDirection![0]).toBeCloseTo(0, 12);
     expect(frame.viewDirection![1]).toBeCloseTo(1, 12);
     expect(frame.up![2]).toBeCloseTo(1, 12);
@@ -1061,21 +1172,66 @@ describe("presetFrame — the named viewpoints, in each pane's OWN basis", () =>
 
   it("without a measured roll there is no off-axis view — null, never a guessed clock", () => {
     // pre-preview panes 2/3 frame down the jaw's occlusal PROXY with up = null
-    // (siteFrameFor): a buccal view would need a roll nothing has measured.
+    // (siteFrameFor): an off-axis view would need a roll nothing has measured.
     const proxy: PaneFrame = { ...base, up: null };
-    expect(presetFrame(proxy, "buccal")).toBeNull();
-    expect(presetFrame(proxy, "mesial")).toBeNull();
+    expect(presetFrame(proxy, "side-a")).toBeNull();
+    expect(presetFrame(proxy, "side-b")).toBeNull();
     // occlusal still works: it is exactly the framing the pane already has
     expect(presetFrame(proxy, "occlusal")).toEqual(proxy);
   });
 
   it("a degenerate basis (axis parallel to its roll) yields no view rather than NaNs", () => {
     const degenerate: PaneFrame = { ...base, viewDirection: [0, 0, 1], up: [0, 0, 2] };
-    expect(presetFrame(degenerate, "buccal")).toBeNull();
+    expect(presetFrame(degenerate, "side-a")).toBeNull();
   });
 
   it("no frame in, no frame out", () => {
     expect(presetFrame(null, "occlusal")).toBeNull();
-    expect(presetFrame(null, "buccal")).toBeNull();
+    expect(presetFrame(null, "side-a")).toBeNull();
+  });
+});
+
+/**
+ * REFERENCE AND LABEL MUST COME FROM ONE FRAME (design review 2026-07-31).
+ *
+ * The pane foot is the one on-screen sentence claiming to be a LIVE measurement of
+ * orientation. Under a preset it measured the camera against the preset-ROTATED
+ * direction while printing the label of the UN-rotated axis, so a side-on pane read
+ * "down the seated pose axis" at exactly 90° off it — and "90° off the seated pose
+ * axis" once the operator orbited back onto it. This pairs the two.
+ */
+describe("presetFraming — the frame a pane got, and the words for what it framed on", () => {
+  const base: PaneFrame = {
+    center: [1, 2, 3],
+    radiusMm: 9,
+    viewDirection: [0, 0, 1],
+    up: [1, 0, 0],
+  };
+
+  it("occlusal is the pane's own framing, so the pane's own axis name stands", () => {
+    const framing = presetFraming(base, "occlusal");
+    expect(framing.frame).toEqual(base);
+    expect(framing.presetLabel).toBeNull();
+  });
+
+  it("a rotated frame carries a label for the direction it ACTUALLY framed on", () => {
+    const framing = presetFraming(base, "side-a");
+    expect(framing.frame!.viewDirection).toEqual([0, 1, 0]);
+    expect(framing.presetLabel).not.toBeNull();
+    expect(framing.presetLabel).toContain("side A");
+    expect(framing.presetLabel).not.toContain("seated pose axis");
+  });
+
+  it("a preset that could not apply falls back to the base frame AND its base label", () => {
+    // pre-preview panes 2/3: the occlusal proxy carries no clock reference at all
+    const proxy: PaneFrame = { ...base, up: null };
+    const framing = presetFraming(proxy, "side-a");
+    expect(framing.frame).toEqual(proxy);
+    // no label of its own — the caller keeps naming the axis the pane is really on
+    expect(framing.presetLabel).toBeNull();
+  });
+
+  it("no frame in: no frame, and no claim about one", () => {
+    expect(presetFraming(null, "side-b")).toEqual({ frame: null, presetLabel: null });
   });
 });

@@ -51,6 +51,7 @@ import {
   systemCards,
   recordedAtWords,
   variantShelves,
+  type PreviewFigures,
   type VariantCard,
   type ViewPresetId,
   type WorkspaceStat,
@@ -272,7 +273,15 @@ export interface WorkspaceToolbarProps {
   readonly viewPreset?: ViewPresetId;
   readonly onSelectView?: (preset: ViewPresetId) => void;
   /** False before a seated pose exists — the off-axis presets need the measured clock
-   *  reference (domain/declare.presetFrame), and occlusal alone stays live. */
+   *  reference (domain/declare.presetFraming), and occlusal alone stays live.
+   *
+   *  DEFAULTS TO FALSE (design review 2026-07-31). It defaulted to TRUE, and the one
+   *  caller that never supplied it — DeclareStage — therefore offered both off-axis
+   *  presets before any preview existed: pane 1 swung side-on (partCameraFrame always
+   *  carries up:[1,0,0]) while panes 2/3 stayed on the occlusal proxy with no clock
+   *  reference to rotate about, and the toolbar latched the new view for all three.
+   *  A preset that cannot reach a camera is a control that lies; the safe default is
+   *  the one that cannot. */
   readonly viewPresetsAvailable?: boolean;
   /** A stage's own control that belongs on this strip (Declare's arch opener) — so
    *  the stage keeps ONE row of chrome above the panes rather than two. */
@@ -305,7 +314,7 @@ export function WorkspaceToolbar({
   stats,
   viewPreset = "occlusal",
   onSelectView,
-  viewPresetsAvailable = true,
+  viewPresetsAvailable = false,
   children,
 }: WorkspaceToolbarProps) {
   const identity = siteIdentity(tooth, systemModel);
@@ -411,6 +420,9 @@ export interface DeclareStageViewProps {
   readonly viewPreset?: ViewPresetId;
   readonly onSelectView?: (preset: ViewPresetId) => void;
   readonly viewPresetsAvailable?: boolean;
+  /** What the PREVIEW published for the active site, while no run has measured it
+   *  (design review 2026-07-31) — see domain/declare.alignmentStats. */
+  readonly previewFigures?: PreviewFigures | null;
   /** The three live panes + the review tick (5b) — the container passes the
    * DeclarePanes container; View tests may omit it (the panes have their own). */
   readonly panesSlot?: ReactNode;
@@ -439,6 +451,7 @@ export function DeclareStageView({
   viewPreset,
   onSelectView,
   viewPresetsAvailable,
+  previewFigures = null,
   panesSlot,
 }: DeclareStageViewProps) {
   const facts = factsFromCaseSession(detail);
@@ -703,16 +716,21 @@ export function DeclareStageView({
             `workspace-toolbar-site-chip` + `alignment-metrics-strip`). The chip is
             the SERVER's rung and the numbers are the run's own rows — the same rows
             the queue's sentences read — so this surface adds a location, never a
-            claim. The named view presets stay dark here: applying one has to reach
-            the three pane cameras, and that seam is `useSitePaneScene`'s frame
-            construction in components/SitePanes.tsx, which this change does not
-            touch. The moment it grows a frame override, `onSelectView` is the one
-            prop to pass. */}
+            claim. The presets DO reach the three pane cameras (useSitePaneScene's
+            frame construction), and whether the off-axis two can is a fact about the
+            preview: `viewPresetsAvailable` is the container's answer, reported up out
+            of DeclarePanes, because a preset that cannot reach a camera is a control
+            that lies. */}
         <WorkspaceToolbar
           tooth={active?.tooth ?? null}
           systemModel={detail.system.effective_model}
           status={active?.status ?? null}
-          stats={alignmentStats(runRows, active?.tooth ?? null, active?.declared_variant ?? null)}
+          stats={alignmentStats(
+            runRows,
+            active?.tooth ?? null,
+            active?.declared_variant ?? null,
+            previewFigures,
+          )}
           viewPreset={viewPreset}
           onSelectView={onSelectView}
           viewPresetsAvailable={viewPresetsAvailable}
@@ -793,6 +811,21 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
   // THE NAMED VIEWPOINT (gap `named-view-presets`), held by the STAGE so one click
   // moves all three panes — a per-pane preset would just be three orbits again.
   const [viewPreset, setViewPreset] = useState<ViewPresetId>("occlusal");
+  /* Every preset click re-frames, re-selection included: a named viewpoint the
+     operator cannot RETURN to after orbiting away is not a viewpoint (design review
+     2026-07-31). */
+  const [viewPresetNonce, setViewPresetNonce] = useState(0);
+  const handleSelectView = useCallback((preset: ViewPresetId) => {
+    setViewPreset(preset);
+    setViewPresetNonce((n) => n + 1);
+  }, []);
+  /* WHAT THE PREVIEW PUBLISHED, held here because two things ABOVE the panes need it:
+     the off-axis presets need to know a seated pose exists (AdjustStage has always
+     done this — `payload?.pose != null` — and this stage passed nothing at all, so the
+     view's default enabled them against no clock reference), and the ALIGNMENT strip
+     printed "—" for the very RMS/p90 the union pane below was displaying. `setState`
+     is a stable identity, so DeclarePanes' report effect does not re-subscribe. */
+  const [previewFigures, setPreviewFigures] = useState<PreviewFigures | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -945,7 +978,9 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
   return (
     <DeclareStageView
       viewPreset={viewPreset}
-      onSelectView={setViewPreset}
+      onSelectView={handleSelectView}
+      viewPresetsAvailable={previewFigures?.poseAvailable ?? false}
+      previewFigures={previewFigures}
       detail={detail}
       activeTooth={activeTooth}
       pendingSwitch={pendingSwitch}
@@ -970,6 +1005,8 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
           site={activeSiteFrom(detail.sites, activeTooth)}
           onDetail={onDetail}
           viewPreset={viewPreset}
+          viewPresetNonce={viewPresetNonce}
+          onPreviewFigures={setPreviewFigures}
         />
       }
     />

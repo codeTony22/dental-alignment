@@ -793,3 +793,99 @@ describe("the terms are a LINK to a routed document (client 2026-07-30)", () => 
     expect(view()).not.toContain('data-role="sealed-terms-link"');
   });
 });
+
+// --- the dropped cap reaches the screen that signs it (audit 2026-07-31) -------------
+
+/** A CLEAN, READY site dropped at Adjust. Before the fix this row rendered the
+ *  literal word "released" while confirming from it withheld the site plus every
+ *  case-wide file, with no control on the row to change it back. */
+const DROPPED_CLEAN = assuranceSite({
+  tooth: 19,
+  status: "ready",
+  withhold_intent: true,
+});
+
+describe("a site dropped at Adjust, on the screen that signs it", () => {
+  const dropped = assuranceView({ sites: [DROPPED_CLEAN] });
+
+  it("NEVER renders the word 'released' for it", () => {
+    const html = view({
+      reportOpen: true,
+      assurance: { kind: "ok", data: dropped },
+      dispositions: {},
+    });
+    const row = html.slice(html.indexOf('data-role="assurance-row" data-tooth="19"'));
+    const cell = row.slice(0, row.indexOf("</tr>"));
+    expect(cell).not.toContain(">released<");
+    expect(cell).toContain('data-disposition="withhold"');
+  });
+
+  it("offers the way back on the row itself, not only on Adjust", () => {
+    const html = view({
+      reportOpen: true,
+      assurance: { kind: "ok", data: dropped },
+      dispositions: {},
+    });
+    expect(html).toContain('data-role="disposition-release"');
+    expect(html).toContain('data-role="disposition-withhold"');
+    expect(html).not.toContain('data-role="disposition-default"');
+  });
+
+  it("pressing release on it puts the row back to the quiet default", () => {
+    const html = view({
+      reportOpen: true,
+      assurance: { kind: "ok", data: dropped },
+      dispositions: { 19: "release" },
+    });
+    expect(html).toContain('data-disposition="release"');
+  });
+
+  it("the panel header stops saying every row releases as it stands", () => {
+    const html = view({ assurance: { kind: "ok", data: dropped }, dispositions: {} });
+    expect(html).not.toContain("every row here releases as it stands");
+  });
+
+  it("the compact summary the confirm sits beside names it too", () => {
+    // the stage's own confirm fires from this panel, so a cap the signature is
+    // about to drop must not read here as an unremarkable line
+    const html = view({ assurance: { kind: "ok", data: dropped }, dispositions: {} });
+    expect(html).toContain('data-role="evidence-withheld"');
+    expect(html).toMatch(/data-role="evidence-line"[^>]*data-disposition="withhold"/);
+  });
+});
+
+describe("what was CHARGED, after the payment (audit 2026-07-31)", () => {
+  it("the receipt survives the Paid step going done", () => {
+    // the whole invoice block — receipt included — was gated on the paid step being
+    // CURRENT, and releaseSteps flips it to "done" the instant payment lands, so
+    // post-payment no surface in the product stated the amount
+    const html = view({
+      detail: deliverableDetail({
+        ...CONFIRMED,
+        payment_authorized: true,
+        payment: {
+          provider: "stub",
+          at: "2026-07-31T09:00:00+00:00",
+          amount_cents: 3200,
+          currency: "USD",
+          rate_card_version: "placeholder-v1",
+          turnaround: "standard",
+        },
+      }),
+      invoice: { kind: "ok", data: invoiceView() },
+    });
+    expect(html).toContain('data-role="release-step" data-step="paid" data-state="done"');
+    expect(html).toContain('data-role="paid-receipt"');
+    expect(html).toContain("Charged $32.00");
+    expect(html).toContain("rate card placeholder-v1");
+  });
+
+  it("a record from before amounts were kept says so rather than printing $0.00", () => {
+    const html = view({
+      detail: deliverableDetail({ ...CONFIRMED, ...PAID }),
+    });
+    expect(html).toContain('data-role="paid-receipt"');
+    expect(html).toContain("no amount was recorded");
+    expect(html).not.toContain("Charged $0.00");
+  });
+});

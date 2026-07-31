@@ -1474,16 +1474,26 @@ def put_withhold_intent(case_id: str, tooth: int, body: WithholdIntentIn,
     def apply(session: CaseSession) -> None:
         _require_known_tooth(case, session, tooth)
         site = session.sites.get(str(tooth), SiteSession())
-        if site.withhold_intent == body.withhold:
-            return   # not an act: an identical re-assertion states nothing new
-        site.withhold_intent = body.withhold
-        session.sites[str(tooth)] = site
-        # the standing signature, judged against the intent as it now stands
+        # THE CONTRADICTION IS A PROPERTY OF THE STATE, NOT OF THE TRANSITION (audit
+        # 2026-07-31). This was judged AFTER an equality early-return, so the state
+        # "intent = withhold, standing confirmation = release" — reachable by
+        # confirming with an explicit ``{"13": "release"}`` over a dropped cap, the
+        # exact path the UI takes when the operator presses `release` on the flagged
+        # row — could never be escaped: pressing DROP again matched the intent
+        # already on the site and returned 200 having retired nothing, so the cap
+        # shipped and was billed while Adjust rendered it dropped. ``confirm_case``
+        # now writes the resolved disposition back onto the site, which makes that
+        # state unreachable; this ordering is the belt to that fix's braces, and the
+        # cheaper half to keep right.
         confirmation = session.confirmation
         signed = (confirmation.dispositions.get(str(tooth))
                   if confirmation is not None else None)
         contradicted = signed is not None and (
             signed == "withhold") != body.withhold
+        if site.withhold_intent == body.withhold and not contradicted:
+            return   # not an act: an identical re-assertion states nothing new
+        site.withhold_intent = body.withhold
+        session.sites[str(tooth)] = site
         if contradicted:
             clear_confirmation(session)
         # THE WORDS ARE NOT THE DESIGN'S. Its log line reads "dropped — not aligned,

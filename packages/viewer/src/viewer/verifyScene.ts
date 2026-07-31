@@ -138,6 +138,23 @@ export function armedViewerClassName(armed: boolean): string {
   return armed ? "verify-viewer verify-viewer--armed" : "verify-viewer";
 }
 
+/**
+ * Does this controls "change" event mean a HAND ON THE MOUSE — the only kind of camera
+ * move that may be mirrored onto the linked panes?
+ *
+ * `onOrbitChange`'s contract is "called whenever the USER moves this pane's camera
+ * (never for an applied orbit)", and a programmatic re-frame is neither: it is an
+ * ASSIGNMENT of a camera position, exactly like a mirrored orbit, and broadcasting it
+ * makes the last pane to frame overwrite its siblings (design review 2026-07-31). Pure
+ * because VerifyScene itself is browser-only; this is the half a node test can hold.
+ */
+export function shouldBroadcastOrbit(
+  assigningCamera: boolean,
+  hasListener: boolean,
+): boolean {
+  return !assigningCamera && hasListener;
+}
+
 /** Fetch + parse one STL into a flat, non-indexed position stream. The single IO edge here; the
  *  dialog calls it once per distinct file (through the app's blob cache) and slices the result. */
 export async function loadStlPositions(url: string): Promise<Float32Array> {
@@ -278,9 +295,30 @@ export class VerifyScene {
     // genuinely moved, and its footer would otherwise keep describing where it used to be.
     // Only the orbit BROADCAST is suppressed, which is what stops the ping-pong.
     this.emitView();
-    if (this.applyingOrbit || this.orbitListener === null) return;
-    this.orbitListener(this.getOrbit());
+    if (!shouldBroadcastOrbit(this.applyingOrbit, this.orbitListener !== null)) return;
+    this.orbitListener!(this.getOrbit());
   };
+
+  /**
+   * Run a CAMERA ASSIGNMENT with the resulting "change" event kept out of the link group.
+   *
+   * Both callers assign a camera outright rather than reporting a hand on the mouse: a
+   * mirrored orbit (applyOrbit) and a re-frame (frameOn). Only the first was guarded, so
+   * with "link views" on a preset click made every pane broadcast its own re-framing and
+   * the LAST pane to frame imposed its world-space spherical angles on the other two —
+   * and since pane 1 renders the library part in its canonical FILE frame while panes 2/3
+   * live in the jaw-scan world frame, no pane ended up on the basis the preset asked for
+   * (design review 2026-07-31).
+   */
+  private assigningCamera<T>(fn: () => T): T {
+    const was = this.applyingOrbit;
+    this.applyingOrbit = true;
+    try {
+      return fn();
+    } finally {
+      this.applyingOrbit = was;
+    }
+  }
 
   private handlePointerDown = (event: PointerEvent): void => {
     this.pointerDownAt = { x: event.clientX, y: event.clientY };
@@ -484,6 +522,18 @@ export class VerifyScene {
     viewDirection?: readonly [number, number, number] | null,
     upHint?: readonly [number, number, number] | null,
   ): void {
+    // A RE-FRAME IS NOT A USER ORBIT (see assigningCamera). Guarding it is what lets a
+    // named viewpoint reach three linked panes at once: without it the panes framed in
+    // tree order and each broadcast overwrote its siblings' basis.
+    this.assigningCamera(() => this.frameOnNow(center, radiusMm, viewDirection, upHint));
+  }
+
+  private frameOnNow(
+    center: readonly [number, number, number],
+    radiusMm: number,
+    viewDirection?: readonly [number, number, number] | null,
+    upHint?: readonly [number, number, number] | null,
+  ): void {
     const target = new THREE.Vector3(center[0], center[1], center[2]);
     const distance = Math.max(radiusMm, 0.5) * FRAME_DISTANCE_FACTOR;
     this.baseDistance = distance;
@@ -553,8 +603,7 @@ export class VerifyScene {
 
   /** Mirror another pane's orbit onto this one, around THIS pane's own target and framing. */
   applyOrbit(orbit: VerifyOrbit): void {
-    this.applyingOrbit = true;
-    try {
+    this.assigningCamera(() => {
       const spherical = new THREE.Spherical(
         Math.max(orbit.distanceScale, 0.05) * this.baseDistance,
         orbit.phi,
@@ -566,9 +615,7 @@ export class VerifyScene {
       // and this pane's own leftover momentum has no business being added to the pane it
       // is mirroring — that is how linked views drift apart while claiming to be linked.
       this.settleControls();
-    } finally {
-      this.applyingOrbit = false;
-    }
+    });
   }
 
   /** Called whenever the USER moves this pane's camera (never for an applied orbit). */

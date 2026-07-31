@@ -87,8 +87,8 @@ export function confirmChip(confirmed: boolean): string {
  *
  * THREE OF THE PROTOTYPE'S FOUR CLAIMS ARE WRONG HERE, and the copy says so:
  *
- *  - "PLY" — discovery globs ``*.stl`` and nothing else (cases.py:78). A PLY-only
- *    folder is not a case and never appears; pinned by
+ *  - "PLY" — discovery accepts STL and nothing else (cases.py). A PLY-only folder is
+ *    not a case and never appears; pinned by
  *    worker tests/test_application.py::test_a_folder_holding_only_a_ply_is_not_a_case.
  *  - "watertight mesh" — measured 2026-07-31 over the client's shipped tree: 0 of 6
  *    real intraoral scans is watertight (two are not even a single body). Advertising
@@ -123,15 +123,20 @@ export const SCAN_ARRIVAL: readonly ScanArrivalStep[] = [
     key: "stl",
     title: "An STL inside it",
     detail:
-      "Discovery looks for *.stl and nothing else. A folder with no STL is not a case, " +
-      "and a .ply on its own will not appear here at all — convert it to STL first.",
+      "Discovery looks for STL files and nothing else; the extension may be upper or " +
+      "lower case. A folder with no STL is not a case, and a .ply on its own will not " +
+      "appear here at all — convert it to STL first. If a folder holds several STLs " +
+      "only the first by name becomes that case's scan and the others are ignored " +
+      "without a warning, so keep one folder per case: a two-arch export belongs in " +
+      "two folders, not one.",
   },
   {
     key: "name",
     title: "The folder name is the case",
     detail:
       "It becomes the case id and the doctor line on the rows above (a leading " +
-      "“doctor-” is stripped). If the name contains a library system — " +
+      "“doctor-” is stripped, and only a leading one — patient-doctor-4471 keeps " +
+      "its name in full). If the name contains a library system — " +
       "neodent-gm, zimmer-4.5 — that system's construction part is preselected at " +
       "Intake, longest match winning. A name matching no system is still a case; you " +
       "choose the part yourself.",

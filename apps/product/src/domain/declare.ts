@@ -195,15 +195,34 @@ export function declaredLabel(site: SiteView): string {
 export function declareQueueSummary(sites: readonly SiteView[]): string {
   const total = sites.length;
   if (total === 0) return "No sites on this case yet — nothing to review.";
-  const reviewed = sites.filter((s) => s.status === "ready").length;
+  const count = (status: string) => sites.filter((s) => s.status === status).length;
+  const reviewed = count("ready");
   const plural = total === 1 ? "site" : "sites";
+  const head = `${reviewed} of ${total} ${plural} reviewed`;
   if (reviewed === total) {
-    return `${reviewed} of ${total} ${plural} reviewed — every one confirmed over its panes.`;
+    return `${head} — every one confirmed over its panes.`;
   }
-  return (
-    `${reviewed} of ${total} ${plural} reviewed — ${total - reviewed} still to ` +
-    `confirm over the panes.`
-  );
+  /* THREE POPULATIONS, NOT ONE (design review 2026-07-31). Everything short of `ready`
+     used to be folded into "still to confirm over the panes" — so a run that flagged
+     one of three sites printed "1 still to confirm over the panes" over a row reading
+     "Flagged by the run — deviation RMS 0.214 mm. Adjust reworks it.", and over a tick
+     that refuses to be clicked. The operator was required to confirm all three sites
+     before the run fired, so that sentence also implied work had been undone that had
+     not. Each population gets the act that is actually open to it. */
+  const flagged = count("flagged");
+  const reworked = count("adjusted");
+  const pending = total - reviewed - flagged - reworked;
+  const clauses: string[] = [];
+  if (pending > 0) clauses.push(`${pending} still to confirm over the panes`);
+  if (flagged > 0) {
+    clauses.push(`${flagged} flagged by the run — Adjust reworks ${flagged === 1 ? "it" : "them"}`);
+  }
+  if (reworked > 0) {
+    clauses.push(
+      `${reworked} reworked since the run — confirm ${reworked === 1 ? "it" : "them"} again in Adjust`,
+    );
+  }
+  return `${head} — ${clauses.join(" · ")}.`;
 }
 
 /**
@@ -679,6 +698,30 @@ export function reviewTick(site: SiteView | null): ReviewTickState {
   }
   if (site.status === "previewed") return { enabled: true, ticked: false, reason: null };
   if (site.status === "ready") return { enabled: true, ticked: true, reason: null };
+  /* A SITE THE RUN HAS MEASURED IS NOT A SITE AWAITING A PREVIEW (design review
+     2026-07-31). Both of these rungs got "preview this site first" — a statement that
+     is false about a fit the run has already measured and printed a deviation for two
+     lines above. The refusal itself stands: the panes HERE seat a fresh preview, while
+     what a flagged or reworked site needs confirming over is the pose that shipped,
+     which only Adjust's panes show. The BFF would accept `review_ready` from ADJUSTED
+     (status.py:50) — this surface declines to offer it against the wrong evidence, and
+     now says which evidence and where. */
+  if (site.status === "flagged") {
+    return {
+      enabled: false,
+      ticked: false,
+      reason: "The run flagged this fit — Adjust reworks it, and the confirmation is taken there.",
+    };
+  }
+  if (site.status === "adjusted") {
+    return {
+      enabled: false,
+      ticked: false,
+      reason:
+        "This site was reworked after the run — confirm it in Adjust, over the panes " +
+        "showing the fit that moved.",
+    };
+  }
   return {
     enabled: false,
     ticked: false,
@@ -854,8 +897,29 @@ export interface WorkspaceStat {
  * strip is a row of numbers, and a blank cell in a row of numbers reads as zero. */
 const NO_FIGURE = "—";
 
-function mmWords(value: unknown): string {
-  return typeof value === "number" ? `${value.toFixed(3)} mm` : NO_FIGURE;
+/** THE OTHER ABSENCE, and it is a different one (design review 2026-07-31). A dash
+ *  belongs where a run row EXISTS and carries no figure; before any run there is no
+ *  measurement to be absent from, and a dash in a deviation column reads as a measured
+ *  zero — the same reason `measuredWords` refuses one on the queue rows. */
+const NO_RUN = "no run yet";
+
+/**
+ * WHAT A PREVIEW HAS ALREADY PUBLISHED about this site, held in the browser between
+ * the pane that renders it and the strip above it.
+ *
+ * Every field is the SERVER's: `rms_mm`/`p90_mm` off the preview payload's own
+ * `stats` block (the very numbers the union pane's folded legend prints), and
+ * `poseAvailable` is whether that payload carried a seated pose at all — which is what
+ * decides whether the off-axis viewpoints have a clock reference to rotate about.
+ * Nothing here is derived in the browser.
+ */
+export interface PreviewFigures {
+  readonly poseAvailable: boolean;
+  readonly rmsMm: number | null;
+  readonly p90Mm: number | null;
+  /** The payload's own `stats.source` — named on the label so a preview figure is
+   *  never mistaken for the run's. */
+  readonly source: string;
 }
 
 function blockOf(row: Record<string, unknown> | undefined, key: string) {
@@ -890,8 +954,17 @@ export function alignmentStats(
   rows: ReadonlyArray<Record<string, unknown>>,
   tooth: number | null,
   declaredVariant: string | null,
+  preview: PreviewFigures | null = null,
 ): readonly WorkspaceStat[] {
   const row = tooth === null ? undefined : rows.find((r) => r["tooth"] === tooth);
+  /* NO ROWS AT ALL = NO RUN. On Declare the container fetches them only once
+     `run_state === "done"`, so pre-run this list is empty while the union pane below is
+     already printing "Deviation over the footprint: RMS 0.086 mm · p90 0.142 mm" for
+     the same site. The strip stated that no figure existed for figures that were on the
+     screen. A row that exists and lacks a number keeps its dash: that is a different
+     fact, and the run made it. */
+  const noRun = rows.length === 0;
+  const absent = noRun ? NO_RUN : NO_FIGURE;
   const shift = blockOf(row, "clocking")?.["notch_shift_deg"];
   // The MEASURED notch residual at the shipped pose (adjust._fold_outcome writes it),
   // not the operator's cumulative nudge — they answer different questions, and this
@@ -899,7 +972,7 @@ export function alignmentStats(
   const rotation =
     typeof shift === "number"
       ? `${shift > 0 ? "+" : ""}${shift.toFixed(1)}°`
-      : NO_FIGURE;
+      : absent;
   const correspondence = blockOf(row, "correspondence");
   const pairs = correspondence?.["pairs"];
   const maxPairs = correspondence?.["max_pairs"];
@@ -908,27 +981,63 @@ export function alignmentStats(
   // and "0 / 8" on a site nobody has fit by points would be an invented fact.
   const pairsWords =
     typeof pairs !== "number"
-      ? NO_FIGURE
+      ? absent
       : typeof maxPairs === "number"
         ? `${pairs} / ${maxPairs}`
         : `${pairs}`;
+  /* THE SOURCE IS PART OF THE FIGURE. Two acts measure this site's deviation — the run,
+     and the pre-run preview seat — on the same instrument at different moments, and a
+     cell that showed one under the other's name would be the quietest possible lie. So
+     the label carries whose number it is, and the preview's is used ONLY where the run
+     has published none. Clocking and pairs have no preview analogue: the preview seats
+     a cap, it does not read a notch residual or place a correspondence. */
+  const usePreview = row === undefined && preview !== null;
+  const devSource = usePreview ? preview.source : "run";
+  const devRms = usePreview ? mmWordsOr(preview.rmsMm, absent) : mmWordsOr(row?.["deviation_rms_mm"], absent);
+  const devP90 = usePreview ? mmWordsOr(preview.p90Mm, absent) : mmWordsOr(row?.["deviation_p90_mm"], absent);
+  const devLabel = (key: string) =>
+    devRms === NO_RUN && devP90 === NO_RUN ? key : `${key} (${devSource})`;
   return [
     { id: "variant", label: "VARIANT", value: declaredVariant ?? NO_FIGURE },
-    { id: "dev-rms", label: "DEV RMS", value: mmWords(row?.["deviation_rms_mm"]) },
-    { id: "dev-p90", label: "DEV P90", value: mmWords(row?.["deviation_p90_mm"]) },
+    { id: "dev-rms", label: devLabel("DEV RMS"), value: devRms },
+    { id: "dev-p90", label: devLabel("DEV P90"), value: devP90 },
     { id: "rotation", label: "ROTATION", value: rotation },
     { id: "pairs", label: "PAIRS", value: pairsWords },
   ];
 }
 
-/** The three named viewpoints (design viewTabs, flow.dc.html:1224-1226). */
-export type ViewPresetId = "occlusal" | "buccal" | "mesial";
+/** mmWords with the caller's own word for "there is no figure here". */
+function mmWordsOr(value: unknown, absent: string): string {
+  return typeof value === "number" ? `${value.toFixed(3)} mm` : absent;
+}
+
+/**
+ * The three named viewpoints (design viewTabs, flow.dc.html:1224-1226).
+ *
+ * THE DESIGN'S ANATOMICAL NAMES DO NOT PORT (design review 2026-07-31). It calls the
+ * off-axis two "buccal" and "mesial", and this app shipped them that way — but they are
+ * built from the seated pose's `x_axis`, which the worker publishes only "because it is
+ * what makes the three panes COMPARABLE" (application/preview.py:119-124): a shared
+ * CLOCK reference, per site, with no anatomical meaning and no fixed relation to the
+ * arch. Nothing maps it to buccal/lingual or mesial/distal, so on tooth 29 "buccal"
+ * could be looking at the lingual wall and on tooth 13 at the distal one — and an
+ * operator asked "does the cap sit proud on the buccal?" would judge the wrong wall.
+ *
+ * It is the same claim this app already refused for the occlusal proxy ("an
+ * anatomically-named view built on it would be a guessed angle"), and the buttons' own
+ * tooltips already told the truth the labels contradicted. The viewer does compute a
+ * real anatomical frame (computeAnatomyFrame().anterior, "toward the incisors"), so an
+ * honestly-named buccal view is buildable — from that basis plus the site's quadrant,
+ * which is a measurement this surface has not made. Until it does, the names say what
+ * the geometry is: two sides of one clock reference.
+ */
+export type ViewPresetId = "occlusal" | "side-a" | "side-b";
 
 export const VIEW_PRESETS: readonly {
   readonly id: ViewPresetId;
   readonly label: string;
-  /** What the direction MEANS, since "buccal" on a pane is only meaningful once the
-   *  operator knows it is measured off this site's own seated axis. */
+  /** What the direction MEANS — the only place the operator learns that "side A" is
+   *  measured off this site's own clock reference and not off the arch. */
   readonly title: string;
 }[] = [
   {
@@ -937,18 +1046,19 @@ export const VIEW_PRESETS: readonly {
     title: "Straight down the seated axis — the top of the cap, each pane's own framing.",
   },
   {
-    id: "buccal",
-    label: "buccal",
+    id: "side-a",
+    label: "side A",
     title:
-      "Side on, a quarter turn off the shared clock reference — the cap's axis stands " +
-      "up on screen.",
+      "Side on, a quarter turn off this site's clock reference — the cap's axis stands " +
+      "up on screen. The clock reference is the seated pose's own, shared by all three " +
+      "panes; it is not an arch direction.",
   },
   {
-    id: "mesial",
-    label: "mesial",
+    id: "side-b",
+    label: "side B",
     title:
-      "Side on, down the shared clock reference itself — the cap's axis stands up on " +
-      "screen.",
+      "Side on, down this site's clock reference itself — the cap's axis stands up on " +
+      "screen. A quarter turn from side A, and like it not an arch direction.",
   },
 ];
 
@@ -986,14 +1096,14 @@ const cross = (
  * y' = z' × x' completes it.
  *
  *   occlusal — z' (the framing the pane already has, returned unchanged)
- *   buccal   — look down y', axis up
- *   mesial   — look down x', axis up
+ *   side A   — look down y', axis up
+ *   side B   — look down x', axis up
  *
  * NULL WHERE THE ROLL IS NOT MEASURED. Before a preview exists panes 2/3 frame down
  * the jaw's occlusal PROXY with `up: null` (siteFrameFor) — the proxy sat 6.2°-42.0°
  * off the real axis across the fleet, and it carries no clock reference at all. An
- * off-axis view built on it would be a made-up angle wearing an anatomical name, so
- * there is none: the caller offers occlusal and says the rest need the seated pose.
+ * off-axis view built on it would be a made-up angle, so there is none: the caller
+ * offers occlusal and says the rest need the seated pose.
  */
 export function presetFrame(
   base: PaneFrame | null,
@@ -1009,7 +1119,50 @@ export function presetFrame(
   return {
     center: base.center,
     radiusMm: base.radiusMm,
-    viewDirection: preset === "buccal" ? third : clock,
+    viewDirection: preset === "side-a" ? third : clock,
     up: axis,
+  };
+}
+
+/** What the pane foot may call the direction a preset actually framed on. null for
+ *  occlusal, which IS the pane's own framing — the caller keeps naming its own axis
+ *  ("the seated pose axis", "the occlusal proxy", "the part's own axis"). */
+export function presetViewLabel(preset: ViewPresetId): string | null {
+  if (preset === "occlusal") return null;
+  return preset === "side-a" ? "the side A viewpoint" : "the side B viewpoint";
+}
+
+/** A frame, and the words for what that frame is pointed down. */
+export interface PresetFraming {
+  readonly frame: PaneFrame | null;
+  /** null = the preset did not move this pane, so its own axis label still stands. */
+  readonly presetLabel: string | null;
+}
+
+/**
+ * THE FRAME AND ITS NAME, TOGETHER (design review 2026-07-31).
+ *
+ * The pane foot is the one sentence on screen claiming to be a LIVE measurement of
+ * orientation, and it was reading the camera against the preset-ROTATED direction while
+ * printing the label of the UN-rotated one: under an off-axis preset all three panes
+ * said "down the seated pose axis" while sitting exactly 90° off it, and said "90° off
+ * the seated pose axis" once the operator orbited back onto it. The band exists
+ * precisely because the design's static "OCCLUSAL" caption "starts lying on the first
+ * drag"; under a preset it lied with no drag at all.
+ *
+ * A reference and a label may never come from different frames, so they are produced
+ * here in one call. `?? base` on a preset that cannot apply is deliberate — the pane
+ * keeps its own framing rather than dropping to nothing — and it yields a null label
+ * for exactly the same reason: the pane is still on the axis it was already naming.
+ */
+export function presetFraming(
+  base: PaneFrame | null,
+  preset: ViewPresetId,
+): PresetFraming {
+  const rotated = presetFrame(base, preset);
+  if (rotated === null) return { frame: base, presetLabel: null };
+  return {
+    frame: rotated,
+    presetLabel: rotated === base ? null : presetViewLabel(preset),
   };
 }
