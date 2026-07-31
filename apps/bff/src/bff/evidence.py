@@ -49,6 +49,13 @@ re-derived, so a case confirmed under the old shape simply refuses release with 
 case changed since it was confirmed" until it is re-confirmed over what is there now
 — the same honest path any other drift takes.
 
+``terms_version`` JOINED THE SHAPE THE SAME WAY (plan §10-A: the agreement moves to
+the confirmation, "recorded with its timestamp and the evidence hash it was given
+over"). Optional and keyword-only, defaulting ``None`` — every pre-existing call
+site (three positional args) keeps working unchanged, and a bundle sealed before
+the terms text existed simply carries ``"terms_version": null``, the same honest
+"this predates the concept" reading ``adjustments: null`` already gives.
+
 WHAT THE BUNDLE NEVER CARRIED, and now cannot: an ACTOR. The confirmation record
 used to hold an ``X-Operator`` name (the bundle itself never did); that field is
 gone entirely (client 2026-07-27 — see bff/session.py's note). The bundle seals the
@@ -96,7 +103,8 @@ def _rounded(value: Any) -> Any:
 
 def canonical_bundle(assurance: Mapping[str, Any],
                      qc_hashes: Mapping[str, str],
-                     adjustments: Optional[str]) -> EvidenceBundle:
+                     adjustments: Optional[str],
+                     terms_version: Optional[str] = None) -> EvidenceBundle:
     """Build the bundle: rounded payload → canonical bytes → sha256. Raises
     ``ValueError`` on non-finite numbers (``allow_nan=False`` — see the module doc:
     evidence that cannot be re-encoded identically is not evidence).
@@ -104,11 +112,18 @@ def canonical_bundle(assurance: Mapping[str, Any],
     ``adjustments`` is the fork's decision WORD ("skip" | "adjust") or None when the
     fork was never faced. Required positionally, deliberately: a default would let a
     caller omit the case's own answer to "were the fits reworked?" and seal a bundle
-    that quietly says nothing."""
+    that quietly says nothing.
+
+    ``terms_version`` is WHICH terms text the confirmation's acceptance covers, or
+    None before the concept existed / before it was faced. Keyword, defaulted: unlike
+    ``adjustments`` it has no third state a caller could accidentally omit (a confirm
+    that reaches this call has always already refused a non-acceptance), so a default
+    costs nothing and spares every existing three-argument call site a rewrite."""
     payload = {
         "assurance": _rounded(dict(assurance)),
         "qc_sha256": dict(sorted(qc_hashes.items())),
         "adjustments": adjustments,
+        "terms_version": terms_version,
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"),
                            ensure_ascii=True, allow_nan=False).encode("ascii")

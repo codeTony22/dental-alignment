@@ -27,9 +27,32 @@ export type Disposition = "release" | "withhold";
 export type DispositionMap = Readonly<Record<number, Disposition>>;
 
 /**
+ * AM-12's acknowledgment gate applies whenever EITHER of two things is true:
+ * the session ladder flagged the site, or the PRODUCTION block disclosed a
+ * shared-construction-part conflict (``production_note`` — plan §10-E, finding
+ * 2026-07-28). Mirrors the BFF's own predicate (deliver.py's
+ * ``_needs_acknowledgment``) exactly, so a row can never look pinned-first (the
+ * BFF's own worst-first order already reflects this) without the UI also
+ * offering — and demanding — the same acknowledgment.
+ */
+export function needsAcknowledgment(site: AssuranceSite): boolean {
+  return site.status === "flagged" || site.production_note !== null;
+}
+
+/** Why a row needs its own acknowledgment, in the reader's words — flagged
+ * sites read as they always did; a production-noted "ready" row says the
+ * true reason rather than claiming a flag that never fired. */
+function acknowledgmentReason(site: AssuranceSite): string {
+  return site.status === "flagged"
+    ? "is flagged"
+    : "shares a construction part with a differently-declared variant";
+}
+
+/**
  * Everything still standing between the operator and a confirmable table, in table
- * order (worst first, exactly as served): each flagged row headed for release
- * without its own acknowledgment (AM-12: row by row, never in bulk).
+ * order (worst first, exactly as served): the terms acceptance (plan §10-A), then
+ * each row needing acknowledgment (``needsAcknowledgment``) headed for release
+ * without one (AM-12: row by row, never in bulk).
  *
  * TWO BLOCKERS WERE DELETED FROM THIS LIST, both deliberately:
  *
@@ -41,23 +64,34 @@ export type DispositionMap = Readonly<Record<number, Disposition>>;
  *    the operator never touched is not an outstanding question. Withholding is the
  *    exceptional act and the only one that must be said.
  *
- * What survives is the client's own assurance rule: a FLAGGED site being released
- * still needs its row tick. This one derivation feeds both places the surface offers
- * to confirm from (the stage and the report modal's footer) — never two lists.
+ * What survives is the client's own assurance rule: a row ``needsAcknowledgment``
+ * being released still needs its row tick. This one derivation feeds both places
+ * the surface offers to confirm from (the stage and the report modal's footer) —
+ * never two lists.
+ *
+ * ``termsAccepted`` defaults ``true`` so every EXISTING caller (this module's own
+ * tests, written before the terms step existed) keeps its prior behavior; the
+ * container passes the real checkbox state.
  */
 export function confirmBlockers(
   assurance: AssuranceView,
   dispositions: DispositionMap,
   acknowledged: readonly number[],
+  termsAccepted = true,
 ): readonly string[] {
   const blockers: string[] = [];
+  if (!termsAccepted) {
+    blockers.push("the terms — read and accept them before confirming");
+  }
   const acked = new Set(acknowledged);
   for (const site of assurance.sites) {
-    // an untouched flagged row is headed for release (the default), so the demand
-    // shows immediately — withholding it is what makes the demand go away
+    // an untouched row needing acknowledgment is headed for release (the
+    // default), so the demand shows immediately — withholding it is what
+    // makes the demand go away
     if (ackRequired(site, dispositions[site.tooth]) && !acked.has(site.tooth)) {
       blockers.push(
-        `tooth ${site.tooth} is flagged — releasing it needs its own acknowledgment`,
+        `tooth ${site.tooth} ${acknowledgmentReason(site)} — releasing it ` +
+          `needs its own acknowledgment`,
       );
     }
   }
@@ -66,13 +100,14 @@ export function confirmBlockers(
 
 /**
  * WHETHER A ROW OFFERS THE WITHHOLD CONTROL AT ALL (client 2026-07-27 #4: the
- * release/withhold pair was friction on single-site cases — 7 of 9). Only a FLAGGED
- * site can plausibly be held back, so only a flagged row renders the control; a
- * clean row is released, and says so quietly instead of asking a question with one
- * sane answer. The server agrees by construction: an omitted disposition IS release.
+ * release/withhold pair was friction on single-site cases — 7 of 9). Only a row
+ * ``needsAcknowledgment`` can plausibly be held back, so only such a row renders
+ * the control; a clean row is released, and says so quietly instead of asking a
+ * question with one sane answer. The server agrees by construction: an omitted
+ * disposition IS release.
  */
 export function withholdOffered(site: AssuranceSite): boolean {
-  return site.status === "flagged";
+  return needsAcknowledgment(site);
 }
 
 /** What a row's disposition actually IS: the operator's act, else release — the
@@ -85,26 +120,58 @@ export function effectiveDisposition(
   return dispositions[site.tooth] ?? "release";
 }
 
-/** Whether a row renders (and demands) its acknowledgment tick: flagged, and not
- * explicitly withheld — withholding drops the release, so there is nothing to
- * acknowledge. */
+/** Whether a row renders (and demands) its acknowledgment tick: it
+ * ``needsAcknowledgment``, and is not explicitly withheld — withholding drops
+ * the release, so there is nothing to acknowledge. */
 export function ackRequired(
   site: AssuranceSite,
   disposition: Disposition | undefined,
 ): boolean {
-  return site.status === "flagged" && disposition !== "withhold";
+  return needsAcknowledgment(site) && disposition !== "withhold";
 }
 
-/** The acts, wire-shaped: dispositions keyed tooth-as-string (JSON object keys). */
+/** The acts, wire-shaped: dispositions keyed tooth-as-string (JSON object keys),
+ * plus the terms acceptance (plan §10-A) — required, like the payment stub's
+ * ``authorize``. */
 export function confirmWireBody(
   dispositions: DispositionMap,
   acknowledged: readonly number[],
+  termsAccepted: boolean,
 ): ConfirmBody {
   const wire: Record<string, Disposition> = {};
   for (const [tooth, act] of Object.entries(dispositions)) {
     wire[tooth] = act;
   }
-  return { dispositions: wire, acknowledged_flags: [...acknowledged] };
+  return {
+    dispositions: wire,
+    acknowledged_flags: [...acknowledged],
+    terms_accepted: termsAccepted,
+  };
+}
+
+// --- the terms (plan §10-A) -------------------------------------------------------------
+//
+// Client, verbatim: "Delivery should be confirm and accept alginment and term and
+// conditions, payment, and released artifacts." The agreement moves OFF Declare's
+// per-site ticks onto this one commercial signature.
+//
+// THE TEXT BELOW IS A PLACEHOLDER, matching bff/resources/deliver.py's
+// ``TERMS_TEXT_PLACEHOLDER`` in spirit (not byte-for-byte — this copy owns its own
+// rendering; the server never inspects the text, only a boolean). It is NOT
+// contractual language this codebase is entitled to invent: the real terms are the
+// client's to supply. DeliverStage.tsx renders this inside an unmissable
+// "PLACEHOLDER" banner so nobody mistakes it for the real thing on screen either.
+// Swapping it for the client's real text is a ONE-STRING change.
+
+/** The terms text, naming the case's own site count the way the plan's own
+ * placeholder sentence does ("I have reviewed the alignment for all N sites"). */
+export function termsText(siteCount: number): string {
+  return (
+    `I have reviewed the alignment for all ${siteCount} site` +
+    `${siteCount === 1 ? "" : "s"} in this case, including the assurance report ` +
+    `and its QC images. I accept the alignment as shown and authorize release ` +
+    `of the deliverables.`
+  );
 }
 
 /** The release button's named blockers — the chain's remaining steps, in order. */

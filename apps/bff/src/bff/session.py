@@ -229,7 +229,19 @@ class ConfirmationRecord(BaseModel):
     re-confirmed. Deliberate, and the same answer bff/evidence.py gives about its
     own shape change: under-claiming a release is the safe direction, the artifact
     gate is unaffected (the bundle's bytes did not move), and a re-confirm over what
-    is there now is the honest path every other drift already takes."""
+    is there now is the honest path every other drift already takes.
+
+    ``terms_accepted``/``terms_version`` are the agreement's new home (plan
+    §10-A: "This can be at the time of payment … as a Terms and Conditions or
+    more explicit saying someone reviewed the alignment changes and they agree
+    to proceed") — moved off Declare's per-site ticks onto this one commercial
+    signature. ``terms_accepted`` defaults ``False`` for the same reason
+    ``payment_authorized`` used to: a record sealed before this field existed
+    never claimed the act, and under-claiming is the safe direction (the same
+    honest gap ``adjustments`` reads as for pre-field records). ``terms_version``
+    names WHICH text was accepted (``bff.resources.deliver.TERMS_VERSION``) so a
+    later swap of the client's real legal text is visible on old records rather
+    than silently reinterpreted."""
 
     at: str
     run_id: str
@@ -237,6 +249,8 @@ class ConfirmationRecord(BaseModel):
     dispositions: Dict[str, str] = Field(default_factory=dict)
     acknowledged_flags: List[int] = Field(default_factory=list)
     adjustments: Optional[str] = None
+    terms_accepted: bool = False
+    terms_version: Optional[str] = None
 
 
 class PaymentRecord(BaseModel):

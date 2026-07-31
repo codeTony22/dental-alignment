@@ -84,7 +84,10 @@ class TestCanonicalization:
         bytes and that comparison becomes dead code, while a withhold after release
         would start 409-ing as "the case changed", blaming the run for an act."""
         bundle = canonical_bundle(ASSURANCE, QC_HASHES, "skip")
-        assert set(bundle.payload) == {"assurance", "qc_sha256", "adjustments"}
+        # "terms_version" joined the shape (plan §10-A) the same way "adjustments"
+        # did: an ACT beside the run's facts, never inside them
+        assert set(bundle.payload) == {"assurance", "qc_sha256", "adjustments",
+                                       "terms_version"}
         text = bundle.canonical.decode("ascii")
         assert "dispositions" not in text
         assert "withhold" not in text

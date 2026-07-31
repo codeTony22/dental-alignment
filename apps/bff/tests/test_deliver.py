@@ -28,7 +28,7 @@ from bff.config import Settings
 from bff.session import SessionStore
 
 from conftest import make_data_tree
-from test_assurance import PACKAGE_FILES, landed_client
+from test_assurance import PACKAGE_FILES, landed_client, with_note
 from test_run_resource import FakeWorker, client_with, row, seed_ready, summary_for
 
 
@@ -60,10 +60,11 @@ def deliverable_client(settings, product_root, rows=None, files=PACKAGE_FILES):
     return client
 
 
-def confirm_body(dispositions=None, acknowledged=()):
+def confirm_body(dispositions=None, acknowledged=(), terms_accepted=True):
     return {"dispositions": dispositions if dispositions is not None
             else {"4": "release", "13": "release"},
-            "acknowledged_flags": list(acknowledged)}
+            "acknowledged_flags": list(acknowledged),
+            "terms_accepted": terms_accepted}
 
 
 def confirm(client, body=None):
@@ -181,9 +182,12 @@ class TestConfirmRefusals:
 
     def test_an_empty_body_confirms_a_clean_case_entirely(
             self, settings, product_root):
+        # "empty" here means no dispositions/acknowledgments — terms_accepted is
+        # the one field that is never optional (plan §10-A: the agreement moved
+        # here, and it is given, not assumed)
         client = deliverable_client(settings, product_root)
         assert client.post("/api/case-sessions/neodent-gm/confirm",
-                           json={}).status_code == 200
+                           json={"terms_accepted": True}).status_code == 200
         assert SessionStore(product_root).load(
             "neodent-gm").confirmation.dispositions == {"4": "release",
                                                         "13": "release"}
@@ -207,6 +211,72 @@ class TestConfirmRefusals:
         res = client.post("/api/case-sessions/neodent-gm/confirm",
                           json={**confirm_body(), "status": "confirmed"})
         assert res.status_code == 422
+
+
+# --- the agreement moves here from Declare (plan §10-A) --------------------------------
+
+class TestConfirmRequiresAcceptingTheTerms:
+    """Client, verbatim: "Delivery should be confirm and accept alginment and term
+    and conditions, payment, and released artifacts." Plan §10-A: the agreement
+    moves OFF Declare's per-site ticks onto this ONE commercial signature —
+    "confirm and accept terms" is one act, mirroring ``PaymentIn.authorize``'s
+    fail-closed shape rather than a second endpoint."""
+
+    def test_omitting_terms_accepted_entirely_is_refused(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        res = client.post("/api/case-sessions/neodent-gm/confirm",
+                          json={"dispositions": {"4": "release", "13": "release"}})
+        assert res.status_code == 422
+        assert SessionStore(product_root).load("neodent-gm").confirmation is None
+
+    def test_terms_accepted_false_is_refused_in_words(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        res = confirm(client, confirm_body(terms_accepted=False))
+        assert res.status_code == 422
+        assert "terms" in res.json()["detail"]
+        assert SessionStore(product_root).load("neodent-gm").confirmation is None
+
+    def test_a_refused_terms_act_costs_no_session_load(
+            self, settings, product_root):
+        # the check sits OUTSIDE the CAS mutation (mirrors authorize_payment): a
+        # request that will refuse regardless of session state must not pay for
+        # a load it never needed
+        seed_ready(product_root)
+        client = client_with(settings, FakeWorker())   # no done run at all
+        res = confirm(client, confirm_body(terms_accepted=False))
+        assert res.status_code == 422
+        assert "terms" in res.json()["detail"]
+        # NOT "no completed current run" — the terms refusal fires first, before
+        # the run precondition is ever consulted
+        assert "no completed current run" not in res.json()["detail"]
+
+    def test_accepting_the_terms_records_the_version_with_the_seal(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        res = confirm(client)
+        assert res.status_code == 200
+        record = SessionStore(product_root).load("neodent-gm").confirmation
+        assert record.terms_accepted is True
+        assert record.terms_version   # a non-empty version tag, whatever it is
+        view = res.json()["session"]["confirmation"]
+        assert view["terms_accepted"] is True
+        assert view["terms_version"] == record.terms_version
+
+    def test_the_terms_version_rides_in_the_sealed_bundle(
+            self, settings, product_root):
+        """Plan §10-A: "recorded with its timestamp and the evidence hash it was
+        given over" — the acceptance is part of what confirming seals, the same
+        way the Delivery-vs-Skip fork is (bff/evidence.py)."""
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        record = SessionStore(product_root).load("neodent-gm").confirmation
+        bundle = json.loads(
+            (product_root / "neodent-gm" / "runs" / record.run_id / "evidence"
+             / f"{record.evidence_sha256}.json").read_bytes())
+        assert bundle["terms_version"] == record.terms_version
+        assert bundle["terms_version"] is not None
 
 
 class TestFlagsAcknowledgeRowByRow:
@@ -241,7 +311,8 @@ class TestFlagsAcknowledgeRowByRow:
         only thing the refusal may ask for — never a disposition the operator was
         not obliged to give."""
         client = self._flagged_client(settings, product_root)
-        res = client.post("/api/case-sessions/neodent-gm/confirm", json={})
+        res = client.post("/api/case-sessions/neodent-gm/confirm",
+                          json={"terms_accepted": True})
         assert res.status_code == 422
         detail = res.json()["detail"]
         assert "acknowledgment" in detail
@@ -266,6 +337,51 @@ class TestFlagsAcknowledgeRowByRow:
         res = confirm(client, confirm_body(acknowledged=[4, 13]))
         assert res.status_code == 422
         assert "tooth 13" in res.json()["detail"]
+
+
+class TestAProductionNoteAlsoDemandsAcknowledgment:
+    """THE FLAG-VS-ANNOTATE DECISION (plan §10-E), enforced: a multi-variant
+    case's shared-construction-part conflict is not merely displayed, it is
+    GATED — the same AM-12 row-by-row rule a truly flagged site earns, even
+    though the run's own guidance called every one of these sites ready. The
+    note's own words are "cannot match", not "differs slightly"; an operator
+    must not be able to confirm and pay past that sentence in silence."""
+
+    def _noted_client(self, settings, product_root):
+        # both sites READY per the run's guidance — the ONLY thing making them
+        # need acknowledgment is the shared-part note
+        return deliverable_client(settings, product_root,
+                                  rows=[with_note(row(4)), with_note(row(13))])
+
+    def test_a_ready_but_noted_site_cannot_be_released_unacknowledged(
+            self, settings, product_root):
+        client = self._noted_client(settings, product_root)
+        res = confirm(client)
+        assert res.status_code == 422
+        detail = res.json()["detail"]
+        assert "acknowledgment" in detail
+        assert "tooth 4" in detail and "tooth 13" in detail
+
+    def test_acknowledging_both_noted_sites_confirms(
+            self, settings, product_root):
+        client = self._noted_client(settings, product_root)
+        assert confirm(client, confirm_body(acknowledged=[4, 13])).status_code == 200
+
+    def test_withholding_a_noted_site_needs_no_acknowledgment(
+            self, settings, product_root):
+        # exactly the flagged-site rule: withholding means there is no release
+        # to acknowledge
+        client = self._noted_client(settings, product_root)
+        res = confirm(client, confirm_body({"4": "release", "13": "withhold"},
+                                           acknowledged=[4]))
+        assert res.status_code == 200
+
+    def test_a_clean_case_needs_no_such_acknowledgment(
+            self, settings, product_root):
+        # the control: no note, no extra demand — this is the existing
+        # single-variant behavior, unmoved
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
 
 
 class TestConfirmSealsTheEvidence:
@@ -329,6 +445,7 @@ class TestPaymentStub:
     def test_the_stub_records_provider_and_time(
             self, settings, product_root):
         client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
         res = pay(client)
         assert res.status_code == 200
         session = SessionStore(product_root).load("neodent-gm")
@@ -351,6 +468,126 @@ class TestPaymentStub:
         res = client.post("/api/case-sessions/neodent-gm/payment",
                           json={"authorize": True, "amount": 0})
         assert res.status_code == 422
+
+
+class TestPaymentIsGatedOnTheTerms:
+    """Plan §10-A: "Payment (and therefore release) is gated on it [the terms
+    acceptance]" — a REAL server-side precondition, not the progression's screen
+    order. Payment now requires a standing confirmation whose OWN
+    ``terms_accepted`` is true; since confirm itself refuses without
+    ``terms_accepted: true`` (TestConfirmRequiresAcceptingTheTerms), any
+    confirmation reachable through the API already satisfies this — the gate
+    exists to refuse the states no client path can normally reach: no
+    confirmation at all, or one sealed before the concept existed."""
+
+    def test_no_confirmation_at_all_refuses_payment(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        res = pay(client)
+        assert res.status_code == 409
+        assert "confirm" in res.json()["detail"]
+        assert SessionStore(product_root).load("neodent-gm").payment is None
+
+    def test_a_confirmation_that_never_accepted_terms_still_refuses_payment(
+            self, settings, product_root):
+        """The pre-field case (a confirmation sealed before this slice, or one
+        forged straight onto the store): ``terms_accepted`` reads False
+        honestly, and payment refuses exactly as if there were no confirmation
+        at all — under-claiming is the safe direction, same as every other
+        pre-field record in this codebase."""
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        store = SessionStore(product_root)
+        session = store.load("neodent-gm")
+        session.confirmation.terms_accepted = False
+        store.save(session)
+        res = pay(client)
+        assert res.status_code == 409
+        assert "confirm" in res.json()["detail"]
+
+    def test_a_real_confirmation_unlocks_payment(self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        assert pay(client).status_code == 200
+
+
+# --- the checkout return leg — THE SECURITY RULE (plan §10-A) --------------------------
+
+def checkout_return(client, body=None):
+    return client.post("/api/case-sessions/neodent-gm/checkout/return",
+                       json=body if body is not None else {"reference": "chk_abc123"})
+
+
+class TestTheCheckoutReturnAssertsNothingAboutPayment:
+    """THE RULE, stated in the task and enforced here: the return from checkout
+    carries an identifier and means "re-read this case" — NOTHING about whether
+    payment happened. Only the BFF's own server-side state (a landed
+    ``PaymentRecord``) decides that. This is the forged-success test: a client
+    that never called ``POST .../payment`` cannot manufacture payment, or an
+    artifact release, by hitting the return leg with any shape of "it worked"
+    it can dream up."""
+
+    def test_a_forged_status_field_is_structurally_refused(
+            self, settings, product_root):
+        # the wire shape has no field a "success" claim could ride in on —
+        # extra="forbid" refuses it before the handler ever runs
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        res = checkout_return(client, {"reference": "chk_abc123",
+                                       "status": "success"})
+        assert res.status_code == 422
+        assert SessionStore(product_root).load("neodent-gm").payment is None
+
+    def test_a_well_formed_return_with_no_prior_payment_call_authorizes_nothing(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        # THE FORGERY: a "return" from checkout, never preceded by the actual
+        # stub-authorize call — exactly what a forged/replayed redirect would
+        # look like from the server's point of view
+        res = checkout_return(client)
+        assert res.status_code == 200
+        assert res.json()["session"]["payment_authorized"] is False
+        assert SessionStore(product_root).load("neodent-gm").payment is None
+        # and the consequence holds all the way down the chain: no release,
+        # no artifacts — a forged return buys nothing
+        assert release(client).status_code == 409
+        assert client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts"
+        ).status_code == 409
+
+    def test_the_return_mutates_nothing_it_is_a_re_read(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        before = SessionStore(product_root).load("neodent-gm").version
+        checkout_return(client)
+        checkout_return(client, {"reference": "a-different-one-entirely"})
+        assert SessionStore(product_root).load("neodent-gm").version == before
+
+    def test_a_real_payment_still_shows_true_after_the_return(
+            self, settings, product_root):
+        """The return is not ADVERSARIAL to a real payment either — it just
+        never CAUSES one. Authorize for real, then return: the return's
+        response reflects the truth it re-read, nothing it asserted."""
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        assert pay(client).status_code == 200
+        res = checkout_return(client)
+        assert res.status_code == 200
+        assert res.json()["session"]["payment_authorized"] is True
+
+    def test_an_empty_reference_is_refused(self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        res = checkout_return(client, {"reference": ""})
+        assert res.status_code == 422
+
+    def test_an_unknown_case_is_a_404(self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        res = client.post("/api/case-sessions/nope/checkout/return",
+                          json={"reference": "chk_abc123"})
+        assert res.status_code == 404
 
 
 # --- release-as-disclosure (AM-1) ------------------------------------------------------

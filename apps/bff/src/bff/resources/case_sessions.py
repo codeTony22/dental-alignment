@@ -213,13 +213,21 @@ class ConfirmationView(BaseModel):
     evidence hash — plus the dispositions and per-flag acknowledgments the artifact
     surface needs to show withheld sites honestly. The record's facts verbatim, and
     since the identity removal (client 2026-07-27) the record names no actor: the
-    attestation act is the record, and the wire says exactly that much."""
+    attestation act is the record, and the wire says exactly that much.
+
+    ``terms_accepted``/``terms_version`` are the agreement's new home (plan
+    §10-A) — the record's own fields, verbatim, so the surface can say WHICH
+    terms text was accepted alongside when and over what evidence.
+    ``terms_accepted`` reads False on a confirmation sealed before the concept
+    existed (the record's own honest default), never implied true."""
 
     at: str
     run_id: str
     evidence_sha256: str
     dispositions: Dict[str, str]
     acknowledged_flags: List[int]
+    terms_accepted: bool
+    terms_version: Optional[str] = None
 
 
 class PaymentView(BaseModel):
