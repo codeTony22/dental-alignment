@@ -348,11 +348,15 @@ describe("the DeclareStage container, statically (effects do not run)", () => {
     expect(html).toContain('data-role="declare-queue"');
     expect(html).toContain('data-role="system-bar"');
     expect(html).toContain('data-role="variant-cards"');
-    // the arch rides as a collapsible context STRIP (client 2026-07-27: the panes
-    // are the subject of this stage) — open by default, foldable by the operator
-    expect(html).toMatch(/<details[^>]*data-role="arch-fold"[^>]*open/);
+    // Retargeted 2026-07-30: the arch was a standing strip, open by default, and it
+    // cost the panes a third of the stage — the union pane sank below the fold
+    // (client: "small panels, the view is cut off ... maybe the arch context view
+    // can just be a modal"). It is now a DIALOG behind one button: closed by
+    // default, the WebGL viewer unmounted until asked for. The panes get the pixels.
+    expect(html).toContain('data-role="arch-open"');
     expect(html).toContain("Arch context");
-    expect(html).toContain('data-role="main-stage"');
+    expect(html).not.toContain('data-role="arch-dialog"');
+    expect(html).not.toContain('data-role="main-stage"');
     // 5b: the three live panes and the review tick ride with the stage
     expect(html).toContain('data-role="declare-panes"');
     expect(html).toContain('data-role="pane-library"');

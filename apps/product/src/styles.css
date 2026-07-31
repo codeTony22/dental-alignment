@@ -2285,37 +2285,14 @@ a.workflow-rail__step {
      → panes row = 679 − 190 − 10 = 479px ≈ 71% of the stage (≥55% holds); each
        pane stage ≈343px — still clear of .verify-panel__stage's 220px min-height
        floor, which stays the last line of defence on shorter windows. */
-.workbench__stage--split .stage-arch-fold {
-  flex: 0 0 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 4px 8px 8px;
-  background: #ffffff;
-}
 
 /* Open, the strip is a FIXED 190px (≈22px summary + ≈156px canvas): the panes'
    share is guaranteed by construction, not by a percentage race. Folded, only the
    summary line remains and the panes take everything. */
-.workbench__stage--split .stage-arch-fold[open] {
-  flex: 0 0 190px;
-}
 
-.stage-arch-fold__summary {
-  flex: 0 0 auto;
-  font-size: 11px;
-  color: var(--color-text-muted);
-  cursor: pointer;
-}
 
 /* The copied stage rules assume the arch is the SUBJECT (240px canvas floors);
    inside the strip it is context, so the floors yield to the fixed strip height. */
-.workbench__stage--split .stage-arch-fold .main-stage {
-  flex: 1 1 auto;
-  min-height: 0;
-}
 
 .workbench__stage--split .main-stage__canvas,
 .workbench__stage--split .main-stage__canvas .viewer3d {
@@ -2832,9 +2809,6 @@ button.package-files__link:hover {
 
   /* Stacked, the page scrolls by design — the arch fold gives up its fixed strip
      and the 420px canvas rule above sizes it like every other stacked viewer. */
-  .workbench__stage--split .stage-arch-fold[open] {
-    flex: 0 0 auto;
-  }
 }
 
 @media (max-width: 960px) {
@@ -3261,8 +3235,16 @@ button.package-files__link:hover {
    the rail folds away (above), and the panes stop being obliged to fill the full
    stage height. An upper bound on the pane row keeps each pane near enough to
    square that the subject fills it. */
+/* No vh cap any more (client 2026-07-30: "small panels, the view is cut off"). Two
+   stacked vh-bounded rows plus chrome exceeded the viewport, so the union pane's legend
+   sank below the fold — a cap that was meant to keep panes square instead hid one. The
+   grid's rows now SPLIT the stage's actual remaining height (grid-auto-rows below), so
+   by construction every pane ends above the confirm bar. */
+.workbench__stage .verify-panels__grid {
+  grid-auto-rows: minmax(220px, 1fr);
+}
 .workbench__stage .verify-panel {
-  max-height: 62vh;
+  min-height: 0;
 }
 
 /* The grid's real class is .verify-panels__grid — an earlier attempt here used
@@ -3278,8 +3260,10 @@ button.package-files__link:hover {
   .workbench__stage .verify-panels__grid:not(.verify-panels__grid--maximized) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .workbench__stage .verify-panel {
-    max-height: 40vh;
+  /* The union pane is the money pane — alone on the wrapped row it took half the
+     width for no reason. Full-width it reads like the verdict it is. */
+  .workbench__stage .verify-panels__grid > .verify-panel:nth-child(3) {
+    grid-column: 1 / -1;
   }
 }
 
@@ -3485,4 +3469,54 @@ button.package-files__link:hover {
   background: var(--color-amber-bg);
   color: var(--color-amber);
   border: 1px solid var(--color-amber-border);
+}
+
+/* ---- the stage toolbar + the arch DIALOG (client 2026-07-30) --------------------- */
+.stage-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+}
+
+/* The arch dialog is a STAGE, not a document: the card takes most of the viewport and
+   the body is one flexed box the WebGL viewer fills. Without the explicit height chain
+   the canvas would collapse to 0 inside the dialog. */
+.decode-dialog--stage {
+  width: min(1200px, 92vw);
+  height: min(760px, 88vh);
+  display: flex;
+  flex-direction: column;
+}
+
+.decode-dialog__body--stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.decode-dialog__body--stage .main-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ---- the per-mark undo becomes a quiet pill (client 2026-07-30: "ugly") ---------- */
+.adjust-pairs__slot-clear {
+  margin-left: 6px;
+  padding: 1px 7px;
+  font-size: 10px;
+  line-height: 1.5;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+
+.adjust-pairs__slot-clear:hover {
+  color: var(--color-text);
+  border-color: var(--color-text-muted);
 }

@@ -272,6 +272,10 @@ export function DeclareStageView({
 }: DeclareStageViewProps) {
   const facts = factsFromCaseSession(detail);
   const active = activeSiteFrom(detail.sites, activeTooth);
+  /* Local by design: whether the arch dialog is open is presentation, not case state —
+     nothing downstream reads it, so it earns no prop. Static tests render it CLOSED,
+     which is also the honest default: the panes are the subject of this stage. */
+  const [archOpen, setArchOpen] = useState(false);
   const shelves = variantShelves(detail);
   // THE FORK'S ONE PRECONDITION, and it is exactly Deliver's reachability: a done
   // run whose verdicts cover every site (the BFF's own 422 for the decision route).
@@ -515,22 +519,63 @@ export function DeclareStageView({
         </div>
       </div>
       <div className="workbench__stage workbench__stage--split">
-        {/* The arch is CONTEXT on this stage, not the subject — a strip, and a
-            <details> so the operator can fold it away entirely when the panes
-            deserve every pixel. Open by default: the strip still orients. */}
-        <details data-role="arch-fold" className="stage-arch-fold" open>
-          <summary className="stage-arch-fold__summary">
-            Arch context — the whole scan with its sites
-          </summary>
-          <MainStage
-            caseId={detail.case.id}
-            scanFilename={detail.case.scan_filename}
-            sites={detail.sites}
-            activeTooth={active?.tooth ?? null}
-          />
-        </details>
+        {/* THE ARCH IS A DIALOG NOW, not a standing strip (client 2026-07-30: "small
+            panels, the view is cut off ... maybe the arch context view can just be a
+            modal"). The always-open strip cost the panes a third of the stage and
+            pushed the union pane below the fold — orientation was taxing the very
+            surface it existed to orient. As a dialog the arch costs one click when
+            wanted and zero pixels when not, and the WebGL viewer only MOUNTS while
+            open, which is one fewer live context the three panes compete with. */}
+        <div className="stage-toolbar">
+          <button
+            type="button"
+            data-role="arch-open"
+            className="button button--secondary button--small"
+            onClick={() => setArchOpen(true)}
+          >
+            ⊞ Arch context — the whole scan
+          </button>
+        </div>
         {panesSlot}
       </div>
+      {archOpen && (
+        <div
+          data-role="arch-backdrop"
+          className="decode-dialog-backdrop"
+          onClick={() => setArchOpen(false)}
+        >
+          <section
+            data-role="arch-dialog"
+            className="decode-dialog decode-dialog--stage"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="arch-dialog-heading"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="decode-dialog__header">
+              <h2 id="arch-dialog-heading" className="decode-dialog__title">
+                Arch context — the whole scan with its sites
+              </h2>
+              <button
+                type="button"
+                data-role="arch-close"
+                className="button button--ghost button--small"
+                onClick={() => setArchOpen(false)}
+              >
+                Close
+              </button>
+            </header>
+            <div className="decode-dialog__body decode-dialog__body--stage">
+              <MainStage
+                caseId={detail.case.id}
+                scanFilename={detail.case.scan_filename}
+                sites={detail.sites}
+                activeTooth={active?.tooth ?? null}
+              />
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

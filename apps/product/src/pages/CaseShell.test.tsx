@@ -60,16 +60,26 @@ describe("the case shell view", () => {
     expect(html).not.toContain("Slice 5a builds");
   });
 
-  it("Intake and Declare mount the main stage (slice 3); Adjust stays a placeholder", () => {
-    for (const stage of ["intake", "declare"] as const) {
-      const html = renderToStaticMarkup(
-        <StaticRouter location={`/case/case-a/${stage}`}>
-          <CaseShellView detail={detail} stage={stage} />
-        </StaticRouter>,
-      );
-      expect(html).toContain('data-role="main-stage"');
-      expect(html).toContain("Loading scan.stl"); // effects do not run statically — honest pre-flight
-    }
+  it("Intake mounts the main stage; Declare offers the arch as a dialog instead", () => {
+    // Retargeted 2026-07-30: Declare's arch used to mount alongside the panes as an
+    // always-open strip, and it cost them a third of the stage (client: "small
+    // panels, the view is cut off"). On Declare the viewer now mounts only inside
+    // the arch DIALOG, so a static render carries the button and no main-stage.
+    const intake = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/intake">
+        <CaseShellView detail={detail} stage="intake" />
+      </StaticRouter>,
+    );
+    expect(intake).toContain('data-role="main-stage"');
+    expect(intake).toContain("Loading scan.stl"); // effects do not run statically — honest pre-flight
+
+    const declare = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/declare">
+        <CaseShellView detail={detail} stage="declare" />
+      </StaticRouter>,
+    );
+    expect(declare).toContain('data-role="arch-open"');
+    expect(declare).not.toContain('data-role="main-stage"');
     const adjust = renderToStaticMarkup(
       <StaticRouter location="/case/case-a/adjust">
         <CaseShellView
