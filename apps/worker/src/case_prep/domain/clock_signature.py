@@ -212,6 +212,25 @@ def scan_rim_centre(pts_canon: np.ndarray, ztop: float, rmax: float) -> np.ndarr
     return c
 
 
+def canon_point_to_world(xy: np.ndarray, z: float, pose_world: np.ndarray) -> np.ndarray:
+    """A canonical-frame point (``xy`` at height ``z`` — e.g. ``scan_rim_centre``'s own
+    result at a template's ``ztop``) mapped through the pose's canon-to-world
+    transform (plan §10-F: the scan-side lever guard's rim centre, exposed in WORLD
+    coordinates beside the pose the panes already render).
+
+    This is the EXACT inverse of how a click is read INTO canon (a pose's rotation is
+    orthonormal, so composing it back out is a coordinate change of an already-computed
+    point, never a re-derivation with a different crop or a different fit) — see
+    ``application.adjust.SiteClicks.to_canon_xy``, whose ``p_local = frame.T @ (point -
+    origin)`` then ``(p_local - t[:3,3]) @ t[:3,:3]`` composes, algebraically, to
+    exactly ``pose_world[:3,:3].T @ (point - pose_world[:3,3])`` — proved and pinned by
+    test, because a wrong composition here would look plausible and be a few
+    millimetres off."""
+    p_canon = np.array([float(xy[0]), float(xy[1]), float(z)])
+    pose = np.asarray(pose_world, float)
+    return pose[:3, :3] @ p_canon + pose[:3, 3]
+
+
 def _masked_shift_corr(scan_img: np.ndarray, tmpl_img: np.ndarray):
     n = scan_img.shape[0]
     corr = np.full(n, np.nan)
