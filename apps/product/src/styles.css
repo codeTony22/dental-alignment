@@ -4113,3 +4113,115 @@ button.package-files__link:hover {
 .checkout-pay {
   flex: 1 1 auto;
 }
+
+
+/* ============================================================================
+   ArTech End-to-End Flow — design import, round 1 (2026-07-31)
+   Written by the stage agents, applied here in one pass: styles.css is shared,
+   so concurrent writes to it would clobber each other. Each block below names
+   the surface it dresses.
+   ============================================================================ */
+/* ===== intake ===== */
+/* ---- Intake's site rows became the operator's PICK (client 2026-07-31) ---- */
+
+/* The row itself is now the button (it wears .decode-stepper__item), so the <li> is
+   only its carrier — no clothes of its own. */
+.intake-site {
+  display: block;
+}
+
+/* Three columns now, not two: identity, the server's evidence, the capture chip. */
+.intake-site__row {
+  gap: 10px;
+}
+
+/* The evidence column is the one allowed to shrink and wrap — the tooth and the
+   capture verdict must never be pushed out by a long variant name. */
+.intake-site__evidence {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 3px 8px;
+}
+
+/* Measured facts read quiet: they are evidence for the operator's own judgement,
+   not a verdict, and must not compete with the capture chip's traffic light. */
+.intake-site__fact {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* A scan click that matched no site. Amber, not red: nothing failed — the click
+   simply landed nowhere, and the picker stays available. */
+.intake-site__miss {
+  color: var(--color-amber);
+}
+
+/* ===== deliver ===== */
+/* ---- Deliver: the assurance header's own arithmetic (design assuranceNote, flow.dc.html:1376) ----
+   Two lines under the panel title: what is IN the table, then what the table OBLIGES.
+   The panel used to name the case and go straight into the rows, so the size and shape
+   of what was about to be signed had to be counted by eye. */
+.deliver-evidence__rollup {
+  margin: -4px 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* The counts lead — they are the fact; everything else on this line is commentary. */
+.deliver-evidence__counts {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+/* The acknowledgment obligation is a policy sentence, not a count: muted so it reads
+   as the condition on the numbers above rather than competing with them. */
+.deliver-evidence__policy {
+  color: var(--color-text-muted);
+}
+
+/* THE ROW'S ONE SENTENCE OF WHY, on the stage the confirmation seals. Its own line
+   under the three numbers: these are gate sentences, and running them on after
+   "RMS 0.43 mm / p90 0.71 mm" made the whole line unscannable. */
+.evidence-summary__note {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: var(--color-text-muted);
+}
+
+/* The rule is the visual claim that this sentence came from the RUN (gate.actions,
+   verbatim) and not from us — the no-action fallback deliberately carries neither the
+   rule nor the darker ink. */
+.evidence-summary__note[data-verbatim="true"] {
+  padding-left: 8px;
+  border-left: 2px solid var(--color-amber-border);
+  color: var(--color-text);
+}
+
+/* THE CLOSING STATEMENT after release — the only green block on this surface, because
+   it is the only sentence that says the work is finished. #eafaf0 is this repo's
+   established green tint, paired as everywhere else with accent-green / accent-green-dark. */
+.released-closing {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-accent-green);
+  border-radius: var(--radius-md);
+  background: #eafaf0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-accent-green-dark);
+}
+
+/* The terms footnote under the checkout button: same muted hint voice as the demo-stub
+   note it follows, given a little air so the two sentences do not read as one. */
+.checkout-terms {
+  margin-top: 6px;
+}

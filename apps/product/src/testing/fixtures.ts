@@ -9,6 +9,7 @@ import type {
   CaseSessionDetail,
   DetectedProposalView,
   DetectionView,
+  InvoiceView,
   SitePreviewPayload,
   SiteView,
   WorklistRow,
@@ -127,6 +128,8 @@ export function caseSessionDetail(
       scan_filename: "scan.stl",
       suggested_model: "conical-4x4",
       suggested_construction: null,
+      teeth: [19, 30],
+      scan_bytes: 31_800_000,
     },
     sites: [siteView({ tooth: 19 }), siteView({ tooth: 30 })],
     system: { effective_model: "conical-4x4", source: "suggested" },
@@ -141,9 +144,13 @@ export function caseSessionDetail(
       // this fixture case carries NO construction suggestion, so the effective
       // construction is honestly absent and completeness fails with it — the
       // BFF's attribution shapes, mirrored (client 2026-07-27)
+      turnaround: null,
       effective_construction: { value: null, source: "none" },
       effective_jaw: { value: "lower", source: "suggested" },
       effective_relief: { value: 0.2, source: "default" },
+      // a case nobody expedited is a standard case — the standing default, and it
+      // never gates `complete`
+      effective_turnaround: { value: "standard", source: "default" },
       complete: false,
     },
     session: {
@@ -183,8 +190,10 @@ export function runnableDetail(
         value: "dess/conical-scanbody.stl",
         source: "chosen",
       },
+      turnaround: null,
       effective_jaw: { value: "lower", source: "chosen" },
       effective_relief: { value: 0.2, source: "chosen" },
+      effective_turnaround: { value: "standard", source: "default" },
       complete: true,
     },
     ...overrides,
@@ -243,6 +252,8 @@ export function worklistRow(overrides: Partial<WorklistRow> = {}): WorklistRow {
     doctor: "Dr. Rivera",
     jaw: "lower",
     suggested_model: "conical-4x4",
+    teeth: [19, 30],
+    scan_bytes: 31_800_000,
     sites: { total: 2, declared: 0, ready: 0, flagged: 0 },
     run_state: "none",
     confirmed: false,
@@ -264,6 +275,10 @@ export function worklistErrorRow(
     doctor: "Dr. Rivera",
     jaw: "lower",
     suggested_model: null,
+    // DISCOVERY facts survive the error contract: a corrupt session says nothing
+    // about the data tree
+    teeth: [19, 30],
+    scan_bytes: 31_800_000,
     sites: null,
     run_state: null,
     confirmed: null,
@@ -286,13 +301,21 @@ export function assuranceSite(overrides: Partial<AssuranceSite> = {}): Assurance
     variant_agreement: "match",
     seat_method: "rim-seat",
     rim_agreement_mm: 0.07,
-    rotation: { deg: 0.7, evidence: "codes", unverified: false },
+    rotation: {
+      deg: 0.7,
+      evidence: "codes",
+      unverified: false,
+      // nobody hand-rotated this site: the run's own certified pose ships
+      operator_cumulative_deg: null,
+    },
     deviation_rms_mm: 0.43,
     deviation_p90_mm: 0.71,
     gate: { level: "ready", actions: [] },
     clamp: { requested_mm: 0.2, applied_mm: 0.2, clamped: false, reason: null },
     production_note: null,
     stale_metrics: [],
+    matching_diameter_mm: null,
+    correspondence: null,
     qc_images: ["case-a-19-clockview.png", "case-a-19-deviation.png"],
     references: {
       rim_agreement_mm: {
@@ -326,8 +349,41 @@ export function flaggedAssuranceSite(
         "The cap's ROTATION could not be verified — visually check the coded features.",
       ],
     },
-    rotation: { deg: null, evidence: "none", unverified: true },
+    rotation: {
+      deg: null,
+      evidence: "none",
+      unverified: true,
+      operator_cumulative_deg: null,
+    },
     qc_images: ["case-a-30-clockview.png", "case-a-30-deviation.png"],
+    ...overrides,
+  });
+}
+
+/** A site someone reworked by hand: the operator's cumulative rotation, the best-fit
+ * dial it was refined at, and the correspondence the shipped pose stands on — the
+ * three facts the alignment-metrics strip reads (gap
+ * ``per-site-pairs-rotation-diameter``). Two of the three pairs came from spans,
+ * hence 3 pairs / 5 observations. */
+export function reworkedAssuranceSite(
+  overrides: Partial<AssuranceSite> = {},
+): AssuranceSite {
+  return assuranceSite({
+    status: "adjusted",
+    rotation: {
+      deg: 1.4,
+      evidence: "codes",
+      unverified: false,
+      operator_cumulative_deg: 12.5,
+    },
+    matching_diameter_mm: 0.45,
+    correspondence: {
+      pairs: 3,
+      observations: 5,
+      max_pairs: 8,
+      residual_rms_mm: 0.08,
+    },
+    stale_metrics: ["rim_agreement_mm", "guidance"],
     ...overrides,
   });
 }
@@ -344,6 +400,56 @@ export function assuranceView(overrides: Partial<AssuranceView> = {}): Assurance
     },
     adjustments: null,
     sites: [flaggedAssuranceSite(), assuranceSite()],
+    ...overrides,
+  };
+}
+
+/** The priced case as the BFF derives it (bff/pricing.py). Amounts are integer
+ * CENTS and the rates are PLACEHOLDERS — `status: "placeholder"` is a server fact
+ * the surface badges, exactly like the terms text. Nothing here is ever computed
+ * client-side; a price is the money-shaped cousin of a verdict. */
+export function invoiceView(overrides: Partial<InvoiceView> = {}): InvoiceView {
+  return {
+    case_id: "case-a",
+    run_id: "20260727-120000-abc123",
+    currency: "USD",
+    rate_card_version: "placeholder-v1",
+    status: "placeholder",
+    note:
+      "PLACEHOLDER RATES — pending the client's price list. The figures are the " +
+      "design prototype's ($32 per site standard, $48 rush, exceptions at half " +
+      "rate) and are not a quotation.",
+    turnaround: "standard",
+    turnaround_source: "default",
+    lines: [
+      {
+        key: "released_sites",
+        label: "1 released site",
+        quantity: 1,
+        unit_amount_cents: 3200,
+        amount_cents: 3200,
+        billed: true,
+      },
+      {
+        key: "exception_sites",
+        label: "1 acknowledged exception, at half rate",
+        quantity: 1,
+        unit_amount_cents: 1600,
+        amount_cents: 1600,
+        billed: true,
+      },
+      {
+        // included at zero and still BILLED — it repriced every line above
+        key: "turnaround",
+        label: "Standard turnaround",
+        quantity: 1,
+        unit_amount_cents: null,
+        amount_cents: 0,
+        billed: true,
+      },
+    ],
+    total_cents: 4800,
+    paid: null,
     ...overrides,
   };
 }

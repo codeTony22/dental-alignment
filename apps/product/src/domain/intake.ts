@@ -110,6 +110,12 @@ function asVec3(center: readonly number[]): readonly [number, number, number] | 
     : null;
 }
 
+/** A site's centre as a usable 3-vector, or nothing — a short/absent vector is never
+ *  padded into a point (the stage would then frame a place that does not exist). */
+export function siteCentre(site: SiteView): readonly [number, number, number] | null {
+  return site.center !== null ? asVec3(site.center) : null;
+}
+
 export function detectionMarkers(detail: CaseSessionDetail): readonly SiteMarker[] {
   const markers: SiteMarker[] = [];
   const proposals: readonly DetectedProposalView[] = detail.detection?.proposals ?? [];
@@ -126,6 +132,108 @@ export function detectionMarkers(detail: CaseSessionDetail): readonly SiteMarker
     if (center !== null) markers.push({ center, radiusMm: MARKER_RADIUS_MM });
   }
   return markers;
+}
+
+/**
+ * PICKING A SITE BY CLICKING IT ON THE SCAN (client 2026-07-31).
+ *
+ * The design prototype picks caps off a flat 2D arch schematic; this product has the
+ * real scan on the stage, so the pick is resolved in millimetres: the click lands on
+ * the mesh surface (the viewer's one-shot point pick) and the nearest site CENTRE
+ * within reach owns it.
+ *
+ * 6mm, not the 2.6mm marker ring: the stored centre sits at rim height over the screw
+ * recess while the click lands wherever the operator's ray met the cap's flank, and two
+ * implants are never closer than 8mm (cap_detection._MIN_SEPARATION_MM) — so 6mm cannot
+ * make a click ambiguous between two caps. Beyond it the operator plainly meant
+ * something else and null is the honest answer: snapping to the least-far site would
+ * silently reframe the stage onto a tooth nobody clicked.
+ */
+export const SITE_PICK_RADIUS_MM = 6.0;
+
+export function pickSiteAt(
+  sites: readonly SiteView[],
+  point: readonly [number, number, number],
+  radiusMm: number = SITE_PICK_RADIUS_MM,
+): number | null {
+  let best: { tooth: number; distance: number } | null = null;
+  for (const site of sites) {
+    const centre = siteCentre(site);
+    if (centre === null) continue;
+    const distance = Math.hypot(
+      centre[0] - point[0],
+      centre[1] - point[1],
+      centre[2] - point[2],
+    );
+    if (distance > radiusMm) continue;
+    if (best === null || distance < best.distance) best = { tooth: site.tooth, distance };
+  }
+  return best?.tooth ?? null;
+}
+
+/**
+ * THE EVIDENCE A SITE ROW CARRIES (client 2026-07-31).
+ *
+ * The design prototype puts a confidence percentage on every row. There is no such
+ * number: the worker's DetectedSite carries no confidence, and a percentage minted in
+ * the browser would be a client-side verdict — exactly what this app must never do
+ * (trust direction, AM-4). What the server DOES know per site is rendered instead, in
+ * the worker's own units:
+ *
+ *  - the variant the operator declared, else the one the registration SUGGESTED;
+ *  - void_ratio — the screw recess read as an absence of scan in the cap's core
+ *    (auto_flow.ProposedSite): real caps measured 0.37-0.62 across the client's two
+ *    arches, a palate slope (no recess at all) measured 0.79;
+ *  - rim_below_cusps_mm — how far the rim sits under the neighbouring cusps: caps
+ *    measured 0.0-0.66mm, the worst tissue artifacts 0.79-1.9mm.
+ *
+ * Both numbers are the DETECTOR's, so they only exist for a site a proposal guessed:
+ * a hand-marked centre (the missed-cap door) has never been measured, and borrowing a
+ * neighbour's numbers would be a lie.
+ */
+export interface SiteFact {
+  readonly key: "variant" | "recess" | "rim";
+  readonly text: string;
+  /** Why the number means anything — the measured ranges, not a restatement. */
+  readonly title: string;
+}
+
+export function siteEvidence(
+  detail: CaseSessionDetail,
+  site: SiteView,
+): readonly SiteFact[] {
+  const facts: SiteFact[] = [];
+  const variant = site.declared_variant ?? site.suggested_variant;
+  if (variant !== null) {
+    facts.push({
+      key: "variant",
+      text: `${site.declared_variant !== null ? "declared" : "suggested"} ${variant}`,
+      title:
+        site.declared_variant !== null
+          ? "The variant declared for this site. Declare is where it is changed."
+          : "The variant registration suggested for this site — a proposal, not a declaration.",
+    });
+  }
+  const proposal = (detail.detection?.proposals ?? []).find(
+    (p) => p.tooth_guess === site.tooth,
+  );
+  if (proposal !== undefined) {
+    facts.push({
+      key: "recess",
+      text: `recess void ${proposal.void_ratio.toFixed(2)}`,
+      title:
+        "Screw-recess evidence: the share of the cap's core with no scan in it. Real caps " +
+        "measured 0.37–0.62 on the client's two arches; a palate slope measured 0.79.",
+    });
+    facts.push({
+      key: "rim",
+      text: `rim ${proposal.rim_below_cusps_mm.toFixed(2)}mm below cusps`,
+      title:
+        "How far this rim sits under the neighbouring cusps. Caps measured 0.0–0.66mm " +
+        "across the client's two arches; the worst tissue artifacts 0.79–1.9mm.",
+    });
+  }
+  return facts;
 }
 
 /** The construction dropdown's rows, extracted from the worker-shaped catalog rows

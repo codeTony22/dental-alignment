@@ -47,8 +47,11 @@ import {
   type FetchState,
 } from "../api/client";
 import {
+  CHECKOUT_SEAL_WORDS,
   ackRequired,
+  acknowledgmentPolicyWords,
   adjustmentsWords,
+  assuranceCountsWords,
   confirmBlockers,
   confirmWireBody,
   effectiveDisposition,
@@ -59,6 +62,8 @@ import {
   needsAcknowledgment,
   releaseDisclosureWords,
   releaseSteps,
+  releasedClosingWords,
+  sealedTermsHref,
   staleMetricsWords,
   termsText,
   withholdOffered,
@@ -671,6 +676,25 @@ export function DeliverStageView({
                           nothing — this case's own record is the only thing that
                           says whether payment happened.
                         </p>
+                        {/* WHAT PAYING DOES, BEFORE the checkout opens. The dialog
+                            covers this page, so the sentence belongs at the point the
+                            operator commits to paying — the last thing read before the
+                            money surface, not a footnote inside it. The link resolves
+                            the version the CONFIRMATION sealed, so the document beside
+                            the payment is the one this case is bound by even after
+                            newer terms land. Paying re-accepts nothing. */}
+                        <p data-role="checkout-terms" className="panel__hint checkout-terms">
+                          {CHECKOUT_SEAL_WORDS}{" "}
+                          <a
+                            data-role="checkout-terms-link"
+                            className="terms-block__link"
+                            href={sealedTermsHref(detail.session.confirmation)}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Read the sealed Terms and Conditions ↗
+                          </a>
+                        </p>
                       </div>
                     </div>
                   )}
@@ -788,6 +812,15 @@ export function DeliverStageView({
                     when every site does: {artifacts.data.withheld_case_files.join(", ")}
                   </p>
                 )}
+                {/* THE CLOSING STATEMENT. The progression's Released step gives the
+                    TIME; nothing said the AMOUNT, so a finished case never actually
+                    said it was finished. Counted off THIS response — the list the
+                    release served — never off release_preview: a withheld site makes
+                    those two legitimately differ, and this sentence describes the
+                    disclosure that happened. */}
+                <p data-role="released-closing" className="released-closing">
+                  {releasedClosingWords(artifacts.data)}
+                </p>
               </>
             )}
           </section>
@@ -813,6 +846,23 @@ export function DeliverStageView({
             Assurance — worst first
             <span className="panel__title-case"> · {detail.case.id}</span>
           </h3>
+          {/* THE HEADER'S OWN ARITHMETIC (design assuranceNote, flow.dc.html:1376).
+              The panel named the case and went straight into the rows, so the size
+              and shape of what is about to be signed had to be counted by eye. The
+              counts are display arithmetic over statuses the BFF derived — this
+              counts rows, it never decides what a row is — and the second line names
+              the acknowledgment obligation as the ACT it is, rather than minting a
+              status word the server never sent. */}
+          {assurance.kind === "ok" && (
+            <p className="deliver-evidence__rollup">
+              <span data-role="assurance-counts" className="deliver-evidence__counts">
+                {assuranceCountsWords(assurance.data)}
+              </span>
+              <span data-role="assurance-policy" className="deliver-evidence__policy">
+                {acknowledgmentPolicyWords(assurance.data)}
+              </span>
+            </p>
+          )}
           {assurance.kind === "loading" && (
             <div data-role="assurance-loading" className="busy-state" role="status">
               <span className="busy-state__spinner" aria-hidden="true" />
@@ -844,6 +894,19 @@ export function DeliverStageView({
                       {line.gate}
                     </span>{" "}
                     <span className="evidence-summary__words">{line.words}</span>
+                    {/* THE ROW'S ONE SENTENCE OF WHY, on the surface the confirmation
+                        SEALS. It was two clicks away — open the report, expand the
+                        row — and the gate's words are the whole reason a row is
+                        flagged. `data-verbatim` marks whether this is the run's own
+                        sentence or the no-action fallback: a reviewer reading the
+                        markup must be able to tell the two apart. */}
+                    <span
+                      data-role="evidence-note"
+                      data-verbatim={line.noteFromRun}
+                      className="evidence-summary__note"
+                    >
+                      {line.note}
+                    </span>
                   </li>
                 ))}
               </ul>

@@ -594,6 +594,115 @@ describe("the parity chrome (ledger row 9): the demo's results-table language", 
   });
 });
 
+describe("the assurance header states its own counts and its exceptions policy", () => {
+  it("counts the served rows in the worklist's phrasing, beside the case", () => {
+    const html = view();
+    expect(html).toContain('data-role="assurance-counts"');
+    expect(html).toContain("2 sites · 1 flagged / 1 ready");
+  });
+
+  it("names the acknowledgment obligation as the product's own act, not a status", () => {
+    const html = view();
+    expect(html).toContain('data-role="assurance-policy"');
+    expect(html).toContain("1 site releases only as an acknowledged exception");
+  });
+
+  it("a clean table says no acknowledgment is owed rather than staying silent", () => {
+    const html = view({
+      assurance: { kind: "ok", data: assuranceView({ sites: [assuranceSite()] }) },
+    });
+    expect(html).toContain("No site needs an acknowledgment");
+  });
+
+  it("states NO tolerance number — this product has none to state", () => {
+    // the design's header ends "· tolerance 0.40 mm"; every band comparison here is
+    // the BFF's, per metric, against the acceptance catalog (AM-4)
+    expect(view()).not.toContain("tolerance");
+  });
+});
+
+describe("each evidence line carries its one sentence of WHY, on the stage", () => {
+  it("the gate's first action rides in the row — the confirmation seals these rows", () => {
+    // it used to take two clicks (open the report, expand the row) to learn why a row
+    // was flagged, on the very surface that seals it
+    const html = view();
+    expect(html).toContain('data-role="evidence-note"');
+    expect(html).toContain("ROTATION could not be verified");
+    expect(html).toMatch(/data-role="evidence-note" data-verbatim="true"/);
+  });
+
+  it("a row whose gate raised nothing says so, in the gate's own word", () => {
+    const html = view({
+      assurance: { kind: "ok", data: assuranceView({ sites: [assuranceSite()] }) },
+    });
+    expect(html).toMatch(/data-role="evidence-note" data-verbatim="false"/);
+    expect(html).toContain("No action was raised — this gate reads ready.");
+  });
+});
+
+describe("the closing statement — the case finally says what shipped", () => {
+  const releasedDetail = () =>
+    deliverableDetail({ ...CONFIRMED, ...PAID, ...RELEASED });
+
+  it("counts off the ARTIFACTS actually served, and names what stays open", () => {
+    const html = view({
+      detail: releasedDetail(),
+      artifacts: {
+        kind: "ok",
+        data: {
+          run_id: "20260727-120000-abc123",
+          files: [
+            { name: "case-a-19-cap.stl", size_bytes: 2048, tooth: 19 },
+            { name: "case-a-19-scanbody.stl", size_bytes: 1024, tooth: 19 },
+            { name: "case-a-manifest.json", size_bytes: 512, tooth: null },
+          ],
+          withheld_teeth: [30],
+          withheld_case_files: [],
+        },
+      },
+    });
+    expect(html).toContain('data-role="released-closing"');
+    expect(html).toContain("Released 3 files for 1 site, including 1 case-wide file.");
+    expect(html).toContain("Tooth 30 stays open");
+  });
+
+  it("no listing, no claim: a refused artifact list closes nothing", () => {
+    const html = view({
+      detail: releasedDetail(),
+      artifacts: { kind: "error", detail: "HTTP 409 — the evidence changed after release" },
+    });
+    expect(html).not.toContain('data-role="released-closing"');
+  });
+
+  it("nothing is closed before the release", () => {
+    expect(view({ detail: deliverableDetail(CONFIRMED) })).not.toContain(
+      'data-role="released-closing"',
+    );
+  });
+});
+
+describe("the checkout says what paying does, and links the sealed terms", () => {
+  it("the footnote sits with the checkout button, pointing at the SEALED version", () => {
+    const html = view({ detail: deliverableDetail(CONFIRMED) });
+    expect(html).toContain('data-role="checkout-terms"');
+    expect(html).toContain('href="/terms/placeholder-v1"');
+    expect(html).toContain("releasing the artifacts is a separate act");
+  });
+
+  it("with no sealed version there is still a document to read", () => {
+    // reachable only through a confirmation, so this is the defensive branch — the
+    // link must never resolve to /terms/null
+    const html = view({
+      detail: deliverableDetail({
+        ...CONFIRMED,
+        confirmation: { ...CONFIRMED.confirmation, terms_version: null },
+      }),
+    });
+    expect(html).toContain('data-role="checkout-terms"');
+    expect(html).not.toContain("/terms/null");
+  });
+});
+
 describe("the terms are a LINK to a routed document (client 2026-07-30)", () => {
   it("the acceptance links out to the current terms, in a new tab", () => {
     // a new tab because reading the agreement must not cost the operator the

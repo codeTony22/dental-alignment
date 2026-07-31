@@ -320,6 +320,76 @@ class TestTheAssuranceShowsTheFork:
             "adjustments"] == "adjust"
 
 
+class TestTheAlignmentMetricsAreTyped:
+    """GAP ``per-site-pairs-rotation-diameter`` (2026-07-31). Three facts about work
+    already done reached the surface only as untyped dicts inside ``RunView.sites``
+    — or, for the pair count, not at all — so no Deliver row could state them. They
+    are DERIVED (the tools' own readings, folded at landing), never client-supplied,
+    and they are typed HERE, on the document the operator signs."""
+
+    def rows_with(self, extra: dict):
+        r = row(4)
+        r.update(extra)
+        return [r, row(13)]
+
+    def site(self, client, tooth: int) -> dict:
+        body = client.get("/api/case-sessions/neodent-gm/assurance").json()
+        return next(s for s in body["sites"] if s["tooth"] == tooth)
+
+    def test_a_clean_run_claims_none_of_them(self, settings, product_root):
+        # None here means "nobody touched this site", never "we forgot"
+        client = landed_client(settings, product_root, [row(4), row(13)])
+        site = self.site(client, 4)
+        assert site["rotation"]["operator_cumulative_deg"] is None
+        assert site["matching_diameter_mm"] is None
+        assert site["correspondence"] is None
+
+    def test_the_operators_cumulative_rotation_is_distinct_from_the_measured_one(
+            self, settings, product_root):
+        # ``deg`` is what the instrument reads at the shipped pose; the nudge is how
+        # far a human turned the cap off the certified one. Two questions, two fields.
+        rows = self.rows_with({
+            "clocking": {"evidence": "codes", "rotation_unverified": False,
+                         "notch_shift_deg": 1.4},
+            "nudge": {"operator_delta_deg": 5.0, "cumulative_deg": 12.5}})
+        client = landed_client(settings, product_root, rows)
+        rotation = self.site(client, 4)["rotation"]
+        assert rotation["deg"] == 1.4
+        assert rotation["operator_cumulative_deg"] == 12.5
+
+    def test_the_best_fit_dial_reaches_the_row(self, settings, product_root):
+        rows = self.rows_with({"best_fit": {"matching_diameter_mm": 0.45,
+                                            "roi_mean_after_mm": 0.12}})
+        client = landed_client(settings, product_root, rows)
+        assert self.site(client, 4)["matching_diameter_mm"] == 0.45
+
+    def test_the_correspondence_says_pairs_observations_and_the_servers_own_cap(
+            self, settings, product_root):
+        # a two-point SPAN contributes two observations to one pair, so the two
+        # numbers differ exactly when spans were used — the fact a reader of a
+        # sealed row most wants. ``max_pairs`` rides along so a surface renders
+        # "3/8" from a server fact rather than a hard-coded bound.
+        rows = self.rows_with({"correspondence": {"pairs": 3, "observations": 5,
+                                                  "max_pairs": 8,
+                                                  "residual_rms_mm": 0.08}})
+        client = landed_client(settings, product_root, rows)
+        assert self.site(client, 4)["correspondence"] == {
+            "pairs": 3, "observations": 5, "max_pairs": 8,
+            "residual_rms_mm": 0.08}
+
+    def test_a_malformed_block_is_ignored_rather_than_crashing_the_projection(
+            self, settings, product_root):
+        # every worker-shaped block on this row is read defensively; a string where
+        # a dict belongs must not take the whole Deliver surface down
+        rows = self.rows_with({"best_fit": "nope", "nudge": "nope",
+                               "correspondence": "nope"})
+        client = landed_client(settings, product_root, rows)
+        site = self.site(client, 4)
+        assert site["matching_diameter_mm"] is None
+        assert site["correspondence"] is None
+        assert site["rotation"]["operator_cumulative_deg"] is None
+
+
 # --- the qc image endpoint -------------------------------------------------------------
 
 class TestQcImages:

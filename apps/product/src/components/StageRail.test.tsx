@@ -79,6 +79,59 @@ describe("the stage rail", () => {
     expect(html.match(/✓/g)?.length).toBe(3);
   });
 
+  it("the sub-line under a stage speaks the LIVE count, not the static one-liner", () => {
+    const flagged: FlowFacts = {
+      siteTotal: 4,
+      siteDeclared: 4,
+      siteReady: 3,
+      siteFlagged: 1,
+      runState: "done",
+      confirmed: false,
+      released: false,
+      detectionDone: true,
+      choicesComplete: true,
+    };
+    const html = railHtml(flagged, "adjust");
+    expect(html).toContain("1 flagged to rework.");
+    // the fixed prose it replaces must be GONE — a reachable Adjust that says
+    // "Optional — refit flagged sites" while one site is flagged is the rail lying
+    expect(html).not.toContain("Optional — refit flagged sites");
+    expect(html).toContain("3 of 4 sites reviewed.");
+  });
+
+  it("falls back to the one-liner where the facts hold no count to speak", () => {
+    const empty: FlowFacts = {
+      siteTotal: 0,
+      siteDeclared: 0,
+      siteReady: 0,
+      siteFlagged: 0,
+      runState: "none",
+      confirmed: false,
+      released: false,
+      detectionDone: false,
+      choicesComplete: false,
+    };
+    // An empty case has nothing to count, so Intake keeps its standing sentence —
+    // "0 of 0 sites" would be noise dressed as information.
+    expect(railHtml(empty)).toContain("Scan in, sites detected");
+  });
+
+  it("Intake's sub-line names the centre shortfall behind the Declare gate", () => {
+    const halfMarked: FlowFacts = {
+      siteTotal: 4,
+      siteDeclared: 0,
+      siteReady: 0,
+      siteFlagged: 0,
+      siteCentred: 2,
+      runState: "none",
+      confirmed: false,
+      released: false,
+      detectionDone: true,
+      choicesComplete: true,
+    };
+    expect(railHtml(halfMarked)).toContain("2 of 4 sites still without a centre.");
+  });
+
   it("a skipped adjust never blocks the deliver link (plan §4)", () => {
     const flagged: FlowFacts = {
       siteTotal: 3,

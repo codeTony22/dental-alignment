@@ -79,7 +79,11 @@ export function StageRail({ states, current, caseId }: StageRailProps) {
       <ol className="workflow-rail__list">
         {states.map((stage) => {
           const isCurrent = stage.id === current;
-          const detail = stage.blockedReason ?? stage.oneLiner;
+          // A blocked stage still leads with WHY. A reachable one now shows the flow
+          // model's LIVE sub-line (counts from the BFF's facts) rather than the fixed
+          // one-liner — the rail was the last surface that said the same thing about
+          // a case with nine flagged sites as about a clean one.
+          const detail = stage.blockedReason ?? stage.subLine;
           const stepClass = [
             "workflow-rail__step",
             isCurrent ? "workflow-rail__step--current" : "",

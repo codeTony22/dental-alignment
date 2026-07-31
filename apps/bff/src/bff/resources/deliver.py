@@ -35,13 +35,14 @@ from case_prep.domain.acceptance import evaluate_acceptance
 
 from ..config import Settings
 from ..evidence import canonical_bundle, qc_image_hashes, write_bundle
+from ..pricing import InvoicePaymentView, InvoiceView, price_invoice
 from ..session import (CaseSession, ConfirmationRecord, PaymentRecord,
                        ReleaseRecord, RunSession, SessionConflict, SessionStore,
                        adjustments_of, release_matches_confirmation,
                        released_teeth_of, split_released_files, summary_teeth_of,
                        tooth_of_file)
 from .case_sessions import (CaseSessionDetail, _case_or_404, _context, _detail,
-                            _mutate_session)
+                            _effective_choices, _mutate_session)
 
 router = APIRouter(prefix="/api/case-sessions", tags=["deliver"])
 # the terms are a CASE-INDEPENDENT document: their own resource, not a
@@ -131,11 +132,23 @@ def current_terms() -> TermsDocumentView:
 
 class AssuranceRotation(BaseModel):
     """The cap's rotation as the run measured it: degrees, the instrument the answer
-    came from, and whether the pipeline itself called it unverified."""
+    came from, and whether the pipeline itself called it unverified.
+
+    TWO ROTATIONS LIVE HERE, AND THEY ARE NOT THE SAME NUMBER (gap
+    ``per-site-pairs-rotation-diameter``, 2026-07-31). ``deg`` is the MEASURED notch
+    shift — what the instrument reads at the shipped pose, re-derived after every
+    rework. ``operator_cumulative_deg`` is how far a HUMAN turned the cap off the
+    pipeline's certified pose, folded onto the summary row by the adjust tools
+    (``row["nudge"]["cumulative_deg"]``). Until now the second reached the surface
+    only as an untyped dict inside ``RunView.sites``, which is why the Deliver row
+    could not say it. They answer different questions — "is it clocked right?" and
+    "how much of that did we do by hand?" — and an operator confirming a case is
+    entitled to both. None on a site nobody rotated."""
 
     deg: Optional[float] = None
     evidence: Optional[str] = None
     unverified: bool = False
+    operator_cumulative_deg: Optional[float] = None
 
 
 class AssuranceClamp(BaseModel):
@@ -154,6 +167,21 @@ class AssuranceGate(BaseModel):
 
     level: str
     actions: List[str] = Field(default_factory=list)
+
+
+class AssuranceCorrespondence(BaseModel):
+    """THE PAIRS a fit-by-points stood on (design flow.dc.html's PAIRS metric).
+
+    ``pairs`` is what the operator NAMED; ``observations`` is what those pairs
+    produced (a two-point span contributes two), and the two differ exactly when
+    spans were used — which is the fact a reader of a sealed row most wants, since a
+    span is the stronger observation. ``max_pairs`` is the wire's own cap, carried so
+    a surface renders "3/8" from a server fact instead of hard-coding the bound."""
+
+    pairs: Optional[int] = None
+    observations: Optional[int] = None
+    max_pairs: Optional[int] = None
+    residual_rms_mm: Optional[float] = None
 
 
 class AssuranceSite(BaseModel):
@@ -196,6 +224,18 @@ class AssuranceSite(BaseModel):
     # without saying so gave stale numbers a fresh signature; empty on every row the
     # run itself produced, so a clean case reads exactly as it always did.
     stale_metrics: List[str] = Field(default_factory=list)
+    # THE OPERATOR'S BEST-FIT DIAL, typed onto the row (gap
+    # ``per-site-pairs-rotation-diameter``, 2026-07-31). The matching diameter a
+    # best-fit was run at is the single number that explains why a refinement moved
+    # what it moved, and it reached the surface only through ``RunView.sites`` as an
+    # untyped dict. Read off ``row["best_fit"]``, which the adjust landing folds and
+    # a rotation-reset drops — so None means "this site ships the pipeline's own
+    # refinement", never "we forgot".
+    matching_diameter_mm: Optional[float] = None
+    # THE CORRESPONDENCE the shipped pose stands on — the design's PAIRS metric. See
+    # ``adjust._fold_outcome`` for why this is the LAST applied set rather than a
+    # monotonic per-site tally.
+    correspondence: Optional[AssuranceCorrespondence] = None
     # this site's QC images, by run-relative name (the qc endpoint serves them)
     qc_images: List[str] = Field(default_factory=list)
     # the acceptance catalog's rows for the numerics this table serves, VERBATIM
@@ -287,6 +327,12 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession,
                   if isinstance(row.get("production"), dict) else {})
     variant = row.get("variant") if isinstance(row.get("variant"), dict) else {}
     rework = row.get("rework") if isinstance(row.get("rework"), dict) else {}
+    # the adjust landing's own blocks (adjust._fold_outcome), read defensively like
+    # every other worker-shaped block on this row
+    nudge = row.get("nudge") if isinstance(row.get("nudge"), dict) else {}
+    best_fit = row.get("best_fit") if isinstance(row.get("best_fit"), dict) else {}
+    correspondence = (row.get("correspondence")
+                      if isinstance(row.get("correspondence"), dict) else None)
     # the domain's evaluation — each numeric beside its industry reference, in the
     # backend's own words; a pure function of the row (no new physics)
     metrics = {m["key"]: m for m in evaluate_acceptance(row)["metrics"]}
@@ -302,6 +348,7 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession,
             deg=clocking.get("notch_shift_deg"),
             evidence=clocking.get("evidence"),
             unverified=bool(clocking.get("rotation_unverified")),
+            operator_cumulative_deg=nudge.get("cumulative_deg"),
         ),
         deviation_rms_mm=row.get("deviation_rms_mm"),
         deviation_p90_mm=row.get("deviation_p90_mm"),
@@ -317,6 +364,11 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession,
         ),
         production_note=production.get("note"),
         stale_metrics=[str(m) for m in (rework.get("stale_metrics") or [])],
+        matching_diameter_mm=best_fit.get("matching_diameter_mm"),
+        correspondence=(AssuranceCorrespondence(**{
+            k: correspondence.get(k)
+            for k in ("pairs", "observations", "max_pairs", "residual_rms_mm")})
+            if correspondence is not None else None),
         qc_images=_site_qc_images(run, case_id, tooth),
         references={key: metrics[key] for key in _REFERENCE_KEYS if key in metrics},
     )
@@ -394,6 +446,79 @@ def case_assurance(case_id: str, request: Request) -> AssuranceView:
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
     return derive_assurance(case, store.load(case_id))
+
+
+# --- the invoice (design payLines/payTotal 1475-1480) ------------------------------------
+#
+# EVIDENCE class too, and for the same reason: an operator must be able to read what a
+# case costs BEFORE authorizing anything, exactly as they read the assurance before
+# confirming. A pure projection — reading it writes nothing.
+#
+# THE DOCTRINE POINT, stated where the money is: no route anywhere accepts an amount.
+# A client that could POST one could pay $0 for a released case, which is a
+# status-shaped claim wearing a currency symbol. The amount is derived here from the
+# run's own assurance and the case's turnaround, and ``bff.pricing`` owns the card.
+
+def _billing_dispositions(session: CaseSession, run: RunSession) -> Dict[str, str]:
+    """The dispositions the invoice prices against: the STANDING confirmation's when
+    it names this run, else empty — and empty resolves, site by site, to release.
+
+    That default is confirm's own rule (client 2026-07-27 #4: "omission means
+    release"), read here rather than re-invented: a case that reached Deliver is a
+    case being delivered, and an invoice that quoted zero until someone clicked every
+    site would be describing a different flow than the one the confirm route
+    implements."""
+    confirmation = session.confirmation
+    if (confirmation is None
+            or confirmation.run_id != (run.run_id or run.job_id)):
+        return {}
+    return dict(confirmation.dispositions)
+
+
+def derive_invoice(case: CaseRecord, session: CaseSession) -> InvoiceView:
+    """The one invoice derivation — the GET serves it and the payment route prices
+    with it, so what the operator read and what they were charged cannot diverge
+    (the ``derive_assurance`` pattern, for the same reason).
+
+    An EXCEPTION is a site ``_needs_acknowledgment`` returns true for — the very
+    predicate the confirmation gate stands on. Deliberately one predicate: what the
+    invoice discounts and what the operator was made to face row by row must be the
+    same set, or the surface would be charging half for something it never asked
+    anyone to acknowledge (or worse, the reverse)."""
+    run = _require_done_run(session, case.id)
+    assurance = derive_assurance(case, session)
+    effective = _effective_choices(case, session.choices)
+    dispositions = _billing_dispositions(session, run)
+    released = exceptions = withheld = 0
+    for site in assurance.sites:
+        if dispositions.get(str(site.tooth), "release") == "withhold":
+            withheld += 1
+        elif _needs_acknowledgment(site):
+            exceptions += 1
+        else:
+            released += 1
+    payment = session.payment
+    return price_invoice(
+        case_id=case.id, run_id=run.run_id or run.job_id,
+        turnaround=effective.turnaround,
+        turnaround_source=effective.turnaround_source,
+        released=released, exceptions=exceptions, withheld=withheld,
+        paid=(InvoicePaymentView(
+            amount_cents=payment.amount_cents, currency=payment.currency,
+            rate_card_version=payment.rate_card_version,
+            turnaround=payment.turnaround, at=payment.at)
+            if payment is not None and payment.payment_authorized else None),
+    )
+
+
+@router.get("/{case_id}/invoice", response_model=InvoiceView)
+def case_invoice(case_id: str, request: Request) -> InvoiceView:
+    """What this case costs, derived. 404 without a done current run — there is
+    nothing to price before the work exists, and quoting a case the pipeline has not
+    run would be a promise about physics nobody has done."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+    return derive_invoice(case, store.load(case_id))
 
 
 @router.get("/{case_id}/runs/current/qc/{filename}")
@@ -743,6 +868,13 @@ def authorize_payment(case_id: str, body: PaymentIn,
     permanently; when a real provider lands, its adapter replaces this route's
     body, and stub-authorized history stays tellable from paid history).
 
+    IT NOW CARRIES AN AMOUNT, AND STILL ACCEPTS NONE (2026-07-31). The body is the
+    same single ``authorize`` boolean it always was; the server derives the price
+    (``derive_invoice`` — the very document the operator read at
+    ``GET /{id}/invoice``) and records what it charged. An amount on the wire would
+    be the money-shaped cousin of a claimed verdict: a client that could send one
+    could pay $0 for a released case.
+
     GATED ON THE TERMS (plan §10-A: "Payment (and therefore release) is gated on
     it") — a REAL server-side precondition, not the progression's screen order:
     payment refuses 409 unless a standing confirmation exists AND its own
@@ -767,8 +899,25 @@ def authorize_payment(case_id: str, body: PaymentIn,
                                      f"accepted the terms — confirm case "
                                      f"{case_id!r} (and accept the terms) before "
                                      f"authorizing payment")
+        # A DONE CURRENT RUN, EXPLICITLY (2026-07-31). Pricing needs one, and the
+        # act needs one for the same reason every other gate here does: a cleared
+        # run pointer means the case changed under the confirmation, which is inert
+        # without a current run anyway. Named as an ACT refusal (409, this module's
+        # own sentence) rather than letting the read helper's 404 leak out of a POST.
+        _require_done_run_for_act(session, case_id, "pay for")
+        # THE SERVER PRICES AT AUTHORIZATION TIME (2026-07-31), inside the mutation,
+        # off the FRESH document — the same derivation the operator just read. The
+        # body carries no amount and never will; what is recorded is what this
+        # server charged, with the card version and turnaround it charged under, so
+        # a later repricing (a turnaround change fires no boundary) leaves the
+        # receipt readable instead of retroactively rewritten.
+        invoice = derive_invoice(case, session)
         session.payment = PaymentRecord(payment_authorized=True, provider="stub",
-                                        at=_now())
+                                        at=_now(),
+                                        amount_cents=invoice.total_cents,
+                                        currency=invoice.currency,
+                                        rate_card_version=invoice.rate_card_version,
+                                        turnaround=invoice.turnaround)
 
     session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)

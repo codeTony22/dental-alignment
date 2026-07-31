@@ -85,6 +85,15 @@ class WorklistRow(BaseModel):
     doctor: str
     jaw: str
     suggested_model: Optional[str]
+    # THE SCAN CARD'S REMAINING FACTS (design flow.dc.html SCANS 651-676; gap
+    # ``practice-and-batch-on-a-case``, 2026-07-31). ``doctor`` was already the
+    # design's "practice" under another name, and ``suggested_model`` its "system";
+    # these two are the rest of what its card states. Both are DISCOVERY facts —
+    # the teeth the curated sites carry and the scan file's size on disk — so they
+    # sit above the error line with identity, present even on a row whose session
+    # could not be read (a corrupt session says nothing about the data tree).
+    teeth: List[int] = Field(default_factory=list)
+    scan_bytes: Optional[int] = None
     sites: Optional[SiteRollup]
     run_state: Optional[str]        # "none" | queued | running | done | refused (AM-3)
     confirmed: Optional[bool]
@@ -157,10 +166,18 @@ class ChoicesView(BaseModel):
     construction_path: Optional[str]
     jaw: Optional[str]
     gingival_offset_mm: Optional[float]
+    # the turnaround ask (design speedChips 1159-1160): raw act, None until made
+    turnaround: Optional[str]
     gingival_offset_default_mm: float
     effective_construction: EffectiveChoiceView
     effective_jaw: EffectiveChoiceView
     effective_relief: EffectiveChoiceView
+    # "chosen" | "default" — never "suggested": no case fact suggests a turnaround,
+    # and the standing default is the only fallback there is
+    effective_turnaround: EffectiveChoiceView
+    # DELIBERATELY unaffected by the turnaround (see ``CaseChoices.turnaround``):
+    # the standing default answers it, so a case is never incomplete for want of a
+    # commercial choice nobody has to make
     complete: bool
 
 
@@ -171,6 +188,9 @@ class CaseView(BaseModel):
     scan_filename: str
     suggested_model: Optional[str]
     suggested_construction: Optional[str]
+    # the scan card's discovery facts, same as the worklist row's (2026-07-31)
+    teeth: List[int] = Field(default_factory=list)
+    scan_bytes: Optional[int] = None
 
 
 class CatalogView(BaseModel):
@@ -232,10 +252,20 @@ class ConfirmationView(BaseModel):
 
 class PaymentView(BaseModel):
     """The stub's honest face: the UI labels the button AS a stub, and the provider
-    field is how a reader tells a stub authorization from a real one."""
+    field is how a reader tells a stub authorization from a real one.
+
+    THE AMOUNT IS A RECEIPT, NOT A PRICE (2026-07-31): what this authorization
+    actually charged, under which rate card and turnaround. It can legitimately
+    differ from the case's CURRENT invoice — a turnaround change after payment
+    reprices going forward and fires no boundary — so the surface shows both and
+    calls them what they are. None on records persisted before pricing existed."""
 
     provider: str
     at: str
+    amount_cents: Optional[int] = None
+    currency: Optional[str] = None
+    rate_card_version: Optional[str] = None
+    turnaround: Optional[str] = None
 
 
 class ReleaseView(BaseModel):
@@ -362,6 +392,11 @@ class ChoicesIn(BaseModel):
     construction_path: Optional[str] = None
     jaw: Optional[str] = None
     gingival_offset_mm: Optional[float] = None
+    # THE TURNAROUND ASK (design speedChips 1159-1160), admissible on this body for
+    # the same reason the fork's "skip" is: it says what the lab ASKED FOR, never
+    # what any site IS. A Literal rather than a validated str, so an unknown word is
+    # a 422 at the wire and ``bff.pricing`` never has to guess a rate for it.
+    turnaround: Optional[Literal["standard", "rush"]] = None
 
     @field_validator("jaw")
     @classmethod
@@ -480,6 +515,27 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
     return [views[t] for t in sorted(views)]
 
 
+def _curated_teeth(case: CaseRecord) -> List[int]:
+    """The teeth DISCOVERY knows about, sorted (gap ``practice-and-batch-on-a-case``,
+    2026-07-31). The case record's curated sites only — not the session's, because
+    this is the worklist's identity half: it must answer even for a row whose session
+    could not be read, and an operator-marked cap is a session fact that belongs to
+    the rollup beside it, not to the scan's own description."""
+    return sorted({int(s["tooth"]) for s in case.suggested_sites})
+
+
+def _scan_bytes(case: CaseRecord) -> Optional[int]:
+    """The scan file's size on disk — the design's "42.1 MB" on its scan card. A
+    single ``stat`` per row: discovery already walked these directories, and no mesh
+    is parsed (the 20-scan morning's worklist stays instant, cases.py's own rule).
+    None when the file has gone since discovery listed it — the row still stands, it
+    just does not claim a size it could not read."""
+    try:
+        return case.scan.stat().st_size
+    except OSError:
+        return None
+
+
 def _rollup(sites: List[SiteView]) -> SiteRollup:
     return SiteRollup(
         total=len(sites),
@@ -560,7 +616,11 @@ def _session_view(session: CaseSession) -> SessionView:
             exclude={"adjustments"}))
             if session.confirmation is not None else None),
         payment=(PaymentView(provider=session.payment.provider,
-                             at=session.payment.at)
+                             at=session.payment.at,
+                             amount_cents=session.payment.amount_cents,
+                             currency=session.payment.currency,
+                             rate_card_version=session.payment.rate_card_version,
+                             turnaround=session.payment.turnaround)
                  if session.payment is not None else None),
         release=(ReleaseView(**session.release.model_dump())
                  if session.release is not None else None),
@@ -582,6 +642,13 @@ def _effective_model(case: CaseRecord, session: CaseSession) -> Optional[str]:
 # the effective-choices derivation reads.
 STANDING_RELIEF_DEFAULT_MM = DEFAULT_GINGIVAL_OFFSET_MM
 
+# THE STANDING TURNAROUND (2026-07-31): a case nobody expedited is a standard case.
+# The default lives HERE rather than in ``bff.pricing`` because it is a flow fact —
+# what the lab is understood to have asked for — while the rate card is what that
+# ask costs; two homes for one word would let a repriced card silently redefine the
+# unmade choice.
+STANDING_TURNAROUND = "standard"
+
 
 @dataclasses.dataclass(frozen=True)
 class EffectiveChoices:
@@ -597,11 +664,19 @@ class EffectiveChoices:
     jaw_source: str
     gingival_offset_mm: Optional[float]
     gingival_offset_source: str
+    # the commercial ask, carried here so pricing reads ONE effective document —
+    # see ``values`` and ``complete`` below for why it joins neither
+    turnaround: str
+    turnaround_source: str
 
     @property
     def complete(self) -> bool:
         """Effective values all present — the completion fact worklist/flow serve
-        since the 2026-07-27 automation ask (raw acts alone no longer gate)."""
+        since the 2026-07-27 automation ask (raw acts alone no longer gate).
+
+        TURNAROUND IS NOT HERE, deliberately: the standing default always answers
+        it, so it could only ever be "present", and a field that cannot fail a
+        completeness test does not belong in one."""
         return (self.construction_path is not None and self.jaw is not None
                 and self.gingival_offset_mm is not None)
 
@@ -610,7 +685,15 @@ class EffectiveChoices:
         """The VALUE triple alone, without attribution — what the choices route's
         reset guard compares: pinning a suggestion flips source suggested→chosen
         while describing the SAME shipped part, and a source flip must never cost
-        a preview."""
+        a preview.
+
+        TURNAROUND IS NOT HERE EITHER, and this is the load-bearing half (gap
+        ``turnaround-as-a-case-choice``, 2026-07-31). These three "all describe the
+        same shipped part" — that sentence is why a change to any of them retires
+        every preview and the current run. A turnaround is a promise about WHEN,
+        touching no geometry: upgrading a case to rush must not drop the operator's
+        reviews or the run they authorized. Adding it to this tuple would fabricate
+        an invalidation, which is the same class of untruth as claiming one."""
         return (self.construction_path, self.jaw, self.gingival_offset_mm)
 
 
@@ -638,10 +721,15 @@ def _effective_choices(case: CaseRecord, choices: CaseChoices) -> EffectiveChoic
         relief = (choices.gingival_offset_mm, "chosen")
     else:
         relief = (STANDING_RELIEF_DEFAULT_MM, "default")
+    if choices.turnaround is not None:
+        turnaround = (choices.turnaround, "chosen")
+    else:
+        turnaround = (STANDING_TURNAROUND, "default")
     return EffectiveChoices(
         construction_path=construction[0], construction_source=construction[1],
         jaw=jaw[0], jaw_source=jaw[1],
         gingival_offset_mm=relief[0], gingival_offset_source=relief[1],
+        turnaround=turnaround[0], turnaround_source=turnaround[1],
     )
 
 
@@ -704,6 +792,7 @@ def _choices_view(case: CaseRecord, session: CaseSession) -> ChoicesView:
         construction_path=session.choices.construction_path,
         jaw=session.choices.jaw,
         gingival_offset_mm=session.choices.gingival_offset_mm,
+        turnaround=session.choices.turnaround,
         gingival_offset_default_mm=DEFAULT_GINGIVAL_OFFSET_MM,
         effective_construction=EffectiveChoiceView(
             value=effective.construction_path, source=effective.construction_source),
@@ -712,6 +801,8 @@ def _choices_view(case: CaseRecord, session: CaseSession) -> ChoicesView:
         effective_relief=EffectiveChoiceView(
             value=effective.gingival_offset_mm,
             source=effective.gingival_offset_source),
+        effective_turnaround=EffectiveChoiceView(
+            value=effective.turnaround, source=effective.turnaround_source),
         complete=effective.complete,
     )
 
@@ -727,6 +818,7 @@ def _detail(case: CaseRecord, session: CaseSession,
             scan_filename=case.scan.name,
             suggested_model=case.suggested_model,
             suggested_construction=case.suggested_construction,
+            teeth=_curated_teeth(case), scan_bytes=_scan_bytes(case),
         ),
         sites=sites,
         system=_system_view(case, session),
@@ -810,6 +902,7 @@ def worklist(request: Request) -> List[WorklistRow]:
             rows.append(WorklistRow(
                 id=case.id, doctor=case.doctor, jaw=case.jaw,
                 suggested_model=case.suggested_model,
+                teeth=_curated_teeth(case), scan_bytes=_scan_bytes(case),
                 sites=None, run_state=None, confirmed=None,
                 detected=None, choices_complete=None, error=str(exc),
             ))
@@ -818,6 +911,7 @@ def worklist(request: Request) -> List[WorklistRow]:
         rows.append(WorklistRow(
             id=case.id, doctor=case.doctor, jaw=case.jaw,
             suggested_model=case.suggested_model,
+            teeth=_curated_teeth(case), scan_bytes=_scan_bytes(case),
             sites=_rollup(sites),
             run_state=_run_state(session),
             confirmed=session.confirmation is not None,
@@ -909,6 +1003,13 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
     that pins exactly the values already in effect (the suggestion, the standing
     default) describes the SAME shipped part, so the previews the automation already
     computed with those values survive the pinning act.
+
+    THE TURNAROUND RIDES ALONG AND RESETS NOTHING (2026-07-31). It is persisted by
+    the same PUT because it is a case-level operator choice like the others, but the
+    reset guard compares ``EffectiveChoices.values``, which excludes it: the reset
+    rule's own justification is that construction, jaw and relief "all describe the
+    same shipped part", and a promise about WHEN touches no geometry. Upgrading a
+    case to rush therefore costs no review, no preview and no run — pinned by test.
     """
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
@@ -927,6 +1028,7 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
             construction_path=body.construction_path,
             jaw=body.jaw,
             gingival_offset_mm=body.gingival_offset_mm,
+            turnaround=body.turnaround,
         )
         effective_changed = (_effective_choices(case, replacement).values
                              != _effective_choices(case, session.choices).values)

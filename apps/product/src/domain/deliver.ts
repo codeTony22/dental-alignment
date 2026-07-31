@@ -13,9 +13,11 @@
 import type {
   ApiResult,
   ArtifactFile,
+  ArtifactsView,
   AssuranceSite,
   AssuranceView,
   ConfirmBody,
+  ConfirmationView,
   SessionView,
 } from "../api/client";
 // the rework's vocabulary lives where the rework happens; Deliver is where it is read
@@ -219,6 +221,28 @@ export interface EvidenceLine {
   readonly flagged: boolean;
   /** The facts, in the served order's own words — no verdict of ours. */
   readonly words: string;
+  /**
+   * THE ROW'S ONE SENTENCE OF WHY (design ref: assuranceRows[].note,
+   * flow.dc.html:1385-1389). The gate's FIRST action, verbatim from the run
+   * (``AssuranceGate.actions``) — never a phrase of ours, and never the design's
+   * client-side reasonFor(), which built its sentence from a tolerance comparison
+   * done in the browser. Where the run raised no action, the fallback states the
+   * gate's own word and nothing more.
+   */
+  readonly note: string;
+  /** True while ``note`` is the run's own sentence; false for the fallback. Rendered
+   * as a data attribute so the distinction survives into the markup a reviewer reads. */
+  readonly noteFromRun: boolean;
+}
+
+/** The gate's own sentence where it raised one; otherwise a statement about the
+ * gate, carrying its level and asserting nothing the run did not. */
+function evidenceNote(site: AssuranceSite): { note: string; fromRun: boolean } {
+  const stated = site.gate.actions[0];
+  if (stated !== undefined && stated.trim() !== "") {
+    return { note: stated, fromRun: true };
+  }
+  return { note: `No action was raised — this gate reads ${site.gate.level}.`, fromRun: false };
 }
 
 function mm(value: number | null): string {
@@ -233,15 +257,85 @@ function mm(value: number | null): string {
  * deviation — the three numbers a reader scans for — beside the gate's own word.
  */
 export function evidenceSummary(assurance: AssuranceView): readonly EvidenceLine[] {
-  return assurance.sites.map((site) => ({
-    tooth: site.tooth,
-    gate: site.gate.level,
-    flagged: site.status === "flagged",
-    words:
-      `${site.declared_variant ?? "no cap declared"} · ` +
-      `${site.seat_method ?? "seat not recorded"}, rim ${mm(site.rim_agreement_mm)} · ` +
-      `RMS ${mm(site.deviation_rms_mm)} / p90 ${mm(site.deviation_p90_mm)}`,
-  }));
+  return assurance.sites.map((site) => {
+    const why = evidenceNote(site);
+    return {
+      tooth: site.tooth,
+      gate: site.gate.level,
+      flagged: site.status === "flagged",
+      words:
+        `${site.declared_variant ?? "no cap declared"} · ` +
+        `${site.seat_method ?? "seat not recorded"}, rim ${mm(site.rim_agreement_mm)} · ` +
+        `RMS ${mm(site.deviation_rms_mm)} / p90 ${mm(site.deviation_p90_mm)}`,
+      note: why.note,
+      noteFromRun: why.fromRun,
+    };
+  });
+}
+
+// --- the assurance panel's own header (design assuranceNote, flow.dc.html:1376-1378) ---
+
+/** One status word and how many SERVED rows carry it. */
+export interface AssuranceCount {
+  readonly status: string;
+  readonly count: number;
+}
+
+/**
+ * THE TABLE, TALLIED. Display arithmetic over statuses the BFF derived — this counts
+ * rows, it never decides what a row is (AM-4). The order is the served order's own
+ * first-appearance order, so a worst-first table reads "1 flagged / 1 ready" rather
+ * than some alphabet of ours, and an unrecognised status word is counted BY ITS OWN
+ * NAME: this app is not entitled to bucket a server word it has no phrasing for.
+ */
+export function assuranceCounts(assurance: AssuranceView): readonly AssuranceCount[] {
+  const order: string[] = [];
+  const tally = new Map<string, number>();
+  for (const site of assurance.sites) {
+    const word = site.status ?? "unknown";
+    if (!tally.has(word)) order.push(word);
+    tally.set(word, (tally.get(word) ?? 0) + 1);
+  }
+  return order.map((status) => ({ status, count: tally.get(status) ?? 0 }));
+}
+
+/**
+ * The counts line the panel header carries. The phrasing is the WORKLIST'S
+ * (worklist.rollupLabel: count, word, " / ") rather than a third vocabulary for the
+ * same idea — an operator crossing from the worklist to Deliver reads one language.
+ *
+ * THE DESIGN'S TOLERANCE CLAUSE IS DELIBERATELY ABSENT (design 1376-1378 ends
+ * "· tolerance 0.40 mm"). There is no single case tolerance in this product: every
+ * band comparison belongs to the acceptance catalog and is made server-side, per
+ * metric. Printing one number here would invent a case-wide threshold that nothing
+ * in the pipeline actually applies.
+ */
+export function assuranceCountsWords(assurance: AssuranceView): string {
+  const total = assurance.sites.length;
+  const head = `${total} site${total === 1 ? "" : "s"}`;
+  const counts = assuranceCounts(assurance);
+  if (counts.length === 0) return head;
+  return `${head} · ${counts.map((c) => `${c.count} ${c.status}`).join(" / ")}`;
+}
+
+/**
+ * THE "EXCEPTIONS" LINE, AS THE PRODUCT'S OWN ACT. The design counts sites
+ * "accepted as exceptions" as though acceptance were a status; here it is not — it is
+ * the operator's per-row acknowledgment (AM-12), and the rows that need one are
+ * ``needsAcknowledgment``'s, flagged or production-noted alike (plan §10-E). So the
+ * header names the OBLIGATION rather than minting a fourth status word.
+ */
+export function acknowledgmentPolicyWords(assurance: AssuranceView): string {
+  const owed = assurance.sites.filter(needsAcknowledgment).length;
+  if (owed === 0) {
+    return "No site needs an acknowledgment — every row here releases as it stands.";
+  }
+  const one = owed === 1;
+  return (
+    `${owed} site${one ? "" : "s"} release${one ? "s" : ""} only as ` +
+    `${one ? "an acknowledged exception" : "acknowledged exceptions"} — the tick sits ` +
+    `on the row in the report, and the acknowledgment rides in the confirmation.`
+  );
 }
 
 // --- what a reworked row's numbers still describe (review 2026-07-28, finding E) -------
@@ -388,6 +482,77 @@ export function releaseDisclosureWords(
     );
   }
   return words;
+}
+
+// --- the closing statement, after the release (design releasedNote, :1510-1511) -------
+
+/**
+ * WHAT ACTUALLY SHIPPED, once it has. The progression's Released step states the
+ * TIME; nothing on the surface stated the AMOUNT, so a case that finished never said
+ * it had.
+ *
+ * Every number is counted off the ARTIFACTS RESPONSE — the gated list the release
+ * actually served — and never off ``release_preview`` or any client-side expectation
+ * of what should have shipped. Those two can legitimately differ: a withheld site's
+ * files stay back, and the sentence has to describe the disclosure that happened.
+ * Which is also why a withheld case is never called closed: it says which sites stay
+ * open, because withholding is a site left unfinished on purpose, not a deferral.
+ */
+export function releasedClosingWords(artifacts: ArtifactsView): string {
+  const withheld = artifacts.withheld_teeth;
+  const closing =
+    withheld.length > 0
+      ? `${withheld.length === 1 ? "Tooth" : "Teeth"} ${withheld.join(", ")} ` +
+        `${withheld.length === 1 ? "stays" : "stay"} open and ` +
+        `${withheld.length === 1 ? "its" : "their"} files stayed back — this run is ` +
+        `closed for the sites that shipped.`
+      : "Nothing was withheld — this run is closed.";
+  const files = artifacts.files.length;
+  if (files === 0) return `No files were disclosed. ${closing}`;
+  const teeth = new Set(
+    artifacts.files.filter((f) => f.tooth !== null).map((f) => f.tooth),
+  ).size;
+  const caseWide = artifacts.files.filter((f) => f.tooth === null).length;
+  const aggregate =
+    caseWide > 0
+      ? `, including ${caseWide} case-wide file${caseWide === 1 ? "" : "s"}`
+      : "";
+  return (
+    `Released ${files} file${files === 1 ? "" : "s"} for ${teeth} ` +
+    `site${teeth === 1 ? "" : "s"}${aggregate}. ${closing}`
+  );
+}
+
+// --- what paying is, said where paying starts (design payment modal; plan §10-A) ------
+
+/**
+ * THE FOOTNOTE UNDER THE CHECKOUT. A payment surface that names no agreement leaves
+ * the operator to infer what the money does; this states the two facts that are
+ * easiest to get wrong — the authorization is bound to THIS run, and it discloses
+ * nothing by itself.
+ *
+ * It claims no NEW acceptance: the terms were accepted at the confirmation and are
+ * sealed there with their version. Paying does not re-accept them, and this sentence
+ * must never be read as a second signature.
+ */
+export const CHECKOUT_SEAL_WORDS =
+  "Paying authorizes the (stub) payment for this run, under the terms already " +
+  "accepted and sealed in this case's confirmation. It discloses nothing on its " +
+  "own: releasing the artifacts is a separate act, back on this page.";
+
+/**
+ * WHERE THAT FOOTNOTE'S LINK POINTS: the version the standing confirmation SEALED,
+ * so the document read beside the payment is the one this case is actually bound by
+ * — not whatever /terms happens to serve after newer terms land. With nothing sealed
+ * yet the current document is the only honest answer.
+ */
+export function sealedTermsHref(
+  confirmation: Pick<ConfirmationView, "terms_version"> | null,
+): string {
+  const version = confirmation?.terms_version;
+  return version != null && version !== ""
+    ? `/terms/${encodeURIComponent(version)}`
+    : "/terms";
 }
 
 // --- the artifacts, grouped by site (client 2026-07-27 #6) ----------------------------

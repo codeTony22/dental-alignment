@@ -14,6 +14,7 @@ import {
   STAGE_INFO,
   STAGE_ORDER,
   stageStates,
+  stageSubLine,
   type FlowFacts,
 } from "./flow";
 
@@ -142,6 +143,106 @@ describe("blocked stages explain WHY in one sentence", () => {
       facts({ siteTotal: 2, siteReady: 2 }),
     ).find((s) => s.id === "deliver");
     expect(noRun?.blockedReason).toContain("no run exists yet");
+  });
+
+  it("names the SHORTFALL, not just the rule — how many sites are still owed", () => {
+    // The design's gate voice ("mark 2 more caps first"): a blocked control that says
+    // only the rule leaves the operator counting rows by hand. The count is arithmetic
+    // over facts already in hand — total minus the two verdicts — never a new status.
+    const underReview = stageStates(
+      facts({ siteTotal: 5, siteReady: 2, siteFlagged: 1, runState: "done" }),
+    ).find((s) => s.id === "deliver");
+    expect(underReview?.blockedReason).toContain("2 of 5");
+    // and the rule itself survives the addition — the sentence still says WHY
+    expect(underReview?.blockedReason).toContain("ready, or flagged");
+
+    const one = stageStates(
+      facts({ siteTotal: 3, siteReady: 2, runState: "done" }),
+    ).find((s) => s.id === "deliver");
+    expect(one?.blockedReason).toContain("1 of 3");
+  });
+});
+
+describe("the rail's sub-line speaks the LIVE counts", () => {
+  it("adjust names how many sites are flagged, in the design's own words", () => {
+    expect(stageSubLine("adjust", facts({ siteTotal: 4, siteFlagged: 2, runState: "done" })))
+      .toBe("2 flagged to rework.");
+    // one flag is still a flag — the count is the point, not the plural
+    expect(stageSubLine("adjust", facts({ siteTotal: 4, siteFlagged: 1, runState: "done" })))
+      .toBe("1 flagged to rework.");
+  });
+
+  it("adjust says 'nothing to rework' once a run exists and no flags remain", () => {
+    expect(stageSubLine("adjust", facts({ siteTotal: 2, siteReady: 2, runState: "done" })))
+      .toContain("Nothing flagged");
+    // before any run there is no count to speak — the static one-liner is the truth
+    expect(stageSubLine("adjust", facts({ siteTotal: 2 }))).toBe(STAGE_INFO.adjust.oneLiner);
+  });
+
+  it("declare counts reviewed sites out of the total", () => {
+    expect(stageSubLine("declare", facts({ siteTotal: 5, siteReady: 2 })))
+      .toBe("2 of 5 sites reviewed.");
+    expect(stageSubLine("declare", facts({ siteTotal: 5, siteReady: 5 })))
+      .toBe("All 5 sites reviewed.");
+    expect(stageSubLine("declare", facts())).toBe(STAGE_INFO.declare.oneLiner);
+  });
+
+  it("intake counts sites and names the centre shortfall (the declare gate's predicate)", () => {
+    // Detection has not run: the sites in hand are the case's curated suggestions.
+    expect(stageSubLine("intake", facts({ siteTotal: 3 })))
+      .toBe("3 sites suggested — detection has not run yet.");
+    // A site with no usable centre cannot be aligned; the honest predicate behind
+    // "Continue to Declare" is every site having one, so the shortfall is spoken.
+    expect(
+      stageSubLine(
+        "intake",
+        facts({ siteTotal: 5, siteCentred: 3, detectionDone: true, choicesComplete: true }),
+      ),
+    ).toBe("2 of 5 sites still without a centre.");
+    expect(
+      stageSubLine(
+        "intake",
+        facts({ siteTotal: 5, siteCentred: 5, detectionDone: true, choicesComplete: false }),
+      ),
+    ).toBe("5 sites detected — case-level choices still open.");
+    expect(
+      stageSubLine(
+        "intake",
+        facts({ siteTotal: 5, siteCentred: 5, detectionDone: true, choicesComplete: true }),
+      ),
+    ).toBe("5 sites detected — case-level choices made.");
+  });
+
+  it("a payload that does not carry the centre count never invents a shortfall", () => {
+    // The worklist's SiteRollup has no centred column, so `siteCentred` is absent
+    // there — silence, not zero. Claiming "5 of 5 without a centre" off a fact the
+    // payload never carried would be the client inventing a status.
+    expect(
+      stageSubLine("intake", facts({ siteTotal: 5, detectionDone: true, choicesComplete: true })),
+    ).toBe("5 sites detected — case-level choices made.");
+  });
+
+  it("deliver's sub-line reports the verdicts, then the release", () => {
+    const resolved = facts({ siteTotal: 3, siteReady: 2, siteFlagged: 1, runState: "done" });
+    expect(stageSubLine("deliver", resolved)).toBe(
+      "2 ready, 1 flagged — assurance ready to review.",
+    );
+    expect(stageSubLine("deliver", { ...resolved, confirmed: true })).toContain("Confirmed");
+    expect(stageSubLine("deliver", { ...resolved, confirmed: true, released: true })).toContain(
+      "released",
+    );
+    // unreachable: there are no verdicts to report yet, so the one-liner stands
+    expect(stageSubLine("deliver", facts({ siteTotal: 3 }))).toBe(STAGE_INFO.deliver.oneLiner);
+  });
+
+  it("stageStates carries the sub-line for every stage", () => {
+    const states = stageStates(
+      facts({ siteTotal: 4, siteReady: 3, siteFlagged: 1, runState: "done" }),
+    );
+    for (const state of states) {
+      expect(state.subLine).toMatch(/\S/);
+    }
+    expect(states.find((s) => s.id === "adjust")?.subLine).toBe("1 flagged to rework.");
   });
 });
 
@@ -280,17 +381,49 @@ describe("the two payload projections agree", () => {
       choices_complete: true,
     });
     const fromDetail = factsFromCaseSession({
-      sites: [{ status: "ready" }, { status: "ready" }, { status: "flagged" }],
+      sites: [
+        { status: "ready", center: [0, 0, 0] },
+        { status: "ready", center: [1, 0, 0] },
+        { status: "flagged", center: [2, 0, 0] },
+      ],
       detection: { proposals: [] },
       choices: { complete: true },
       session: { run_state: "done", confirmed: false, released: false },
     });
-    expect(fromRow).toEqual(fromDetail);
+    // The centre count is the ONE fact only the DETAIL carries: the worklist's
+    // SiteRollup has no centred column (bff/resources/case_sessions.py:69-73) and the
+    // worklist renders no rail, so the row leaves it ABSENT rather than guessing a
+    // zero. On every fact the rules share, the two projections still agree exactly.
+    const { siteCentred, ...sharedFromDetail } = fromDetail;
+    expect(fromRow).toEqual(sharedFromDetail);
+    expect(siteCentred).toBe(3);
+    expect(fromRow.siteCentred).toBeUndefined();
+  });
+
+  it("counts only sites with a usable centre — a null centre is not one", () => {
+    // A curated site can reach the surface with no centre at all
+    // (bff/resources/case_sessions.py:459-461), and a session-only site has none
+    // until a human marks it. Neither can be aligned, so neither counts.
+    const projected = factsFromCaseSession({
+      sites: [
+        { status: "detected", center: [0, 0, 0] },
+        { status: "detected", center: null },
+        { status: "declared", center: [2, 0, 0] },
+      ],
+      detection: { proposals: [] },
+      choices: { complete: false },
+      session: { run_state: "none", confirmed: false, released: false },
+    });
+    expect(projected.siteTotal).toBe(3);
+    expect(projected.siteCentred).toBe(2);
+    // and the gate itself is UNCHANGED — a centreless site does not close Declare off
+    // (no client word to tighten it; doing so would newly block cases that work today)
+    expect(isReachable("declare", projected)).toBe(true);
   });
 
   it("detection facts project from the payload, not from sites existing", () => {
     const undetected = factsFromCaseSession({
-      sites: [{ status: "detected" }],
+      sites: [{ status: "detected", center: [0, 0, 0] }],
       detection: null,
       choices: { complete: false },
       session: { run_state: "none", confirmed: false, released: false },
@@ -303,11 +436,11 @@ describe("the two payload projections agree", () => {
   it("in-flight statuses (declared/previewed/adjusted) count as neither ready nor flagged", () => {
     const projected = factsFromCaseSession({
       sites: [
-        { status: "detected" },
-        { status: "declared" },
-        { status: "previewed" },
-        { status: "adjusted" },
-        { status: "ready" },
+        { status: "detected", center: [0, 0, 0] },
+        { status: "declared", center: [1, 0, 0] },
+        { status: "previewed", center: [2, 0, 0] },
+        { status: "adjusted", center: [3, 0, 0] },
+        { status: "ready", center: [4, 0, 0] },
       ],
       detection: null,
       choices: { complete: false },

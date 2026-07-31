@@ -74,6 +74,22 @@ export interface FlowFacts {
    * suggestion, or the standing relief default each count (client 2026-07-27) —
    * the BFF's derivation, verbatim. */
   readonly choicesComplete: boolean;
+  /**
+   * Sites carrying a usable centre — the honest predicate behind "Continue to
+   * Declare", since a site with no centre has nothing for the run to align to
+   * (`SiteView.center` is nullable, and a curated site can reach the surface without
+   * one — bff/resources/case_sessions.py:459-461).
+   *
+   * ABSENT, not zero, when the payload in hand does not carry the fact: the
+   * worklist's `SiteRollup` has no centred column (bff/resources/case_sessions.py:
+   * 69-73). Silence is the honest projection there — a zero would have this module
+   * invent a shortfall the server never reported.
+   *
+   * It is spoken, never enforced: nothing in `isReachable` reads it, because
+   * tightening the Declare gate on it would newly block cases that ship today and
+   * that is a client decision, not a display one.
+   */
+  readonly siteCentred?: number;
 }
 
 /** Structural mirror of a `WorklistRow` (GET /api/case-sessions). */
@@ -107,7 +123,13 @@ export function factsFromWorklistRow(row: WorklistRowLike): FlowFacts {
 
 /** Structural mirror of a `CaseSessionDetail` (GET /api/case-sessions/{id}). */
 export interface CaseSessionLike {
-  readonly sites: ReadonlyArray<{ readonly status: string }>;
+  /** `center` is REQUIRED here though it is nullable: `SiteView.center` always
+   * rides the wire (api/client.ts), and letting a caller omit it would make an
+   * unmarked site and an unreported one look identical to the shortfall count. */
+  readonly sites: ReadonlyArray<{
+    readonly status: string;
+    readonly center: ReadonlyArray<number> | null;
+  }>;
   readonly detection: object | null;
   readonly choices: { readonly complete: boolean };
   readonly session: {
@@ -128,6 +150,7 @@ export function factsFromCaseSession(payload: CaseSessionLike): FlowFacts {
     released: payload.session.released,
     detectionDone: payload.detection !== null,
     choicesComplete: payload.choices.complete,
+    siteCentred: payload.sites.filter((s) => s.center !== null).length,
   };
 }
 
@@ -182,7 +205,12 @@ export function blockedReason(stage: StageId, facts: FlowFacts): string | null {
         return "Nothing to deliver — this case has no implant sites yet.";
       }
       if (!allSitesResolved(facts)) {
-        return "Sites are still awaiting review — every site must be ready, or flagged, before Deliver.";
+        // NAME THE SHORTFALL, not just the rule (design's gate voice, "mark 2 more
+        // caps first"): a blocked control that recites the rule leaves the operator
+        // counting rows by hand to find out how far off they are. The number is
+        // arithmetic over facts the BFF already derived — never a client verdict.
+        const pending = facts.siteTotal - facts.siteReady - facts.siteFlagged;
+        return `Sites are still awaiting review — ${pending} of ${facts.siteTotal} still have no verdict; every site must be ready, or flagged, before Deliver.`;
       }
       if (facts.runState === "none") {
         return "Deliver reads the run's evidence — no run exists yet; it fires when Declare completes.";
@@ -221,11 +249,79 @@ export function isComplete(stage: StageId, facts: FlowFacts): boolean {
   }
 }
 
+/** "3 sites" / "1 site" — the count leads, because the count is the news. */
+function nSites(n: number): string {
+  return `${n} ${n === 1 ? "site" : "sites"}`;
+}
+
+/**
+ * THE SUB-LINE UNDER A STAGE'S TITLE — the same slot the static one-liner filled,
+ * now speaking the case's LIVE counts (design rail, `sub` at flow.dc.html:865).
+ *
+ * Why this exists: a reachable Adjust read "Optional — refit flagged sites; skipping
+ * never blocks delivery" whether nothing or nine sites were flagged, so the rail's
+ * one line of prose per stage was the only part of the shell that never moved. The
+ * counts were already in `FlowFacts` — this only says them out loud.
+ *
+ * Every branch is arithmetic over BFF-derived facts. Nothing here compares a
+ * tolerance, decides a verdict, or invents a status; where the facts hold no count
+ * worth speaking (an empty case, a stage whose evidence has not arrived) the
+ * standing one-liner is still the truth and stands.
+ */
+export function stageSubLine(stage: StageId, facts: FlowFacts): string {
+  const standing = STAGE_INFO[stage].oneLiner;
+  const total = facts.siteTotal;
+  switch (stage) {
+    case "intake": {
+      if (total === 0) return standing;
+      if (!facts.detectionDone) {
+        // Sites before detection are the case's CURATED suggestions — calling them
+        // "detected" here would claim a run that has not happened.
+        return `${nSites(total)} suggested — detection has not run yet.`;
+      }
+      // The shortfall behind the Declare gate, spoken but not enforced. `undefined`
+      // means the payload never carried the fact, which is not the same as zero.
+      const centred = facts.siteCentred;
+      if (centred !== undefined && centred < total) {
+        return `${total - centred} of ${nSites(total)} still without a centre.`;
+      }
+      return facts.choicesComplete
+        ? `${nSites(total)} detected — case-level choices made.`
+        : `${nSites(total)} detected — case-level choices still open.`;
+    }
+    case "declare": {
+      if (total === 0) return standing;
+      // Ready ONLY, matching isComplete("declare"): the review tick is the act
+      // being counted, and a flag is the run's evidence rather than a review.
+      return facts.siteReady === total
+        ? `All ${nSites(total)} reviewed.`
+        : `${facts.siteReady} of ${nSites(total)} reviewed.`;
+    }
+    case "adjust": {
+      // The design's own words (flow.dc.html:865) — the work waiting, in one count.
+      if (facts.siteFlagged > 0) return `${facts.siteFlagged} flagged to rework.`;
+      if (!runExists(facts)) return standing;
+      return "Nothing flagged — no rework owed.";
+    }
+    case "deliver": {
+      if (facts.released) return "Artifacts released for the current run.";
+      if (facts.confirmed) return "Confirmed — artifacts not released yet.";
+      if (!isReachable("deliver", facts)) return standing;
+      return facts.siteFlagged > 0
+        ? `${facts.siteReady} ready, ${facts.siteFlagged} flagged — assurance ready to review.`
+        : `All ${nSites(total)} ready — assurance ready to review.`;
+    }
+  }
+}
+
 export interface StageState {
   readonly id: StageId;
   readonly number: number;
   readonly title: string;
   readonly oneLiner: string;
+  /** The live-count sentence the rail shows — falls back to `oneLiner` where the
+   * facts hold no count worth speaking. */
+  readonly subLine: string;
   readonly reachable: boolean;
   readonly complete: boolean;
   /** Present exactly when the stage is not reachable. */
@@ -239,6 +335,7 @@ export function stageStates(facts: FlowFacts): readonly StageState[] {
     number: index + 1,
     title: STAGE_INFO[id].title,
     oneLiner: STAGE_INFO[id].oneLiner,
+    subLine: stageSubLine(id, facts),
     reachable: isReachable(id, facts),
     complete: isComplete(id, facts),
     blockedReason: blockedReason(id, facts),

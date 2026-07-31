@@ -40,11 +40,26 @@ export interface SiteRollup {
  * null when a case's session could not be read, so one corrupt file never takes the
  * whole list down. domain/worklist.ts's guard tells the two shapes apart.
  */
+/**
+ * NEW WIRE FIELDS ARE DECLARED OPTIONAL HERE, and the reason is worth stating once:
+ * these types are ADDITIVE mirrors that many fixtures and tests construct as object
+ * literals. The BFF always sends them; declaring them `?:` keeps a literal built
+ * before the field existed legal, and a consumer that must have one narrows it at the
+ * point of use. A field the BFF may genuinely omit is `| null`, never `?:` — the two
+ * are deliberately different statements.
+ */
+
 export interface WorklistRow {
   id: string;
   doctor: string;
   jaw: string;
   suggested_model: string | null;
+  /** The scan card's DISCOVERY facts (2026-07-31): the curated teeth and the scan
+   * file's size on disk. Identity-class, so they stand even on an error row —
+   * a corrupt session says nothing about the data tree. `scan_bytes` is null when
+   * the file has gone since discovery listed it. */
+  teeth?: number[];
+  scan_bytes?: number | null;
   sites: SiteRollup;
   run_state: RunState;
   confirmed: boolean;
@@ -62,6 +77,8 @@ export interface WorklistRowError {
   doctor: string;
   jaw: string;
   suggested_model: string | null;
+  teeth?: number[];
+  scan_bytes?: number | null;
   sites: null;
   run_state: null;
   confirmed: null;
@@ -126,6 +143,12 @@ export interface EffectiveChoiceView<T> {
   source: "chosen" | "suggested" | "default" | "none";
 }
 
+/** The turnaround ask (design speedChips 1159-1160): what the lab ASKED FOR, never
+ * what any site IS — which is why it is admissible as an operator choice at all.
+ * It fires NO reset boundary: a promise about WHEN touches no geometry, so
+ * upgrading a case to rush costs no review, no preview and no run. */
+export type Turnaround = "standard" | "rush";
+
 /** The operator's case-level choices as persisted (raw acts, None until made),
  * beside the EFFECTIVE values preview/run actually consume; `complete` is the
  * BFF's derivation over the EFFECTIVE values (this app never computes completion
@@ -135,9 +158,16 @@ export interface ChoicesView {
   jaw: string | null;
   gingival_offset_mm: number | null;
   gingival_offset_default_mm: number;
+  /** The turnaround ask (design speedChips): the raw act, null until made. */
+  turnaround?: Turnaround | null;
   effective_construction: EffectiveChoiceView<string>;
   effective_jaw: EffectiveChoiceView<string>;
   effective_relief: EffectiveChoiceView<number>;
+  /** "chosen" | "default" — never "suggested": no case fact suggests a turnaround,
+   * and the standing default is the only fallback there is. */
+  effective_turnaround?: EffectiveChoiceView<Turnaround>;
+  /** DELIBERATELY unaffected by the turnaround: the standing default always answers
+   * it, so a case is never incomplete for want of a commercial choice. */
   complete: boolean;
 }
 
@@ -148,6 +178,9 @@ export interface CaseView {
   scan_filename: string;
   suggested_model: string | null;
   suggested_construction: string | null;
+  /** The scan card's discovery facts, same as the worklist row's. */
+  teeth?: number[];
+  scan_bytes?: number | null;
 }
 
 /** Worker-shaped catalog rows stay untyped on the wire; domain/declare.ts extracts
@@ -200,10 +233,20 @@ export interface ConfirmationView {
   terms_version: string | null;
 }
 
-/** The payment stub's record: provider "stub" keeps it honest forever. */
+/** The payment stub's record: provider "stub" keeps it honest forever.
+ *
+ * The amount is a RECEIPT, not a price: what this authorization actually charged,
+ * under which rate card and turnaround. It can legitimately differ from the case's
+ * CURRENT invoice — a turnaround change after payment reprices going forward and
+ * fires no boundary — so a surface showing both must say which is which. Null on a
+ * record persisted before pricing existed; never read as zero. */
 export interface PaymentView {
   provider: string;
   at: string;
+  amount_cents?: number | null;
+  currency?: string | null;
+  rate_card_version?: string | null;
+  turnaround?: string | null;
 }
 
 export interface ReleaseView {
@@ -475,6 +518,11 @@ export interface ChoicesUpdate {
   construction_path: string | null;
   jaw: string | null;
   gingival_offset_mm: number | null;
+  /** PUT semantics apply here too: a panel that renders the turnaround chips must
+   * submit the field on EVERY choices write, or the next write un-chooses it back
+   * to the standing default. Optional only so a panel that does not yet render it
+   * keeps compiling. */
+  turnaround?: Turnaround | null;
 }
 
 export async function putChoices(
@@ -652,6 +700,27 @@ export interface AssuranceRotation {
   deg: number | null;
   evidence: string | null;
   unverified: boolean;
+  /** TWO ROTATIONS, NOT ONE (2026-07-31): `deg` is the MEASURED notch shift at the
+   * shipped pose; this is how far a HUMAN turned the cap off the pipeline's
+   * certified one, folded onto the row by the adjust tools. They answer different
+   * questions — "is it clocked right?" and "how much of that did we do by hand?" —
+   * and null here means nobody rotated this site. */
+  operator_cumulative_deg?: number | null;
+}
+
+/** THE PAIRS a fit-by-points stood on (the design's PAIRS metric). `pairs` is what
+ * the operator NAMED; `observations` is what those pairs produced (a two-point span
+ * contributes two), so the two differ exactly when spans were used. `max_pairs` is
+ * the server's own cap, carried so a chip reads "3/8" from a server fact.
+ *
+ * It describes the LAST APPLIED correspondence, not a running per-site tally: each
+ * fit-by-points call replaces the pose outright, so a monotonic count would claim a
+ * history the record does not carry. */
+export interface AssuranceCorrespondence {
+  pairs: number | null;
+  observations: number | null;
+  max_pairs: number | null;
+  residual_rms_mm: number | null;
 }
 
 export interface AssuranceClamp {
@@ -710,6 +779,11 @@ export interface AssuranceSite {
    * they are named here rather than left to look current. Empty on every row the run
    * itself produced. */
   stale_metrics: string[];
+  /** The matching diameter a best-fit was run at — the one number that explains why
+   * a refinement moved what it moved. Null means this site ships the pipeline's own
+   * refinement, never "we forgot". */
+  matching_diameter_mm?: number | null;
+  correspondence?: AssuranceCorrespondence | null;
   qc_images: string[];
   references: Record<string, AssuranceReference>;
 }
@@ -736,6 +810,64 @@ export async function fetchAssurance(
 ): Promise<ApiResult<AssuranceView>> {
   return fetchJson<AssuranceView>(
     `/api/case-sessions/${encodeURIComponent(caseId)}/assurance`,
+  );
+}
+
+// --- the invoice (design payLines/payTotal 1475-1480) ---------------------------------
+//
+// THE AMOUNT IS NEVER COMPUTED HERE. A price is the money-shaped cousin of a verdict:
+// this app renders `total_cents` and the lines the BFF derived, and no request body it
+// can send carries an amount at all — `postPayment` is still `{authorize: true}`.
+
+/** One invoice line. `label` is a noun phrase with NO money in it — formatting is
+ * presentation, so amounts arrive as integer cents and the UI formats them.
+ *
+ * `billed` is not `amount_cents === 0`: a rush turnaround is included at zero and IS
+ * billed (it repriced every site above), while a withheld site is not billed at all. */
+export interface InvoiceLine {
+  key: "released_sites" | "exception_sites" | "turnaround" | "withheld_sites" | string;
+  label: string;
+  quantity: number;
+  unit_amount_cents: number | null;
+  amount_cents: number;
+  billed: boolean;
+}
+
+/** What was ACTUALLY charged, off the payment record — beside, never instead of, the
+ * current price. The two can legitimately differ after a turnaround change. */
+export interface InvoicePaymentView {
+  amount_cents: number | null;
+  currency: string | null;
+  rate_card_version: string | null;
+  turnaround: string | null;
+  at: string;
+}
+
+/** The priced case. `status` is "placeholder" until the client supplies a real price
+ * list — the same word (and the same honesty) TERMS_TEXT_PLACEHOLDER carries, so a
+ * surface can badge both from a server fact rather than deciding for itself. */
+export interface InvoiceView {
+  case_id: string;
+  run_id: string;
+  currency: string;
+  rate_card_version: string;
+  status: string;
+  note: string;
+  turnaround: string;
+  turnaround_source: "chosen" | "default" | string;
+  lines: InvoiceLine[];
+  total_cents: number;
+  paid: InvoicePaymentView | null;
+}
+
+/** EVIDENCE class like the assurance: ungated, because an operator must be able to
+ * read what a case costs BEFORE authorizing anything. 404 until a done current run
+ * exists — there is nothing to price before the work exists. */
+export async function fetchInvoice(
+  caseId: string,
+): Promise<ApiResult<InvoiceView>> {
+  return fetchJson<InvoiceView>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/invoice`,
   );
 }
 

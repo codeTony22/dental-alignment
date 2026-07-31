@@ -10,8 +10,12 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  CHECKOUT_SEAL_WORDS,
   ackRequired,
+  acknowledgmentPolicyWords,
   adjustmentsWords,
+  assuranceCounts,
+  assuranceCountsWords,
   confirmBlockers,
   confirmWireBody,
   effectiveDisposition,
@@ -23,6 +27,8 @@ import {
   releaseBlockers,
   releaseDisclosureWords,
   releaseSteps,
+  releasedClosingWords,
+  sealedTermsHref,
   staleMetricsWords,
   termsText,
   withholdOffered,
@@ -33,6 +39,7 @@ import {
   caseSessionDetail,
   flaggedAssuranceSite,
 } from "../testing/fixtures";
+import type { ArtifactsView } from "../api/client";
 
 const TWO_SITES = assuranceView(); // flagged tooth 30 pinned first, ready tooth 19
 
@@ -269,6 +276,95 @@ describe("evidenceSummary — the stage's compact read (client #5)", () => {
     expect(evidenceSummary(view)[0]!.words).toContain("seat not recorded");
     expect(evidenceSummary(view)[0]!.words).toContain("rim —");
   });
+
+  it("carries the gate's FIRST action sentence verbatim — the run's words, never ours", () => {
+    // the reason a row is flagged used to be two clicks away (the report modal, then
+    // the row expand) on the very surface the confirmation seals
+    const line = evidenceSummary(TWO_SITES)[0]!;
+    expect(line.note).toBe(
+      "The cap's ROTATION could not be verified — visually check the coded features.",
+    );
+    expect(line.noteFromRun).toBe(true);
+  });
+
+  it("a gate that raised no action says exactly that, in the gate's own word", () => {
+    const line = evidenceSummary(TWO_SITES)[1]!;
+    expect(line.note).toBe("No action was raised — this gate reads ready.");
+    expect(line.noteFromRun).toBe(false);
+  });
+
+  it("an empty action string is not a sentence — the clean-row wording stands in", () => {
+    const view = assuranceView({
+      sites: [assuranceSite({ gate: { level: "ready", actions: ["  "] } })],
+    });
+    expect(evidenceSummary(view)[0]!.noteFromRun).toBe(false);
+  });
+});
+
+describe("the assurance panel's own counts (design assuranceNote, flow.dc.html:1376)", () => {
+  it("tallies the SERVED status words, in the order they were served", () => {
+    // worst-first is the BFF's order and this app never re-sorts evidence — the
+    // tally reads down the table the operator is looking at
+    expect(assuranceCounts(TWO_SITES)).toEqual([
+      { status: "flagged", count: 1 },
+      { status: "ready", count: 1 },
+    ]);
+  });
+
+  it("invents no vocabulary: a status this app has never heard of is counted by its own name", () => {
+    const view = assuranceView({
+      sites: [assuranceSite({ tooth: 19, status: "adjusted" })],
+    });
+    expect(assuranceCounts(view)).toEqual([{ status: "adjusted", count: 1 }]);
+  });
+
+  it("a row with no status is counted as unknown, never dropped from the total", () => {
+    const view = assuranceView({ sites: [assuranceSite({ status: null })] });
+    expect(assuranceCounts(view)).toEqual([{ status: "unknown", count: 1 }]);
+  });
+
+  it("reads in the worklist's own phrasing — count, word, slash", () => {
+    expect(assuranceCountsWords(TWO_SITES)).toBe("2 sites · 1 flagged / 1 ready");
+  });
+
+  it("one site is one site — and an empty table claims no breakdown", () => {
+    expect(
+      assuranceCountsWords(assuranceView({ sites: [assuranceSite()] })),
+    ).toBe("1 site · 1 ready");
+    expect(assuranceCountsWords(assuranceView({ sites: [] }))).toBe("0 sites");
+  });
+
+  it("states no tolerance — this product has no single case tolerance number", () => {
+    // the design's header ends "· tolerance 0.40 mm"; there is no such number here,
+    // and every band comparison is the BFF's (AM-4). Pinned so nobody adds one.
+    expect(assuranceCountsWords(TWO_SITES)).not.toContain("tolerance");
+  });
+});
+
+describe("the exceptions policy, in the product's own act (not a status word)", () => {
+  it("counts the rows that release only under an acknowledgment", () => {
+    const words = acknowledgmentPolicyWords(TWO_SITES);
+    expect(words).toContain("1 site releases only as an acknowledged exception");
+    expect(words).toContain("acknowledgment rides in the confirmation");
+  });
+
+  it("plurals honestly, and counts a production-noted READY row too", () => {
+    // the AM-12 rule is needsAcknowledgment, not status === flagged (plan §10-E)
+    const view = assuranceView({
+      sites: [
+        flaggedAssuranceSite({ tooth: 30 }),
+        assuranceSite({ tooth: 19, production_note: "shared construction part" }),
+      ],
+    });
+    expect(acknowledgmentPolicyWords(view)).toContain(
+      "2 sites release only as acknowledged exceptions",
+    );
+  });
+
+  it("a clean table says so rather than staying silent", () => {
+    const view = assuranceView({ sites: [assuranceSite()] });
+    expect(acknowledgmentPolicyWords(view)).toContain("No site needs an acknowledgment");
+  });
 });
 
 describe("staleMetricsWords — what a reworked row's numbers still describe", () => {
@@ -429,5 +525,79 @@ describe("the artifacts, grouped and sized (client #6)", () => {
     expect(formatBytes(2048)).toBe("2.0 KB");
     expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
     expect(formatBytes(null)).toContain("size unknown");
+  });
+});
+
+describe("the closing note — what actually shipped, counted from the served list", () => {
+  const artifacts = (over: Partial<ArtifactsView> = {}): ArtifactsView => ({
+    run_id: "20260727-120000-abc123",
+    files: [],
+    withheld_teeth: [],
+    withheld_case_files: [],
+    ...over,
+  });
+
+  it("counts the files and the sites the RELEASE actually served", () => {
+    // never a client-side expectation of what should have shipped: the withheld path
+    // means the two can legitimately differ, and this sentence must track the disclosure
+    const words = releasedClosingWords(
+      artifacts({
+        files: [
+          { name: "a-19-cap.stl", size_bytes: 1, tooth: 19 },
+          { name: "a-19-sb.stl", size_bytes: 1, tooth: 19 },
+          { name: "a-30-cap.stl", size_bytes: 1, tooth: 30 },
+          { name: "a-manifest.json", size_bytes: 1, tooth: null },
+        ],
+      }),
+    );
+    expect(words).toBe(
+      "Released 4 files for 2 sites, including 1 case-wide file. " +
+        "Nothing was withheld — this run is closed.",
+    );
+  });
+
+  it("a withheld site keeps the case OPEN and the sentence says so", () => {
+    const words = releasedClosingWords(
+      artifacts({
+        files: [{ name: "a-19-cap.stl", size_bytes: 1, tooth: 19 }],
+        withheld_teeth: [30],
+      }),
+    );
+    expect(words).toContain("Released 1 file for 1 site.");
+    expect(words).toContain("Tooth 30 stays open");
+    expect(words).not.toContain("Nothing was withheld");
+  });
+
+  it("two withheld sites are both named, and the closing is scoped to what shipped", () => {
+    const words = releasedClosingWords(
+      artifacts({ withheld_teeth: [30, 19] }),
+    );
+    expect(words).toContain("Teeth 30, 19 stay open");
+    expect(words).toContain("No files were disclosed");
+    expect(words).toContain("closed for the sites that shipped");
+  });
+});
+
+describe("the checkout's terms footnote (design payment modal; plan §10-A)", () => {
+  it("points at the version the standing confirmation SEALED, not whatever is current", () => {
+    expect(sealedTermsHref({ terms_version: "placeholder-v1" })).toBe(
+      "/terms/placeholder-v1",
+    );
+  });
+
+  it("falls back to the current document when nothing is sealed yet", () => {
+    expect(sealedTermsHref(null)).toBe("/terms");
+    expect(sealedTermsHref({ terms_version: null })).toBe("/terms");
+  });
+
+  it("escapes a version that would otherwise forge a path", () => {
+    expect(sealedTermsHref({ terms_version: "v1/../admin" })).toBe(
+      "/terms/v1%2F..%2Fadmin",
+    );
+  });
+
+  it("says what paying does — and what it does NOT do", () => {
+    expect(CHECKOUT_SEAL_WORDS).toContain("this run");
+    expect(CHECKOUT_SEAL_WORDS).toContain("releasing the artifacts is a separate act");
   });
 });

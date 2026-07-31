@@ -275,3 +275,93 @@ describe("marking a cap the detector missed (client 2026-07-28)", () => {
     expect(html).toContain("already a site");
   });
 });
+
+describe("the site rows carry what the server already knows (client 2026-07-31)", () => {
+  const detail = caseSessionDetail({
+    sites: [
+      siteView({
+        tooth: 19,
+        suggested_variant: "5020",
+        // a check message with no percentage in it, so the "no invented confidence"
+        // assertion below is about the ROW and not about the worker's own sentence
+        capture: captureAssessment({
+          verdict: "marginal",
+          checks: [
+            {
+              name: "rim_arc",
+              value: 0.6,
+              bound_pass: 0.75,
+              bound_rescan: 0.5,
+              verdict: "marginal",
+              message: "The rim arc is thin.",
+            },
+          ],
+        }),
+      }),
+    ],
+    detection: detectionView([
+      detectedProposal({ tooth_guess: 19, void_ratio: 0.42, rim_below_cusps_mm: 0.31 }),
+    ]),
+  });
+
+  it("shows the suggested variant and the detector's measured numbers beside the chip", () => {
+    const html = view({ detail });
+    expect(html).toContain('data-role="site-evidence"');
+    expect(html).toContain("suggested 5020");
+    expect(html).toContain("recess void 0.42");
+    expect(html).toContain("rim 0.31mm below cusps");
+  });
+
+  it("states no confidence percentage — a verdict is the server's, and there is none", () => {
+    // The design prototype computed conf% in the browser. The worker's DetectedSite
+    // has no confidence field at all, so a percentage here would be invented.
+    expect(view({ detail })).not.toMatch(/\d+%/);
+  });
+
+  it("each row is a pick — the operator selects a site, the stage frames it", () => {
+    const html = view({ detail, activeTooth: 19 });
+    expect(html).toMatch(/data-role="site-row"[^>]*data-tooth="19"/);
+    expect(html).toMatch(/data-role="site-row"[^>]*aria-pressed="true"/);
+    expect(html).toContain("Tooth 19 is framed on the scan");
+  });
+
+  it("an unpicked row is not pressed, and nothing claims to be framed", () => {
+    const html = view({ detail });
+    expect(html).toMatch(/data-role="site-row"[^>]*aria-pressed="false"/);
+    expect(html).not.toContain("is framed on the scan");
+  });
+
+  it("a picked site with no centre says so rather than claiming a framing", () => {
+    const html = view({
+      detail: caseSessionDetail({ sites: [siteView({ tooth: 19, center: null })] }),
+      activeTooth: 19,
+    });
+    expect(html).toContain("no centre yet");
+    expect(html).not.toContain("is framed on the scan");
+  });
+});
+
+describe("picking a site by clicking it on the scan (client 2026-07-31)", () => {
+  it("offers the door, closed, when nothing is armed", () => {
+    const html = view();
+    expect(html).toContain('data-role="pick-arm"');
+    expect(html).not.toContain('data-role="pick-prompt"');
+  });
+
+  it("armed, it asks for a click on the scan and offers a way out", () => {
+    const html = view({ pickArmed: true });
+    expect(html).toContain('data-role="pick-prompt"');
+    expect(html).toContain("Click a cap on the scan");
+    expect(html).toContain('data-role="pick-cancel"');
+    // arming the picker must not also claim the missed-cap centre prompt
+    expect(html).not.toContain("Click the centre of the cap on the scan");
+  });
+
+  it("a click that lands on no site says so instead of snapping to the least-far one", () => {
+    const html = view({
+      pickMiss: "No site within 6.0mm of that click — try the centre of a cap.",
+    });
+    expect(html).toContain('data-role="pick-miss"');
+    expect(html).toContain("No site within 6.0mm");
+  });
+});

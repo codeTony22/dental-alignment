@@ -120,6 +120,17 @@ class TestWorklist:
         assert row["sites"] == {"total": 2, "declared": 1, "ready": 0, "flagged": 1}
         assert row["run_state"] == "done"
 
+    def test_the_row_carries_the_scan_cards_discovery_facts(self, client):
+        """The design's scan card states teeth, system and file size beside the
+        practice (gap ``practice-and-batch-on-a-case``, 2026-07-31). PRACTICE was
+        already built under the name ``doctor``, and SYSTEM under
+        ``suggested_model``; these two are the rest."""
+        (row,) = client.get("/api/case-sessions").json()
+        assert row["teeth"] == [4, 13]
+        assert row["scan_bytes"] == 0        # the fixture's STL is an empty touch()
+        assert row["doctor"] == "Doctor Neodent GM"      # the design's "practice"
+        assert row["suggested_model"] == "neodent-gm"    # the design's "system"
+
 
 class TestCaseSessionDetail:
     def test_an_unknown_case_is_a_404(self, client):
@@ -134,6 +145,10 @@ class TestCaseSessionDetail:
             "scan_filename": "upper_jaw.stl",
             "suggested_model": "neodent-gm",
             "suggested_construction": "dess/neodent-gm-scanbody.stl",
+            # the scan card's discovery facts (2026-07-31): the curated teeth and the
+            # file's size on disk — the fixture's STL is an empty touch(), so 0 bytes
+            "teeth": [4, 13],
+            "scan_bytes": 0,
         }
         assert [s["tooth"] for s in body["sites"]] == [4, 13]
         assert all(s["status"] == "detected" for s in body["sites"])
@@ -157,11 +172,15 @@ class TestCaseSessionDetail:
             "construction_path": None,
             "jaw": None,
             "gingival_offset_mm": None,
+            "turnaround": None,
             "gingival_offset_default_mm": 0.2,
             "effective_construction": {"value": "dess/neodent-gm-scanbody.stl",
                                        "source": "suggested"},
             "effective_jaw": {"value": "upper", "source": "suggested"},
             "effective_relief": {"value": 0.2, "source": "default"},
+            # a case nobody expedited is a standard case — the standing default,
+            # attributed like the others (2026-07-31)
+            "effective_turnaround": {"value": "standard", "source": "default"},
             "complete": True,
         }
         assert body["session"] == {
@@ -379,6 +398,7 @@ class TestChoices:
             "construction_path": "dess/neodent-gm-scanbody.stl",
             "jaw": "upper",
             "gingival_offset_mm": 0.15,
+            "turnaround": None,
             "gingival_offset_default_mm": 0.2,
             # explicit acts flip every attribution to "chosen" (the system bar's
             # declared/suggested pattern, mirrored per choice)
@@ -386,6 +406,7 @@ class TestChoices:
                                        "source": "chosen"},
             "effective_jaw": {"value": "upper", "source": "chosen"},
             "effective_relief": {"value": 0.15, "source": "chosen"},
+            "effective_turnaround": {"value": "standard", "source": "default"},
             "complete": True,
         }
         # persisted: a fresh app serves the same choices and the worklist's fact
@@ -487,6 +508,50 @@ class TestChoices:
         persisted = SessionStore(settings.product_root).load("neodent-gm")
         assert persisted.sites["4"].status is SiteStatus.READY
         assert persisted.sites["4"].seat_method == "rim-seat"
+
+    def test_turnaround_persists_with_its_attribution(self, client):
+        body = client.put("/api/case-sessions/neodent-gm/choices",
+                          json={"turnaround": "rush"}).json()
+        assert body["choices"]["turnaround"] == "rush"
+        assert body["choices"]["effective_turnaround"] == {"value": "rush",
+                                                           "source": "chosen"}
+
+    def test_an_unknown_turnaround_word_is_refused_at_the_wire(self, client):
+        # a Literal, not a validated str: bff.pricing must never be handed a word it
+        # has no rate for
+        res = client.put("/api/case-sessions/neodent-gm/choices",
+                         json={"turnaround": "overnight"})
+        assert res.status_code == 422
+
+    def test_turnaround_does_not_gate_completeness(self, client):
+        # the standing default always answers it, so a case is never incomplete for
+        # want of a commercial choice nobody has to make
+        body = client.get("/api/case-sessions/neodent-gm").json()
+        assert body["choices"]["turnaround"] is None
+        assert body["choices"]["complete"] is True
+
+    def test_changing_the_turnaround_RESETS_NOTHING(self, settings):
+        """THE RULE THIS FIELD EXISTS UNDER (gap ``turnaround-as-a-case-choice``,
+        2026-07-31). Construction, jaw and relief reset every preview and the run
+        because they "all describe the same shipped part". A turnaround is a promise
+        about WHEN and touches no geometry — dropping an operator's reviews because
+        the lab upgraded a case to rush would be a fabricated invalidation, which is
+        the same class of untruth as claiming one."""
+        store = SessionStore(settings.product_root)
+        s = store.load("neodent-gm")
+        s.sites["4"] = SiteSession(status=SiteStatus.READY, declared_variant="5020",
+                                   seat_method="rim-seat", rim_agreement_mm=0.07)
+        s.run = RunSession(job_id="job-1", run_id="job-1", state="done", summary={})
+        store.save(s)
+        client = TestClient(create_app(settings))
+        res = client.put("/api/case-sessions/neodent-gm/choices",
+                         json={"turnaround": "rush"})
+        assert res.status_code == 200, res.text
+        persisted = SessionStore(settings.product_root).load("neodent-gm")
+        assert persisted.sites["4"].status is SiteStatus.READY
+        assert persisted.sites["4"].seat_method == "rim-seat"
+        assert persisted.run is not None      # the run pointer survives
+        assert persisted.choices.turnaround == "rush"
 
     def test_an_unknown_construction_part_is_refused_by_catalog_membership(self, client):
         res = client.put("/api/case-sessions/neodent-gm/choices",
@@ -1282,6 +1347,11 @@ class TestWorklistRowErrors:
         assert corrupt["confirmed"] is None
         assert corrupt["detected"] is None
         assert corrupt["choices_complete"] is None
+        # the DISCOVERY facts survive it (2026-07-31): a corrupt session says
+        # nothing about the data tree, so the scan card's teeth and file size
+        # still stand beside identity
+        assert corrupt["teeth"] == [4, 13]
+        assert corrupt["scan_bytes"] == 0
         # the healthy row is untouched by its neighbour's trouble
         healthy = rows["other"]
         assert healthy["error"] is None

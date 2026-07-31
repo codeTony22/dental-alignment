@@ -292,6 +292,65 @@ class TestTheLanding:
         assert row4["clocking"]["evidence"] == "codes"
         assert row4["nudge"] == {"operator_delta_deg": 1.0, "cumulative_deg": 1.0}
 
+    def test_a_correspondence_persists_the_pairs_the_operator_named(
+            self, settings, product_root, monkeypatch):
+        """GAP ``per-site-pairs-rotation-diameter`` (2026-07-31): the pair count
+        lived only in a client-side draft — reload the page and it was gone, and no
+        Deliver row could say what a fit was built from.
+
+        PAIRS come from the REQUEST, observations from the outcome: a two-point span
+        contributes two residual rows to one pair, so counting the outcome would
+        over-report what the operator actually placed."""
+        client, _ = tooled(settings, product_root, monkeypatch, result=outcome(
+            4, operation="fit-by-points",
+            pairs=[{"residual_mm": 0.05}, {"residual_mm": 0.07},
+                   {"residual_mm": 0.06}],
+            residual_rms_mm=0.06))
+        assert client.post(f"{BASE}/4/fit-by-points", json={"pairs": [
+            {"feature_id": "code-1", "scan_point": [0.0, 0.0, 0.0],
+             "scan_point_end": [1.0, 0.0, 0.0]},
+            {"feature_id": "code-2", "scan_point": [2.0, 0.0, 0.0]},
+        ]}).status_code == 200
+        row4 = next(r for r in client.get(f"/api/case-sessions/{CASE}/run").json()[
+            "sites"] if r["tooth"] == 4)
+        assert row4["correspondence"] == {"pairs": 2, "observations": 3,
+                                          "max_pairs": 8, "residual_rms_mm": 0.06}
+
+    def test_a_rotation_reset_drops_the_correspondence_with_the_best_fit_block(
+            self, settings, product_root, monkeypatch):
+        """A site back on the pipeline's certified pose stands on no correspondence
+        at all — leaving the block would have the sealed row credit a fit that has
+        been undone."""
+        client, _ = tooled(settings, product_root, monkeypatch, result=outcome(
+            4, operation="fit-by-points", pairs=[{"residual_mm": 0.05}],
+            residual_rms_mm=0.05))
+        assert client.post(f"{BASE}/4/fit-by-points", json={"pairs": [
+            {"feature_id": "code-1", "scan_point": [0.0, 0.0, 0.0]}]},
+        ).status_code == 200
+        stub_tools(monkeypatch, result=outcome(4, operation="rotation-reset"))
+        assert client.post(f"{BASE}/4/rotation",
+                           json={"reset": True}).status_code == 200
+        row4 = next(r for r in client.get(f"/api/case-sessions/{CASE}/run").json()[
+            "sites"] if r["tooth"] == 4)
+        assert "correspondence" not in row4
+
+    def test_a_rotation_leaves_an_earlier_correspondence_alone(
+            self, settings, product_root, monkeypatch):
+        # only a RESET undoes it; a further nudge still stands on the pose the
+        # correspondence produced, so the record keeps saying what it was built from
+        client, _ = tooled(settings, product_root, monkeypatch, result=outcome(
+            4, operation="fit-by-points", pairs=[{"residual_mm": 0.05}],
+            residual_rms_mm=0.05))
+        assert client.post(f"{BASE}/4/fit-by-points", json={"pairs": [
+            {"feature_id": "code-1", "scan_point": [0.0, 0.0, 0.0]}]},
+        ).status_code == 200
+        stub_tools(monkeypatch, result=outcome(4, operation="rotation"))
+        assert client.post(f"{BASE}/4/rotation",
+                           json={"step_deg": 1.0}).status_code == 200
+        row4 = next(r for r in client.get(f"/api/case-sessions/{CASE}/run").json()[
+            "sites"] if r["tooth"] == 4)
+        assert row4["correspondence"]["pairs"] == 1
+
     def test_the_rows_deviation_is_re_derived_over_the_pose_that_just_landed(
             self, settings, product_root, monkeypatch):
         """FINDING E (review 2026-07-28): the row's numbers describe A POSE, and the

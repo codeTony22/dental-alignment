@@ -10,8 +10,11 @@ import {
   choicesUpdateFrom,
   constructionOptions,
   detectionMarkers,
+  pickSiteAt,
   rescanNotices,
   shouldAutoDetect,
+  siteCentre,
+  siteEvidence,
 } from "./intake";
 import {
   captureAssessment,
@@ -275,5 +278,81 @@ describe("ceilingReadouts — the relief ask beside its measured ceiling", () =>
     expect(readout!.line).toContain("ceiling unavailable");
     expect(readout!.line).toContain("unknown variant '9999'");
     expect(readout!.exceeded).toBe(false);
+  });
+});
+
+describe("siteEvidence — what the server already knows about a site", () => {
+  it("names the suggested variant and the detector's two measured numbers", () => {
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 19, suggested_variant: "5020" })],
+      detection: detectionView([
+        detectedProposal({ tooth_guess: 19, void_ratio: 0.42, rim_below_cusps_mm: 0.31 }),
+      ]),
+    });
+    const facts = siteEvidence(detail, detail.sites[0]!);
+    expect(facts.map((f) => f.key)).toEqual(["variant", "recess", "rim"]);
+    expect(facts[0]!.text).toBe("suggested 5020");
+    expect(facts[1]!.text).toBe("recess void 0.42");
+    expect(facts[2]!.text).toBe("rim 0.31mm below cusps");
+  });
+
+  it("a declared variant supersedes the suggestion — the operator's act wins the row", () => {
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 19, declared_variant: "6030", suggested_variant: "5020" })],
+      detection: detectionView([detectedProposal({ tooth_guess: 19 })]),
+    });
+    expect(siteEvidence(detail, detail.sites[0]!)[0]!.text).toBe("declared 6030");
+  });
+
+  it("no suggestion and no declaration: the row says nothing rather than guessing", () => {
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 19, suggested_variant: null })],
+      detection: detectionView([]),
+    });
+    expect(siteEvidence(detail, detail.sites[0]!)).toEqual([]);
+  });
+
+  it("an operator-marked site the detector never proposed carries no measured numbers", () => {
+    // client 2026-07-28: a hand-marked centre has no void ratio and no rim depth — the
+    // detector never measured it. Showing another site's numbers here would be a lie.
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 7, suggested_variant: "5020" })],
+      detection: detectionView([detectedProposal({ tooth_guess: 19 })]),
+    });
+    expect(siteEvidence(detail, detail.sites[0]!).map((f) => f.key)).toEqual(["variant"]);
+  });
+});
+
+describe("pickSiteAt — choosing a site by clicking it on the scan", () => {
+  const sites = [
+    siteView({ tooth: 19, center: [0, 0, 0] }),
+    siteView({ tooth: 30, center: [10, 0, 0] }),
+  ];
+
+  it("a click near a cap picks that site's tooth", () => {
+    expect(pickSiteAt(sites, [1.5, 0.5, 0])).toBe(19);
+  });
+
+  it("the NEAREST centre wins when two are in reach", () => {
+    expect(pickSiteAt(sites, [6.0, 0, 0])).toBe(30);
+  });
+
+  it("a click on bare arch picks nothing rather than the least-far site", () => {
+    expect(pickSiteAt([siteView({ tooth: 19, center: [0, 0, 0] })], [40, 0, 0])).toBeNull();
+  });
+
+  it("sites without a usable centre cannot be picked", () => {
+    expect(pickSiteAt([siteView({ tooth: 19, center: null })], [0, 0, 0])).toBeNull();
+  });
+});
+
+describe("siteCentre — the honest 3-vector, or nothing", () => {
+  it("returns the centre when the payload carries three numbers", () => {
+    expect(siteCentre(siteView({ center: [1, 2, 3] }))).toEqual([1, 2, 3]);
+  });
+
+  it("null centre and short vectors are nothing, not a partial point", () => {
+    expect(siteCentre(siteView({ center: null }))).toBeNull();
+    expect(siteCentre(siteView({ center: [1, 2] }))).toBeNull();
   });
 });

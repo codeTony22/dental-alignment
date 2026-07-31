@@ -295,7 +295,8 @@ def _summary_row(run: RunSession, tooth: int) -> Optional[dict]:
     return None
 
 
-def _fold_outcome(run: RunSession, tooth: int, outcome: AdjustOutcome) -> None:
+def _fold_outcome(run: RunSession, tooth: int, outcome: AdjustOutcome,
+                  correspondence_pairs: Optional[int] = None) -> None:
     """Fold the post-adjustment reading into the run's summary row — the demo's
     ``_update_run_row`` (server.py:1337-1375), re-homed: the demo rewrote its cached
     run.json, the product's summary lives on the session receipt.
@@ -343,13 +344,36 @@ def _fold_outcome(run: RunSession, tooth: int, outcome: AdjustOutcome) -> None:
         row["best_fit"] = outcome.best_fit
     elif outcome.operation == "rotation-reset":
         row.pop("best_fit", None)
+    # THE CORRESPONDENCE THE SHIPPED POSE STANDS ON (design flow.dc.html's PAIRS
+    # metric; gap ``per-site-pairs-rotation-diameter``, 2026-07-31). Until now the
+    # count lived only in a client-side draft: reload the page and it was gone, and
+    # no Deliver row could say what a fit was built from.
+    #
+    # THE MEANING, DECIDED, because the design and the product disagree. The design
+    # treats pairs as a MONOTONIC per-site counter; the product cannot honestly do
+    # that — every fit-by-points call is a FRESH correspondence set that replaces
+    # the pose outright, so a running total would have the sealed row claim a
+    # history the record does not carry. What is written here is the LAST APPLIED
+    # correspondence: how many pairs the operator named, how many OBSERVATIONS they
+    # produced (a two-point span contributes two), and the cap the wire enforces —
+    # so a surface can render "3/8" without hard-coding the server's own bound.
+    # A rotation-reset drops it with the best-fit block: a site back on the
+    # pipeline's certified pose stands on no correspondence at all.
+    if correspondence_pairs is not None:
+        row["correspondence"] = {"pairs": correspondence_pairs,
+                                 "observations": len(outcome.pairs),
+                                 "max_pairs": _MAX_PAIRS,
+                                 "residual_rms_mm": outcome.residual_rms_mm}
+    elif outcome.operation == "rotation-reset":
+        row.pop("correspondence", None)
     for name in outcome.files:
         if name not in run.package_files:
             run.package_files.append(name)
 
 
 def _land(store: SessionStore, case: CaseRecord, tooth: int, run_id: str,
-          outcome: AdjustOutcome) -> CaseSession:
+          outcome: AdjustOutcome,
+          correspondence_pairs: Optional[int] = None) -> CaseSession:
     """Persist what an APPLIED tool did, inside one CAS mutation.
 
     The run pointer is re-judged on the fresh document: the physics already wrote into
@@ -368,7 +392,7 @@ def _land(store: SessionStore, case: CaseRecord, tooth: int, run_id: str,
         # the ladder's own move — never a status assigned by hand (AM-4). READY falls
         # here by construction: the pose the review attested has moved.
         site.status = status.adjust(site.status)
-        _fold_outcome(run, tooth, outcome)
+        _fold_outcome(run, tooth, outcome, correspondence_pairs)
         # the stage was worked in — a fact about the session, derived from the act
         session.adjust_visited = True
         # THE EVIDENCE BOUNDARY (session.clear_confirmation): a confirmed case whose
@@ -427,9 +451,16 @@ def _tool_context(request: Request, case_id: str, tooth: int):
     return settings, store, case, run, _run_dir(settings, case_id, run)
 
 
-def _apply_tool(request: Request, case_id: str, tooth: int, run_tool) -> AdjustResultView:
+def _apply_tool(request: Request, case_id: str, tooth: int, run_tool,
+                correspondence_pairs: Optional[int] = None) -> AdjustResultView:
     """Judge → run the physics (outside the mutation: it takes seconds and a CAS retry
-    must never re-run it) → land. A measure-only outcome lands nothing and says so."""
+    must never re-run it) → land. A measure-only outcome lands nothing and says so.
+
+    ``correspondence_pairs`` is the ONE fact the outcome cannot report: the number of
+    PAIRS the operator named. The application returns one residual row per
+    OBSERVATION (a two-point span contributes two), so counting the outcome would
+    over-report what the operator actually placed — the count comes from the request
+    body, which is the only place it exists."""
     settings, store, case, run, run_dir = _tool_context(request, case_id, tooth)
     try:
         outcome = run_tool(case, run_dir)
@@ -439,7 +470,8 @@ def _apply_tool(request: Request, case_id: str, tooth: int, run_tool) -> AdjustR
         # MEASURE ONLY: judged, reported, and NOT written — no rung moves, no
         # confirmation falls, nothing is persisted at all
         return _result(case, store.load(case_id), settings, outcome)
-    session = _land(store, case, tooth, run.run_id or run.job_id, outcome)
+    session = _land(store, case, tooth, run.run_id or run.job_id, outcome,
+                    correspondence_pairs)
     return _result(case, session, settings, outcome)
 
 
@@ -519,7 +551,8 @@ def post_fit_by_points(case_id: str, tooth: int, body: FitByPointsIn,
              for p in body.pairs]
     return _apply_tool(request, case_id, tooth,
                        lambda case, run_dir: align_to_correspondence(
-                           case, run_dir, tooth, pairs))
+                           case, run_dir, tooth, pairs),
+                       correspondence_pairs=len(pairs))
 
 
 @router.post("/{case_id}/sites/{tooth}/best-fit", response_model=AdjustResultView)

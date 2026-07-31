@@ -29,8 +29,12 @@ import {
   choicesUpdateFrom,
   constructionOptions,
   detectionMarkers,
+  pickSiteAt,
   rescanNotices,
   shouldAutoDetect,
+  siteCentre,
+  siteEvidence,
+  SITE_PICK_RADIUS_MM,
 } from "../domain/intake";
 import { MainStage } from "./MainStage";
 
@@ -74,6 +78,13 @@ function CaptureBanner({ detail }: CaptureBannerProps) {
 
 interface SiteListProps {
   readonly detail: CaseSessionDetail;
+  /** The site the operator picked — the stage frames it. Null = the stage's own default. */
+  readonly activeTooth: number | null;
+  readonly onSelectSite: (tooth: number) => void;
+  readonly pickArmed: boolean;
+  readonly pickMiss: string | null;
+  readonly onArmPick: () => void;
+  readonly onCancelPick: () => void;
 }
 
 /** The chip's demo clothes: pass/marginal/rescan traffic-light tones, muted "none". */
@@ -83,32 +94,111 @@ function captureChipClass(verdict: string | null): string {
     : `chip chip--capture-${verdict}`;
 }
 
-/** The site queue's Intake face: tooth, status, capture chip — the demo's stepper
- * list language, read-only on this stage. */
-function SiteList({ detail }: SiteListProps) {
+/**
+ * The site queue's Intake face: tooth, status, the SERVER's evidence for this site,
+ * capture chip — the demo's stepper list language.
+ *
+ * No longer read-only (client 2026-07-31): a row is the operator's pick, and the pick
+ * is what the 3D stage frames. The row carries no confidence percentage even though
+ * the design prototype has one — see domain/intake.siteEvidence for why there is no
+ * such number to render.
+ */
+function SiteList({
+  detail,
+  activeTooth,
+  onSelectSite,
+  pickArmed,
+  pickMiss,
+  onArmPick,
+  onCancelPick,
+}: SiteListProps) {
   const unassigned =
     detail.detection?.proposals.filter((p) => p.tooth_guess === null).length ?? 0;
+  const active = detail.sites.find((s) => s.tooth === activeTooth) ?? null;
   return (
     <section data-role="intake-sites" className="panel">
       <h3 className="panel__title">Sites</h3>
       <ul className="decode-stepper__overview">
         {detail.sites.map((site) => (
-          <li key={site.tooth} className="decode-stepper__item">
-            <span className="decode-stepper__position">
-              Tooth {site.tooth}{" "}
-              <span className="decode-stepper__tooth">{site.status}</span>
-            </span>
-            <span
-              data-role="capture-chip"
-              data-verdict={site.capture?.verdict ?? "none"}
-              className={captureChipClass(site.capture?.verdict ?? null)}
-              title={site.capture?.checks.map((c) => c.message).join(" ") ?? undefined}
+          <li key={site.tooth} className="intake-site">
+            <button
+              type="button"
+              data-role="site-row"
+              data-tooth={site.tooth}
+              aria-pressed={site.tooth === activeTooth}
+              className={`decode-stepper__item intake-site__row${
+                site.tooth === activeTooth ? " decode-stepper__item--active" : ""
+              }`}
+              title="Frame this site on the scan"
+              onClick={() => onSelectSite(site.tooth)}
             >
-              {captureChipLabel(site.capture)}
-            </span>
+              <span className="decode-stepper__position">
+                Tooth {site.tooth}{" "}
+                <span className="decode-stepper__tooth">{site.status}</span>
+              </span>
+              <span data-role="site-evidence" className="intake-site__evidence">
+                {siteEvidence(detail, site).map((fact) => (
+                  <span
+                    key={fact.key}
+                    data-fact={fact.key}
+                    className="intake-site__fact"
+                    title={fact.title}
+                  >
+                    {fact.text}
+                  </span>
+                ))}
+              </span>
+              <span
+                data-role="capture-chip"
+                data-verdict={site.capture?.verdict ?? "none"}
+                className={captureChipClass(site.capture?.verdict ?? null)}
+                title={site.capture?.checks.map((c) => c.message).join(" ") ?? undefined}
+              >
+                {captureChipLabel(site.capture)}
+              </span>
+            </button>
           </li>
         ))}
       </ul>
+      {active !== null && (
+        <p data-role="site-framed" className="panel__hint">
+          {siteCentre(active) !== null
+            ? `Tooth ${active.tooth} is framed on the scan.`
+            : `Tooth ${active.tooth} has no centre yet — the stage cannot frame it.`}
+        </p>
+      )}
+      {/* The other direction of the same pick: point at the cap instead of reading the
+          list. The stage's one-shot point pick resolves it (MainStage's markArmed door),
+          and domain/intake.pickSiteAt turns the surface point into a tooth. */}
+      {pickArmed ? (
+        <p data-role="pick-prompt" className="panel__hint">
+          Click a cap on the scan to select its site.{" "}
+          <button
+            type="button"
+            data-role="pick-cancel"
+            className="button button--ghost button--small"
+            onClick={onCancelPick}
+          >
+            Cancel
+          </button>
+        </p>
+      ) : (
+        <div className="panel__actions">
+          <button
+            type="button"
+            data-role="pick-arm"
+            className="button button--secondary button--small"
+            onClick={onArmPick}
+          >
+            Pick a site on the scan
+          </button>
+        </div>
+      )}
+      {pickMiss !== null && (
+        <p data-role="pick-miss" className="panel__hint intake-site__miss">
+          {pickMiss}
+        </p>
+      )}
       {unassigned > 0 && (
         <p data-role="unassigned-proposals" className="panel__hint">
           {unassigned} detected site{unassigned === 1 ? "" : "s"} without a curated
@@ -395,8 +485,15 @@ export interface IntakeStageViewProps {
   readonly onArmMark?: () => void;
   readonly onCancelMark?: () => void;
   readonly onMarkTooth?: (tooth: string) => void;
-  readonly onMarkPlaced?: (point: readonly [number, number, number]) => void;
+  readonly onStagePoint?: (point: readonly [number, number, number]) => void;
   readonly onSubmitMark?: () => void;
+  /** Picking a site — from its row, or by clicking the cap on the scan (client 2026-07-31). */
+  readonly activeTooth?: number | null;
+  readonly onSelectSite?: (tooth: number) => void;
+  readonly pickArmed?: boolean;
+  readonly pickMiss?: string | null;
+  readonly onArmPick?: () => void;
+  readonly onCancelPick?: () => void;
 }
 
 /** The stage's whole surface, pure payload → markup — statically testable. */
@@ -415,8 +512,14 @@ export function IntakeStageView({
   onArmMark = () => undefined,
   onCancelMark = () => undefined,
   onMarkTooth = () => undefined,
-  onMarkPlaced = () => undefined,
+  onStagePoint = () => undefined,
   onSubmitMark = () => undefined,
+  activeTooth = null,
+  onSelectSite = () => undefined,
+  pickArmed = false,
+  pickMiss = null,
+  onArmPick = () => undefined,
+  onCancelPick = () => undefined,
 }: IntakeStageViewProps) {
   const facts = factsFromCaseSession(detail);
   const declareOpen = isReachable("declare", facts);
@@ -447,7 +550,15 @@ export function IntakeStageView({
             </p>
           </div>
         )}
-        <SiteList detail={detail} />
+        <SiteList
+          detail={detail}
+          activeTooth={activeTooth}
+          onSelectSite={onSelectSite}
+          pickArmed={pickArmed}
+          pickMiss={pickMiss}
+          onArmPick={onArmPick}
+          onCancelPick={onCancelPick}
+        />
         <MarkMissedCap
           armed={markArmed}
           pending={markPending}
@@ -491,8 +602,12 @@ export function IntakeStageView({
           scanFilename={detail.case.scan_filename}
           sites={detail.sites}
           markers={detectionMarkers(detail)}
-          markArmed={markArmed}
-          onMark={onMarkPlaced}
+          activeTooth={activeTooth}
+          // ONE point-pick door, two callers (client 2026-07-31): the stage arms the
+          // viewer's one-shot pick while EITHER the missed-cap mark or the site picker
+          // is armed, and the container routes the resolved point to whichever asked.
+          markArmed={markArmed || pickArmed}
+          onMark={onStagePoint}
         />
       </div>
     </div>
@@ -532,6 +647,58 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
     setMarkPending([...point]);
     setMarkArmed(false);   // the click is spent; naming the tooth comes next
   }, []);
+
+  /* PICKING A SITE (client 2026-07-31). Purely a VIEW act — which site the stage
+     frames and which row reads as chosen. Nothing here is persisted and nothing here
+     is a verdict, so no PUT: the case's own facts are untouched by looking at a cap.
+     The scan-side pick borrows the same one-shot point pick the missed-cap mark uses
+     (the viewer arms exactly one), so the two modes are mutually exclusive by
+     construction — arming either disarms the other. */
+  const [activeTooth, setActiveTooth] = useState<number | null>(null);
+  const [pickArmed, setPickArmed] = useState(false);
+  const [pickMiss, setPickMiss] = useState<string | null>(null);
+
+  const handleSelectSite = useCallback((tooth: number) => {
+    setActiveTooth(tooth);
+    setPickArmed(false);
+    setPickMiss(null);
+  }, []);
+
+  const handleArmPick = useCallback(() => {
+    setPickArmed(true);
+    setPickMiss(null);
+    resetMark();           // one point pick, one owner
+  }, [resetMark]);
+
+  const handleCancelPick = useCallback(() => {
+    setPickArmed(false);
+    setPickMiss(null);
+  }, []);
+
+  /* The stage resolved a surface point. Whoever armed the pick owns it — the site
+     picker first, because arming it disarms the mark. A click that lands on no cap is
+     SAID, not snapped to the least-far site: the operator would otherwise watch the
+     stage fly to a tooth they did not click. */
+  const handleStagePoint = useCallback(
+    (point: readonly [number, number, number]) => {
+      if (!pickArmed) {
+        handleMarkPlaced(point);
+        return;
+      }
+      setPickArmed(false);  // the viewer's pick is one-shot; so is this arming
+      const tooth = pickSiteAt(detail.sites, point);
+      if (tooth === null) {
+        setPickMiss(
+          `No site within ${SITE_PICK_RADIUS_MM.toFixed(1)}mm of that click — ` +
+            "try the centre of a cap, or pick the row instead.",
+        );
+        return;
+      }
+      setPickMiss(null);
+      setActiveTooth(tooth);
+    },
+    [detail.sites, handleMarkPlaced, pickArmed],
+  );
 
   const handleSubmitMark = useCallback(() => {
     const tooth = Number(markTooth);
@@ -621,12 +788,23 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
       markTooth={markTooth}
       markSaving={markSaving}
       markError={markError}
-      onArmMark={() => { setMarkArmed(true); setMarkError(null); }}
+      onArmMark={() => {
+        setMarkArmed(true);
+        setMarkError(null);
+        setPickArmed(false); // one point pick, one owner
+        setPickMiss(null);
+      }}
       onCancelMark={resetMark}
       onMarkTooth={setMarkTooth}
-      onMarkPlaced={handleMarkPlaced}
+      onStagePoint={handleStagePoint}
       onSubmitMark={handleSubmitMark}
       onRetryDetect={fireDetect}
+      activeTooth={activeTooth}
+      onSelectSite={handleSelectSite}
+      pickArmed={pickArmed}
+      pickMiss={pickMiss}
+      onArmPick={handleArmPick}
+      onCancelPick={handleCancelPick}
     />
   );
 }

@@ -129,6 +129,20 @@ class CaseChoices(BaseModel):
     construction_path: Optional[str] = None
     jaw: Optional[str] = None
     gingival_offset_mm: Optional[float] = None
+    # THE TURNAROUND ASK (design flow.dc.html speedChips 1159-1160; gap
+    # ``turnaround-as-a-case-choice``, 2026-07-31). An ACT in exactly the sense
+    # AM-4's allowlist means: it says what the lab ASKED FOR, never what any site
+    # IS — no physics reads it, no verdict derives from it.
+    #
+    # It is deliberately OUTSIDE ``complete`` and outside ``EffectiveChoices.values``:
+    # changing it must fire NO reset boundary. The other three describe the shipped
+    # PART (the review-reset rule's own words), so a change to any of them retires
+    # previews and the current run; a turnaround is a commercial promise about WHEN,
+    # touching no geometry, and dropping a case's reviews because the lab upgraded it
+    # to rush would be a fabricated invalidation. It is likewise not in ``complete``
+    # because the standing default already answers it, so a case is never blocked on
+    # a choice nobody has to make.
+    turnaround: Optional[Literal["standard", "rush"]] = None
 
     @property
     def complete(self) -> bool:
@@ -257,12 +271,34 @@ class PaymentRecord(BaseModel):
     """THE PAYMENT STUB (plan §4 Deliver): fail-closed — this record exists only
     when someone explicitly authorized, and ``provider: "stub"`` keeps
     stub-authorized sessions PERMANENTLY distinguishable from paid ones once a real
-    provider lands. Never faked deeper than this: no amounts, no receipts, no
-    provider ids — inventing those would be a lie wearing a schema."""
+    provider lands. Still never faked deeper than the stub: no receipts, no provider
+    ids — inventing those would be a lie wearing a schema.
+
+    THE AMOUNT ARRIVED (gap ``per-site-pricing-model``, 2026-07-31) and it is the one
+    fact that had to. The record's original note said "no amounts"; that was right
+    while there was no derivation behind an amount, and wrong the moment there was
+    one, because a case can be repriced after it is paid (a turnaround change touches
+    no physics and fires no boundary — see ``CaseChoices.turnaround``). Without the
+    charged figure on the record, "what did this case cost?" could only ever be
+    answered by re-deriving TODAY's price and calling it history.
+
+    So: the SERVER prices at authorization time (``bff.pricing``) and writes what it
+    charged here, with the rate card version and the turnaround it charged under, so
+    an amount is re-readable in its own terms rather than reinterpreted under a later
+    card. ``PaymentIn`` still carries nothing but ``authorize`` — an amount a client
+    could send would be a status-shaped claim wearing a currency symbol.
+
+    All four are Optional: a record persisted before the invoice existed carries
+    none of them, and under-claiming is the safe direction (the ``adjustments``
+    precedent). None here means "this authorization predates pricing", never zero."""
 
     payment_authorized: bool
     provider: str
     at: str
+    amount_cents: Optional[int] = None
+    currency: Optional[str] = None
+    rate_card_version: Optional[str] = None
+    turnaround: Optional[str] = None
 
 
 class AdjustDecisionRecord(BaseModel):
