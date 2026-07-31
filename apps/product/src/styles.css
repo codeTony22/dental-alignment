@@ -4884,3 +4884,139 @@ button.package-files__link:hover {
 .verify-panel__hint {
   bottom: 26px;
 }
+
+/* ============================================================================
+   ArTech End-to-End Flow — design import, round 4 (2026-07-31)
+   ============================================================================ */
+/* ===== scan-intake ===== */
+/* THE SCAN-ARRIVAL STATEMENT (design flow.dc.html 76-83; gap "a scan arrives",
+   2026-07-31). Deliberately NOT the prototype's dashed rectangle: a dashed border is
+   the universal "drop a file here" signal, and nothing on this page accepts a file.
+   Solid, muted, and below the rows — a procedure note read once, never a control
+   competing with the morning's work. */
+.scan-arrival {
+  margin-top: 28px;
+  padding: 18px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: #fbfcfb;
+}
+
+.scan-arrival__title {
+  margin: 0 0 13px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.scan-arrival__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: scan-arrival;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.scan-arrival__step {
+  counter-increment: scan-arrival;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 2px 11px;
+}
+
+/* The step number as a quiet badge — the sequence matters (a folder with no STL never
+   reaches step 3), but it must not read as a progress tracker the operator can act on. */
+.scan-arrival__step::before {
+  content: counter(scan-arrival);
+  grid-row: span 2;
+  align-self: start;
+  width: 20px;
+  height: 20px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  color: var(--color-accent-green-dark);
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scan-arrival__step-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.scan-arrival__step-detail {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}
+
+/* The closing note carries the one thing an operator would otherwise hunt for — the
+   upload button the design drew and this installation does not have. Ruled off so it
+   reads as the answer to a question, not as a seventh step. */
+.scan-arrival__note {
+  margin: 15px 0 0;
+  padding-top: 13px;
+  border-top: 1px solid var(--color-border);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}
+
+/* ===== drop-a-cap ===== */
+/* ---- ADJUST: DROPPING A CAP (design flow.dc.html dropSite 1345-1354, queue row
+   1183-1191; gap `drop-a-cap-from-adjust`, 2026-07-31) -----------------------------
+   The design draws the dropped state NEUTRAL, not danger: an operator taking a cap
+   out of the case has made a routine commercial decision, and painting it red would
+   read as a failure the run reported. Everything below is grey until the reversal,
+   which is the one control that gets weight. */
+
+/* The dropped row sinks to the bottom of the queue (adjustQueue's sort) and reads
+   quieter than the clean sites above it — it is the row already finished with. */
+.decode-stepper__item--dropped {
+  opacity: 0.62;
+}
+
+.adjust-queue__dropped {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* The act itself, under the toolbox, separated by a rule like the re-confirmation
+   above it: both are per-site acts, and neither belongs inside one tool's tab. */
+.adjust-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+.adjust-drop__note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  text-wrap: pretty;
+  color: var(--color-text-muted);
+}
+
+/* A cap that IS dropped gets a green-edged control, because the offered act is then
+   "bring it back" — the design's own inversion (dropStyle, 1347-1350). */
+.adjust-drop [data-dropped="true"] {
+  border-color: var(--color-accent-green);
+}

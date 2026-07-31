@@ -12,7 +12,12 @@
  *   CENTRE — the SAME three panes as Declare (components/SitePanes), reading the
  *            SHIPPED pose rather than a pre-run preview. After any applied tool they
  *            re-render the NEW pose: the payload comes back with the tool's response.
- *   UNDER  — the toolbox: one tool visible, the other three one click away.
+ *   UNDER  — the toolbox: one tool visible, the other three one click away, and the
+ *            one act that is not a correction — DROPPING the cap (2026-07-31). A
+ *            rework that is not going to converge has an honest end, and until now
+ *            it could only be said at Deliver, hours later, on the signing screen.
+ *            The drop is a DRAFT of the confirmation's own disposition, reversible
+ *            in the same place; nothing on this stage signs it.
  *
  * EVERY TOOL IS A GATED PROPOSAL and this surface never pretends otherwise. Optimism
  * is OFF: nothing moves on screen until the server says it moved. A refusal renders
@@ -36,6 +41,7 @@ import {
   postMarkTrench,
   postReview,
   postRotation,
+  putWithholdIntent,
   type AdjustOutcomeView,
   type AdjustResultView,
   type ApiResult,
@@ -59,6 +65,9 @@ import {
   autoMarkSourceLabel,
   autoMarkSummary,
   diameterBandWords,
+  dropLabel,
+  dropNote,
+  droppedRowWords,
   flaggedExceptionWords,
   isComplete,
   needsReconfirmStatus,
@@ -179,6 +188,17 @@ export interface AdjustStageViewProps {
    *  domain/declare.alignmentStats over the run's own rows: this component holds no
    *  number it did not receive. Optional with empty defaults: static callers predate
    *  the strip. */
+  /** DROPPING A CAP (design flow.dc.html dropSite 1345-1354; gap
+   *  `drop-a-cap-from-adjust`). The act is the BFF's per-site withhold INTENT, which
+   *  PRE-FILLS the confirmation's disposition — this surface signs nothing and
+   *  computes nothing: it sends the operator's word and renders what came back.
+   *  Both directions go through the one handler, because the reversal must be
+   *  exactly as reachable as the act. Optional with inert defaults: static callers
+   *  predate it. */
+  readonly onDrop?: (tooth: number, withhold: boolean) => void;
+  readonly dropSaving?: boolean;
+  /** A refusal, VERBATIM — same posture as every other refusal on this surface. */
+  readonly dropError?: string | null;
   readonly systemModel?: string | null;
   readonly stats?: readonly WorkspaceStat[];
   readonly viewPreset?: ViewPresetId;
@@ -416,6 +436,9 @@ export function AdjustStageView({
   autoMarkLandmarks = [],
   autoMarkPhase = "idle",
   autoMarkError = null,
+  onDrop = () => undefined,
+  dropSaving = false,
+  dropError = null,
   flaggedCount = 0,
   deliverBlockedReason = null,
   onBack = () => undefined,
@@ -466,7 +489,9 @@ export function AdjustStageView({
                   aria-pressed={entry.tooth === activeTooth}
                   className={`decode-stepper__item${
                     entry.tooth === activeTooth ? " decode-stepper__item--active" : ""
-                  }${entry.optional ? " decode-stepper__item--optional" : ""}`}
+                  }${entry.optional ? " decode-stepper__item--optional" : ""}${
+                    entry.dropped ? " decode-stepper__item--dropped" : ""
+                  }`}
                   onClick={() => onSelectSite(entry.tooth)}
                 >
                   <span className="decode-stepper__position">Tooth {entry.tooth}</span>
@@ -482,7 +507,16 @@ export function AdjustStageView({
                       {entry.declaredVariant ?? "no variant declared"}
                     </span>
                   </span>
-                  {entry.flagged ? (
+                  {entry.dropped ? (
+                    /* A DROPPED CAP STOPS ASKING (design queue row 1183-1191). The
+                       flag line is the queue's ASK — "rework me" — and a cap the
+                       operator has taken out of the case must not keep asking. The
+                       WHY control stays a sibling below, because the verdict is
+                       still true and bringing the cap back must cost no re-read. */
+                    <span data-role="queue-dropped" className="adjust-queue__dropped">
+                      {droppedRowWords()}
+                    </span>
+                  ) : entry.flagged ? (
                     /* The gate's words used to sit here in full — five lines of amber per
                        flagged site, which pushed the queue past its card and left the
                        operator scrolling a list whose whole job is to be scannable
@@ -858,6 +892,46 @@ export function AdjustStageView({
             <p data-role="flagged-exception" className="adjust-exception">
               {exceptionWords}
             </p>
+          )}
+
+          {active !== null && (
+            /* DROP THIS CAP — DON'T RELEASE OR BILL IT (design dropSite 1345-1354,
+               its sticky footer's third control, template 471).
+
+               THE ACT ALREADY EXISTED AND ONLY DELIVER COULD REACH IT: the
+               confirmation's per-site disposition (release | withhold). This is that
+               same act, reachable from the stage where the decision is actually
+               taken — a per-site withhold INTENT that pre-fills the confirmation.
+               Deliberately NOT a second exclusion concept: two overlapping ways to
+               take a site out of a case would be two gates to keep in step.
+
+               THE WORDS ARE NOT THE DESIGN'S. Its label says "don't align or bill
+               it"; post-run the alignment has already happened and this act leaves
+               the pipeline alone, so `dropLabel`/`dropNote` state only the half that
+               is true. Nothing here is a verdict, a price or a gate — the note says
+               in the open that Deliver's confirmation is what signs it. */
+            <div data-role="drop" className="adjust-drop">
+              <button
+                type="button"
+                data-role="drop-site"
+                data-dropped={active.dropped}
+                className={`button ${
+                  active.dropped ? "button--secondary" : "button--ghost"
+                }`}
+                disabled={dropSaving}
+                onClick={() => onDrop(active.tooth, !active.dropped)}
+              >
+                {dropSaving ? "Recording the decision…" : dropLabel(active.dropped)}
+              </button>
+              <p data-role="drop-note" className="adjust-drop__note">
+                {dropNote(active.dropped)}
+              </p>
+              {dropError !== null && (
+                <span data-role="drop-error" role="alert" className="panel__error">
+                  {dropError}
+                </span>
+              )}
+            </div>
           )}
         </section>
         </div>
@@ -1364,6 +1438,32 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
     });
   }, [activeTooth, detail.case.id, onDetail]);
 
+  /* THE DROP (gap `drop-a-cap-from-adjust`). One handler, both directions — the
+     reversal is the same request with `false`, so it can never fall behind the act.
+     Optimism stays OFF: the row moves because the SERVER returned a detail saying
+     the intent landed, and a refusal renders in the gate's own words. */
+  const [dropSaving, setDropSaving] = useState(false);
+  const [dropError, setDropError] = useState<string | null>(null);
+
+  const handleDrop = useCallback(
+    (tooth: number, withhold: boolean) => {
+      setDropSaving(true);
+      setDropError(null);
+      void putWithholdIntent(caseId, tooth, withhold).then((result) => {
+        if (!mountedRef.current) return;
+        setDropSaving(false);
+        // ApiResult is a {kind} union — `.ok`/`.value` do not exist on it, and
+        // reading them has silently discarded a landed write twice in this app
+        if (result.kind === "ok") {
+          onDetail(result.data);
+          return;
+        }
+        setDropError(result.detail);
+      });
+    },
+    [caseId, onDetail],
+  );
+
   const panes = (
     <SitePanesView
       variantLabel={activeSite?.declared_variant ?? null}
@@ -1446,6 +1546,9 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       autoMarkLandmarks={autoMarkLandmarks}
       autoMarkPhase={autoMarkPhase}
       autoMarkError={autoMarkError}
+      onDrop={handleDrop}
+      dropSaving={dropSaving}
+      dropError={dropError}
       /* The footer's facts come from the ONE flow model, not from a second count
          taken here: `blockedReason` is what the rail itself shows for Deliver, and
          `siteFlagged` is the BFF's rollup. Navigation only — no POST, no status. */

@@ -1456,6 +1456,17 @@ class TestStatusesAreNeverClientWritable:
         # the design's own re-preview label pre-announces, which is exactly the
         # client-side verdict this allowlist exists to make unexpressible.
         ("POST", "/api/case-sessions/{case_id}/sites/{tooth}/re-preview"),
+        # DROPPING A CAP (design flow.dc.html dropSite 1345-1354; gap
+        # ``drop-a-cap-from-adjust``, 2026-07-31): {"withhold": true|false} — the
+        # DRAFT of the disposition ``ConfirmIn`` has carried since slice 8, made
+        # reachable from Adjust instead of only from the signing screen. Admissible
+        # for exactly the reason a disposition is: it says what the operator DOES
+        # with a site (holds it back from the release and the bill), never what the
+        # site IS. It moves no rung, the run still aligns the site, and the
+        # confirmation is still the only place a disposition is sealed — an intent
+        # is a draft, and the body of THIS route has no field a claimed fit-outcome
+        # could ride in on.
+        ("PUT", "/api/case-sessions/{case_id}/sites/{tooth}/withhold"),
     }
     STATUS_SHAPED = {"status", "state", "verdict", "gate", "flagged", "ready",
                      "confirmed"}

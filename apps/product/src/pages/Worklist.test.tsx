@@ -154,3 +154,46 @@ describe("the worklist container", () => {
     expect(html).toContain("Loading the worklist");
   });
 });
+
+/**
+ * THE SCAN-ARRIVAL PANEL (design flow.dc.html 76-83; gap "a scan arrives", 2026-07-31).
+ *
+ * The prototype's dashed "Drop a scan file" zone is scenery — its `browseUpload` is
+ * `() => this.pickScan(SCANS[0].id)` (flow.dc.html:1105), which selects a fixture. This
+ * product ships the honest affordance instead, so these tests police the two halves of
+ * honesty: it must SAY how scans actually reach this installation, and it must offer no
+ * control that could be mistaken for an upload.
+ */
+describe("the scan-arrival panel", () => {
+  it("states the real route onto this worklist", () => {
+    const html = screenHtml({ kind: "ok", data: [worklistRow()] });
+    expect(html).toContain('data-role="scan-arrival"');
+    expect(html).toContain("How a new scan reaches this worklist");
+    expect(html).toContain("*.stl");
+  });
+
+  it("offers nothing that behaves like an upload", () => {
+    const html = screenHtml({ kind: "ok", data: [worklistRow()] });
+    // scoped to the panel's own markup: a control elsewhere on the screen is not this
+    // test's business, but a control INSIDE the zone is exactly what must never exist
+    const panel = html.slice(html.indexOf('data-role="scan-arrival"'));
+    expect(panel).not.toContain("<button");
+    expect(panel).not.toContain("<input");
+    expect(panel).not.toContain("browse files");
+    expect(panel).not.toContain("Drop a scan file");
+    expect(panel).toContain("There is no browser upload");
+  });
+
+  it("is loudest on the empty worklist — the one time the operator asks 'where?'", () => {
+    const html = screenHtml({ kind: "ok", data: [] });
+    expect(html).toContain('data-role="worklist-empty"');
+    expect(html).toContain('data-role="scan-arrival"');
+  });
+
+  it("stays out of the way while loading and when the BFF is unreachable", () => {
+    expect(screenHtml({ kind: "loading" })).not.toContain('data-role="scan-arrival"');
+    expect(
+      screenHtml({ kind: "error", detail: "the case service is unreachable" }),
+    ).not.toContain('data-role="scan-arrival"');
+  });
+});

@@ -111,6 +111,24 @@ class SiteSession(BaseModel):
     # None on documents persisted before the record existed, which the run gate
     # treats as unverifiable (fail-closed: re-preview + re-review once)
     seated_selection: Optional[SeatedSelection] = None
+    # THE DROP, AS A DRAFT (design flow.dc.html dropSite 1345-1354; gap
+    # ``drop-a-cap-from-adjust``, 2026-07-31): the operator's standing intent to
+    # WITHHOLD this site at confirmation time.
+    #
+    # It is deliberately NOT a second way to exclude a site. The product already had
+    # the act — ``ConfirmationRecord.dispositions`` (release | withhold) — and it was
+    # reachable only from Deliver, so an operator abandoning a stubborn cap at Adjust
+    # had to carry the decision to the signing screen to record it at all. Two
+    # overlapping exclusion concepts would be two gates to keep in step, which is
+    # exactly the class of defect audit finding 1 (2026-07-31) found in this module.
+    # So this is the SAME concept with a draft stage: it PRE-FILLS the confirmation's
+    # dispositions (``confirm_case``), and the confirmation still signs them.
+    #
+    # An ACT in the allowlist's sense: it says what the operator DOES with a site,
+    # never what the site IS. It moves no rung, and the run still aligns the site —
+    # skipping the physics would make the decision irreversible without a re-run,
+    # and the whole point of a draft is that it can be taken back.
+    withhold_intent: bool = False
 
     def clear_preview_facts(self) -> None:
         """The reset boundaries' ONE home for forgetting a preview's facts — called
@@ -390,6 +408,7 @@ ACT_CHOICES_SET = "choices-set"
 ACT_SYSTEM_DECLARED = "system-declared"
 ACT_SITE_MARKED = "site-marked"
 ACT_SITE_DECLARED = "site-declared"
+ACT_SITE_WITHHOLD_INTENT = "site-withhold-intent"
 ACT_SITE_PREVIEWED = "site-previewed"
 ACT_SITE_REVIEWED = "site-reviewed"
 ACT_SITE_REVIEW_WITHDRAWN = "site-review-withdrawn"
@@ -583,6 +602,24 @@ def released_teeth_of(dispositions: Dict[str, str]) -> List[int]:
     the record), the artifact gate and the display half: the same map must never
     imply two different sets in two places."""
     return sorted(int(t) for t, act in dispositions.items() if act == "release")
+
+
+def withhold_intents_of(session: "CaseSession") -> Dict[str, str]:
+    """The DRAFT disposition map the operator's drops imply — tooth-as-string →
+    ``"withhold"``, and nothing for a site nobody dropped (gap
+    ``drop-a-cap-from-adjust``, 2026-07-31).
+
+    Shaped as a disposition map on purpose: confirm folds it under the body's own
+    entries, and the invoice prices against it while no confirmation exists. Both
+    readers then resolve an unnamed site the one way confirm has always resolved one
+    (client 2026-07-27 #4: "omission means release"), so the draft and the signature
+    are read by identical code and cannot come to mean two different things.
+
+    Lives HERE beside ``released_teeth_of`` for the reason that one does: a second
+    reading of "which sites is the operator holding back?" would be a second answer
+    waiting to disagree with the first."""
+    return {tooth: "withhold" for tooth, site in session.sites.items()
+            if site.withhold_intent}
 
 
 def adjustments_of(session: "CaseSession") -> Optional[str]:

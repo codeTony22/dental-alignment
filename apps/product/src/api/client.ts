@@ -119,6 +119,12 @@ export interface SiteView {
    * move-forward summary reads these; null until this site has previewed. */
   seat_method: string | null;
   rim_agreement_mm: number | null;
+  /** THE DROP, AS A DRAFT (design flow.dc.html dropSite 1345-1354): whether the
+   * operator has said this site is to be WITHHELD at confirmation time. It is an
+   * ACT, not a rung — every surface renders it as something the operator DID, never
+   * as a verdict about the site. Optional on this type only because fixtures and
+   * detail documents written before it exists omit it; the BFF always sends it. */
+  withhold_intent?: boolean;
 }
 
 /** A detector proposal: centre + evidence + the NON-BINDING tooth guess + capture. */
@@ -627,6 +633,32 @@ export async function deleteReview(
 ): Promise<ApiResult<CaseSessionDetail>> {
   return fetchJson<CaseSessionDetail>(siteActionPath(caseId, tooth, "review"), {
     method: "DELETE",
+  });
+}
+
+/**
+ * DROP THIS CAP / BRING IT BACK (PUT /{id}/sites/{tooth}/withhold — design
+ * flow.dc.html dropSite 1345-1354).
+ *
+ * The DRAFT of the confirmation's own per-site disposition, made reachable from
+ * Adjust instead of only from the signing screen. It records what the operator DOES
+ * with the site — holds it back from the release and the bill — and never what the
+ * site IS: no rung moves, and the run still aligns it.
+ *
+ * IT IS NOT THE SIGNATURE. Confirm still carries the disposition map and still
+ * seals it; this only pre-fills what an unnamed site resolves to. Nothing about
+ * withholding is decided here, and no verdict, price or gate is computed in the
+ * browser — the returned detail is the whole new truth.
+ */
+export async function putWithholdIntent(
+  caseId: string,
+  tooth: number,
+  withhold: boolean,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(siteActionPath(caseId, tooth, "withhold"), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ withhold }),
   });
 }
 

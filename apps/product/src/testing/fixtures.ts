@@ -71,6 +71,9 @@ export function siteView(overrides: Partial<SiteView> = {}): SiteView {
     // clears them at every reset boundary with the rung that justified them)
     seat_method: null,
     rim_agreement_mm: null,
+    // the drop, as a draft: nobody has held this site back (gap
+    // ``drop-a-cap-from-adjust``) — the BFF's own default for a fresh site
+    withhold_intent: false,
     ...overrides,
   };
 }

@@ -24,6 +24,8 @@ The ACTIONS (slices 4-5b) — writes that carry no claimed outcomes:
     over the panes; no body either way, the act is the request itself.
   - ``POST .../adjust-decision`` (client 2026-07-27) — the Delivery-vs-Skip fork,
     recorded: an act about the Adjust STAGE, keyed to the run, gating nothing.
+  - ``PUT .../sites/{tooth}/withhold`` (2026-07-31) — dropping a cap: the DRAFT of
+    the confirmation's own disposition, reachable from Adjust and reversible.
 
 Every status is still DERIVED: cases and suggestions from ``case_prep.application``,
 statuses from the session store. The doctrine is structural and tested: every non-GET
@@ -58,11 +60,12 @@ from ..session import (ACT_ADJUST_DECISION, ACT_CHOICES_SET, ACT_DETECTED,
                        ACT_RUN_AUTHORIZED, ACT_RUN_LANDED, ACT_RUN_REFUSED,
                        ACT_RUN_WITHDRAWN, ACT_SITE_DECLARED, ACT_SITE_MARKED,
                        ACT_SITE_PREVIEWED, ACT_SITE_REVIEW_WITHDRAWN,
-                       ACT_SITE_REVIEWED, ACT_SYSTEM_DECLARED,
+                       ACT_SITE_REVIEWED, ACT_SITE_WITHHOLD_INTENT,
+                       ACT_SYSTEM_DECLARED,
                        AdjustDecisionRecord, CaseChoices, CaseSession,
                        DetectedProposal, DetectionRecord, RunSession,
                        SeatedSelection, SessionConflict, SessionStore, SiteSession,
-                       SiteStatus, clear_current_run,
+                       SiteStatus, clear_confirmation, clear_current_run,
                        confirmation_covers_bundle_shape, confirmation_covers_fork,
                        record_activity, release_matches_confirmation,
                        released_teeth_of, split_released_files, summary_teeth_of)
@@ -132,6 +135,12 @@ class SiteView(BaseModel):
     # never describe a preview the case has moved past.
     seat_method: Optional[str] = None
     rim_agreement_mm: Optional[float] = None
+    # THE DROP, AS A DRAFT (gap ``drop-a-cap-from-adjust``, 2026-07-31): whether the
+    # operator has said this site is to be WITHHELD at confirmation time. A standing
+    # INTENT, not an outcome — the confirmation is still what signs it, and every
+    # surface that renders this must say what the operator DID, never what the site
+    # IS (see ``SiteSession.withhold_intent``).
+    withhold_intent: bool = False
 
 
 class DetectedProposalView(BaseModel):
@@ -467,6 +476,26 @@ class MarkedSiteIn(BaseModel):
     center: List[float]
 
 
+class WithholdIntentIn(BaseModel):
+    """DROP THIS CAP / BRING IT BACK (design flow.dc.html dropSite 1345-1354) — one
+    boolean, both directions, and nothing else.
+
+    An ACT in this allowlist's sense, and the same one ``ConfirmIn.dispositions``
+    already carries: it says what the operator DOES with a site (hold it back from
+    the release and the bill), never what the site IS. There is deliberately no
+    reason field and no note — a drop that could carry a claim about the fit would
+    be a status field wearing a different name, and the ladder stays server-derived.
+
+    The design's own label reads "don't align or bill it". Only the second half is
+    true here, and the wording downstream says so: the run still aligns the site.
+    Skipping the physics would make the decision irreversible without a re-run,
+    which is the opposite of what a reversible draft is for."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    withhold: bool
+
+
 class DeclarationIn(BaseModel):
     """The per-site variant declaration (plan §4 Declare / AM-8) — one required
     catalog entry id. Membership against the EFFECTIVE system's library is judged in
@@ -503,6 +532,7 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
             capture=capture.get(str(tooth)),
             seat_method=(sess.seat_method if sess else None),
             rim_agreement_mm=(sess.rim_agreement_mm if sess else None),
+            withhold_intent=(sess.withhold_intent if sess else False),
         )
     for key, sess in session.sites.items():
         tooth = int(key)
@@ -517,7 +547,8 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
                                     center=sess.marked_center,
                                     capture=capture.get(key),
                                     seat_method=sess.seat_method,
-                                    rim_agreement_mm=sess.rim_agreement_mm)
+                                    rim_agreement_mm=sess.rim_agreement_mm,
+                                    withhold_intent=sess.withhold_intent)
     return [views[t] for t in sorted(views)]
 
 
@@ -1391,6 +1422,85 @@ def delete_review(case_id: str, tooth: int, request: Request) -> CaseSessionDeta
         session = _mutate_session(store, case_id, apply)
     except status.IllegalTransition as exc:
         raise HTTPException(422, str(exc))
+    return _detail(case, session, settings)
+
+
+# --- dropping a cap (gap ``drop-a-cap-from-adjust``, 2026-07-31) ------------------------
+
+@router.put("/{case_id}/sites/{tooth}/withhold", response_model=CaseSessionDetail)
+def put_withhold_intent(case_id: str, tooth: int, body: WithholdIntentIn,
+                        request: Request) -> CaseSessionDetail:
+    """Record — or take back — the operator's intent to WITHHOLD this site.
+
+    THE ACT ALREADY EXISTED; ITS REACH DID NOT. ``ConfirmIn.dispositions`` has
+    carried release|withhold per site since slice 8, but only from Deliver, at
+    signing time. An operator who gives up on a stubborn cap at Adjust had nowhere
+    to put that decision until they reached the signing screen — and before any
+    confirmation exists there is no record of the intent at all. This route is that
+    missing reach, NOT a second exclusion concept: what it writes is a DRAFT that
+    ``confirm_case`` folds under the body's own entries.
+
+    THE INTENT IS A DRAFT; THE CONFIRMATION IS THE ACT. Nothing here signs
+    anything — the confirmation's body still carries the disposition map, still
+    seals it over re-derivable evidence, and an explicit entry there still wins over
+    this. That separation is the whole reason this is admissible under AM-4's
+    doctrine: a draft that could seal itself would be a client writing a disclosure
+    outcome.
+
+    IT IS ALWAYS REACHABLE, both ways. No run, no preview and no declaration is
+    required: the decision is recordable at the moment it is actually taken, and the
+    reversal is the same route with ``false`` — "bring this cap back into the case"
+    must never be harder to find than the drop was.
+
+    A CONTRADICTED CONFIRMATION IS RETIRED (``clear_confirmation``), and the reason
+    is worth stating because a draft retiring a signature looks backwards. A
+    standing confirmation that signed this site as RELEASED no longer describes what
+    the operator wants; dispositions live outside the evidence hash, so the sha does
+    not move and the artifact gate's re-derivation would not catch it — the surface
+    would go on reading "Released ✓" over a cap the operator has just dropped. This
+    module's own rule for the reverse case is already "the operator's newest signed
+    act wins, and disclosure stops until an explicit re-release"; under-claiming a
+    release is the safe direction everywhere here, and the honest path out is the
+    one every other drift takes — re-confirm over what is there now. An intent the
+    confirmation ALREADY agrees with retires nothing (an identical re-act flips no
+    equality — the ``SeatedSelection`` precedent). The PAYMENT record survives:
+    money is not evidence.
+
+    Judged INSIDE the mutation, like every other per-site act, so a rival write
+    mid-flight is re-judged rather than re-applied from a stale read."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+
+    def apply(session: CaseSession) -> None:
+        _require_known_tooth(case, session, tooth)
+        site = session.sites.get(str(tooth), SiteSession())
+        if site.withhold_intent == body.withhold:
+            return   # not an act: an identical re-assertion states nothing new
+        site.withhold_intent = body.withhold
+        session.sites[str(tooth)] = site
+        # the standing signature, judged against the intent as it now stands
+        confirmation = session.confirmation
+        signed = (confirmation.dispositions.get(str(tooth))
+                  if confirmation is not None else None)
+        contradicted = signed is not None and (
+            signed == "withhold") != body.withhold
+        if contradicted:
+            clear_confirmation(session)
+        # THE WORDS ARE NOT THE DESIGN'S. Its log line reads "dropped — not aligned,
+        # not billed" (flow.dc.html 1352); post-run the first half is a lie — the
+        # alignment already ran, and this route deliberately leaves the pipeline
+        # alone. What is true either side of a run is that nothing is released for
+        # the site and it is not billed.
+        detail = ("held back — no construction is released for it and it is not "
+                  "billed; the confirmation still signs the dispositions"
+                  if body.withhold else
+                  "brought back into the case — it releases and bills with the rest")
+        if contradicted:
+            detail += "; the standing confirmation no longer described this and " \
+                      "was retired with any release over it"
+        record_activity(session, ACT_SITE_WITHHOLD_INTENT, detail, tooth=tooth)
+
+    session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)
 
 

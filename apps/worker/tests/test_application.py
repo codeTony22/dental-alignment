@@ -91,6 +91,19 @@ class TestDiscoverCases:
         assert case.suggested_model is None
         assert case.suggested_construction is None
 
+    def test_a_folder_holding_only_a_ply_is_not_a_case(self, tmp_path):
+        # THE PRODUCT'S SCAN-ARRIVAL COPY DEPENDS ON THIS (2026-07-31). The design
+        # prototype's drop zone advertises "STL or PLY"; discovery globs ``*.stl`` and
+        # nothing else, so a PLY-only folder is silently invisible — the worst failure
+        # mode there is for a lab that just copied a case in. apps/product's Worklist
+        # panel (domain/worklist.SCAN_ARRIVAL) therefore tells operators to convert
+        # first. If discovery ever learns PLY, this test fails and names the copy to fix.
+        root = _tree(tmp_path)
+        d = root / "scans" / "doctor-ply-only"
+        d.mkdir()
+        (d / "upper_jaw.ply").touch()
+        assert discover_cases(root) == []
+
     def test_jaw_is_a_suggestion_read_off_the_scan_filename(self, tmp_path):
         root = _tree(tmp_path)
         _scan_folder(root, "doctor-a-neodent-gm", "lower_jaw.stl")

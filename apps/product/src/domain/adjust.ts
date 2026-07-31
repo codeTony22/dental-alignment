@@ -123,6 +123,11 @@ export interface AdjustQueueEntry {
   readonly status: SiteStatus;
   readonly flagged: boolean;
   readonly optional: boolean;
+  /** The operator's standing WITHHOLD INTENT for this site, from the BFF
+   * (`SiteView.withhold_intent`) — never derived here. A dropped cap sinks to the
+   * bottom of the queue and keeps its verdict: dropping changes what SHIPS, never
+   * what was measured. */
+  readonly dropped: boolean;
   readonly declaredVariant: string | null;
   readonly reasons: readonly string[];
 }
@@ -154,6 +159,11 @@ function rowFor(
  * Sites the run never aligned are DROPPED: the tools refuse them server-side (there is
  * no fit to rework), and listing a row that can only refuse is a promise to nowhere —
  * the exact thing this whole stage exists to stop doing.
+ *
+ * A CAP THE OPERATOR DROPPED SINKS TO THE BOTTOM (design 1178) and is the one thing
+ * that outranks the flagged-first rule: it is the row they have already finished
+ * with. It is NOT hidden and it keeps its verdict — bringing it back must cost no
+ * re-read of why it was flagged in the first place.
  */
 export function adjustQueue(
   sites: readonly SiteView[],
@@ -166,10 +176,13 @@ export function adjustQueue(
       status: site.status,
       flagged: site.status === "flagged",
       optional: site.status !== "flagged",
+      // the BFF's own field, passed through — this app derives no disposition
+      dropped: site.withhold_intent === true,
       declaredVariant: site.declared_variant,
       reasons: gateActions(rowFor(rows, site.tooth)),
     }));
   return [...entries].sort((a, b) => {
+    if (a.dropped !== b.dropped) return a.dropped ? 1 : -1;
     if (a.flagged !== b.flagged) return a.flagged ? -1 : 1;
     return a.tooth - b.tooth;
   });
@@ -178,18 +191,64 @@ export function adjustQueue(
 /** The queue's one-line header — what the operator is looking at before they read a
  * single row. Counts only: the rows carry the reasons. */
 export function queueSummary(entries: readonly AdjustQueueEntry[]): string {
-  const flagged = entries.filter((e) => e.flagged).length;
+  const dropped = entries.filter((e) => e.dropped).length;
+  // a dropped cap is out of the WORK, so it is out of the work's counts — counting
+  // it as flagged would keep asking for a rework the operator has already declined
+  const live = entries.filter((e) => !e.dropped);
+  const flagged = live.filter((e) => e.flagged).length;
+  const tail = dropped === 0 ? "" : ` ${dropped} dropped.`;
   if (entries.length === 0) {
     return "No aligned sites on this run — there is nothing to rework.";
   }
-  if (flagged === 0) {
-    return `Nothing is flagged. All ${entries.length} site${
-      entries.length === 1 ? "" : "s"
-    } passed their gates — reworking one is optional.`;
+  if (live.length === 0) {
+    return "Every site on this run is dropped — nothing here releases or bills.";
   }
-  return `${flagged} of ${entries.length} site${entries.length === 1 ? "" : "s"} ${
+  if (flagged === 0) {
+    return `Nothing is flagged. All ${live.length} site${
+      live.length === 1 ? "" : "s"
+    } passed their gates — reworking one is optional.${tail}`;
+  }
+  return `${flagged} of ${live.length} site${live.length === 1 ? "" : "s"} ${
     flagged === 1 ? "is" : "are"
-  } flagged — those come first.`;
+  } flagged — those come first.${tail}`;
+}
+
+// --- dropping a cap (design flow.dc.html dropSite 1345-1354, queue row 1183-1191) -------
+//
+// THE DESIGN'S OWN WORDS ARE HALF WRONG HERE and it is worth saying why, because they
+// are otherwise the words to copy. Its button reads "drop this cap — don't align or
+// bill it" and its queue row "dropped — not aligned, not billed". On this stage the
+// alignment has ALREADY RUN: the operator is standing in front of the shipped pose.
+// The product's act deliberately does not touch the pipeline either (skipping the
+// physics would make the decision irreversible without a re-run). So every sentence
+// below states the half that is true — nothing releases for it, and it is not billed —
+// and none of them claims anything about what was measured.
+//
+// NOTHING HERE IS A VERDICT. The act is the BFF's per-site withhold INTENT, which
+// pre-fills the confirmation's disposition; the confirmation at Deliver is what signs
+// it. These functions name what the operator DOES, never what the site IS.
+
+/** The act's label, both directions — the reversal is a first-class control, not a
+ * hidden undo (design 1345: "bring this cap back into the case"). */
+export function dropLabel(dropped: boolean): string {
+  return dropped
+    ? "Bring this cap back into the case"
+    : "Drop this cap — hold it back from the release and the bill";
+}
+
+/** The standing explanation beside the control: what the act does, and who signs it. */
+export function dropNote(dropped: boolean): string {
+  return dropped
+    ? "This cap is held back: no construction releases for it and it is not billed. " +
+        "It is a draft — the confirmation at Deliver is what signs it, and bringing " +
+        "the cap back before then puts it straight back in."
+    : "Dropping a cap holds it back from the release and the bill. It stays on this " +
+        "queue with its verdict, and the drop can be undone here at any time.";
+}
+
+/** The dropped row's own line in the queue, in place of the flag/optional line. */
+export function droppedRowWords(): string {
+  return "dropped — nothing is released for it, and it is not billed";
 }
 
 // --- the panes' words on this stage ------------------------------------------------------

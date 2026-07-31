@@ -43,7 +43,7 @@ from ..session import (ACT_CASE_RESET, ACT_CONFIRMED, ACT_DELIVERY_RESET,
                        SessionConflict, SessionStore, adjustments_of,
                        record_activity, release_matches_confirmation,
                        released_teeth_of, split_released_files, summary_teeth_of,
-                       tooth_of_file)
+                       tooth_of_file, withhold_intents_of)
 from .case_sessions import (CaseSessionDetail, _case_or_404, _context, _detail,
                             _effective_choices, _mutate_session)
 
@@ -667,14 +667,25 @@ def _confirmation_run_id(session: CaseSession) -> Optional[str]:
 
 def _billing_dispositions(session: CaseSession, run: RunSession) -> Dict[str, str]:
     """The dispositions the invoice prices against: the STANDING confirmation's when
-    it names this run; empty when there is NO confirmation at all, which resolves
-    site by site to release.
+    it names this run; the operator's WITHHOLD DRAFT when there is no confirmation at
+    all, which resolves every un-dropped site to release.
 
     That default is confirm's own rule (client 2026-07-27 #4: "omission means
     release"), read here rather than re-invented: a case that reached Deliver is a
     case being delivered, and an invoice that quoted zero until someone clicked every
     site would be describing a different flow than the one the confirm route
     implements.
+
+    THE DRAFT IS PRICED (gap ``drop-a-cap-from-adjust``, 2026-07-31), because this
+    module's own rule demands it: what the operator READ and what they were CHARGED
+    cannot diverge (``derive_invoice``'s one-derivation note). ``confirm_case``
+    pre-fills its dispositions from exactly this map, so quoting a dropped cap at the
+    full release rate right up until the confirmation lands would be an invoice
+    describing a different act than the one the next click performs. Reading the
+    draft here also keeps the price honest ACROSS a retirement: dropping a cap the
+    standing confirmation released retires that confirmation, and without this the
+    invoice would spring back to full price at the exact moment the operator said
+    "don't ship it".
 
     A CONFIRMATION NAMING ANOTHER RUN IS NOT THAT STATE, and conflating the two was
     a money hole (audit finding 1, 2026-07-31). It happens with no race at all:
@@ -688,7 +699,7 @@ def _billing_dispositions(session: CaseSession, run: RunSession) -> Dict[str, st
     honest act is named in the refusal."""
     confirmation = session.confirmation
     if confirmation is None:
-        return {}
+        return withhold_intents_of(session)
     current = run.run_id or run.job_id
     if confirmation.run_id != current:
         raise HTTPException(
@@ -817,6 +828,11 @@ class ConfirmIn(BaseModel):
     only one that must be SAID. What is NOT relaxed: a flagged site that is released
     still needs its own row acknowledgment (AM-12 — the client's own assurance
     rule), which is exactly what the refusals now name.
+
+    AN OMISSION IS RESOLVED AGAINST THE OPERATOR'S DRAFT FIRST (2026-07-31): a cap
+    dropped at Adjust (``SiteSession.withhold_intent``) pre-fills its own withhold
+    here. That draft is NOT a signature and never becomes one — naming the site in
+    this body overrides it, and what is sealed is the map this route resolved.
 
     ``terms_accepted`` is the agreement itself, moved here from Declare's per-site
     ticks (plan §10-A). Required, like ``PaymentIn.authorize`` — a default would
@@ -1011,8 +1027,19 @@ def confirm_case(case_id: str, body: ConfirmIn,
         # every reader downstream (released_teeth_of, the artifact gate, the display
         # half) keeps reading one complete map — the default is resolved HERE, once,
         # never re-guessed by each reader.
-        dispositions = {str(t): body.dispositions.get(str(t), "release")
-                        for t in teeth}
+        #
+        # THE DRAFT SITS BETWEEN THEM (gap ``drop-a-cap-from-adjust``, 2026-07-31).
+        # A cap dropped at Adjust pre-fills its own withhold, so a decision taken
+        # hours before the signing screen is not silently released by omission. The
+        # PRECEDENCE is the point: body → draft → release. THE INTENT IS A DRAFT AND
+        # THIS IS THE ACT — an intent is not a signature, so a body that names the
+        # site explicitly overrides it, and what gets SEALED is still the map this
+        # route resolved and the operator signed, never the session field. The
+        # confirmation remains the only place a disposition is sealed.
+        drafted = withhold_intents_of(session)
+        dispositions = {
+            str(t): body.dispositions.get(str(t), drafted.get(str(t), "release"))
+            for t in teeth}
         # AM-12's acknowledgment gate, extended (plan §10-E, 2026-07-28): a site
         # needs its own row acknowledgment when the session ladder flagged it OR
         # the production block disclosed a shared-construction-part conflict

@@ -16,6 +16,8 @@ import {
   resumeTarget,
   rollupLabel,
   runChip,
+  SCAN_ARRIVAL,
+  SCAN_UPLOAD_ABSENT,
   worklistBand,
   type WorklistEntry,
 } from "./worklist";
@@ -180,5 +182,46 @@ describe("classifyWorklist — the per-row error contract and the defensive guar
       { kind: "unreadable", index: 0, id: null, error: null },
       { kind: "unreadable", index: 1, id: null, error: null },
     ]);
+  });
+});
+
+/**
+ * THE SCAN-ARRIVAL STATEMENT (design flow.dc.html 76-83; gap "a scan arrives",
+ * 2026-07-31). These tests exist to keep the panel's copy TRUE, because the design
+ * prototype pressures it toward two claims that are false here — see SCAN_ARRIVAL's
+ * own doc for the measurements that refuted them.
+ */
+describe("the scan-arrival statement", () => {
+  const prose = SCAN_ARRIVAL.map((step) => `${step.title} ${step.detail}`).join(" ");
+
+  it("has a stable, unique key per step and says something in each", () => {
+    const keys = SCAN_ARRIVAL.map((step) => step.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const step of SCAN_ARRIVAL) {
+      expect(step.title.length).toBeGreaterThan(0);
+      expect(step.detail.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("states the discovery rules a case is actually minted by", () => {
+    expect(prose).toContain("*.stl");
+    expect(prose).toContain("The folder name is the case");
+    expect(prose).toContain("lower"); // the jaw suggestion's one keyword
+  });
+
+  it("refuses the prototype's PLY claim — discovery globs *.stl and nothing else", () => {
+    expect(prose).toContain("a .ply on its own will not appear here");
+  });
+
+  it("refuses the prototype's watertight claim — 0 of 6 client scans are watertight", () => {
+    expect(prose).toContain("Watertightness is not a requirement");
+  });
+
+  it("never invites a browser drag — this app moves no files", () => {
+    // "drop" is the prototype's whole verb. If it ever reappears here, an operator
+    // will try dragging a file onto a page that cannot accept one.
+    expect(prose.toLowerCase()).not.toContain("drop");
+    expect(SCAN_UPLOAD_ABSENT.toLowerCase()).not.toContain("drop");
+    expect(SCAN_UPLOAD_ABSENT).toContain("no browser upload");
   });
 });

@@ -25,6 +25,9 @@ import {
   autoMarkSourceLabel,
   autoMarkSummary,
   diameterBandWords,
+  dropLabel,
+  dropNote,
+  droppedRowWords,
   flaggedExceptionWords,
   gateActions,
   isComplete,
@@ -104,12 +107,93 @@ describe("the flagged-first queue", () => {
   });
 });
 
+/**
+ * DROPPING A CAP (design flow.dc.html dropSite 1345-1354, queue row 1183-1191; gap
+ * `drop-a-cap-from-adjust`). The act itself is the BFF's — a per-site WITHHOLD
+ * INTENT that pre-fills the confirmation's disposition — so what is pinned here is
+ * only what this app decides: where a dropped row SORTS, and what the words are
+ * allowed to claim.
+ */
+describe("a dropped cap", () => {
+  const sites = [
+    siteView({ tooth: 4, status: "ready", declared_variant: "5020" }),
+    siteView({
+      tooth: 13,
+      status: "flagged",
+      declared_variant: "5020",
+      withhold_intent: true,
+    }),
+    siteView({ tooth: 19, status: "flagged", declared_variant: "4030" }),
+  ];
+  const rows = [row(4), row(13, "attention", [ACTION]), row(19, "attention", [ACTION])];
+
+  it("sorts last — below even the clean sites, whatever its rung", () => {
+    // the design's own rule (1178): dropped rows sink, and the flagged-first order
+    // holds among everything above them. A dropped cap is the one row the operator
+    // has already finished with.
+    expect(adjustQueue(sites, rows).map((e) => e.tooth)).toEqual([19, 4, 13]);
+  });
+
+  it("is still flagged, because the run still flagged it", () => {
+    // dropping changes what SHIPS, never what was measured — the row keeps the
+    // verdict and the gate's own words, so bringing the cap back costs no re-read
+    const dropped = adjustQueue(sites, rows).find((e) => e.tooth === 13)!;
+    expect(dropped.dropped).toBe(true);
+    expect(dropped.flagged).toBe(true);
+    expect(dropped.reasons).toEqual([ACTION]);
+  });
+
+  it("counts as dropped in the summary, and stops being counted as work", () => {
+    const summary = queueSummary(adjustQueue(sites, rows));
+    expect(summary).toContain("1 dropped");
+  });
+
+  it("says nothing about drops when nobody has dropped anything", () => {
+    expect(queueSummary(adjustQueue([sites[0]!], [row(4)]))).not.toContain("dropped");
+  });
+
+  it("labels the act and its reversal, both as things the operator DOES", () => {
+    expect(dropLabel(false)).toContain("Drop this cap");
+    expect(dropLabel(true)).toContain("Bring this cap back");
+  });
+
+  it("NEVER repeats the design's 'not aligned' — post-run that is a lie", () => {
+    // design 1352 logs "dropped — not aligned, not billed". The alignment already
+    // ran and this act deliberately leaves the pipeline alone, so the only honest
+    // half is the second one.
+    for (const words of [dropLabel(true), dropLabel(false), dropNote(true),
+                         dropNote(false), droppedRowWords()]) {
+      expect(words).not.toContain("not aligned");
+      expect(words).not.toContain("won't be aligned");
+    }
+  });
+
+  it("states what a drop actually does: nothing releases, nothing is billed", () => {
+    const note = dropNote(true);
+    expect(note).toContain("release");
+    expect(note).toContain("bill");
+    expect(droppedRowWords()).toContain("released");
+    expect(droppedRowWords()).toContain("billed");
+  });
+
+  it("says the CONFIRMATION is what signs it — this stage signs nothing", () => {
+    // the intent is a draft; the confirmation is the act. A surface that implied
+    // the drop was final would be claiming a disclosure outcome in the browser.
+    expect(dropNote(true)).toContain("Deliver");
+  });
+
+  it("offers the reversal in the same breath as the drop", () => {
+    expect(dropNote(false)).toContain("undone");
+  });
+});
+
 describe("the panes' words on this stage", () => {
   const entry: AdjustQueueEntry = {
     tooth: 13,
     status: "flagged",
     flagged: true,
     optional: false,
+    dropped: false,
     declaredVariant: "5020",
     reasons: [ACTION],
   };

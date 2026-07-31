@@ -74,6 +74,103 @@ export function confirmChip(confirmed: boolean): string {
   return confirmed ? "confirmed" : "unconfirmed";
 }
 
+/**
+ * HOW A SCAN ACTUALLY ARRIVES (design flow.dc.html 76-83; gap "a scan arrives",
+ * 2026-07-31).
+ *
+ * The design prototype puts a dashed drop zone here — "Drop a scan file · STL or PLY ·
+ * upper or lower jaw · watertight mesh", with a "browse files" button. It is scenery:
+ * `browseUpload: () => this.pickScan(SCANS[0].id)` (flow.dc.html:1105) selects a
+ * fixture. Shipping that zone would teach a workflow this installation does not have,
+ * so the affordance is a STATEMENT instead, and every clause of it was checked against
+ * the code that really mints cases (case_prep.application.cases.discover_cases).
+ *
+ * THREE OF THE PROTOTYPE'S FOUR CLAIMS ARE WRONG HERE, and the copy says so:
+ *
+ *  - "PLY" — discovery globs ``*.stl`` and nothing else (cases.py:78). A PLY-only
+ *    folder is not a case and never appears; pinned by
+ *    worker tests/test_application.py::test_a_folder_holding_only_a_ply_is_not_a_case.
+ *  - "watertight mesh" — measured 2026-07-31 over the client's shipped tree: 0 of 6
+ *    real intraoral scans is watertight (two are not even a single body). Advertising
+ *    watertightness as an acceptance criterion would have every scan this product has
+ *    ever run read as invalid, and would send a lab hunting a scanner fault that is
+ *    not there. Nothing checks it, and nothing should.
+ *  - "Drop a scan file" — no file travels through this app at all. See
+ *    SCAN_UPLOAD_ABSENT for what a real browser ingest would take.
+ *
+ * The one true claim is "upper or lower jaw", and even that is a SUGGESTION read off
+ * the filename (cases.py:89), settled by the operator at Intake.
+ *
+ * Display copy, not a rule: nothing here is computed and nothing here is a verdict.
+ * It lives in domain/ so the claims have one home and a test that pins them.
+ */
+export interface ScanArrivalStep {
+  readonly key: "folder" | "stl" | "name" | "jaw" | "appears" | "unchecked";
+  readonly title: string;
+  readonly detail: string;
+}
+
+export const SCAN_ARRIVAL: readonly ScanArrivalStep[] = [
+  {
+    key: "folder",
+    title: "One folder per case, in this installation's scan root",
+    detail:
+      "The lab copies the case folder into the scan root this service was configured " +
+      "with — the same place the morning's scans already land. The runbook names the " +
+      "path for this installation.",
+  },
+  {
+    key: "stl",
+    title: "An STL inside it",
+    detail:
+      "Discovery looks for *.stl and nothing else. A folder with no STL is not a case, " +
+      "and a .ply on its own will not appear here at all — convert it to STL first.",
+  },
+  {
+    key: "name",
+    title: "The folder name is the case",
+    detail:
+      "It becomes the case id and the doctor line on the rows above (a leading " +
+      "“doctor-” is stripped). If the name contains a library system — " +
+      "neodent-gm, zimmer-4.5 — that system's construction part is preselected at " +
+      "Intake, longest match winning. A name matching no system is still a case; you " +
+      "choose the part yourself.",
+  },
+  {
+    key: "jaw",
+    title: "The scan filename suggests the jaw",
+    detail:
+      "A filename containing “lower” reads as a lower jaw; anything else " +
+      "reads as upper. It is only a suggestion — Intake's jaw control settles it.",
+  },
+  {
+    key: "appears",
+    title: "Reload to see it",
+    detail:
+      "This worklist re-reads the scan root every time it loads: nothing is cached and " +
+      "no service needs restarting. Copy the folder in, then reload this page.",
+  },
+  {
+    key: "unchecked",
+    title: "Nothing here opens the mesh",
+    detail:
+      "Discovery reads names and directory shape only, so a case appears within " +
+      "seconds of landing however large the scan is. The cost is that a file which is " +
+      "not a readable mesh still gets a row, and only says so when Intake runs " +
+      "detection on it, in the detector's own words. Watertightness is not a " +
+      "requirement and is not checked — none of the client's own intraoral scans is " +
+      "watertight.",
+  },
+];
+
+/** Why there is no control here, said plainly so nobody hunts for the button the
+ *  design drew. The honest alternative to a zone that pretends. */
+export const SCAN_UPLOAD_ABSENT =
+  "There is no browser upload. Files do not travel through this app — scans reach the " +
+  "scan root the way the lab already moves them, and this worklist reads what is " +
+  "there. Nothing on this page will accept a dragged file: if a case is missing here, " +
+  "it is missing from the scan root.";
+
 const isRollup = (value: unknown): value is SiteRollup => {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;

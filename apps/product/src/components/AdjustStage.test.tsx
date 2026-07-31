@@ -20,6 +20,7 @@ const FLAGGED: AdjustQueueEntry = {
   status: "flagged",
   flagged: true,
   optional: false,
+  dropped: false,
   declaredVariant: "5020",
   reasons: [ACTION],
 };
@@ -29,9 +30,12 @@ const CLEAN: AdjustQueueEntry = {
   status: "ready",
   flagged: false,
   optional: true,
+  dropped: false,
   declaredVariant: "5020",
   reasons: [],
 };
+
+const DROPPED: AdjustQueueEntry = { ...FLAGGED, dropped: true };
 
 function view(overrides: Partial<Parameters<typeof AdjustStageView>[0]> = {}) {
   return renderToStaticMarkup(
@@ -670,5 +674,71 @@ describe("the workspace toolbar over the panes", () => {
     expect(wired).toMatch(
       /data-role="view-preset"[^>]*data-preset="occlusal"[^>]*aria-pressed="true"/,
     );
+  });
+});
+
+/**
+ * DROPPING A CAP (design flow.dc.html dropSite 1345-1354, template 471; gap
+ * `drop-a-cap-from-adjust`). The act is the BFF's per-site withhold INTENT — a
+ * draft the confirmation signs — so what is checked here is the TONE and the
+ * REACH: that the reversal is as findable as the act, that the row says what
+ * happened without claiming what the site is, and that nothing on this surface
+ * pretends the drop is final.
+ */
+describe("dropping a cap", () => {
+  it("offers the act on the selected site, in the operator's own terms", () => {
+    const html = view();
+    expect(html).toContain('data-role="drop-site"');
+    expect(html).toContain("Drop this cap");
+    expect(html).toContain("hold it back from the release and the bill");
+  });
+
+  it("offers the REVERSAL in the same place, not as a hidden undo", () => {
+    const html = view({ entries: [DROPPED, CLEAN], activeTooth: 13 });
+    expect(html).toContain('data-role="drop-site"');
+    expect(html).toContain("Bring this cap back into the case");
+    expect(html).toContain('data-dropped="true"');
+  });
+
+  it("says the confirmation at Deliver is what signs it", () => {
+    const html = view({ entries: [DROPPED, CLEAN], activeTooth: 13 });
+    expect(html).toContain('data-role="drop-note"');
+    expect(html).toContain("Deliver");
+  });
+
+  it("the dropped row reads as an ACT, never as a rung", () => {
+    const html = view({ entries: [DROPPED, CLEAN], activeTooth: 13 });
+    expect(html).toContain('data-role="queue-dropped"');
+    expect(html).toContain("nothing is released for it, and it is not billed");
+  });
+
+  it("never claims a dropped cap was not aligned — the run already ran", () => {
+    const html = view({ entries: [DROPPED, CLEAN], activeTooth: 13 });
+    expect(html).not.toContain("not aligned");
+  });
+
+  it("a dropped row stops asking for the rework the operator declined", () => {
+    // the flag line is the queue's ASK; a cap that is on its way out of the case
+    // must not keep asking to be reworked, though the reasons stay one click away
+    const html = view({ entries: [DROPPED, CLEAN], activeTooth: 13 });
+    expect(html).not.toContain('data-role="queue-flag"');
+    expect(html).toContain('data-role="queue-why"');
+  });
+
+  it("shows the refusal VERBATIM when the act is refused", () => {
+    const html = view({ dropError: "the case changed underneath this write" });
+    expect(html).toContain('data-role="drop-error"');
+    expect(html).toContain("the case changed underneath this write");
+  });
+
+  it("names the wait rather than freezing silently", () => {
+    const html = view({ dropSaving: true });
+    expect(html).toContain("Recording");
+    expect(html).toMatch(/data-role="drop-site"[^>]*disabled/);
+  });
+
+  it("offers nothing to drop when no site is selected", () => {
+    const html = view({ activeTooth: null, activeStatus: null });
+    expect(html).not.toContain('data-role="drop-site"');
   });
 });

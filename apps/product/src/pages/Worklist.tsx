@@ -21,6 +21,8 @@ import {
   orderWorklist,
   resumeTarget,
   runChip,
+  SCAN_ARRIVAL,
+  SCAN_UPLOAD_ABSENT,
   worklistBand,
   type WorklistEntry,
 } from "../domain/worklist";
@@ -119,6 +121,41 @@ const BAND_LABELS: Readonly<Record<number, string>> = {
 const bandOf = (entry: WorklistEntry): number =>
   entry.kind === "unreadable" ? -1 : worklistBand(entry.row);
 
+/**
+ * WHERE THE DESIGN'S DROP ZONE WENT (design flow.dc.html 76-83, gap "a scan arrives").
+ *
+ * The prototype draws a dashed "Drop a scan file" rectangle with a "browse files"
+ * button whose handler is `() => this.pickScan(SCANS[0].id)` — it selects a fixture.
+ * There is no ingest behind it, and there is none in this product either: the BFF's
+ * `data_root` is the worker's tree, READ-ONLY to the BFF by design (bff/config.py:20),
+ * and every case's identity, doctor, jaw and library suggestion is read out of the
+ * folder the lab created. A dashed rectangle that quietly loaded a fixture — or one
+ * that accepted a file this installation has nowhere to put — would teach a workflow
+ * that does not exist, which is strictly worse than no zone at all.
+ *
+ * So the zone states the route that IS real, in the operator's terms. It is prose and
+ * a heading: no button, no input, nothing droppable. The claims are in
+ * domain/worklist.SCAN_ARRIVAL with the measurements that refuted the prototype's.
+ */
+function ScanArrival() {
+  return (
+    <section data-role="scan-arrival" className="scan-arrival">
+      <h3 className="scan-arrival__title">How a new scan reaches this worklist</h3>
+      <ol className="scan-arrival__steps">
+        {SCAN_ARRIVAL.map((step) => (
+          <li key={step.key} data-step={step.key} className="scan-arrival__step">
+            <strong className="scan-arrival__step-title">{step.title}</strong>
+            <span className="scan-arrival__step-detail">{step.detail}</span>
+          </li>
+        ))}
+      </ol>
+      <p data-role="scan-upload-absent" className="scan-arrival__note">
+        {SCAN_UPLOAD_ABSENT}
+      </p>
+    </section>
+  );
+}
+
 interface WorklistScreenProps {
   readonly state: FetchState<readonly unknown[]>;
 }
@@ -160,6 +197,10 @@ export function WorklistScreen({ state }: WorklistScreenProps) {
           })}
         </ol>
       )}
+      {/* Below the work, not above it: the 20-scan morning opens this page to pick a
+          case, not to read a procedure. It matters most on the empty list, which is
+          exactly where it ends up being the only thing on screen. */}
+      <ScanArrival />
     </section>
   );
 }
