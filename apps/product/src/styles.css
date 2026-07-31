@@ -3740,6 +3740,162 @@ button.package-files__link:hover {
   padding: 2px 8px;
 }
 
+/* ---- express checkout: the wallet mocks (client 2026-07-31) ----
+   Deliberately NOT pixel-copies of Apple's and Google's buttons. Both vendors
+   publish brand rules that a mock cannot satisfy, and a convincing forgery of a
+   payment button is exactly the thing a demo must not ship — so these carry the
+   right shape and placement (full-width, above the card list, black/dark) with a
+   MOCK badge that a real wallet button would never wear. */
+.checkout-wallets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.checkout-wallet {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px; /* the touch target real wallet buttons use */
+  padding: 0 14px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+  background: #000000;
+  border: 1px solid #000000;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.checkout-wallet:hover:not(:disabled) { opacity: 0.86; }
+
+.checkout-wallet:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.checkout-wallet--google {
+  color: #3c4043;
+  background: #ffffff;
+  border-color: var(--color-border);
+}
+
+.checkout-wallet__mark {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.checkout-wallet--google .checkout-wallet__mark {
+  font-weight: 800;
+  color: #4285f4;
+}
+
+.checkout-wallet__mock {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  opacity: 0.75;
+}
+
+/* "or pay with a card" — a rule with the words sitting in the gap */
+.checkout-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.checkout-divider::before,
+.checkout-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+/* ---- add a new card ---- */
+.checkout-add {
+  width: 100%;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-accent-green);
+  background: transparent;
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.checkout-add:hover:not(:disabled) {
+  background: #f6f8f7;
+  border-color: var(--color-accent-green);
+}
+
+.checkout-add:disabled { opacity: 0.5; cursor: default; }
+
+.checkout-add__plus {
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* scrolled into view on open, so leave room for the sticky pay bar to yield into */
+.checkout-add-panel {
+  scroll-margin-bottom: 12px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-accent-green);
+  border-radius: 6px;
+  background: #f6f8f7;
+}
+
+.checkout-add-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+/* the head carries the dismiss; Add rides the end of the field row */
+.checkout-add-panel__head { position: relative; }
+
+.checkout-add-panel__dismiss {
+  position: absolute;
+  right: 0;
+  top: -2px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.checkout-add-panel__dismiss:hover { color: var(--color-text); background: #e9edea; }
+
+.checkout-add-panel__go {
+  align-self: flex-end;
+  flex: 0 0 auto;
+  height: 34px;
+}
+
 /* ---- the saved cards ---- */
 .checkout-cards {
   list-style: none;
@@ -3768,9 +3924,12 @@ button.package-files__link:hover {
   border-color: var(--color-text-muted);
 }
 
+/* the product's accent is GREEN. These read `var(--color-accent, #2f7fe6)` until
+   2026-07-31 — a token this stylesheet never defines, so the selected card was
+   always the fallback BLUE, alone among every other selected thing in the app. */
 .checkout-card--selected {
-  border-color: var(--color-accent, #2f7fe6);
-  box-shadow: 0 0 0 1px var(--color-accent, #2f7fe6);
+  border-color: var(--color-accent-green);
+  box-shadow: 0 0 0 1px var(--color-accent-green);
 }
 
 .checkout-card:disabled {
@@ -3787,7 +3946,7 @@ button.package-files__link:hover {
 }
 
 .checkout-card--selected .checkout-card__radio {
-  border-color: var(--color-accent, #2f7fe6);
+  border-color: var(--color-accent-green);
   border-width: 4px;
 }
 
@@ -3802,8 +3961,12 @@ button.package-files__link:hover {
   border-radius: 3px;
 }
 
-.checkout-card__brand--visa-4242 { background: #1a1f71; }
-.checkout-card__brand--mc-4444 { background: #cc4b1f; }
+/* keyed by BRAND, which is what the class is built from (`row.brand.toLowerCase()`).
+   These read `--visa-4242` until 2026-07-31 — card IDs, so every selector matched
+   nothing and no brand chip had ever been coloured. */
+.checkout-card__brand--visa { background: #1a1f71; }
+.checkout-card__brand--mc { background: #cc4b1f; }
+.checkout-card__brand--amex { background: #016fd0; }
 
 .checkout-card__lines {
   display: flex;
@@ -3845,6 +4008,19 @@ button.package-files__link:hover {
   flex-direction: column;
   gap: 3px;
   flex: 1 1 100%;
+}
+
+/* Inside the add panel the three fields share ONE row, the way a real card form
+   lays them out. Stacked (measured 2026-07-31) the panel stood ~200px tall, which
+   put the dialog back into scroll and pushed its own Add/Cancel behind the sticky
+   pay bar — the panel was hiding the buttons that dismiss it. */
+.checkout-add-panel .checkout-form__field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.checkout-add-panel .checkout-form__field--short {
+  flex: 0 0 74px;
 }
 
 .checkout-form__field--short {
@@ -3915,13 +4091,23 @@ button.package-files__link:hover {
   margin-top: 8px;
 }
 
-/* ---- the actions ---- */
+/* ---- the actions ----
+   STICKY (measured 2026-07-31: 781px of content in a 646px dialog body, so Pay and
+   Cancel sat below the fold on a 720px-tall screen). The client has already said it
+   once about Declare — "there should not be a need to scroll down" — and a checkout
+   whose Pay button must be hunted for is the worst place to repeat it. The bar rides
+   the bottom of the scrolling body; the content still scrolls behind it. */
 .checkout-page__actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
   display: flex;
   gap: 10px;
   align-items: center;
-  padding-top: 12px;
+  padding: 12px 0 2px;
+  margin-top: auto;
   border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
 }
 
 .checkout-pay {

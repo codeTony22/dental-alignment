@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StaticRouter } from "react-router-dom";
-import { CheckoutView } from "./CheckoutPage";
+import { ADDABLE_CARDS, CheckoutView, SAVED_CARDS, nextAddableCard } from "./CheckoutPage";
 import { caseSessionDetail } from "../testing/fixtures";
 import type { CaseSessionDetail } from "../api/client";
 
@@ -37,8 +37,14 @@ function view(detail: CaseSessionDetail, over: Partial<Parameters<typeof Checkou
         detail={detail}
         phase="idle"
         error={null}
+        cards={SAVED_CARDS}
         card="visa-4242"
         onCard={() => undefined}
+        adding={false}
+        onStartAdd={() => undefined}
+        onCancelAdd={() => undefined}
+        onAddCard={() => undefined}
+        onWalletPay={() => undefined}
         onPay={() => undefined}
         onCancel={() => undefined}
         {...over}
@@ -66,11 +72,17 @@ describe("the mock checkout", () => {
     expect(html).toContain("PLACEHOLDER — pricing not yet defined");
   });
 
-  it("has NO editable card field — every input is readOnly, structurally", () => {
+  it("has NO editable card field — when idle there is no input AT ALL", () => {
+    // Retargeted 2026-07-31 alongside the removal of the duplicated "Card details"
+    // section: the strongest possible form of "a real number cannot be typed here"
+    // is that the idle checkout renders no text input whatsoever.
     const html = view(confirmedDetail());
-    // static render: every <input> in the mock form must carry readonly; a single
-    // editable field would be a path for a real card number, which this demo must
-    // not have
+    expect(html.match(/<input[^>]*>/g) ?? []).toHaveLength(0);
+    expect(html).not.toContain('data-role="mock-card-form"');
+  });
+
+  it("the only inputs that ever exist — the add-card panel's — are readOnly", () => {
+    const html = view(confirmedDetail(), { adding: true });
     const inputs = html.match(/<input[^>]*>/g) ?? [];
     expect(inputs.length).toBeGreaterThan(0);
     for (const tag of inputs) {
@@ -116,7 +128,7 @@ describe("the checkout's affordances (rebuilt 2026-07-31)", () => {
     expect(html).toContain('aria-checked="true"');
   });
 
-  it("the locked fields track the SELECTED card, so the form is never a lie", () => {
+  it("the selected card ROW carries its own number and expiry — no second copy to drift", () => {
     const html = view(confirmedDetail(), { card: "mc-4444" });
     expect(html).toContain("•••• •••• •••• 4444");
     expect(html).toContain("09/33");
@@ -127,5 +139,83 @@ describe("the checkout's affordances (rebuilt 2026-07-31)", () => {
     expect(html).toContain("Authorizing (demo)…");
     // a card swapped mid-authorization would describe a payment that already left
     expect(html).toMatch(/data-role="saved-card"[^>]*disabled/);
+  });
+});
+
+describe("express checkout: the wallet mocks (client 2026-07-31)", () => {
+  it("offers Apple Pay and Google Pay ABOVE the card list, both marked MOCK", () => {
+    const html = view(confirmedDetail());
+    expect(html).toContain('data-wallet="apple-pay"');
+    expect(html).toContain('data-wallet="google-pay"');
+    expect(html).toContain("or pay with a card");
+    // placement is the point: a wallet is a way to SKIP the card, so it must not
+    // read as one more card in the list
+    expect(html.indexOf('data-role="wallets"')).toBeLessThan(
+      html.indexOf('data-role="saved-cards"'),
+    );
+  });
+
+  it("neither wallet claims to be real — the MOCK badge is on the button itself", () => {
+    const html = view(confirmedDetail());
+    const wallets = html.match(/<button[^>]*data-role="wallet-pay"[\s\S]*?<\/button>/g) ?? [];
+    expect(wallets).toHaveLength(2);
+    for (const button of wallets) expect(button).toContain("MOCK");
+  });
+
+  it("a blocked or already-paid case offers no wallet either", () => {
+    // the gate is the CASE's, not the payment method's: a wallet that worked while
+    // the card was refused would be a way around the confirmation requirement
+    expect(view(caseSessionDetail())).not.toContain('data-role="wallet-pay"');
+    const base = confirmedDetail();
+    const paid = {
+      ...base,
+      session: { ...base.session, payment_authorized: true },
+    } as CaseSessionDetail;
+    expect(view(paid)).not.toContain('data-role="wallet-pay"');
+  });
+
+  it("authorizing disables the wallets too", () => {
+    const html = view(confirmedDetail(), { phase: "paying" });
+    expect(html).toMatch(/data-role="wallet-pay"[^>]*disabled/);
+  });
+});
+
+describe("adding a card (client 2026-07-31: 'needs to be better')", () => {
+  it("offers the add control while the pool still has a card", () => {
+    const html = view(confirmedDetail());
+    expect(html).toContain('data-role="add-card-open"');
+    expect(html).toContain("Add a new card");
+    expect(html).not.toContain('data-role="add-card-panel"');
+  });
+
+  it("the open panel shows the NEXT pool card, pre-filled and locked", () => {
+    const html = view(confirmedDetail(), { adding: true });
+    expect(html).toContain('data-role="add-card-panel"');
+    expect(html).toContain("•••• •••• •••• 0005"); // amex, the first addable
+    expect(html).toContain('data-role="add-card-confirm"');
+    expect(html).toContain('data-role="add-card-cancel"');
+    // and it is STILL true that no input on this page can be typed into
+    for (const tag of html.match(/<input[^>]*>/g) ?? []) {
+      expect(tag).toContain("readonly");
+    }
+  });
+
+  it("says so honestly once the pool is spent, rather than offering a dead button", () => {
+    const html = view(confirmedDetail(), {
+      cards: [...SAVED_CARDS, ...ADDABLE_CARDS],
+    });
+    expect(html).toContain('data-role="add-card-exhausted"');
+    expect(html).not.toContain('data-role="add-card-open"');
+  });
+});
+
+describe("nextAddableCard", () => {
+  it("returns the first pool card not already held", () => {
+    expect(nextAddableCard(SAVED_CARDS)?.id).toBe("amex-0005");
+    expect(nextAddableCard([...SAVED_CARDS, ADDABLE_CARDS[0]!])?.id).toBe("visa-1881");
+  });
+
+  it("returns null — never a repeat — once every pool card is held", () => {
+    expect(nextAddableCard([...SAVED_CARDS, ...ADDABLE_CARDS])).toBeNull();
   });
 });

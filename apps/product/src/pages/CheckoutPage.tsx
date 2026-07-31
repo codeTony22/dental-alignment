@@ -17,7 +17,7 @@
  *     the return leg — which asserts NOTHING and merely re-reads the case. Only the
  *     BFF's own state says whether payment happened.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   postCheckoutReturn,
   postPayment,
@@ -26,17 +26,55 @@ import {
 
 type CheckoutPhase = "idle" | "paying" | "failed";
 
-const SAVED_CARDS = [
+export interface MockCard {
+  readonly id: string;
+  readonly brand: string;
+  readonly last4: string;
+  readonly holder: string;
+  readonly expiry: string;
+}
+
+export const SAVED_CARDS: readonly [MockCard, ...MockCard[]] = [
   { id: "visa-4242", brand: "VISA", last4: "4242", holder: "DEMO CARDHOLDER", expiry: "12/34" },
   { id: "mc-4444", brand: "MC", last4: "4444", holder: "DEMO CARDHOLDER", expiry: "09/33" },
-] as const;
+];
+
+/**
+ * The cards an "add a new card" can produce, in order.
+ *
+ * A demo must have NO path by which a real card number is typed, so adding a card
+ * cannot mean an editable form. It means the demo hands you the next card off this
+ * pool, pre-filled and visibly locked — the FLOW is real (choose to add, see the
+ * details, confirm, it joins the list and becomes selected) while the DATA never
+ * comes from a keyboard.
+ */
+export const ADDABLE_CARDS: readonly MockCard[] = [
+  { id: "amex-0005", brand: "AMEX", last4: "0005", holder: "DEMO CARDHOLDER", expiry: "04/35" },
+  { id: "visa-1881", brand: "VISA", last4: "1881", holder: "DEMO CARDHOLDER", expiry: "07/36" },
+];
+
+/** The next card this demo can add, or null once the pool is spent. */
+export function nextAddableCard(
+  existing: readonly MockCard[],
+  pool: readonly MockCard[] = ADDABLE_CARDS,
+): MockCard | null {
+  return pool.find((row) => !existing.some((have) => have.id === row.id)) ?? null;
+}
 
 export interface CheckoutViewProps {
   readonly detail: CaseSessionDetail;
   readonly phase: CheckoutPhase;
   readonly error: string | null;
+  readonly cards: readonly MockCard[];
   readonly card: string;
   readonly onCard: (id: string) => void;
+  /** The add-a-card panel's open state and its two acts. */
+  readonly adding: boolean;
+  readonly onStartAdd: () => void;
+  readonly onCancelAdd: () => void;
+  readonly onAddCard: (card: MockCard) => void;
+  /** A wallet button (client 2026-07-31) — the same two-leg flow, named. */
+  readonly onWalletPay: (wallet: string) => void;
   readonly onPay: () => void;
   /** Every exit is CLOSE (client 2026-07-30: "might be better on a modal, so the
    *  client can still see their work on the background") — the work behind this
@@ -82,8 +120,14 @@ export function CheckoutView({
   detail,
   phase,
   error,
+  cards,
   card,
   onCard,
+  adding,
+  onStartAdd,
+  onCancelAdd,
+  onAddCard,
+  onWalletPay,
   onPay,
   onCancel,
 }: CheckoutViewProps) {
@@ -92,8 +136,21 @@ export function CheckoutView({
     detail.session.confirmation?.terms_accepted === true;
   const paid = detail.session.payment_authorized;
   const siteCount = detail.sites.length;
-  const selected = SAVED_CARDS.find((row) => row.id === card) ?? SAVED_CARDS[0];
+  // may be null: an empty card list is a state the type allows, and a checkout with
+  // no method should say so rather than render a details panel about nothing
+  const selected = cards.find((row) => row.id === card) ?? cards[0] ?? null;
   const busy = phase === "paying";
+  const pending = nextAddableCard(cards);
+
+  /* Opening the panel grows the dialog past its height, and the sticky pay bar then
+     sits over the panel's own Add/Cancel (measured 2026-07-31: CTA bottom 644 vs bar
+     top 582). The bar is sticky, not fixed, so it yields at the end of the scroll —
+     the panel only has to bring itself into view. Effects do not run under
+     renderToStaticMarkup, so this costs the static tests nothing. */
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (adding) panelRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [adding]);
 
   return (
     <div data-role="checkout-page" className="checkout-page">
@@ -166,19 +223,66 @@ export function CheckoutView({
         />
       ) : (
         <>
+          {/* EXPRESS CHECKOUT (client 2026-07-31: "add in apple pay and android paid
+              button mocks"). Wallets sit ABOVE the card list and under their own
+              divider, which is where every real checkout puts them — they are a way
+              to skip the card entirely, not another card. Both are MOCKS and say so;
+              each runs the same two-leg flow the card button does. */}
           <section className="checkout-section">
-            <h3 className="checkout-section__title">Payment method</h3>
+            <h3 className="checkout-section__title">Express checkout</h3>
+            <div data-role="wallets" className="checkout-wallets">
+              <button
+                type="button"
+                data-role="wallet-pay"
+                data-wallet="apple-pay"
+                className="checkout-wallet checkout-wallet--apple"
+                disabled={busy}
+                onClick={() => onWalletPay("apple-pay")}
+              >
+                {/* THE WORDS, not the logos. "" is an Apple-font private-use
+                    character: measured 2026-07-31 it painted at width 0 in a
+                    non-Apple browser, leaving a black button that just said "Pay".
+                    Drawing the real marks instead would mean reproducing two
+                    trademarks on a fake payment button — the opposite of what a
+                    mock should do. Text renders everywhere and forges nothing. */}
+                <span className="checkout-wallet__word">Apple Pay</span>
+                <span className="checkout-wallet__mock">MOCK</span>
+              </button>
+              <button
+                type="button"
+                data-role="wallet-pay"
+                data-wallet="google-pay"
+                className="checkout-wallet checkout-wallet--google"
+                disabled={busy}
+                onClick={() => onWalletPay("google-pay")}
+              >
+                <span className="checkout-wallet__word">Google Pay</span>
+                <span className="checkout-wallet__mock">MOCK</span>
+              </button>
+            </div>
+            <p className="checkout-divider">
+              <span>or pay with a card</span>
+            </p>
+          </section>
+
+          <section className="checkout-section">
+            <h3 className="checkout-section__title">
+              Payment method
+              <span className="checkout-section__lock" aria-hidden="true">
+                🔒 nothing here is typed
+              </span>
+            </h3>
             {/* a RADIOGROUP, not a row of pressed buttons: picking one of several
                 mutually exclusive cards is exactly what radios mean, and screen
-                readers get the "1 of 2" for free */}
+                readers get the "1 of N" for free */}
             <ul
               data-role="saved-cards"
               className="checkout-cards"
               role="radiogroup"
               aria-label="Saved cards (mock)"
             >
-              {SAVED_CARDS.map((row) => {
-                const active = row.id === selected.id;
+              {cards.map((row) => {
+                const active = row.id === selected?.id;
                 return (
                   <li key={row.id}>
                     <button
@@ -195,7 +299,7 @@ export function CheckoutView({
                     >
                       <span className="checkout-card__radio" aria-hidden="true" />
                       <span
-                        className={`checkout-card__brand checkout-card__brand--${row.id}`}
+                        className={`checkout-card__brand checkout-card__brand--${row.brand.toLowerCase()}`}
                         aria-hidden="true"
                       >
                         {row.brand}
@@ -214,37 +318,93 @@ export function CheckoutView({
                 );
               })}
             </ul>
+
+            {/* ADD A NEW CARD (client 2026-07-31: "Add a new card needs to be
+                better"). It was not there at all — the only card surface was the
+                locked detail of whichever card was already selected. */}
+            {!adding && pending !== null && (
+              <button
+                type="button"
+                data-role="add-card-open"
+                className="checkout-add"
+                disabled={busy}
+                onClick={onStartAdd}
+              >
+                <span className="checkout-add__plus" aria-hidden="true">
+                  +
+                </span>
+                Add a new card
+              </button>
+            )}
+            {!adding && pending === null && (
+              <p data-role="add-card-exhausted" className="checkout-form__note">
+                Every demo card is already on this case — the pool is not a keyboard,
+                so there are no more to add.
+              </p>
+            )}
+
+            {adding && pending !== null && (
+              /* The FLOW is real — choose to add, see the details, confirm, it joins
+                 the list and becomes selected. The DATA never comes from a keyboard:
+                 a demo must have no path by which a real card number is typed, so
+                 the fields are pre-filled and readOnly like every other card field
+                 on this page. */
+              <div ref={panelRef} data-role="add-card-panel" className="checkout-add-panel">
+                <div className="checkout-add-panel__head">
+                  <strong>New card</strong>
+                  <span className="checkout-card__mock">MOCK</span>
+                  {/* the dismiss lives in the HEAD, and Add sits at the end of the
+                      field row: a second action BAR here would land under the
+                      dialog's sticky pay bar (measured 2026-07-31) — two competing
+                      footers, one of them hidden. One bar per dialog. */}
+                  <button
+                    type="button"
+                    data-role="add-card-cancel"
+                    className="checkout-add-panel__dismiss"
+                    aria-label="Cancel adding a card"
+                    onClick={onCancelAdd}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div data-role="mock-new-card-form" className="checkout-form">
+                  <label className="checkout-form__field">
+                    <span className="checkout-form__label">Card number</span>
+                    <input
+                      readOnly
+                      tabIndex={-1}
+                      value={`•••• •••• •••• ${pending.last4}`}
+                    />
+                  </label>
+                  <label className="checkout-form__field checkout-form__field--short">
+                    <span className="checkout-form__label">Expiry</span>
+                    <input readOnly tabIndex={-1} value={pending.expiry} />
+                  </label>
+                  <label className="checkout-form__field checkout-form__field--short">
+                    <span className="checkout-form__label">CVC</span>
+                    <input readOnly tabIndex={-1} value="•••" />
+                  </label>
+                  <button
+                    type="button"
+                    data-role="add-card-confirm"
+                    className="button button--primary button--small checkout-add-panel__go"
+                    onClick={() => onAddCard(pending)}
+                  >
+                    Add
+                  </button>
+                </div>
+                <p className="checkout-form__note">
+                  Pre-filled by the demo — this page accepts no typed card data.
+                </p>
+              </div>
+            )}
           </section>
 
-          <section className="checkout-section">
-            <h3 className="checkout-section__title">
-              Card details
-              <span className="checkout-section__lock" aria-hidden="true">
-                🔒 locked
-              </span>
-            </h3>
-            {/* readOnly BY DESIGN — there must be no code path by which a real card
-                number can be typed into a demo. Styled as LOCKED rather than
-                broken: the previous dashed-input treatment read as a form that had
-                failed to load (client 2026-07-30). */}
-            <div data-role="mock-card-form" className="checkout-form">
-              <label className="checkout-form__field">
-                <span className="checkout-form__label">Card number</span>
-                <input readOnly tabIndex={-1} value={`•••• •••• •••• ${selected.last4}`} />
-              </label>
-              <label className="checkout-form__field checkout-form__field--short">
-                <span className="checkout-form__label">Expiry</span>
-                <input readOnly tabIndex={-1} value={selected.expiry} />
-              </label>
-              <label className="checkout-form__field checkout-form__field--short">
-                <span className="checkout-form__label">CVC</span>
-                <input readOnly tabIndex={-1} value="•••" />
-              </label>
-            </div>
-            <p className="checkout-form__note">
-              Mock values, not editable — this demo holds no card data to enter.
-            </p>
-          </section>
+          {/* THE "CARD DETAILS" SECTION IS GONE (2026-07-31). It restated the
+              selected card row verbatim — same masked number, same expiry, plus a
+              CVC that was literally "•••" — and those 135px were the entire reason
+              the dialog scrolled and buried the Pay button. The selected row IS the
+              card's details; the lock now lives on the section that owns them. */}
 
           {error !== null && (
             <div data-role="checkout-error" role="alert" className="panel__error">
@@ -253,13 +413,13 @@ export function CheckoutView({
           )}
 
           {/* the actions sit in a footer bar: the primary act leads, the way out is
-              always beside it, and the reassurance rides under both */}
+              always beside it */}
           <footer className="checkout-page__actions">
             <button
               type="button"
               data-role="checkout-pay"
               className="button button--primary checkout-pay"
-              disabled={busy}
+              disabled={busy || selected === null}
               onClick={onPay}
             >
               {busy ? "Authorizing (demo)…" : "Pay (demo)"}
@@ -299,9 +459,14 @@ export function CheckoutDialog({
 }) {
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [cards, setCards] = useState<readonly MockCard[]>(SAVED_CARDS);
   const [card, setCard] = useState<string>(SAVED_CARDS[0].id);
+  const [adding, setAdding] = useState(false);
 
-  const handlePay = () => {
+  /** Both legs, named by whatever method paid — the reference is the only place the
+   *  method appears, because the SERVER records provider "stub" either way: a wallet
+   *  mock must not be able to describe itself as a different provider than it is. */
+  const pay = (method: string) => {
     setPhase("paying");
     setError(null);
     void postPayment(detail.case.id).then((paid) => {
@@ -310,12 +475,14 @@ export function CheckoutDialog({
         setError(paid.detail);
         return;
       }
-      void postCheckoutReturn(detail.case.id, `demo-${card}`).then((returned) => {
+      void postCheckoutReturn(detail.case.id, `demo-${method}`).then((returned) => {
         onDetail(returned.kind === "ok" ? returned.data : paid.data);
         onClose();
       });
     });
   };
+
+  const handlePay = () => pay(card);
 
   return (
     <div
@@ -336,8 +503,20 @@ export function CheckoutDialog({
             detail={detail}
             phase={phase}
             error={error}
+            cards={cards}
             card={card}
             onCard={setCard}
+            adding={adding}
+            onStartAdd={() => setAdding(true)}
+            onCancelAdd={() => setAdding(false)}
+            onAddCard={(added) => {
+              // added AND selected: adding a card you then have to go and pick is a
+              // step the operator did not ask for
+              setCards((now) => [...now, added]);
+              setCard(added.id);
+              setAdding(false);
+            }}
+            onWalletPay={pay}
             onPay={handlePay}
             onCancel={onClose}
           />
