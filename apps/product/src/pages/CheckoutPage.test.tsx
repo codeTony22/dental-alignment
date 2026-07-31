@@ -57,7 +57,10 @@ describe("the mock checkout", () => {
   it("offers saved-card MOCKS and a pay control, and the amount stays a placeholder", () => {
     const html = view(confirmedDetail());
     expect(html).toContain('data-role="saved-card"');
-    expect(html).toContain("Visa •••• 4242");
+    // Retargeted 2026-07-31: the row became a brand chip + a full masked number
+    // that never wraps, rather than one label that broke across two lines.
+    expect(html).toContain("VISA");
+    expect(html).toContain("•••• •••• •••• 4242");
     expect(html).toContain("MOCK");
     expect(html).toContain('data-role="checkout-pay"');
     expect(html).toContain("PLACEHOLDER — pricing not yet defined");
@@ -101,5 +104,28 @@ describe("the mock checkout", () => {
     const html = view(paid);
     expect(html).toContain('data-role="checkout-already-paid"');
     expect(html).not.toContain('data-role="checkout-pay"');
+  });
+});
+
+describe("the checkout's affordances (rebuilt 2026-07-31)", () => {
+  it("the cards are a RADIOGROUP — one of several, which is what radios mean", () => {
+    const html = view(confirmedDetail());
+    expect(html).toContain('role="radiogroup"');
+    expect(html).toContain('role="radio"');
+    // the selected one is announced, not merely coloured
+    expect(html).toContain('aria-checked="true"');
+  });
+
+  it("the locked fields track the SELECTED card, so the form is never a lie", () => {
+    const html = view(confirmedDetail(), { card: "mc-4444" });
+    expect(html).toContain("•••• •••• •••• 4444");
+    expect(html).toContain("09/33");
+  });
+
+  it("paying disables both the pay control and the card choice", () => {
+    const html = view(confirmedDetail(), { phase: "paying" });
+    expect(html).toContain("Authorizing (demo)…");
+    // a card swapped mid-authorization would describe a payment that already left
+    expect(html).toMatch(/data-role="saved-card"[^>]*disabled/);
   });
 });

@@ -27,8 +27,8 @@ import {
 type CheckoutPhase = "idle" | "paying" | "failed";
 
 const SAVED_CARDS = [
-  { id: "visa-4242", label: "Visa •••• 4242", holder: "DEMO CARDHOLDER" },
-  { id: "mc-4444", label: "Mastercard •••• 4444", holder: "DEMO CARDHOLDER" },
+  { id: "visa-4242", brand: "VISA", last4: "4242", holder: "DEMO CARDHOLDER", expiry: "12/34" },
+  { id: "mc-4444", brand: "MC", last4: "4444", holder: "DEMO CARDHOLDER", expiry: "09/33" },
 ] as const;
 
 export interface CheckoutViewProps {
@@ -42,6 +42,39 @@ export interface CheckoutViewProps {
    *  client can still see their work on the background") — the work behind this
    *  dialog never went anywhere, so there is nothing to navigate back to. */
   readonly onCancel: () => void;
+}
+
+/** A dead-end state (nothing to confirm yet, or already paid) — one shape, so the two
+ *  cases cannot drift into looking like different products. */
+function CheckoutNotice({
+  role,
+  tone,
+  title,
+  words,
+  action,
+  onCancel,
+}: {
+  readonly role: string;
+  readonly tone: "wait" | "done";
+  readonly title: string;
+  readonly words: string;
+  readonly action: string;
+  readonly onCancel: () => void;
+}) {
+  return (
+    <div data-role={role} className={`checkout-notice checkout-notice--${tone}`}>
+      <span className="checkout-notice__mark" aria-hidden="true">
+        {tone === "done" ? "✓" : "!"}
+      </span>
+      <div className="checkout-notice__body">
+        <strong className="checkout-notice__title">{title}</strong>
+        <p className="checkout-notice__words">{words}</p>
+      </div>
+      <button type="button" className="button button--secondary" onClick={onCancel}>
+        {action}
+      </button>
+    </div>
+  );
 }
 
 /** Pure markup — statically testable; the container owns the flow. */
@@ -58,121 +91,189 @@ export function CheckoutView({
     detail.session.confirmation !== null &&
     detail.session.confirmation?.terms_accepted === true;
   const paid = detail.session.payment_authorized;
+  const siteCount = detail.sites.length;
+  const selected = SAVED_CARDS.find((row) => row.id === card) ?? SAVED_CARDS[0];
+  const busy = phase === "paying";
+
   return (
     <div data-role="checkout-page" className="checkout-page">
       <header className="checkout-page__header">
-        <h2 className="checkout-page__title">Checkout</h2>
+        <div>
+          <h2 className="checkout-page__title">Checkout</h2>
+          <p className="checkout-page__case">
+            {detail.case.id} · {detail.case.doctor}
+          </p>
+        </div>
         {/* the same unmissable tone as the terms placeholder: nobody may mistake
             this screen for a real payment surface */}
-        <p data-role="checkout-demo-banner" className="terms-block__placeholder">
-          DEMO — no provider is contacted, no money moves, no real card data exists
-          on this page
+        <p data-role="checkout-demo-banner" className="checkout-page__demo">
+          DEMO — no provider is contacted, no money moves, and no real card data
+          exists on this page
         </p>
       </header>
 
-      <section className="checkout-page__summary panel">
-        <h3 className="panel__title">Order</h3>
-        <p data-role="checkout-order">
-          Case {detail.case.id} — {detail.sites.length} site
-          {detail.sites.length === 1 ? "" : "s"}
-        </p>
-        <p data-role="checkout-price" className="checkout-screen__price">
-          Amount due: <strong>PLACEHOLDER — pricing not yet defined</strong>
-        </p>
+      {/* THE ORDER, as line items rather than a sentence: a checkout's first job is
+          to say exactly what is being bought before it asks for money. */}
+      <section className="checkout-section">
+        <h3 className="checkout-section__title">Order</h3>
+        <dl className="checkout-order">
+          <div className="checkout-order__row">
+            <dt>Case</dt>
+            <dd data-role="checkout-order">
+              {detail.case.id} — {siteCount} site{siteCount === 1 ? "" : "s"}
+            </dd>
+          </div>
+          <div className="checkout-order__row">
+            <dt>Deliverables</dt>
+            <dd>Aligned parts + assurance report</dd>
+          </div>
+          <div className="checkout-order__row checkout-order__row--total">
+            <dt>Amount due</dt>
+            <dd data-role="checkout-price">
+              <span className="checkout-order__placeholder">
+                PLACEHOLDER — pricing not yet defined
+              </span>
+            </dd>
+          </div>
+        </dl>
       </section>
 
       {!confirmed && !paid ? (
         /* the payment gate's own precondition, said HERE rather than discovered as a
            409 after picking a card — the way back is the way forward */
-        <section data-role="checkout-blocked" className="panel">
-          <p className="panel__hint">
-            Payment needs a standing confirmation that accepted the terms — this case
-            does not have one yet.
-          </p>
-          <button type="button" className="button button--primary" onClick={onCancel}>
-            Close — confirm first
-          </button>
-        </section>
+        <CheckoutNotice
+          role="checkout-blocked"
+          tone="wait"
+          title="Not ready to pay yet"
+          words={
+            "Payment needs a standing confirmation that accepted the terms — " +
+            "this case does not have one yet."
+          }
+          action="Close — confirm first"
+          onCancel={onCancel}
+        />
       ) : paid ? (
-        <section data-role="checkout-already-paid" className="panel">
-          <p className="panel__hint">
-            This case is already paid (demo record, provider “stub”).
-          </p>
-          <button type="button" className="button button--primary" onClick={onCancel}>
-            Close
-          </button>
-        </section>
+        <CheckoutNotice
+          role="checkout-already-paid"
+          tone="done"
+          title="Already paid"
+          words={
+            "This case carries a demo payment record (provider “stub”). " +
+            "Nothing further is charged."
+          }
+          action="Close"
+          onCancel={onCancel}
+        />
       ) : (
         <>
-          <section className="panel">
-            <h3 className="panel__title">Saved cards (mock)</h3>
-            <ul data-role="saved-cards" className="checkout-cards">
-              {SAVED_CARDS.map((row) => (
-                <li key={row.id}>
-                  <button
-                    type="button"
-                    data-role="saved-card"
-                    data-card={row.id}
-                    aria-pressed={card === row.id}
-                    className={`checkout-card${
-                      card === row.id ? " checkout-card--selected" : ""
-                    }`}
-                    onClick={() => onCard(row.id)}
-                  >
-                    <span className="checkout-card__label">{row.label}</span>
-                    <span className="checkout-card__holder">{row.holder}</span>
-                    <span className="checkout-card__mock">MOCK</span>
-                  </button>
-                </li>
-              ))}
+          <section className="checkout-section">
+            <h3 className="checkout-section__title">Payment method</h3>
+            {/* a RADIOGROUP, not a row of pressed buttons: picking one of several
+                mutually exclusive cards is exactly what radios mean, and screen
+                readers get the "1 of 2" for free */}
+            <ul
+              data-role="saved-cards"
+              className="checkout-cards"
+              role="radiogroup"
+              aria-label="Saved cards (mock)"
+            >
+              {SAVED_CARDS.map((row) => {
+                const active = row.id === selected.id;
+                return (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      role="radio"
+                      data-role="saved-card"
+                      data-card={row.id}
+                      aria-checked={active}
+                      className={`checkout-card${
+                        active ? " checkout-card--selected" : ""
+                      }`}
+                      disabled={busy}
+                      onClick={() => onCard(row.id)}
+                    >
+                      <span className="checkout-card__radio" aria-hidden="true" />
+                      <span
+                        className={`checkout-card__brand checkout-card__brand--${row.id}`}
+                        aria-hidden="true"
+                      >
+                        {row.brand}
+                      </span>
+                      <span className="checkout-card__lines">
+                        <span className="checkout-card__label">
+                          •••• •••• •••• {row.last4}
+                        </span>
+                        <span className="checkout-card__holder">
+                          {row.holder} · expires {row.expiry}
+                        </span>
+                      </span>
+                      <span className="checkout-card__mock">MOCK</span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </section>
 
-          <section className="panel">
-            <h3 className="panel__title">Card details (mock — not editable)</h3>
-            {/* readOnly BY DESIGN: a demo must have no path by which a real card
-                number can be typed. These fields exist so the screen reads like the
-                checkout it stands in for, and for no other reason. */}
+          <section className="checkout-section">
+            <h3 className="checkout-section__title">
+              Card details
+              <span className="checkout-section__lock" aria-hidden="true">
+                🔒 locked
+              </span>
+            </h3>
+            {/* readOnly BY DESIGN — there must be no code path by which a real card
+                number can be typed into a demo. Styled as LOCKED rather than
+                broken: the previous dashed-input treatment read as a form that had
+                failed to load (client 2026-07-30). */}
             <div data-role="mock-card-form" className="checkout-form">
               <label className="checkout-form__field">
-                Card number
-                <input readOnly value="4242 4242 4242 4242" />
+                <span className="checkout-form__label">Card number</span>
+                <input readOnly tabIndex={-1} value={`•••• •••• •••• ${selected.last4}`} />
               </label>
               <label className="checkout-form__field checkout-form__field--short">
-                Expiry
-                <input readOnly value="12/34" />
+                <span className="checkout-form__label">Expiry</span>
+                <input readOnly tabIndex={-1} value={selected.expiry} />
               </label>
               <label className="checkout-form__field checkout-form__field--short">
-                CVC
-                <input readOnly value="•••" />
+                <span className="checkout-form__label">CVC</span>
+                <input readOnly tabIndex={-1} value="•••" />
               </label>
             </div>
+            <p className="checkout-form__note">
+              Mock values, not editable — this demo holds no card data to enter.
+            </p>
           </section>
 
-          <div className="checkout-page__actions">
-            <button
-              type="button"
-              data-role="checkout-pay"
-              className="button button--primary"
-              disabled={phase === "paying"}
-              onClick={onPay}
-            >
-              {phase === "paying" ? "Paying (demo)…" : "Pay (demo)"}
-            </button>
-            <button
-              type="button"
-              data-role="checkout-cancel"
-              className="button button--secondary"
-              onClick={onCancel}
-            >
-              Cancel (nothing is charged)
-            </button>
-          </div>
           {error !== null && (
             <div data-role="checkout-error" role="alert" className="panel__error">
               {error}
             </div>
           )}
+
+          {/* the actions sit in a footer bar: the primary act leads, the way out is
+              always beside it, and the reassurance rides under both */}
+          <footer className="checkout-page__actions">
+            <button
+              type="button"
+              data-role="checkout-pay"
+              className="button button--primary checkout-pay"
+              disabled={busy}
+              onClick={onPay}
+            >
+              {busy ? "Authorizing (demo)…" : "Pay (demo)"}
+            </button>
+            <button
+              type="button"
+              data-role="checkout-cancel"
+              className="button button--secondary"
+              disabled={busy}
+              onClick={onCancel}
+            >
+              Cancel (nothing is charged)
+            </button>
+          </footer>
         </>
       )}
     </div>
@@ -224,13 +325,13 @@ export function CheckoutDialog({
     >
       <section
         data-role="checkout-dialog"
-        className="decode-dialog decode-dialog--narrow"
+        className="decode-dialog decode-dialog--checkout"
         role="dialog"
         aria-modal="true"
         aria-label="Checkout (demo)"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="decode-dialog__body">
+        <div className="decode-dialog__body decode-dialog__body--plain">
           <CheckoutView
             detail={detail}
             phase={phase}

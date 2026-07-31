@@ -1887,6 +1887,12 @@ body {
   color: var(--color-text-muted);
 }
 
+/* NOTE the two columns: this base is the REPORT modal's shape — a 268px sidebar
+   beside its table. Any other dialog that reuses this class silently lands in that
+   sidebar. The checkout did exactly that (measured 2026-07-31: a 600px dialog whose
+   content column was 268px, wrapping the amount and the buttons), which is why
+   single-column bodies now say so with --plain rather than inheriting a layout meant
+   for a different dialog. */
 .decode-dialog__body {
   flex: 1;
   min-height: 0;
@@ -1894,6 +1900,14 @@ body {
   grid-template-columns: 268px minmax(0, 1fr);
   gap: 12px;
   padding: 10px 12px;
+}
+
+/* one column, full width — for dialogs that are a single document rather than a
+   sidebar beside a table */
+.decode-dialog__body--plain {
+  display: block;
+  overflow-y: auto;
+  padding: 16px 18px 18px;
 }
 
 /* Collapsed: the panels take the column's width too. */
@@ -3569,99 +3583,6 @@ button.package-files__link:hover {
   pointer-events: none;
 }
 
-/* ---- THE MOCK CHECKOUT (client 2026-07-30) --------------------------------------- */
-.checkout-page {
-  max-width: 560px;
-  margin: 0 auto;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.checkout-page__title {
-  margin: 0 0 8px;
-}
-
-.checkout-cards {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.checkout-card {
-  width: 100%;
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 10px 12px;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.checkout-card--selected {
-  border-color: var(--color-accent, #2f7fe6);
-  box-shadow: 0 0 0 1px var(--color-accent, #2f7fe6);
-}
-
-.checkout-card__holder {
-  color: var(--color-text-muted);
-  font-size: 12px;
-}
-
-/* the word MOCK rides on every card row — same job as the demo banner */
-.checkout-card__mock {
-  margin-left: auto;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--color-danger);
-  border: 1px dashed var(--color-danger);
-  border-radius: 999px;
-  padding: 1px 7px;
-}
-
-.checkout-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.checkout-form__field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--color-text-muted);
-  flex: 1 1 100%;
-}
-
-.checkout-form__field--short {
-  flex: 1 1 30%;
-}
-
-/* readOnly mock values render muted — visibly not a live form */
-.checkout-form__field input {
-  padding: 8px 10px;
-  font-size: 14px;
-  color: var(--color-text-muted);
-  background: var(--color-bg-subtle, #f6f7f8);
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.checkout-page__actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 /* the door back sits quietly beside the Delivery title — present, never loud */
 .delivery-reset {
   margin-left: 10px;
@@ -3710,4 +3631,299 @@ button.package-files__link:hover {
 .terms-page__body {
   white-space: pre-wrap;
   line-height: 1.6;
+}
+
+/* ---- THE CHECKOUT (client 2026-07-30, rebuilt for hierarchy) ---------------------
+   The first pass had the right substance and read like a form that had failed to
+   load: card labels wrapping mid-number, dashed inputs that looked broken rather
+   than deliberately locked, and every section the same weight. */
+.decode-dialog--checkout {
+  width: min(600px, 94vw);
+  max-height: 90vh;
+}
+
+.checkout-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.checkout-page__header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checkout-page__title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.checkout-page__case {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.checkout-page__demo {
+  margin: 0;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-danger);
+  background: #fdecea;
+  border: 1px dashed var(--color-danger);
+  border-radius: var(--radius-md);
+}
+
+.checkout-section__title {
+  margin: 0 0 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.checkout-section__lock {
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ---- the order, as line items ---- */
+.checkout-order {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.checkout-order__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.checkout-order__row dt {
+  color: var(--color-text-muted);
+}
+
+.checkout-order__row dd {
+  margin: 0;
+  text-align: right;
+}
+
+/* the total earns a rule above it — the one number a payer looks for */
+.checkout-order__row--total {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+  font-weight: 600;
+}
+
+.checkout-order__placeholder {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-amber);
+  background: var(--color-amber-bg);
+  border: 1px dashed var(--color-amber-border);
+  border-radius: var(--radius-md);
+  padding: 2px 8px;
+}
+
+/* ---- the saved cards ---- */
+.checkout-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checkout-card {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.checkout-card:hover:not(:disabled) {
+  border-color: var(--color-text-muted);
+}
+
+.checkout-card--selected {
+  border-color: var(--color-accent, #2f7fe6);
+  box-shadow: 0 0 0 1px var(--color-accent, #2f7fe6);
+}
+
+.checkout-card:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* the radio dot: a real selection affordance, not colour alone */
+.checkout-card__radio {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+}
+
+.checkout-card--selected .checkout-card__radio {
+  border-color: var(--color-accent, #2f7fe6);
+  border-width: 4px;
+}
+
+.checkout-card__brand {
+  min-width: 40px;
+  padding: 3px 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: #ffffff;
+  border-radius: 3px;
+}
+
+.checkout-card__brand--visa-4242 { background: #1a1f71; }
+.checkout-card__brand--mc-4444 { background: #cc4b1f; }
+
+.checkout-card__lines {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* the number never wraps — a wrapped card number reads as a broken row */
+.checkout-card__label {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.checkout-card__holder {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.checkout-card__mock {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-danger);
+  border: 1px dashed var(--color-danger);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+/* ---- the locked card fields ---- */
+.checkout-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.checkout-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 100%;
+}
+
+.checkout-form__field--short {
+  flex: 1 1 30%;
+}
+
+.checkout-form__label {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* SOLID and muted, not dashed: dashed borders read as "failed to load". These are
+   locked on purpose, and locked things look settled, not broken. */
+.checkout-form__field input {
+  padding: 9px 10px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  background: var(--color-bg-subtle, #f6f7f8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: default;
+}
+
+.checkout-form__note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* ---- the dead-end notices ---- */
+.checkout-notice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.checkout-notice__mark {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  border-radius: 999px;
+}
+
+.checkout-notice--wait .checkout-notice__mark { background: var(--color-amber); }
+.checkout-notice--done .checkout-notice__mark { background: var(--color-ok, #1e8e3e); }
+
+.checkout-notice__title { font-size: 14px; }
+
+.checkout-notice__words {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.checkout-notice .button {
+  grid-column: 2;
+  justify-self: start;
+  margin-top: 8px;
+}
+
+/* ---- the actions ---- */
+.checkout-page__actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.checkout-pay {
+  flex: 1 1 auto;
 }
