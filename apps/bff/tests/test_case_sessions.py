@@ -1355,6 +1355,10 @@ class TestStatusesAreNeverClientWritable:
         # clears stays server-side truth right up until this is called, which is
         # what keeps the forged-checkout-return test meaningful
         ("POST", "/api/case-sessions/{case_id}/delivery/reset"),
+        # the whole case back to fresh intake (client 2026-07-30: "resetting the
+        # cases persistance") — body-less; clears the session, never the immutable
+        # run directories, which AM-1 keeps as history
+        ("POST", "/api/case-sessions/{case_id}/reset"),
         # THE DELIVERY-vs-SKIP FORK (client 2026-07-27) — this allowlist's doctrine
         # extended once more, and the reason is worth stating: {"decision": "skip"}
         # says what the operator DID with the Adjust stage, never what any site IS.

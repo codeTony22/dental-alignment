@@ -593,3 +593,25 @@ describe("the parity chrome (ledger row 9): the demo's results-table language", 
     expect(html).toContain("decode-ack__actions");
   });
 });
+
+describe("the terms are a LINK to a routed document (client 2026-07-30)", () => {
+  it("the acceptance links out to the current terms, in a new tab", () => {
+    // a new tab because reading the agreement must not cost the operator the
+    // confirmation they are part-way through
+    const html = view();
+    expect(html).toContain('data-role="terms-link"');
+    expect(html).toContain('href="/terms"');
+    expect(html).toContain('target="_blank"');
+  });
+
+  it("a sealed confirmation resolves the EXACT version it accepted", () => {
+    const html = view({ detail: deliverableDetail(CONFIRMED) });
+    expect(html).toContain('data-role="sealed-terms-link"');
+    expect(html).toContain('href="/terms/placeholder-v1"');
+    expect(html).toContain("Terms accepted: placeholder-v1");
+  });
+
+  it("with nothing sealed there is no version to resolve", () => {
+    expect(view()).not.toContain('data-role="sealed-terms-link"');
+  });
+});

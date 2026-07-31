@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import {
   fetchCaseSession,
+  postCaseReset,
   type CaseSessionDetail,
   type FetchState,
 } from "../api/client";
@@ -68,6 +69,10 @@ interface CaseShellViewProps {
   readonly stage: StageId;
   /** How Intake's actions replace the payload; the static tests pass nothing. */
   readonly onDetail?: (next: CaseSessionDetail) => void;
+  /** Reset the whole case (client 2026-07-30). Null/omitted renders no control —
+   *  static tests predate it, and a demo affordance is opt-in by construction. */
+  readonly onResetCase?: (() => void) | null;
+  readonly resetting?: boolean;
 }
 
 const IGNORE_DETAIL = () => undefined;
@@ -79,7 +84,13 @@ const IGNORE_DETAIL = () => undefined;
  * Each built stage emits exactly two regions (.workbench__work + .workbench__stage);
  * the stage-body wrapper is `display: contents` so those regions sit as the grid's own
  * children without changing the tested DOM roles. */
-export function CaseShellView({ detail, stage, onDetail }: CaseShellViewProps) {
+export function CaseShellView({
+  detail,
+  stage,
+  onDetail,
+  onResetCase = null,
+  resetting = false,
+}: CaseShellViewProps) {
   const states = stageStates(factsFromCaseSession(detail));
   return (
     <section data-role="case-shell" className="case-shell">
@@ -90,6 +101,22 @@ export function CaseShellView({ detail, stage, onDetail }: CaseShellViewProps) {
         <span data-role="case-jaw" className="chip chip--gate">
           {detail.case.jaw}
         </span>
+        {/* RESET THE WHOLE CASE (client 2026-07-30: "there is a need for resetting
+            the cases persistance"). It sits in the case HEADER, not on a stage,
+            because it is not part of any stage's work — it discards all of it. The
+            immutable run directories survive on disk; this clears the session that
+            points at them, so a demo can be walked from the very start. */}
+        {onResetCase !== null && (
+          <button
+            type="button"
+            data-role="case-reset"
+            className="button button--ghost button--small case-header__reset"
+            disabled={resetting}
+            onClick={onResetCase}
+          >
+            {resetting ? "Resetting…" : "Reset case (demo)"}
+          </button>
+        )}
         {/* AM-7's loop: the worklist is home, and "next case" returns there. */}
         {/* The way back lives in the app header now ("← All cases", on every route). This
             corner link said "Next case" first and went to the worklist — a label that
@@ -116,6 +143,7 @@ export function CaseShellView({ detail, stage, onDetail }: CaseShellViewProps) {
 
 export function CaseShell() {
   const { id, stage } = useParams<{ id: string; stage: string }>();
+  const [resetting, setResetting] = useState(false);
   const [state, setState] = useState<FetchState<CaseSessionDetail>>({
     kind: "loading",
   });
@@ -163,6 +191,14 @@ export function CaseShell() {
       stage={resolution.stage}
       // an action's response IS the new payload — rendered verbatim (AM-4)
       onDetail={(next) => setState({ kind: "ok", data: next })}
+      resetting={resetting}
+      onResetCase={() => {
+        setResetting(true);
+        void postCaseReset(state.data.case.id).then((result) => {
+          setResetting(false);
+          if (result.kind === "ok") setState({ kind: "ok", data: result.data });
+        });
+      }}
     />
   );
 }

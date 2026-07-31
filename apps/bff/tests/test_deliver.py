@@ -25,6 +25,7 @@ import json
 import pytest
 
 from bff.config import Settings
+from bff.resources.deliver import TERMS_VERSION
 from bff.session import SessionStore
 
 from conftest import make_data_tree
@@ -1320,3 +1321,72 @@ class TestTheDemosDoorBack:
         after = SessionStore(product_root).load("neodent-gm")
         assert after.run is not None and after.run.state == "done"
         assert {k: s.status for k, s in after.sites.items()} == statuses
+
+
+class TestTheTermsResolve:
+    """A recorded terms_version must resolve to the text it names (client
+    2026-07-30: "shouldn't term and condition be a link and if clicked route to
+    the proper pages")."""
+
+    def test_the_current_terms_are_served_with_their_version(self, client):
+        res = client.get("/api/terms")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["version"] == TERMS_VERSION
+        assert body["status"] == "placeholder"
+        assert "PLACEHOLDER" in body["body"]
+
+    def test_a_confirmations_recorded_version_resolves_to_its_text(
+            self, settings, product_root):
+        # the whole point: read the version out of a sealed confirmation, then GET it
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        sealed = SessionStore(product_root).load("neodent-gm").confirmation
+        assert sealed is not None and sealed.terms_version is not None
+        res = client.get(f"/api/terms/{sealed.terms_version}")
+        assert res.status_code == 200
+        assert res.json()["version"] == sealed.terms_version
+
+    def test_an_unknown_version_404s_and_names_what_this_build_carries(self, client):
+        res = client.get("/api/terms/not-a-version")
+        assert res.status_code == 404
+        assert TERMS_VERSION in res.json()["detail"]
+
+
+class TestResettingTheWholeCase:
+    """POST /{case}/reset (client 2026-07-30: "resetting the cases persistance") —
+    back to fresh intake, while the immutable run directories stay history."""
+
+    def test_reset_returns_the_session_to_fresh_intake(self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        before = SessionStore(product_root).load("neodent-gm")
+        assert before.run is not None and before.sites and before.confirmation
+
+        res = client.post("/api/case-sessions/neodent-gm/reset")
+        assert res.status_code == 200
+        after = SessionStore(product_root).load("neodent-gm")
+        assert after.run is None
+        assert after.sites == {}
+        assert after.system is None
+        assert after.detection is None
+        assert after.confirmation is None and after.payment is None
+        assert after.release is None
+        assert after.adjust_decision is None and after.adjust_visited is False
+
+    def test_the_CAS_version_carries_FORWARD_so_a_stale_rival_still_loses(
+            self, settings, product_root):
+        # a reset must not become a way to make a stale write look current
+        client = deliverable_client(settings, product_root)
+        before = SessionStore(product_root).load("neodent-gm").version
+        assert client.post("/api/case-sessions/neodent-gm/reset").status_code == 200
+        assert SessionStore(product_root).load("neodent-gm").version > before
+
+    def test_the_run_DIRECTORY_survives_the_reset(self, settings, product_root):
+        # AM-1: a landed run is history; re-walking a demo does not erase it
+        client = deliverable_client(settings, product_root)
+        run_id = SessionStore(product_root).load("neodent-gm").run.run_id
+        run_dir = product_root / "neodent-gm" / "runs" / run_id
+        assert run_dir.is_dir()
+        assert client.post("/api/case-sessions/neodent-gm/reset").status_code == 200
+        assert run_dir.is_dir(), "the immutable run directory must survive"

@@ -10,6 +10,7 @@ import "./styles.css";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
 import { CaseShell } from "./pages/CaseShell";
 import { Shell } from "./pages/Shell";
+import { TermsPage } from "./pages/TermsPage";
 import { WorklistPage } from "./pages/Worklist";
 
 const router = createBrowserRouter([
@@ -18,6 +19,10 @@ const router = createBrowserRouter([
     element: <Shell />,
     children: [
       { index: true, element: <WorklistPage /> },
+      // the terms are CASE-INDEPENDENT and versioned: /terms is the current text,
+      // /terms/:version resolves the exact one a confirmation recorded
+      { path: "terms", element: <TermsPage /> },
+      { path: "terms/:version", element: <TermsPage /> },
       { path: "case/:id/:stage", element: <CaseShell /> },
       { path: "case/:id", element: <CaseShell /> },
       { path: "*", element: <Navigate to="/" replace /> },

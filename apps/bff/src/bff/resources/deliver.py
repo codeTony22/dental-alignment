@@ -44,6 +44,9 @@ from .case_sessions import (CaseSessionDetail, _case_or_404, _context, _detail,
                             _mutate_session)
 
 router = APIRouter(prefix="/api/case-sessions", tags=["deliver"])
+# the terms are a CASE-INDEPENDENT document: their own resource, not a
+# sub-resource of whichever case happens to be citing them
+terms_router = APIRouter(prefix="/api/terms", tags=["terms"])
 
 
 # --- the terms (plan §10-A) ---------------------------------------------------------------
@@ -69,6 +72,59 @@ TERMS_TEXT_PLACEHOLDER = (
     "assurance report and its QC images. I accept the alignment as shown and "
     "authorize release of the deliverables."
 )
+
+
+# THE TERMS AS A RESOLVABLE DOCUMENT (client 2026-07-30: "shouldn't term and
+# condition be a link and if clicked route to the proper pages").
+#
+# They are right, and the reason is stronger than layout. Every confirmation already
+# records WHICH terms it accepted (``terms_version``, sealed into the evidence hash),
+# but until now that string pointed at nothing: an auditor reading "placeholder-v1"
+# in a sealed bundle had no way to obtain the text it names. Serving each version by
+# id makes the recorded version RESOLVABLE — the evidence stops citing a document
+# nobody can produce.
+#
+# Versions are additive, never edited in place: when the client's real text lands it
+# becomes a NEW id, and a confirmation sealed over the old one still resolves to the
+# text its signer actually saw. That is the whole point of recording a version.
+TERMS_DOCUMENTS: Dict[str, Dict[str, str]] = {
+    TERMS_VERSION: {
+        "version": TERMS_VERSION,
+        "title": "Terms and Conditions",
+        "status": "placeholder",
+        "body": TERMS_TEXT_PLACEHOLDER,
+    },
+}
+
+
+class TermsDocumentView(BaseModel):
+    """One terms version, verbatim. ``status`` is "placeholder" until the client's
+    real text lands — the surface renders that word rather than deciding for itself
+    whether the document it received is binding."""
+
+    version: str
+    title: str
+    status: str
+    body: str
+
+
+@terms_router.get("/{version}", response_model=TermsDocumentView)
+def terms_document(version: str) -> TermsDocumentView:
+    """One version's text — 404 for an id this build does not carry, which is the
+    honest answer: a version served from a different deployment is not something
+    this one can vouch for."""
+    document = TERMS_DOCUMENTS.get(version)
+    if document is None:
+        raise HTTPException(
+            404, f"no terms document with version {version!r} — this build carries "
+                 f"{', '.join(sorted(TERMS_DOCUMENTS))}")
+    return TermsDocumentView(**document)
+
+
+@terms_router.get("", response_model=TermsDocumentView)
+def current_terms() -> TermsDocumentView:
+    """The CURRENT version — what a confirmation signed right now would record."""
+    return TermsDocumentView(**TERMS_DOCUMENTS[TERMS_VERSION])
 
 
 # --- response models --------------------------------------------------------------------
@@ -718,7 +774,46 @@ def authorize_payment(case_id: str, body: PaymentIn,
     return _detail(case, session, settings)
 
 
-# --- the demo's door back (client 2026-07-30) -------------------------------------------
+# --- the demo's doors back (client 2026-07-30) ------------------------------------------
+
+
+@router.post("/{case_id}/reset", response_model=CaseSessionDetail)
+def reset_case(case_id: str, request: Request) -> CaseSessionDetail:
+    """RESET THE WHOLE CASE to fresh intake (client 2026-07-30: "there is a need for
+    resetting the cases persistance").
+
+    The delivery reset below withdraws three signatures; this one returns the case to
+    the state it had on ingest — no system, no declarations, no previews, no
+    detection, no run, no signatures — so a demo can be walked from the very start
+    rather than from the last thing that happened to it.
+
+    WHAT SURVIVES, and it is not an oversight: the immutable RUN DIRECTORIES under
+    ``reports/product/<case>/runs/<run_id>/``. AM-1 says a landed run is history and
+    history is not erased by someone re-walking a demo — this clears the session's
+    POINTER to it, exactly as every other reset boundary already does. The case
+    record itself (the scan, the suggestions) is the ingest's, and no route of ours
+    writes it.
+
+    A fresh ``CaseSession`` is built rather than fields nulled one by one,
+    deliberately: a field added later would otherwise survive this reset silently,
+    and "reset" would quietly come to mean "reset the fields someone remembered".
+    The CAS version is carried FORWARD (not reset to 0) so a rival writer holding the
+    pre-reset document still loses its save — a reset must not become a way to make
+    a stale write look current."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+
+    def apply(session: CaseSession) -> None:
+        fresh = CaseSession(case_id=session.case_id, tenant_id=session.tenant_id,
+                            version=session.version)
+        for field in CaseSession.model_fields:   # on the CLASS (pydantic 2.11+)
+            setattr(session, field, getattr(fresh, field))
+
+    session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
+# --- the delivery door back --------------------------------------------------------------
 
 
 @router.post("/{case_id}/delivery/reset", response_model=CaseSessionDetail)

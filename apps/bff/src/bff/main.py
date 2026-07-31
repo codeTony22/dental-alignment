@@ -49,6 +49,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     # gated — mounted after case_sessions so its multi-segment paths never shadow
     # the single-segment detail route
     app.include_router(deliver.router)
+    # the terms document (client 2026-07-30): case-independent, so its own
+    # resource — a recorded terms_version must resolve to the text it names
+    app.include_router(deliver.terms_router)
     # the rework surface (plan §4 Adjust / slice 6): mounted after case_sessions for
     # the same reason deliver is — its multi-segment per-site paths must never shadow
     # the single-segment detail route

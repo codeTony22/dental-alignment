@@ -1067,3 +1067,43 @@ export async function postDeliveryReset(
     { method: "POST" },
   );
 }
+
+/** One terms version, verbatim from the BFF. `status` is "placeholder" until the
+ *  client's real text lands — the surface renders that word rather than deciding
+ *  for itself whether what it received is binding. */
+export interface TermsDocumentView {
+  version: string;
+  title: string;
+  status: string;
+  body: string;
+}
+
+/**
+ * Fetch a terms version — the CURRENT one when `version` is omitted (client
+ * 2026-07-30). A confirmation records which version it accepted; this is what makes
+ * that record resolvable rather than a string pointing at nothing.
+ */
+export async function fetchTerms(
+  version?: string,
+): Promise<ApiResult<TermsDocumentView>> {
+  const path =
+    version === undefined
+      ? "/api/terms"
+      : `/api/terms/${encodeURIComponent(version)}`;
+  return fetchJson<TermsDocumentView>(path);
+}
+
+/**
+ * RESET THE WHOLE CASE to fresh intake (client 2026-07-30: "there is a need for
+ * resetting the cases persistance"). Body-less. Clears the session — system,
+ * declarations, previews, detection, run and every signature — while the immutable
+ * run directories stay on disk as history (AM-1).
+ */
+export async function postCaseReset(
+  caseId: string,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/reset`,
+    { method: "POST" },
+  );
+}

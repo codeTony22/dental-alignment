@@ -3669,3 +3669,45 @@ button.package-files__link:hover {
   text-transform: none;
   letter-spacing: 0;
 }
+
+/* ---- the terms as a routed document (client 2026-07-30) -------------------------- */
+.terms-block__link {
+  display: inline-block;
+  margin-top: 4px;
+  font-weight: 600;
+  color: var(--color-accent, #2f7fe6);
+}
+
+/* the sealed version, resolvable from the confirmed step — quiet, it is an audit
+   affordance rather than an action */
+.release-step__terms {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.release-step__terms:hover {
+  color: var(--color-text);
+}
+
+.terms-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+}
+
+.terms-page__title {
+  margin: 0 0 4px;
+}
+
+.terms-page__version {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.terms-page__body {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}

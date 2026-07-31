@@ -148,7 +148,25 @@ function TermsAcceptance({
           disabled={disabled}
           onChange={(event) => onChange(event.target.checked)}
         />
-        <span data-role="terms-text">{termsText(siteCount)}</span>
+        <span data-role="terms-text">
+          {termsText(siteCount)}{" "}
+          {/* THE TERMS ARE A LINK (client 2026-07-30). A NEW TAB, deliberately:
+              reading the agreement must never cost the operator the confirmation
+              they are part-way through — and a legal document wants a URL you can
+              print, save or send on, which is why this is a route and not another
+              modal. /terms serves the CURRENT version — the same server constant
+              a new acceptance records — so what is read and what gets sealed
+              cannot be different documents. */}
+          <a
+            data-role="terms-link"
+            className="terms-block__link"
+            href="/terms"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Read the Terms and Conditions ↗
+          </a>
+        </span>
       </label>
     </div>
   );
@@ -577,6 +595,25 @@ export function DeliverStageView({
                 <div className="release-step__body">
                   <strong className="release-step__title">{step.title}</strong>
                   <span className="release-step__detail">{step.detail}</span>
+                  {step.id === "confirmed" &&
+                    step.state === "done" &&
+                    detail.session.confirmation?.terms_version != null && (
+                      /* THE AUDIT PATH (client 2026-07-30): the sealed record names
+                         a terms version, and this resolves it — reading back exactly
+                         the document that signature covered, even once newer terms
+                         land under a different version. */
+                      <a
+                        data-role="sealed-terms-link"
+                        className="release-step__terms"
+                        href={`/terms/${encodeURIComponent(
+                          detail.session.confirmation.terms_version,
+                        )}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Terms accepted: {detail.session.confirmation.terms_version} ↗
+                      </a>
+                    )}
 
                   {step.id === "confirmed" && step.state === "current" && (
                     <>

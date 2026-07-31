@@ -208,3 +208,30 @@ describe("the case load error", () => {
     expect(html).toContain("Start the BFF on :8001");
   });
 });
+
+describe("resetting the whole case (client 2026-07-30)", () => {
+  const detail = caseSessionDetail();
+
+  it("offers the reset in the case HEADER when the container wires it", () => {
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/declare">
+        <CaseShellView
+          detail={detail}
+          stage="declare"
+          onResetCase={() => undefined}
+        />
+      </StaticRouter>,
+    );
+    expect(html).toContain('data-role="case-reset"');
+    expect(html).toContain("Reset case (demo)");
+  });
+
+  it("renders no reset control when no handler is supplied", () => {
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/declare">
+        <CaseShellView detail={detail} stage="declare" />
+      </StaticRouter>,
+    );
+    expect(html).not.toContain('data-role="case-reset"');
+  });
+});
