@@ -18,16 +18,32 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
+from case_prep.application.adjust import load_site, site_clicks
 from case_prep.application.cases import CaseRecord, discover_cases
 from case_prep.application.catalog import UnknownSelection
 from case_prep.application.preview import (PreviewRefused, PreviewSelection,
-                                           preview_site)
+                                           measured_rim_centre_world, preview_site)
+from case_prep.domain.clock_signature import canon_point_to_world, template_signature
+from case_prep.domain.part_features import MIN_LEVER_ARM_MM
 
 REAL = Path(__file__).resolve().parents[1] / "data" / "real"
 real_only = pytest.mark.skipif(not (REAL / "library").is_dir(),
                                reason="real data tree not present")
+
+# a private, already-shipped run (test_adjust.py's own warmed fixture): reading its
+# scan/pose/template needs no ICP, no detection, no `run_auto_case` pass — just the
+# bytes already on disk — so the cross-check below is fast even though it exercises
+# real fleet geometry, not a synthetic identity.
+PRODUCT = Path(__file__).resolve().parents[1] / "reports" / "product"
+WARMED_CASE = "295811960-neodent-gm"
+WARMED_RUN = PRODUCT / WARMED_CASE / "runs" / "20260728-224101-47bb54"
+WARMED_TOOTH = 29
+warmed_only = pytest.mark.skipif(
+    not (REAL / "library").is_dir() or not WARMED_RUN.is_dir(),
+    reason="real data tree / warmed product run not present")
 
 
 def _case(tmp_path: Path, sites=()) -> CaseRecord:
@@ -85,6 +101,7 @@ class TestPreviewOnTheRealTree:
             "case_id", "tooth", "implant_model", "variant", "frame", "units",
             "pose", "n_points", "points", "faces", "deviation_mm", "scale",
             "stats", "vertex_footprint_points", "reporting_only", "preview", "seat",
+            "clock_reference",
         }
         assert payload["case_id"] == "neodent-gm"
         assert payload["tooth"] == 13
@@ -108,6 +125,11 @@ class TestPreviewOnTheRealTree:
         assert payload["stats"]["rms_mm"] is not None
         assert set(payload["seat"]) == {"seat_method", "rim_agreement_mm", "fit"}
         assert payload["seat"]["seat_method"] is not None
+        # plan §10-F: the scan-side lever guard's own reference, beside the pose —
+        # Declare carries the same field Adjust's seated payload does (test_adjust.py)
+        assert set(payload["clock_reference"]) == {"rim_centre", "min_lever_mm"}
+        assert len(payload["clock_reference"]["rim_centre"]) == 3
+        assert payload["clock_reference"]["min_lever_mm"] == MIN_LEVER_ARM_MM
 
     def test_nothing_persists_anywhere_a_later_read_could_find(self):
         # the demo kept OUT/<case>/preview; the product's preview is a pure derivation
@@ -118,3 +140,48 @@ class TestPreviewOnTheRealTree:
         preview_site(case, _selection(), tooth=13)
         assert sorted(p for p in case.scan.parent.rglob("*")) == before
         assert not (REAL / "preview").exists()
+
+
+@warmed_only
+@pytest.mark.slow
+class TestMeasuredRimCentreAgreesWithAdjust:
+    """plan §10-F: ``measured_rim_centre_world`` exists because a PRE-RUN preview has
+    no shipped record to build ``application.adjust``'s cached ``SiteContext`` from —
+    it rebuilds the crowns-local frame fresh instead of reusing one. That is only
+    safe if the fresh rebuild reads the IDENTICAL point ``adjust.site_clicks`` does
+    for the same scan and pose; a frame mismatch here would be invisible in either
+    module alone (both would look internally consistent) and would only surface as
+    Declare and Adjust silently disagreeing about where an operator's mark sits
+    relative to the guard's own bound.
+
+    Proved on the warmed run's REAL scan and REAL shipped pose (not a synthetic
+    identity transform, which cannot exercise ``_crowns_frame``'s actual PCA/normal
+    read on real mesh noise) by calling the two INDEPENDENT code paths — this
+    module's fresh reconstruction and ``adjust``'s cached-context read — over the
+    exact same bytes and comparing the result."""
+
+    def test_the_fresh_reconstruction_matches_the_cached_sitecontext_read(self):
+        case = next(c for c in discover_cases(REAL) if c.id == WARMED_CASE)
+        ctx = load_site(case, WARMED_RUN, WARMED_TOOTH)
+
+        # the ADJUST path: the frame cached on SiteContext at load_site time
+        sig = template_signature(ctx.template)
+        clicks = site_clicks(ctx, sig)
+        pose_world = np.asarray(ctx.record["pose_matrix"], float)
+        adjust_side = canon_point_to_world(clicks.rim_centre_xy, sig.ztop, pose_world)
+
+        # the PREVIEW path: no SiteContext at all — rebuilt from the scan and the
+        # pose alone, exactly what a pre-run preview has
+        preview_side = measured_rim_centre_world(
+            ctx.scan_points, _scan_normals_for(case), pose_world, ctx.template)
+
+        assert preview_side == pytest.approx(adjust_side.tolist(), abs=1e-6)
+
+
+def _scan_normals_for(case: CaseRecord) -> np.ndarray:
+    """The same normals ``load_site`` reads (``_scan_mesh(case.scan).vertex_normals``)
+    — a tiny local import to avoid reaching into ``application.detection``'s private
+    ``_scan_mesh`` from the test module's top level for what is otherwise a one-line
+    need."""
+    from case_prep.application.detection import _scan_mesh
+    return np.asarray(_scan_mesh(case.scan).vertex_normals, float)

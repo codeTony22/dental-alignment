@@ -91,8 +91,9 @@ from scipy.spatial import cKDTree
 
 from case_prep.adapters.output_package import register_package_files
 from case_prep.adapters.qc_render import render_alignment_proof
-from case_prep.domain.clock_signature import (notch_reading, scan_rim_centre,
-                                              template_signature, wrap_deg)
+from case_prep.domain.clock_signature import (canon_point_to_world, notch_reading,
+                                              scan_rim_centre, template_signature,
+                                              wrap_deg)
 from case_prep.domain.part_features import (CLICK_SLACK_MM, MIN_LEVER_ARM_MM,
                                             PartAnnotation, PartFeature,
                                             auto_features,
@@ -780,15 +781,36 @@ def _finish_adjustment(ctx: SiteContext, cand: np.ndarray, cap_path: Path,
     return names
 
 
+def clock_reference(ctx: SiteContext) -> dict:
+    """THE MEASURED RIM CENTRE ``require_clock_lever`` guards against (plan §10-F),
+    in WORLD coordinates, beside its own bound — so a client can measure the SAME
+    quantity the guard does and refuse locally with no risk of disagreeing.
+
+    ``site_clicks(ctx, sig).rim_centre_xy`` is exactly what every scan-side lever
+    check in this module reads (``observations_for``'s single-point and span
+    branches, ``align_to_mark``'s click azimuth) — this does not recompute it a
+    different way, it only changes the point's COORDINATES, via
+    ``canon_point_to_world`` (an exact composition through ``pose_matrix``, proved by
+    the round-trip test in test_adjust.py, not merely asserted)."""
+    sig = template_signature(ctx.template)
+    clicks = site_clicks(ctx, sig)
+    pose_world = np.asarray(ctx.record["pose_matrix"], float)
+    rim_world = canon_point_to_world(clicks.rim_centre_xy, sig.ztop, pose_world)
+    return {"rim_centre": [round(float(v), 6) for v in rim_world],
+            "min_lever_mm": MIN_LEVER_ARM_MM}
+
+
 def _seated_payload(ctx: SiteContext) -> dict:
     """The three panes' union read over the record's CURRENT pose — the same builder
     Declare's preview uses (``application.preview.deviation_payload``), so a pose read
     before and after an adjustment is the same instrument on the same scale.
     ``preview=False``: this colouring describes a SHIPPED pose, not a pre-run seat."""
-    return deviation_payload(
+    payload = deviation_payload(
         ctx.case_id, ctx.tooth, ctx.scan_points,
         np.asarray(ctx.record["pose_matrix"], float), ctx.template,
         implant_model=ctx.model, variant=ctx.variant, preview=False)
+    payload["clock_reference"] = clock_reference(ctx)
+    return payload
 
 
 def seated_payload(case: CaseRecord, run_dir: Path, tooth: int) -> dict:

@@ -39,15 +39,17 @@ from case_prep.application.adjust import (MIN_SPAN_MM, SPAN_RADIAL_TOLERANCE_DEG
                                           align_to_mark, anchor_certified_pose,
                                           azimuth_deg, best_fit_refusal, best_fit_site,
                                           circular_mean_deg, clock_landmarks,
-                                          direction_delta, landmark_point, load_site,
-                                          observation_weight, observations_for,
-                                          rederived_reading, require_clock_lever,
-                                          reset_discards, reset_target, residual_rows,
-                                          rotate_site, seated_payload, span_readings,
+                                          clock_reference, direction_delta,
+                                          landmark_point, load_site, observation_weight,
+                                          observations_for, rederived_reading,
+                                          require_clock_lever, reset_discards,
+                                          reset_target, residual_rows, rotate_site,
+                                          seated_payload, site_clicks, span_readings,
                                           validate_span)
 from case_prep.application.cases import CaseRecord, discover_cases
 from case_prep.domain.part_features import (MIN_LEVER_ARM_MM, PartFeature)
-from case_prep.domain.clock_signature import wrap_deg
+from case_prep.domain.clock_signature import (canon_point_to_world,
+                                              template_signature, wrap_deg)
 
 REAL = Path(__file__).resolve().parents[1] / "data" / "real"
 PRODUCT = Path(__file__).resolve().parents[1] / "reports" / "product"
@@ -79,6 +81,62 @@ class TestAzimuth:
         # the measured rim centre is never (0,0) on a real scan; a reading about the
         # wrong centre is the whole class of bug this argument exists to prevent
         assert azimuth_deg((2.0, 1.0), (1.0, 1.0)) == pytest.approx(0.0)
+
+
+class TestCanonPointToWorld:
+    """plan §10-F: composing a canonical-frame point (``scan_rim_centre``'s own xy, at
+    a template's ``ztop``) through a WORLD pose — the exact operation that exposes the
+    scan-side lever guard's measured rim centre without changing what the guard
+    measures. Hand-computed: no mesh, no scan, just the linear algebra the domain
+    function performs."""
+
+    def test_an_identity_rotation_only_translates(self):
+        pose = np.eye(4)
+        pose[:3, 3] = [1.0, 2.0, 3.0]
+        world = canon_point_to_world((5.0, -2.0), 0.75, pose)
+        assert world == pytest.approx([6.0, 0.0, 3.75])
+
+    def test_a_quarter_turn_about_z_rotates_the_canonical_x_axis_onto_world_y(self):
+        # pose columns are the WORLD images of the canon x/y/z axes (canon->world);
+        # a 90deg CCW turn about z sends canon +x to world +y, by hand
+        pose = np.eye(4)
+        pose[:3, :3] = [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+        world = canon_point_to_world((1.0, 0.0), 0.0, pose)
+        assert world == pytest.approx([0.0, 1.0, 0.0], abs=1e-9)
+
+    def test_z_composes_through_the_poses_own_axis_column(self):
+        pose = np.eye(4)
+        pose[:3, :3] = [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+        pose[:3, 3] = [0.0, 0.0, 10.0]
+        world = canon_point_to_world((0.0, 0.0), 2.0, pose)
+        assert world == pytest.approx([0.0, 0.0, 12.0])
+
+    def test_the_composition_inverts_exactly_recovering_the_canonical_point(self):
+        """THE FRAME PROOF this module exists for: composing a canonical point through
+        a pose and then reading it back through that SAME pose's inverse (its
+        transpose — a pose's rotation is orthonormal by construction, see
+        ``_crowns_frame``'s right-handed-frame note) must recover the exact xy/z it
+        started from. A wrong composition would still look plausible here — this is
+        why the real-data round trip below (against ``require_clock_lever``'s own
+        computed radius) is the test that actually proves the exposure is correct."""
+        rng = np.random.default_rng(2026_07_29)
+        for _ in range(20):
+            axis = rng.normal(size=3)
+            axis /= np.linalg.norm(axis)
+            theta = rng.uniform(-np.pi, np.pi)
+            k = np.array([[0.0, -axis[2], axis[1]],
+                          [axis[2], 0.0, -axis[0]],
+                          [-axis[1], axis[0], 0.0]])
+            rot = np.eye(3) + np.sin(theta) * k + (1 - np.cos(theta)) * (k @ k)
+            pose = np.eye(4)
+            pose[:3, :3] = rot
+            pose[:3, 3] = rng.normal(size=3) * 5.0
+            xy = rng.normal(size=2) * 3.0
+            z = float(rng.normal() * 2.0)
+            world = canon_point_to_world(xy, z, pose)
+            recovered = pose[:3, :3].T @ (world - pose[:3, 3])
+            assert recovered[:2] == pytest.approx(xy, abs=1e-9)
+            assert recovered[2] == pytest.approx(z, abs=1e-9)
 
 
 class TestSpanReadings:
@@ -653,11 +711,106 @@ class TestSeatedPayload:
         assert len(payload["deviation_mm"]) == payload["n_points"]
         # ...but this colouring describes a SHIPPED pose, not a pre-run seat
         assert payload["preview"] is False
+        # plan §10-F: the scan-side lever guard's own reference, beside the pose
+        assert set(payload["clock_reference"]) == {"rim_centre", "min_lever_mm"}
+        assert len(payload["clock_reference"]["rim_centre"]) == 3
+        assert payload["clock_reference"]["min_lever_mm"] == MIN_LEVER_ARM_MM
 
     def test_reading_the_seated_pose_writes_nothing(self, warmed_run):
         before = _fingerprint(warmed_run)
         seated_payload(_real_case(), warmed_run, WARMED_TOOTH)
         assert _fingerprint(warmed_run) == before
+
+
+@pytest.mark.slow
+@warmed_only
+class TestClockReferenceIsTheGuardsOwnQuantity:
+    """plan §10-F: exposing the measured rim centre only matters if it is PROVABLY the
+    same quantity ``require_clock_lever`` measures against — not a plausible-looking
+    point a few millimetres off (this project has shipped exactly that kind of wrong
+    number before: an axis estimator that read 26.9deg/48.3deg off, an occlusal proxy
+    off by up to 42deg). Real fleet geometry, not a synthetic identity."""
+
+    def test_the_payload_field_equals_the_guards_own_canonical_point_composed_through_the_pose(
+            self, warmed_run):
+        case = _real_case()
+        ctx = load_site(case, warmed_run, WARMED_TOOTH)
+        sig = template_signature(ctx.template)
+        clicks = site_clicks(ctx, sig)
+        pose_world = np.asarray(ctx.record["pose_matrix"], float)
+        expected = canon_point_to_world(clicks.rim_centre_xy, sig.ztop, pose_world)
+
+        payload = seated_payload(case, warmed_run, WARMED_TOOTH)
+        assert payload["clock_reference"]["rim_centre"] == pytest.approx(
+            expected.tolist(), abs=1e-5)
+        # ``clock_reference`` (the function) is exactly what the payload carries —
+        # pinned so the two cannot drift apart under a future edit
+        assert clock_reference(ctx) == {
+            "rim_centre": [round(float(v), 6) for v in expected],
+            "min_lever_mm": MIN_LEVER_ARM_MM,
+        }
+
+    def test_the_exposed_reference_is_a_real_measurement_not_the_pose_origin_repeated(
+            self, warmed_run):
+        # the whole point of §10-F: pose.origin is close to the measured rim centre
+        # but is not it (that gap is why the client could only WARN, never refuse)
+        payload = seated_payload(_real_case(), warmed_run, WARMED_TOOTH)
+        origin = np.array(payload["pose"]["origin"])
+        rim = np.array(payload["clock_reference"]["rim_centre"])
+        gap = float(np.linalg.norm(origin - rim))
+        assert 0.0 < gap < 5.0, (
+            f"expected a small but non-zero gap between the seat origin and the "
+            f"measured rim centre, got {gap:.3f}mm")
+
+    def test_a_mark_the_guard_accepts_reads_the_same_radius_the_exposed_reference_predicts(
+            self, warmed_run):
+        """THE ROUND TRIP this repo's standard of evidence asks for: a point at a
+        KNOWN canonical-frame distance from the measured rim centre must read the
+        SAME radius whether it is measured INTERNALLY (``require_clock_lever``'s own
+        basis, ``SiteClicks.to_canon_xy``) or EXTERNALLY, using nothing but the wire
+        payload's published ``pose`` and ``clock_reference`` fields — the exact
+        computation a client would run to refuse a span locally, before it is ever
+        placed. Both an ACCEPTED mark and a REFUSED one are checked: the exposed
+        reference must predict both outcomes, not just the convenient one."""
+        case = _real_case()
+        ctx = load_site(case, warmed_run, WARMED_TOOTH)
+        sig = template_signature(ctx.template)
+        clicks = site_clicks(ctx, sig)
+        pose_world = np.asarray(ctx.record["pose_matrix"], float)
+        payload = seated_payload(case, warmed_run, WARMED_TOOTH)
+
+        pose_origin = np.array(payload["pose"]["origin"])
+        pose_axis = np.array(payload["pose"]["axis"])
+        pose_x = np.array(payload["pose"]["x_axis"])
+        pose_y = np.cross(pose_axis, pose_x)
+        rim_world = np.array(payload["clock_reference"]["rim_centre"])
+        min_lever = payload["clock_reference"]["min_lever_mm"]
+
+        def client_canon_xy(point_world: np.ndarray) -> np.ndarray:
+            """What a client with ONLY the wire payload's pose/clock_reference
+            fields would compute — no canonical frame, no SiteContext, no scan."""
+            rel = np.asarray(point_world) - pose_origin
+            return np.array([rel @ pose_x, rel @ pose_y])
+
+        for dx, expect_accept in ((MIN_LEVER_ARM_MM + 2.0, True),
+                                  (MIN_LEVER_ARM_MM - 0.1, False)):
+            canon_xy = clicks.rim_centre_xy + np.array([dx, 0.0])
+            point_world = canon_point_to_world(canon_xy, sig.ztop, pose_world)
+
+            internal_radius = float(np.linalg.norm(
+                clicks.to_canon_xy(point_world) - clicks.rim_centre_xy))
+            predicted_radius = float(np.linalg.norm(
+                client_canon_xy(point_world) - client_canon_xy(rim_world)))
+            assert predicted_radius == pytest.approx(internal_radius, abs=1e-5)
+
+            if expect_accept:
+                assert require_clock_lever(internal_radius, "t", span=False) == \
+                    pytest.approx(internal_radius)
+                assert predicted_radius >= min_lever
+            else:
+                with pytest.raises(AdjustInvalid):
+                    require_clock_lever(internal_radius, "t", span=False)
+                assert predicted_radius < min_lever
 
 
 @pytest.mark.slow
