@@ -361,3 +361,11 @@ browser shared the box. The intent is right — the number is asked while an ope
 waits on a dropdown — but a wall-clock bound measures the MACHINE, not the code, and
 `-n auto` guarantees the machine is busy. Fix: measure work rather than seconds (cache
 hits, catalog reads), or mark it serial, or widen the bound and say it is a smoke test.
+
+RESOLVED 2026-07-29, the third option, and the reasoning is worth keeping: the bound is
+now 30s and the test is renamed to what it actually is — a floor against ORDER-OF-
+MAGNITUDE regression, not a budget. The failure mode it exists to catch (a change that
+re-reads the catalog per query) is orders of magnitude, so a wide bound loses nothing
+real while surviving a loaded box. The genuine budget belongs in a benchmark that owns
+the machine and compares against a baseline rather than a constant; it is not a
+correctness fact and does not belong in this lane.

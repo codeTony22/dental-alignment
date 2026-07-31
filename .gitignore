@@ -28,3 +28,8 @@ apps/worker/data/synthetic/
 *.log
 .env
 .env.*
+
+# Agent worktrees: transient, and `git add -A` swept them in as embedded gitlinks
+# on 2026-07-29. They are checkouts of THIS repo — committing them is meaningless
+# and confusing to anyone who clones it.
+.claude/worktrees/

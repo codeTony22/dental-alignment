@@ -282,14 +282,34 @@ class TestTheRealCatalogTable:
         assert small.wall_mm_at_zero < design_rules.MIN_WALL_MM <= large.wall_mm_at_zero
 
     @pytest.mark.slow
-    def test_a_cold_search_is_cheap_enough_to_answer_at_selection_time(self):
+    def test_a_cold_search_does_not_regress_by_an_order_of_magnitude(self):
+        """A FLOOR against catastrophic regression — deliberately not a budget.
+
+        This asserted `< 3.0s` against a measured ~1.2s worst case: 2.5x of headroom,
+        which is nothing on a shared box. It failed twice on 2026-07-29 inside the
+        8-way parallel lane while other suites and three agents shared the machine,
+        and passed alone in 1.97s both times. A wall-clock bound in a correctness
+        battery measures THE MACHINE, and `-n auto` guarantees the machine is busy —
+        so the old bound reported on the box, not the code, and a battery that goes
+        red for reasons unrelated to the code is how a team learns to ignore it.
+
+        The intent behind it is real and kept: this number is asked while an operator
+        waits on a dropdown, so a change that makes the search reload the catalog per
+        query must not pass silently. That failure mode is orders of magnitude, not
+        milliseconds, and this bound catches it while surviving a loaded box.
+
+        The genuine budget belongs in a benchmark that owns the machine, measured
+        against a baseline rather than a constant — it is not a correctness fact and
+        does not belong in this lane. See plan §10-G2.
+        """
         import time
         t0 = time.time()
         _real_limit(ATLANTIS, "zimmer-4.5", "7030")
         elapsed = time.time() - t0
-        assert elapsed < 3.0, (
-            f"the ceiling took {elapsed:.1f}s — it is asked while an operator waits on a "
-            f"dropdown; the measured budget is ~1.2s worst case on this catalog")
+        assert elapsed < 30.0, (
+            f"the cold ceiling search took {elapsed:.1f}s against a ~1.2s worst case "
+            f"measured on a quiet box — that is an order-of-magnitude regression, not "
+            f"a busy machine: something is re-reading the catalog per query")
 
 
 def _real_library(model: str):
