@@ -3568,3 +3568,104 @@ button.package-files__link:hover {
   background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--color-bg));
   pointer-events: none;
 }
+
+/* ---- THE MOCK CHECKOUT (client 2026-07-30) --------------------------------------- */
+.checkout-page {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.checkout-page__title {
+  margin: 0 0 8px;
+}
+
+.checkout-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checkout-card {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.checkout-card--selected {
+  border-color: var(--color-accent, #2f7fe6);
+  box-shadow: 0 0 0 1px var(--color-accent, #2f7fe6);
+}
+
+.checkout-card__holder {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+/* the word MOCK rides on every card row — same job as the demo banner */
+.checkout-card__mock {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-danger);
+  border: 1px dashed var(--color-danger);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.checkout-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.checkout-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  flex: 1 1 100%;
+}
+
+.checkout-form__field--short {
+  flex: 1 1 30%;
+}
+
+/* readOnly mock values render muted — visibly not a live form */
+.checkout-form__field input {
+  padding: 8px 10px;
+  font-size: 14px;
+  color: var(--color-text-muted);
+  background: var(--color-bg-subtle, #f6f7f8);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.checkout-page__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* the door back sits quietly beside the Delivery title — present, never loud */
+.delivery-reset {
+  margin-left: 10px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}

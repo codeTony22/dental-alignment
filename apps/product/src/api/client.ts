@@ -1051,3 +1051,19 @@ export async function fetchLandmarks(
 ): Promise<ApiResult<LandmarkView[]>> {
   return fetchJson<LandmarkView[]>(siteActionPath(caseId, tooth, "landmarks"));
 }
+
+/**
+ * START OVER (client 2026-07-30, the demo's door back): withdraw the confirmation,
+ * the payment and the release together, so the delivery flow can be walked again.
+ * Body-less — the act's whole content is the request; the server refuses when
+ * nothing is signed, and everything below the signatures (the run, every site rung)
+ * survives untouched.
+ */
+export async function postDeliveryReset(
+  caseId: string,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/delivery/reset`,
+    { method: "POST" },
+  );
+}

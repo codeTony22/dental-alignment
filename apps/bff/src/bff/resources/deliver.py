@@ -718,6 +718,48 @@ def authorize_payment(case_id: str, body: PaymentIn,
     return _detail(case, session, settings)
 
 
+# --- the demo's door back (client 2026-07-30) -------------------------------------------
+
+
+@router.post("/{case_id}/delivery/reset", response_model=CaseSessionDetail)
+def delivery_reset(case_id: str, request: Request) -> CaseSessionDetail:
+    """START OVER — withdraw the confirmation, the payment and the release, so the
+    delivery flow can be walked again (client 2026-07-30: "This is a demo … once paid
+    i cant go back").
+
+    The client's first framing was "we dont need to persist" — this route is the
+    version that keeps the trust architecture honest instead. Payment staying
+    server-side truth is the entire reason the forged-checkout-return test means
+    anything; making it ephemeral would demo a product whose money state evaporates.
+    So the state PERSISTS exactly as before, and the door back is an explicit,
+    body-less operator ACT: three signed records withdrawn together, loudly, leaving
+    the run and every site rung exactly where they stand. Re-walking the flow then
+    re-derives and re-seals evidence through the same gates as the first pass —
+    nothing about the second walk is cheaper.
+
+    All three records go TOGETHER, deliberately: a confirmation without its payment
+    would let the walk resume mid-flow with the terms acceptance already spent, and a
+    release outliving its confirmation is exactly the divergence the artifact gate
+    exists to refuse. Refuses 409 when nothing is signed — "start over" from the
+    start is a no-op someone mistook for a reset, and pretending it did something
+    would teach the demo operator a false model."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+
+    def apply(session: CaseSession) -> None:
+        if (session.confirmation is None and session.payment is None
+                and session.release is None):
+            raise HTTPException(409, f"nothing to start over from on case "
+                                     f"{case_id!r} — no confirmation, payment or "
+                                     f"release is standing")
+        session.confirmation = None
+        session.payment = None
+        session.release = None
+
+    session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
 # --- the checkout return leg (plan §10-A: "a checkout screen and a return") -------------
 
 class CheckoutReturnIn(BaseModel):

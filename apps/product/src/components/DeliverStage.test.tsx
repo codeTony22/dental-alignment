@@ -89,8 +89,7 @@ function view(overrides: Partial<Parameters<typeof DeliverStageView>[0]> = {}) {
         onAcknowledge={() => undefined}
         onToggleExpand={() => undefined}
         onConfirm={() => undefined}
-        onPay={() => undefined}
-        onRelease={() => undefined}
+          onRelease={() => undefined}
         onReloadEvidence={() => undefined}
         onDownload={() => undefined}
         {...overrides}
@@ -283,12 +282,38 @@ describe("the delivery progression — Confirmed, Paid, Released (#6)", () => {
     expect(html).toMatch(/data-step="paid"[^>]*data-state="current"/);
   });
 
-  it("the payment control names the case, the site count AND its stub nature", () => {
+  it("the paid step OPENS the mock checkout dialog instead of paying inline", () => {
+    // Retargeted twice on 2026-07-30, both by the client: first the inline stub
+    // became a real checkout surface ("does not routes me to add credit card or
+    // saved credit card mocks"), then the surface became a DIALOG over this page
+    // ("might be better on a modal, so the client can still see their work on the
+    // background"). The control is a button that opens it; nothing navigates away.
     const html = view({ detail: deliverableDetail(CONFIRMED) });
-    expect(html).toContain('data-role="payment-stub"');
-    expect(html).toContain("Pay (stub) — 2 sites on case case-a");
+    expect(html).toContain('data-role="go-to-checkout"');
+    expect(html).toContain("Go to checkout (demo) — 2 sites");
     expect(html).toContain('data-role="payment-stub-note"');
-    expect(html).toContain("no provider is contacted and no money moves");
+    expect(html).toContain("return leg asserts nothing");
+    expect(html).not.toContain('href="/case/case-a/checkout"');
+    expect(html).not.toContain('data-role="payment-stub"');
+  });
+
+  it("the checkout dialog rides on the stage when the container opens it", () => {
+    const html = view({
+      detail: deliverableDetail(CONFIRMED),
+      checkoutDialog: <div data-role="stub-checkout-dialog" />,
+    });
+    expect(html).toContain('data-role="stub-checkout-dialog"');
+  });
+
+  it("the door back appears once anything is signed, and names all three records", () => {
+    const html = view({ detail: deliverableDetail(CONFIRMED) });
+    expect(html).toContain('data-role="delivery-reset"');
+    expect(html).toContain("withdraw confirmation, payment &amp; release");
+  });
+
+  it("with nothing signed there is no door back to offer", () => {
+    const html = view();
+    expect(html).not.toContain('data-role="delivery-reset"');
   });
 
   it("the checkout screen shows a placeholder amount, never a real number (#10-A)", () => {

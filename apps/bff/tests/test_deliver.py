@@ -1259,3 +1259,64 @@ class TestTheReleasePreview:
         assert body["withheld_teeth"] == preview["withheld_teeth"]
         assert len(body["withheld_case_files"]) == preview[
             "withheld_case_file_count"]
+
+
+class TestTheDemosDoorBack:
+    """POST /{case}/delivery/reset (client 2026-07-30: "once paid i cant go back").
+    The records stay server-side truth; the door back is an explicit act that
+    withdraws all three together."""
+
+    def test_reset_after_payment_reopens_the_whole_flow(self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        assert client.post("/api/case-sessions/neodent-gm/payment",
+                           json={"authorize": True}).status_code == 200
+
+        res = client.post("/api/case-sessions/neodent-gm/delivery/reset")
+        assert res.status_code == 200
+        session = SessionStore(product_root).load("neodent-gm")
+        assert session.confirmation is None
+        assert session.payment is None
+        assert session.release is None
+        # and the gates all hold again: paying now refuses (no confirmed terms),
+        # releasing refuses, artifacts refuse — the second walk is not cheaper
+        assert client.post("/api/case-sessions/neodent-gm/payment",
+                           json={"authorize": True}).status_code == 409
+        assert release(client).status_code == 409
+        assert client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts"
+        ).status_code == 409
+
+    def test_reset_after_release_withdraws_the_disclosure_too(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        assert client.post("/api/case-sessions/neodent-gm/payment",
+                           json={"authorize": True}).status_code == 200
+        assert release(client).status_code == 200
+
+        assert client.post(
+            "/api/case-sessions/neodent-gm/delivery/reset").status_code == 200
+        assert SessionStore(product_root).load("neodent-gm").release is None
+        assert client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts"
+        ).status_code == 409
+
+    def test_reset_with_nothing_signed_refuses_in_words(self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        res = client.post("/api/case-sessions/neodent-gm/delivery/reset")
+        assert res.status_code == 409
+        assert "nothing to start over from" in res.json()["detail"]
+
+    def test_the_run_and_the_site_rungs_survive_a_reset(self, settings, product_root):
+        # the door back withdraws SIGNATURES, not work: the run stays current and
+        # every site keeps its rung, so re-walking starts at re-confirm, not re-run
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        before = SessionStore(product_root).load("neodent-gm")
+        statuses = {k: s.status for k, s in before.sites.items()}
+        assert client.post(
+            "/api/case-sessions/neodent-gm/delivery/reset").status_code == 200
+        after = SessionStore(product_root).load("neodent-gm")
+        assert after.run is not None and after.run.state == "done"
+        assert {k: s.status for k, s in after.sites.items()} == statuses

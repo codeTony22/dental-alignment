@@ -1350,6 +1350,11 @@ class TestStatusesAreNeverClientWritable:
         # (confirmation, dispositions, payment) is already the session's; validity
         # is judged by RE-DERIVING the evidence, never by trusting the record
         ("POST", "/api/case-sessions/{case_id}/release"),
+        # the demo's door back (client 2026-07-30): withdraw confirmation, payment
+        # and release TOGETHER — body-less, an explicit operator act; the state it
+        # clears stays server-side truth right up until this is called, which is
+        # what keeps the forged-checkout-return test meaningful
+        ("POST", "/api/case-sessions/{case_id}/delivery/reset"),
         # THE DELIVERY-vs-SKIP FORK (client 2026-07-27) — this allowlist's doctrine
         # extended once more, and the reason is worth stating: {"decision": "skip"}
         # says what the operator DID with the Adjust stage, never what any site IS.

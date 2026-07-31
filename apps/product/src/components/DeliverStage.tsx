@@ -31,13 +31,13 @@
  * its own flow: reload the evidence and ask again — never a silent retry.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CheckoutDialog } from "../pages/CheckoutPage";
 import {
   fetchArtifactBlob,
   fetchArtifacts,
   fetchAssurance,
-  postCheckoutReturn,
   postConfirm,
-  postPayment,
+  postDeliveryReset,
   postRelease,
   qcImageUrl,
   type ArtifactsView,
@@ -66,11 +66,11 @@ import {
   type DispositionMap,
 } from "../domain/deliver";
 
-export type DeliverPhase = "idle" | "confirming" | "paying" | "releasing";
+export type DeliverPhase = "idle" | "confirming" | "resetting" | "releasing";
 
 const PHASE_WORDS: Readonly<Record<Exclude<DeliverPhase, "idle">, string>> = {
   confirming: "Sealing the confirmation…",
-  paying: "Recording the (stub) payment authorization…",
+  resetting: "Withdrawing the confirmation, payment and release…",
   releasing: "Releasing — re-deriving the evidence…",
 };
 
@@ -444,7 +444,11 @@ export interface DeliverStageViewProps {
   readonly onCloseReport?: () => void;
   readonly onTermsChange?: (accepted: boolean) => void;
   readonly onConfirm: () => void;
-  readonly onPay: () => void;
+  /** The demo's door back (client 2026-07-30) — optional: static tests predate it. */
+  readonly onStartOver?: () => void;
+  /** Opens the checkout DIALOG; the container renders it via `checkoutDialog`. */
+  readonly onOpenCheckout?: () => void;
+  readonly checkoutDialog?: React.ReactNode;
   readonly onRelease: () => void;
   readonly onReloadEvidence: () => void;
   readonly onDownload: (filename: string) => void;
@@ -475,7 +479,9 @@ export function DeliverStageView({
   onCloseReport = () => undefined,
   onTermsChange = () => undefined,
   onConfirm,
-  onPay,
+  onStartOver = () => undefined,
+  onOpenCheckout = () => undefined,
+  checkoutDialog = null,
   onRelease,
   onReloadEvidence,
   onDownload,
@@ -532,7 +538,27 @@ export function DeliverStageView({
         )}
 
         <section className="panel">
-          <h3 className="panel__title">Delivery</h3>
+          <h3 className="panel__title">
+            Delivery
+            {(detail.session.confirmation !== null ||
+              detail.session.payment_authorized ||
+              detail.session.released) && (
+              /* THE DOOR BACK (client 2026-07-30: "once paid i cant go back").
+                 Withdraws the confirmation, the payment and the release TOGETHER —
+                 an explicit act against real server state, not a demo mode where the
+                 money record evaporates. The run and every site rung survive; the
+                 second walk re-derives and re-seals through the same gates. */
+              <button
+                type="button"
+                data-role="delivery-reset"
+                className="button button--ghost button--small delivery-reset"
+                disabled={phase !== "idle"}
+                onClick={onStartOver}
+              >
+                Start over (demo) — withdraw confirmation, payment &amp; release
+              </button>
+            )}
+          </h3>
           {/* THE VISIBLE PROGRESSION (client 2026-07-27 #6): three steps, each
               stating what it is — done with its time, current with its act, waiting
               with what it needs. No step is ever inert without saying why. */}
@@ -586,27 +612,27 @@ export function DeliverStageView({
                         <p data-role="checkout-price" className="checkout-screen__price">
                           Amount due: <strong>PLACEHOLDER — pricing not yet defined</strong>
                         </p>
-                        {/* labelled AS a stub, in words, on the control itself —
-                            the record says provider "stub" for the same reason */}
+                        {/* THE CHECKOUT DIALOG (client 2026-07-30, twice): first
+                            "no way … to add credit card or saved credit card
+                            mocks" — so an inline stub became a real checkout
+                            surface — then "might be better on a modal, so the
+                            client can still see their work on the background".
+                            The dialog keeps the assurance visible underneath, and
+                            paying updates THIS page in place. */}
                         <button
                           type="button"
-                          data-role="payment-stub"
-                          className="button button--secondary"
-                          disabled={phase !== "idle"}
-                          onClick={onPay}
+                          data-role="go-to-checkout"
+                          className="button button--primary"
+                          onClick={onOpenCheckout}
                         >
-                          Pay (stub) — {detail.sites.length} site
-                          {detail.sites.length === 1 ? "" : "s"} on case{" "}
-                          {detail.case.id}
+                          Go to checkout (demo) — {detail.sites.length} site
+                          {detail.sites.length === 1 ? "" : "s"}
                         </button>
                         <p data-role="payment-stub-note" className="panel__hint">
-                          A STUB: no provider is contacted and no money moves. The
-                          record says so permanently (provider “stub”), so a
-                          stub-authorized case stays tellable from a paid one once
-                          a real provider lands. Clicking this simulates BOTH legs
-                          of a real checkout: the authorization itself, then the
-                          return — which asserts nothing and simply re-reads this
-                          case's true state.
+                          The checkout is a DEMO: saved-card mocks, non-editable
+                          card fields, no provider, no money. Its return leg asserts
+                          nothing — this case's own record is the only thing that
+                          says whether payment happened.
                         </p>
                       </div>
                     </div>
@@ -743,6 +769,7 @@ export function DeliverStageView({
         )}
       </div>
 
+      {checkoutDialog}
       <div className="workbench__stage">
         <section className="panel deliver-evidence" aria-label="Assurance evidence">
           <h3 className="panel__title">
@@ -1071,19 +1098,20 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
    * whatever brought the browser back. If authorization itself refuses,
    * there is no checkout to "return" from, so it settles right there.
    */
-  const handlePay = useCallback(() => {
-    setPhase("paying");
-    void postPayment(caseId).then((result) => {
-      if (result.kind !== "ok") {
-        settle(result);
-        return;
-      }
-      const reference = `chk_${Date.now().toString(36)}_${Math.random()
-        .toString(36)
-        .slice(2, 8)}`;
-      void postCheckoutReturn(caseId, reference).then(settle);
+  /* THE CHECKOUT DIALOG'S open-state lives here because paying must update THIS
+     page's detail — the dialog itself owns the two-leg flow (CheckoutDialog). */
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+
+  const handleStartOver = useCallback(() => {
+    setPhase("resetting");
+    setActionError(null);
+    void postDeliveryReset(caseId).then((result) => {
+      if (!mountedRef.current) return;
+      setPhase("idle");
+      if (result.kind === "ok") onDetail(result.data);
+      else setActionError(result.detail);
     });
-  }, [caseId, settle]);
+  }, [caseId, onDetail]);
 
   const handleRelease = useCallback(() => {
     setPhase("releasing");
@@ -1154,7 +1182,17 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
       onCloseReport={() => setReportOpen(false)}
       onTermsChange={handleTermsChange}
       onConfirm={handleConfirm}
-      onPay={handlePay}
+      onStartOver={handleStartOver}
+      onOpenCheckout={() => setCheckoutOpen(true)}
+      checkoutDialog={
+        checkoutOpen ? (
+          <CheckoutDialog
+            detail={detail}
+            onDetail={onDetail}
+            onClose={() => setCheckoutOpen(false)}
+          />
+        ) : null
+      }
       onRelease={handleRelease}
       onReloadEvidence={reloadEvidence}
       onDownload={handleDownload}
