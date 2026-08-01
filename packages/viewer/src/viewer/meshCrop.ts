@@ -17,9 +17,16 @@
  * node environment.
  */
 
-/** How wide a "cap region" is by default: a healing cap is ~4-8mm across, so ±9mm shows the cap,
- *  its emergence and enough neighbouring tissue to judge the seat, and nothing else. */
-export const CAP_REGION_RADIUS_MM = 9;
+/** How wide a "cap region" is by default: a healing cap is ~4-8mm across, so this shows the cap,
+ *  its emergence and enough neighbouring tissue to judge the seat.
+ *
+ *  WIDENED 9 -> 11mm (client, 2026-08-01) once it was established that this bound is a DISPLAY
+ *  choice and nothing more. The registration never sees it: the aligner cuts its own ROI
+ *  server-side from the scan file — a ball at rim height of radius min(rim_r + 1.2, 5.4)mm
+ *  (auto_flow._cap_patch_roi), TIGHTER than this crop and derived from the seat, not from the
+ *  operator's centre. So this number trades context against apparent cap size and trades
+ *  nothing else; it cannot move a millimetre of the fit. */
+export const CAP_REGION_RADIUS_MM = 11;
 
 /**
  * The triangles of `positions` (a flat, NON-indexed x,y,z stream — what STLLoader produces) with

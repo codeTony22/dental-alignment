@@ -36,7 +36,7 @@ function view(overrides: Partial<SitePanesViewProps> = {}) {
       notices={{ part: null, scan: null, union: null }}
       partBusy={false}
       scanBusy={false}
-      scanCaption="Tooth 19 · 1,234 triangles within 9 mm of the site's centre"
+      scanCaption="Tooth 19 · 1,234 triangles within 11 mm of the site's centre"
       unionCaption="the previewed seat"
       unionBusy={false}
       unionBusyMessage={null}
@@ -425,19 +425,19 @@ describe("siteAxisLabel", () => {
 
 describe("scanPaneCaption", () => {
   it("leads with the tooth — the only other place it shows is the rail, which scrolls", () => {
-    expect(scanPaneCaption(19, 1234, 9)).toBe(
-      "Tooth 19 · 1,234 triangles within 9 mm of the site's centre",
+    expect(scanPaneCaption(19, 1234, 11)).toBe(
+      "Tooth 19 · 1,234 triangles within 11 mm of the site's centre",
     );
   });
 
   it("drops the tooth when there is no site — never prints 'Tooth null'", () => {
-    expect(scanPaneCaption(null, 1234, 9)).toBe(
-      "1,234 triangles within 9 mm of the site's centre",
+    expect(scanPaneCaption(null, 1234, 11)).toBe(
+      "1,234 triangles within 11 mm of the site's centre",
     );
   });
 
   it("groups the triangle count the way the operator reads it", () => {
-    expect(scanPaneCaption(3, 20500, 9)).toContain("20,500 triangles");
+    expect(scanPaneCaption(3, 20500, 11)).toContain("20,500 triangles");
   });
 });
 

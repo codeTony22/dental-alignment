@@ -595,3 +595,78 @@ two library marks where the fit consumes only the FIRST changes no number, so th
 codebase's doctrine requires the surface to say so out loud; two library marks matched as
 INDEPENDENT pairs already changes numbers honestly (two observations clears the
 cross-check floor) and is a different build. Do not invent the product here.
+
+**K. THE DISPLAY BAND WIDENS 9 -> 11mm (client, 2026-08-01; landed).**
+
+The client's first ask was the opposite — "the panel cannot have a lot of extra of the
+scan" — and reversed once the measurement was on the table: the ALIGNER never sees this
+crop. It cuts its own ROI server-side, a ball at rim height of radius
+min(rim_r + 1.2, 5.4)mm (`auto_flow._cap_patch_roi`), TIGHTER than the display and
+derived from the seat rather than the operator's centre. So this bound trades context
+against apparent cap size and trades nothing else; it cannot move a millimetre of any
+fit. With that established the client chose MORE context, not less.
+
+Changed IN PLACE rather than behind a second constant, which reverses the earlier
+recommendation and should be read as deliberate: `CAP_REGION_RADIUS_MM` is aliased as
+`SITE_FRAME_RADIUS_MM` precisely so the main stage and the verify panes cannot disagree
+about what "this site" means, and `siteRouting.ts` says so in as many words. Widening the
+crop SHOULD widen the main stage's framing — that is what sharing the constant is for. A
+second constant would have been the change needing justification.
+
+Measured consequence, stated so it can be dialled: at 45° FOV an 11mm radius puts the
+camera ~40mm out and shows ~33mm of jaw; the 6.16mm cap reads ~19% of the view (~84px on
+the 444px stage), down from 23% at 9mm and still far above the 3.1% / 14px of whole-arch
+framing. Every millimetre here costs apparent cap size. One line to change.
+
+Trap for the next person: the pane caption and `siteFrameFor`/`partCameraFrame` take the
+radius as an ARGUMENT and echo it. Their tests must move the input WITH the expectation,
+or they assert a transformation that does not happen. Only `siteRouting.test.ts` and the
+sceneController characterization actually pin the constant — the latter now reads
+`SITE_FRAME_RADIUS_MM` instead of a literal, so it cannot silently describe an old radius.
+
+**L. THE SECOND BODY IS THE SEALED SCREW RECESS — measured 2026-08-01, and what it can
+and cannot be used for.**
+
+The client confirmed this is what "two meshes in the scan" meant: where a second
+connected component exists it IS the sealed screw recess, and they asked whether it can
+be used when available. Measured on all three fleet scans that carry one, against each
+case's own shipped pose:
+
+```
+                    verts   extent (mm)        watertight  volume   centroid vs pose AXIS
+cap6030-neodent-gm   8377   2.77x2.67x3.74     yes         -12.98   0.171mm  (agrees)
+cap6020-neodent-gm   3796   2.51x2.44x2.04     yes          -3.69   1.590mm
+cap7030-zimmer-4.5   3099   2.37x2.25x2.20     yes          -2.92   2.069mm
+```
+
+WHAT IT IS GOOD FOR, and it is a real answer to the identification ask: when present it
+is topologically isolated, watertight and negative-volume, so it can be labelled
+"screw recess, not tissue" EXACTLY — no heuristic, no island, no contamination estimate.
+Its centroid is also stable (vertex mean and area-weighted mean agree to ~0.015mm), so it
+is a genuine independent witness of where the screw access sits.
+
+WHAT IT CANNOT DO, all three measured rather than assumed:
+
+1. NO CLOCK. The shell is BLOBBY — singular values 0.665/0.549/0.435 on cap7030,
+   0.895/0.822/0.722 on cap6030 — so it has no reliable principal axis, and the
+   "own axis vs pose axis" readings (66.5°, 30.3°, 82.9°) are noise, not measurements.
+   It therefore cannot help the rotation, which is cap7030's actual defect.
+2. NO COVERAGE. Present on 3 of 9 fleet scans. Anything that DEPENDS on it works a third
+   of the time, so it can be an extra, never a step.
+3. NOT TRUSTWORTHY AS TRUTH. Its centroid agrees with the shipped pose on cap6030
+   (0.171mm) and disagrees by 1.59mm and 2.07mm on the other two — on cap7030, whose seat
+   is the BEST on the fleet by fit.avg (0.395mm) and fit.max (1.183mm). Either the recess
+   or the pose is wrong there and this measurement cannot say which. The recess
+   instrument is separately convicted of bias in this repo's phantom-clock work, which is
+   why the recess-anchored clock fallback was retired for the 7030 in 2026-07-23.
+
+THE SHAPE TO BUILD, therefore: a REPORTED CROSS-CHECK, never an input. When the second
+body exists, say so and say how far its centre sits from the axis the fit used. On
+cap7030 that reads 2.07mm — a loud, independent signal on precisely the case the client
+called badly aligned, arrived at without the island, the void detector, or any tunable.
+Same doctrine as SHADOW_ISLAND: measured, reported, consumed by nothing.
+
+Compare the pipeline's own `delivered_channel_vs_recess` on the same sites (1.254 /
+0.912 / 0.953mm): it measures a related disagreement through the void detector, and
+disagrees with this cleaner instrument. Which is right is unresolved and worth one
+measurement before either number is put in front of a client.

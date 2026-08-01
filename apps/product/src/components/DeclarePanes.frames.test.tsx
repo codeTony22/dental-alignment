@@ -65,7 +65,7 @@ describe("the container's frames reach the viewer slots", () => {
     // null; the POSE/occlusal directions themselves are siteFrameFor's unit pins
     const expected = {
       center: [1, 2, 3],
-      radiusMm: 9,
+      radiusMm: 11,
       viewDirection: null,
       up: null,
     };

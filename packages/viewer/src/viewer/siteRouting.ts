@@ -4,20 +4,26 @@ import { CAP_REGION_RADIUS_MM } from "./meshCrop";
 /**
  * THE SITE NEIGHBOURHOOD — how much of the jaw the main stage shows around the active cap.
  *
- * It is deliberately the SAME 9 mm region the verify panes crop the scan to (see meshCrop), not a
+ * It is deliberately the SAME region the verify panes crop the scan to (see meshCrop), not a
  * second number: the main stage and the verify panes must agree about what "this site" means, and
- * one constant cannot drift from itself.
+ * one constant cannot drift from itself. Widening the crop therefore widens this too, by
+ * construction — that is the point of sharing it, not a side effect to be worked around.
  *
- * The client chose this band over both extremes, and the measurements say they were right. At a
- * 45° FOV a 9 mm framing radius puts the camera ~33 mm out and shows ~27 mm of jaw, so:
+ * The client chose a context band over both extremes (whole-arch and cap-tight), and then chose
+ * MORE of it: 9 -> 11 mm on 2026-08-01, once it was established that the aligner fits its own
+ * ≤5.4 mm ROI server-side and this bound touches no measurement. At a 45° FOV an 11 mm framing
+ * radius puts the camera ~40 mm out and shows ~33 mm of jaw, so:
  *
- *   - the 6.16 mm cap reads 23% of the view (~100 px on the live 444 px stage) — up from 3.1%
- *     and 14 px when the camera framed the whole arch, which is the complaint this answers;
- *   - the cap's NEIGHBOURS and the gum line stay in frame, so the operator can still tell which
- *     tooth this is and whether the collar clears the tissue — judgements a cap-tight view
- *     silently removes;
- *   - the 8 mm pose triad stays inside the frame (at cap-tight framing its arms run off both
- *     edges), and the size-attenuated brush dots stay ~36 px rather than ~80 px blobs.
+ *   - the 6.16 mm cap reads ~19% of the view (~84 px on the live 444 px stage) — down from 23%
+ *     at 9 mm, and still far above the 3.1% / 14 px of whole-arch framing, which is the
+ *     complaint this whole routing answers;
+ *   - the cap's NEIGHBOURS and the gum line sit further inside the frame, so the judgements a
+ *     cap-tight view silently removes — which tooth this is, whether the collar clears the
+ *     tissue — get MORE room rather than less;
+ *   - the 8 mm pose triad stays inside the frame with margin to spare.
+ *
+ * The trade is stated so it can be dialled: every millimetre here costs apparent cap size. If
+ * the cap reads too small to judge, this constant is the one line to change.
  */
 export const SITE_FRAME_RADIUS_MM = CAP_REGION_RADIUS_MM;
 

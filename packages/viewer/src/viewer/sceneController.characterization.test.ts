@@ -39,6 +39,7 @@ import {
   fitPaddingFor,
   percentile,
 } from "./sceneController";
+import { SITE_FRAME_RADIUS_MM } from "./siteRouting";
 import type { AnatomyFrame } from "./anatomyOrientation";
 
 /** The canonical arch pose: crowns up (+z), incisors toward +y. */
@@ -123,10 +124,12 @@ describe("anatomyViewOrientation — the four presets' camera math", () => {
 });
 
 describe("fitDistanceMm / fitPaddingFor — the one framing formula", () => {
-  it("a 9 mm site at 45° FOV with the close padding sits ~33 mm out (the documented routing geometry)", () => {
-    const distance = fitDistanceMm(9, 45, SITE_FIT_PADDING);
-    expect(distance).toBeGreaterThan(32);
-    expect(distance).toBeLessThan(34); // 9 * 1.4 / sin(22.5°) ≈ 32.9
+  it("the site framing radius at 45° FOV with the close padding sits ~40 mm out", () => {
+    // reads the CONSTANT, not a literal: this characterizes the routing geometry, so
+    // it must move when the radius moves rather than silently describing an old one
+    const distance = fitDistanceMm(SITE_FRAME_RADIUS_MM, 45, SITE_FIT_PADDING);
+    expect(distance).toBeGreaterThan(39);
+    expect(distance).toBeLessThan(42); // 11 * 1.4 / sin(22.5°) ≈ 40.2
   });
 
   it("close is the routing padding (1.4), wide backs out to 2.4", () => {

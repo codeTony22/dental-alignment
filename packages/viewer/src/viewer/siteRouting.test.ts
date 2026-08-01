@@ -59,10 +59,10 @@ describe("resolveRouteTarget — where the main stage should look", () => {
     expect(resolveRouteTarget(inputs({ posePosition: POSE }))?.center).toEqual(POSE);
   });
 
-  it("uses the site's own 9 mm neighbourhood — the same region the verify panes crop to", () => {
+  it("uses the site's own 11 mm neighbourhood — the same region the verify panes crop to", () => {
     // One constant means the main stage and the verify panes cannot disagree about what
-    // "this site" is. 9 mm was calibrated for the crop; it is reused, never re-guessed.
-    expect(SITE_FRAME_RADIUS_MM).toBe(9);
+    // "this site" is. The crop's radius is reused, never re-guessed.
+    expect(SITE_FRAME_RADIUS_MM).toBe(11);
   });
 });
 

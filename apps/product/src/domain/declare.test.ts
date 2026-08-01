@@ -324,18 +324,18 @@ describe("siteFrameFor — panes 2/3 face the top of the cap (the demo's semanti
   const occlusal = [0, 0, 1] as const;
 
   it("a preview pose frames down the EXACT seated axis with up = its x_axis", () => {
-    expect(siteFrameFor([1, 2, 3], pose, [...occlusal], 9)).toEqual({
+    expect(siteFrameFor([1, 2, 3], pose, [...occlusal], 11)).toEqual({
       center: [1, 2, 3],
-      radiusMm: 9,
+      radiusMm: 11,
       viewDirection: [0, 0.6, 0.8],
       up: [1, 0, 0],
     });
   });
 
   it("without a pose the jaw's occlusal proxy aims the camera; up stays null", () => {
-    expect(siteFrameFor([1, 2, 3], null, [...occlusal], 9)).toEqual({
+    expect(siteFrameFor([1, 2, 3], null, [...occlusal], 11)).toEqual({
       center: [1, 2, 3],
-      radiusMm: 9,
+      radiusMm: 11,
       viewDirection: [0, 0, 1],
       up: null,
     });
@@ -343,26 +343,26 @@ describe("siteFrameFor — panes 2/3 face the top of the cap (the demo's semanti
 
   it("a malformed pose axis falls back to the occlusal proxy — up falls with it", () => {
     const broken = { ...pose, axis: [0, 1] };
-    expect(siteFrameFor([1, 2, 3], broken, [...occlusal], 9)).toEqual({
+    expect(siteFrameFor([1, 2, 3], broken, [...occlusal], 11)).toEqual({
       center: [1, 2, 3],
-      radiusMm: 9,
+      radiusMm: 11,
       viewDirection: [0, 0, 1],
       up: null,
     });
   });
 
   it("with neither, the frame centres the site and leaves the direction to the viewer", () => {
-    expect(siteFrameFor([1, 2, 3], null, null, 9)).toEqual({
+    expect(siteFrameFor([1, 2, 3], null, null, 11)).toEqual({
       center: [1, 2, 3],
-      radiusMm: 9,
+      radiusMm: 11,
       viewDirection: null,
       up: null,
     });
   });
 
   it("no centre (or a malformed one) means no frame at all", () => {
-    expect(siteFrameFor(null, pose, [...occlusal], 9)).toBeNull();
-    expect(siteFrameFor([1, 2], pose, [...occlusal], 9)).toBeNull();
+    expect(siteFrameFor(null, pose, [...occlusal], 11)).toBeNull();
+    expect(siteFrameFor([1, 2], pose, [...occlusal], 11)).toBeNull();
   });
 });
 
@@ -1151,7 +1151,7 @@ describe("presetFrame — the named viewpoints, in each pane's OWN basis", () =>
      directions), which is the same reference the seated pose's x_axis is. */
   const base: PaneFrame = {
     center: [1, 2, 3],
-    radiusMm: 9,
+    radiusMm: 11,
     viewDirection: [0, 0, 1],
     up: [1, 0, 0],
   };
@@ -1231,7 +1231,7 @@ describe("presetFrame — the named viewpoints, in each pane's OWN basis", () =>
 describe("presetFraming — the frame a pane got, and the words for what it framed on", () => {
   const base: PaneFrame = {
     center: [1, 2, 3],
-    radiusMm: 9,
+    radiusMm: 11,
     viewDirection: [0, 0, 1],
     up: [1, 0, 0],
   };
