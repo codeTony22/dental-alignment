@@ -79,6 +79,7 @@ import {
   withholdOffered,
   type Disposition,
   type DispositionMap,
+  qcPreviews,
 } from "../domain/deliver";
 
 export type DeliverPhase = "idle" | "confirming" | "resetting" | "releasing";
@@ -1118,6 +1119,41 @@ export function DeliverStageView({
                   Open the full report
                 </button>
               </div>
+              {/* THE THREE MAIN ARTIFACTS, PREVIEWED (client 2026-08-01): the run's
+                  own pictures of the fit — alignment proof, clock view, deviation
+                  map — on the page, not one click away inside the report. Each card
+                  opens the full report, which stays the one place the whole row is
+                  read. Filenames come from the assurance's own list; nothing here
+                  constructs one. */}
+              {qcPreviews(assurance.data).length > 0 && (
+                <ul data-role="artifact-previews" className="deliver-previews">
+                  {qcPreviews(assurance.data).map((preview) => (
+                    <li key={preview.filename} className="deliver-previews__item">
+                      <button
+                        type="button"
+                        data-role="artifact-preview"
+                        data-filename={preview.filename}
+                        className="deliver-previews__card"
+                        title={`${preview.label} — tooth ${preview.tooth}. Opens the full report.`}
+                        onClick={onOpenReport}
+                      >
+                        <img
+                          className="deliver-previews__image"
+                          src={qcImageUrl(detail.case.id, preview.filename)}
+                          alt={`${preview.label}, tooth ${preview.tooth}`}
+                          loading="lazy"
+                        />
+                        <span className="deliver-previews__caption">
+                          {preview.label}
+                          <span className="deliver-previews__tooth">
+                            tooth {preview.tooth}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {/* the confirm itself lives in TWO places and only two: the modal's
                   footer bar (read and act in one place) and the progression's
                   Confirmed step in the work column (reachable without reopening the

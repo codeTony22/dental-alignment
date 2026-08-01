@@ -538,6 +538,45 @@ export function casePolicyWords(choices: ChoicesView): string {
   return `Case policy: ${reliefWords} · ${turnaround} turnaround.`;
 }
 
+/**
+ * THE THREE MAIN ARTIFACTS, PREVIEWED ON THE PAGE (client 2026-08-01: "we need to
+ * show the 3 main artifacts as a preview in the Deliver Page, below the open full
+ * report button").
+ *
+ * The run writes three QC images per site — the alignment proof, the clock view and
+ * the deviation map — and until now they lived only inside the report modal, one
+ * click and one scroll away from the surface that asks for a signature over them.
+ * This projects the assurance's own `qc_images` list into labelled preview cards,
+ * in the assurance's worst-first site order, verbatim.
+ *
+ * The FILENAME is always the server's — nothing here constructs one. Only the human
+ * label is derived, from the suffix the worker's own writer uses; a name the
+ * labeller does not recognise keeps the server's name whole rather than guessing a
+ * prettier one.
+ */
+export interface QcPreview {
+  readonly tooth: number;
+  readonly filename: string;
+  readonly label: string;
+}
+
+const QC_LABELS: readonly { readonly suffix: string; readonly label: string }[] = [
+  { suffix: "-alignment-proof.png", label: "Alignment proof" },
+  { suffix: "-clockview.png", label: "Clock view" },
+  { suffix: "-deviation.png", label: "Deviation map" },
+];
+
+export function qcPreviews(assurance: AssuranceView): readonly QcPreview[] {
+  return assurance.sites.flatMap((site) =>
+    site.qc_images.map((filename) => ({
+      tooth: site.tooth,
+      filename,
+      label:
+        QC_LABELS.find((row) => filename.endsWith(row.suffix))?.label ?? filename,
+    })),
+  );
+}
+
 /** The release button's named blockers — the chain's remaining steps, in order. */
 export function releaseBlockers(
   session: Pick<SessionView, "confirmed" | "payment_authorized">,

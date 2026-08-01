@@ -5218,3 +5218,66 @@ button.package-files__link:hover {
   border-left: 2px solid var(--color-amber-border);
   line-height: 1.4;
 }
+
+
+/* ============================================================================
+   THE THREE MAIN ARTIFACTS, PREVIEWED (client 2026-08-01: "show the 3 main
+   artifacts as a preview in the Deliver Page, below the open full report button")
+   ============================================================================ */
+
+/* One row of cards under the report button. auto-fit so a single-site case's three
+   images share the row, and a multi-site case wraps without a second layout. */
+.deliver-previews {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+/* The card is a button — clicking any preview opens the full report, which stays
+   the one place the whole row is read. */
+.deliver-previews__card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  cursor: pointer;
+  overflow: hidden;
+  font: inherit;
+  text-align: left;
+}
+
+.deliver-previews__card:hover {
+  border-color: var(--color-accent-green);
+}
+
+/* The QC renders are wide screenshots; contain keeps their aspect and the light
+   stage tint behind them reads as the image's own margin, not a broken load. */
+.deliver-previews__image {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: #f2f5f3;
+  display: block;
+}
+
+.deliver-previews__caption {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.deliver-previews__tooth {
+  font-weight: 600;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}

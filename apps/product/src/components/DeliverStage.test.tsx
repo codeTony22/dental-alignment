@@ -147,14 +147,20 @@ describe("the stage's compact evidence, and the report behind a modal (#5)", () 
     expect(expanded).toContain("scan-body agreement literature");
   });
 
-  it("a row's QC images live in the modal, behind the row expand", () => {
+  it("the MODAL's per-row QC images stay behind the row expand", () => {
+    /* Retargeted 2026-08-01: this used to assert the filename appeared NOWHERE
+       until a row expanded — the premise the client overrode the same day ("we
+       need to show the 3 main artifacts as a preview in the Deliver Page"). The
+       page-level preview strip now shows them by design; what this test still
+       guards is the MODAL's own economy — its full-size qc-image rows render
+       only behind the expand, not on every open. */
     const collapsed = view({ reportOpen: true });
-    expect(collapsed).not.toContain("case-a-30-clockview.png");
+    expect(collapsed).not.toContain('data-role="qc-image"');
     const html = view({ reportOpen: true, expanded: [30] });
+    expect(html).toContain('data-role="qc-image"');
     expect(html).toContain(
       'src="/api/case-sessions/case-a/runs/current/qc/case-a-30-clockview.png"',
     );
-    expect(html).toContain('loading="lazy"');
   });
 
   it("an assurance fetch error states itself instead of an empty summary", () => {
@@ -950,5 +956,25 @@ describe("what was CHARGED, after the payment (audit 2026-07-31)", () => {
     expect(html).toContain('data-role="paid-receipt"');
     expect(html).toContain("no amount was recorded");
     expect(html).not.toContain("Charged $0.00");
+  });
+});
+
+describe("the three main artifacts, previewed under the report button (client 2026-08-01)", () => {
+  it("renders each QC image as a labelled card that opens the full report", () => {
+    const html = view();
+    expect(html).toContain('data-role="artifact-previews"');
+    // the fixture's two QC images, by the server's own filenames
+    expect(html).toContain('data-filename="case-a-19-clockview.png"');
+    expect(html).toContain("Clock view");
+    expect(html).toContain("Deviation map");
+    // the image is fetched off the evidence surface, never a constructed path
+    expect(html).toContain("/runs/current/qc/case-a-19-clockview.png");
+  });
+
+  it("sits AFTER the open-report button — a preview, not a replacement", () => {
+    const html = view();
+    expect(html.indexOf('data-role="open-report"')).toBeLessThan(
+      html.indexOf('data-role="artifact-previews"'),
+    );
   });
 });

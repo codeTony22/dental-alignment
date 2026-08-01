@@ -45,6 +45,7 @@ import {
   staleMetricsWords,
   termsText,
   withholdOffered,
+  qcPreviews,
 } from "./deliver";
 import {
   assuranceSite,
@@ -1152,5 +1153,62 @@ describe("signoffRows — the checkout's row must classify what it charges for",
     );
     expect(rows[0]!.status).toBe("ready");
     expect(rows[0]!.flagged).toBe(true);
+  });
+});
+
+describe("qcPreviews — the three main artifacts, previewed on the page (client 2026-08-01)", () => {
+  it("labels each of the run's three QC images by what it shows, tooth first", () => {
+    // "show the 3 main artifacts as a preview in the Deliver Page, below the open
+    // full report button" — the run's own pictures of the fit: the alignment
+    // proof, the clock view, the deviation map. Filenames are the SERVER's list
+    // verbatim; only the human label is derived, from the suffix the worker's own
+    // writer uses.
+    const rows = qcPreviews(
+      assuranceView({
+        sites: [
+          assuranceSite({
+            tooth: 29,
+            qc_images: [
+              "case-a-29-alignment-proof.png",
+              "case-a-29-clockview.png",
+              "case-a-29-deviation.png",
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(rows).toEqual([
+      { tooth: 29, filename: "case-a-29-alignment-proof.png", label: "Alignment proof" },
+      { tooth: 29, filename: "case-a-29-clockview.png", label: "Clock view" },
+      { tooth: 29, filename: "case-a-29-deviation.png", label: "Deviation map" },
+    ]);
+  });
+
+  it("keeps the assurance's own worst-first site order", () => {
+    const rows = qcPreviews(
+      assuranceView({
+        sites: [
+          assuranceSite({ tooth: 30, qc_images: ["c-30-deviation.png"] }),
+          assuranceSite({ tooth: 19, qc_images: ["c-19-deviation.png"] }),
+        ],
+      }),
+    );
+    expect(rows.map((r) => r.tooth)).toEqual([30, 19]);
+  });
+
+  it("a filename the labeller does not recognise keeps the server's name verbatim", () => {
+    const rows = qcPreviews(
+      assuranceView({
+        sites: [assuranceSite({ tooth: 29, qc_images: ["case-a-29-seat-check.png"] })],
+      }),
+    );
+    expect(rows[0]!.label).toBe("case-a-29-seat-check.png");
+  });
+
+  it("no QC images means no previews — never a placeholder card", () => {
+    const rows = qcPreviews(
+      assuranceView({ sites: [assuranceSite({ tooth: 29, qc_images: [] })] }),
+    );
+    expect(rows).toEqual([]);
   });
 });
