@@ -122,8 +122,17 @@ describe("resumeTarget — the row opens at the session's furthest stage", () =>
     expect(resumeTarget(running)).toBe("/case/case-running/adjust");
   });
 
-  it("a fully resolved case resumes at deliver", () => {
-    expect(resumeTarget(flagged)).toBe("/case/case-flagged/deliver");
+  it("a resolved case with no part picked resumes at the construction library", () => {
+    // client 2026-08-01: the library is a page, and Delivery cannot open until a part
+    // is picked — so the furthest REACHABLE stage for this row is the library. The row
+    // carries no per-choice breakdown, so `choices_complete` is what stands in for a
+    // chosen part (it cannot be true without an effective construction).
+    expect(resumeTarget(flagged)).toBe("/case/case-flagged/library");
+  });
+
+  it("...and resumes at Delivery once the choices are complete", () => {
+    expect(resumeTarget({ ...flagged, choices_complete: true }))
+      .toBe("/case/case-flagged/deliver");
   });
 });
 

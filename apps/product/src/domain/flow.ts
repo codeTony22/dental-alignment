@@ -20,12 +20,13 @@
 // this stays a pure-rules dependency.
 import { asVec3 } from "./intake";
 
-export type StageId = "intake" | "declare" | "adjust" | "deliver";
+export type StageId = "intake" | "declare" | "adjust" | "library" | "deliver";
 
 export const STAGE_ORDER: readonly StageId[] = [
   "intake",
   "declare",
   "adjust",
+  "library",
   "deliver",
 ];
 
@@ -40,15 +41,19 @@ export const STAGE_INFO: Readonly<Record<StageId, StageInfo>> = {
     oneLiner: "Scan in, sites detected, case-level choices made.",
   },
   declare: {
-    title: "Declare",
+    title: "Alignment",
     oneLiner: "System and variants declared, every site reviewed over the panes.",
   },
   adjust: {
-    title: "Adjust",
+    title: "Adjustment",
     oneLiner: "Optional — refit flagged sites; skipping never blocks delivery.",
   },
+  library: {
+    title: "Construction library",
+    oneLiner: "Pick the part Delivery cuts, and preview it against the scan.",
+  },
   deliver: {
-    title: "Deliver",
+    title: "Delivery",
     oneLiner: "Assurance reviewed, confirmation sealed, artifacts released.",
   },
 };
@@ -106,6 +111,15 @@ export interface FlowFacts {
    * worklist row projects no proposals, and a zero there would invent a shortfall.
    */
   readonly siteDetected?: number;
+  /**
+   * A CONSTRUCTION PART IS CHOSEN — the BFF's effective-choice derivation, never a
+   * client read of a raw field (an absent explicit choice can still be answered by
+   * the case's own suggestion). The client's 2026-08-01 flow makes this a
+   * REACHABILITY fact rather than a display one: the construction library is a page,
+   * and Delivery prices and cuts what was picked there, so Delivery cannot open on a
+   * case that has picked nothing.
+   */
+  readonly constructionChosen: boolean;
 }
 
 /** Structural mirror of a `WorklistRow` (GET /api/case-sessions). */
@@ -134,6 +148,10 @@ export function factsFromWorklistRow(row: WorklistRowLike): FlowFacts {
     released: row.released,
     detectionDone: row.detected,
     choicesComplete: row.choices_complete,
+    // the row carries no per-choice breakdown, and `choices_complete` cannot be true
+    // without an effective construction — so this is the honest projection here, not
+    // a guess. The DETAIL below reads the choice itself.
+    constructionChosen: row.choices_complete,
   };
 }
 
@@ -153,7 +171,13 @@ export interface CaseSessionLike {
   readonly detection: {
     readonly proposals: ReadonlyArray<{ readonly tooth_guess: number | null }>;
   } | null;
-  readonly choices: { readonly complete: boolean };
+  readonly choices: {
+    readonly complete: boolean;
+    /** The BFF's effective construction — an explicit choice OR the case's own
+     *  suggestion. Optional on this mirror because documents written before the
+     *  library stage omit it; absent reads as "nothing chosen". */
+    readonly effective_construction?: { readonly value: string | null } | null;
+  };
   readonly session: {
     readonly run_state: string;
     readonly confirmed: boolean;
@@ -177,6 +201,7 @@ export function factsFromCaseSession(payload: CaseSessionLike): FlowFacts {
     released: payload.session.released,
     detectionDone: payload.detection !== null,
     choicesComplete: payload.choices.complete,
+    constructionChosen: payload.choices.effective_construction?.value != null,
     // intake.asVec3, not `center !== null`: same predicate as the site list's framing
     // hint and the scan picker, so the rail cannot over-report against its own rows
     siteCentred: payload.sites.filter((s) => asVec3(s.center) !== null).length,
@@ -215,8 +240,14 @@ export function isReachable(stage: StageId, facts: FlowFacts): boolean {
       return facts.siteTotal > 0;
     case "adjust":
       return runExists(facts);
-    case "deliver":
+    case "library":
+      // the design's own rule: the library builds ON the aligned fits, so it needs a
+      // completed run and every site carrying a verdict — the condition Deliver used
+      // to hold alone.
       return allSitesResolved(facts) && runDone(facts);
+    case "deliver":
+      // ...and Delivery adds the part, because Delivery is what prices and cuts it.
+      return allSitesResolved(facts) && runDone(facts) && facts.constructionChosen;
   }
 }
 
@@ -230,6 +261,10 @@ export function blockedReason(stage: StageId, facts: FlowFacts): string | null {
       return "Nothing to declare yet — Intake has not detected any implant sites on this scan.";
     case "adjust":
       return "No run exists yet — Adjust reworks the fits that Declare's authorized run produces.";
+    case "library":
+      return runDone(facts)
+        ? "Every site must be ready, or flagged, before you pick a construction part."
+        : "The construction library opens once the run completes — it builds on the aligned fits.";
     case "deliver":
       if (facts.siteTotal === 0) {
         return "Nothing to deliver — this case has no implant sites yet.";
@@ -245,7 +280,13 @@ export function blockedReason(stage: StageId, facts: FlowFacts): string | null {
       if (facts.runState === "none") {
         return "Deliver reads the run's evidence — no run exists yet; it fires when Declare completes.";
       }
-      return `Deliver reads the run's evidence — the current run is ${facts.runState}, not completed.`;
+      if (!runDone(facts)) {
+        return `Deliver reads the run's evidence — the current run is ${facts.runState}, not completed.`;
+      }
+      // LAST, and only once nothing else is missing: a case with no run is not short
+      // of a part, and sending the operator to the library to fix a missing run would
+      // be the wrong page.
+      return "Pick a construction part in the library first — Delivery prices and cuts what you choose there.";
   }
 }
 
@@ -274,6 +315,8 @@ export function isComplete(stage: StageId, facts: FlowFacts): boolean {
       return facts.siteTotal > 0 && facts.siteReady === facts.siteTotal;
     case "adjust":
       return runExists(facts) && facts.siteFlagged === 0;
+    case "library":
+      return facts.constructionChosen;
     case "deliver":
       return facts.released;
   }
@@ -347,6 +390,12 @@ export function stageSubLine(stage: StageId, facts: FlowFacts): string {
       if (facts.siteFlagged > 0) return `${facts.siteFlagged} flagged to rework.`;
       if (!runExists(facts)) return standing;
       return "Nothing flagged — no rework owed.";
+    }
+    case "library": {
+      if (!isReachable("library", facts)) return standing;
+      return facts.constructionChosen
+        ? "Delivery cuts this part for every site that ships."
+        : "Pick the part Delivery should cut for this case.";
     }
     case "deliver": {
       if (facts.released) return "Artifacts released for the current run.";

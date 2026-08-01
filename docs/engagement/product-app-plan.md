@@ -670,3 +670,71 @@ Compare the pipeline's own `delivered_channel_vs_recess` on the same sites (1.25
 0.912 / 0.953mm): it measures a related disagreement through the void detector, and
 disagrees with this cleaner instrument. Which is right is unresolved and worth one
 measurement before either number is put in front of a client.
+
+**M. THE FIVE-PAGE FLOW (client design "ArTech End-to-End Flow", 2026-08-01; stage model
+and the library page landed).**
+
+The design keeps the ENGINEERING KEYS and changes only the titles, which is why this cost
+a fraction of what §10-I feared: `declare` is titled **Alignment**, `adjust` is
+**Adjustment**, `deliver` is **Delivery**, and a new `library` — **Construction library**
+— sits fourth. Every route, guard, session field and BFF resource survives untouched.
+
+Gating, verbatim from the design and now in `flow.ts`: `library` needs a DONE run and
+every site resolved — the condition Deliver used to hold alone — and `deliver` adds a
+chosen construction part, because Delivery is what prices and cuts it.
+
+**THE DEADLOCK THE DESIGN WALKS INTO, and what was done about it.** `reach.library`
+requires `runState === "done"`, and picking a part is what satisfies `reach.deliver` —
+but changing the effective `construction_path` calls `clear_current_run`
+(case_sessions.py:1124) and regresses every site. Taken literally the happy-path forward
+walk retires the run the page depends on, and Delivery never opens.
+
+Measured, the fix is real and cheap in principle: THE POSE IS CONSTRUCTION-INDEPENDENT.
+`construction_mesh` enters `auto_flow` at exactly four places — two signatures, the
+forward, and the product build — and every alignment, seat, clock and confidence
+computation runs on the CAP template. So a part change owes a RE-EMIT, never a re-align,
+which is what §4's `emit_from_poses` was priced for.
+
+`emit_from_poses` DOES NOT EXIST — grep returns five hits, all of them prose in this
+document. So the page ships telling the truth about today's cost (`constructionChangeWords`,
+the same sentence Deliver's picker uses) rather than pretending a change is free. The
+flow does not lock: a changed part retires the run, the rail honestly says the library
+"opens once the run completes", and re-running returns the case. Picking the part that is
+ALREADY effective is not an act at all — the reset boundary is keyed on the effective
+value changing — so the ordinary walk costs nothing.
+
+When `emit_from_poses` is built, these hazards were measured and must be answered:
+`emit_case_package` rewrites `implant.json` wholesale and would ERASE `record["adjustments"]`
+(the append-only operator provenance), so a re-emit must merge; the design-rule gate is
+per (construction part × cap) and can REFUSE at emission, arriving at a point in the flow
+that has never had to surface a refusal; the scanbody filename embeds the VENDOR, so a
+vendor change must delete the old name and drop its manifest row (`register_package_files`
+never removes); and the QC PNGs are cap+pose, so a naive evidence re-derivation would pass
+while `prosthesis_cad.stl` changed underneath — `clear_confirmation` must fire explicitly.
+
+**WHAT THE PAGE DELIBERATELY DOES NOT SHIP.**
+
+- **The design's four parts.** `["ti-base", "Titanium base", "$18 / site", "3 days"]` and
+  three siblings are invented: the real catalog carries `path_id`, `label` and `vendor`
+  and no price or lead time anywhere. The page reads `constructionOptions` — the same
+  source Intake's dropdown and Deliver's picker read — so there is no fourth copy of the
+  list, and it quotes no money the server never said.
+- **The design's preview.** It LOOKS like the client's "preview of the boolean with the
+  construction and the scan unified in a view" and is not: lines 511-514 are a static CSS
+  disc with zero data bindings, which reads neither the chosen part nor the scan nor any
+  geometry, and it wears the SCAN CAP's own palette so it depicts the cap. Porting it
+  would ship a control that looks like the answer — the silent no-op this codebase
+  forbids. `libraryPreviewPending()` states the gap instead. The real thing needs a mesh
+  the BFF does not serve: `library.py` serves a catalog part alone, and the only unified
+  geometry that exists is the run's own `-arch-with-constructions.stl`, emitted AFTER
+  this page.
+
+One consequential fix found by the typechecker rather than by eye: DeclareStage gated its
+whole move-forward block on `isReachable("deliver")`. That was exactly right until a page
+appeared between them; with Deliver now needing a part picked two stages later, the fork
+vanished from Alignment until work that happens after it. It reads `library` now — the
+condition it always meant — and the skip fork lands on the library rather than Delivery.
+
+STILL OPEN: the confirmation's placement. The design's rail sub-line puts it on
+Adjustment ("tooling, reports, confirmation"), which is §10-I ruling 1 and remains
+unanswered; confirmation is untouched by this slice and still lives on Delivery.

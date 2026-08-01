@@ -463,11 +463,17 @@ export function DeclareStageView({
   // Per-SITE shelves: the detector's proposal is a fact about the active site, so the
   // same catalog marks a different card as the operator moves down the queue.
   const shelves = variantShelves(detail, active);
-  // THE FORK'S ONE PRECONDITION, and it is exactly Deliver's reachability: a done
-  // run whose verdicts cover every site (the BFF's own 422 for the decision route).
-  // Adjust's reachability is deliberately NOT the gate here — a refused run opens
-  // Adjust while offering nothing to decide about.
-  const deliverOpen = isReachable("deliver", facts);
+  // THE FORK'S ONE PRECONDITION: a done run whose verdicts cover every site (the
+  // BFF's own 422 for the decision route). Adjust's reachability is deliberately NOT
+  // the gate — a refused run opens Adjust while offering nothing to decide about.
+  //
+  // It reads LIBRARY, not Deliver (client 2026-08-01). That was exactly Deliver's
+  // reachability until the construction library became a page of its own; Deliver now
+  // also needs a part picked TWO PAGES LATER, so gating the fork on it made the whole
+  // move-forward block vanish from this stage until work that happens after it.
+  // Library's reachability is the condition Deliver used to hold alone, which is the
+  // one this fork always meant.
+  const forkOpen = isReachable("library", facts);
   const summary = attestationSummary(detail.sites);
   const decided: AdjustDecisionView | null = detail.session.adjust_decision;
   // THE RUN'S PROGRESS SURFACE (5c): in flight client-side, or persisted as
@@ -624,7 +630,7 @@ export function DeclareStageView({
           data-role="declare-advance"
           className="workbench__work-footer panel__actions panel__actions--advance"
         >
-          {deliverOpen ? (
+          {forkOpen ? (
             <>
               <ul data-role="attestation-summary" className="attestation-summary">
                 {summary.map((line) => (
@@ -992,7 +998,7 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
       onRetryRun={handleRetryRun}
       forkSaving={forkSaving}
       forkError={forkError}
-      onSkipAdjustments={() => fireFork("skip", `/case/${caseId}/deliver`)}
+      onSkipAdjustments={() => fireFork("skip", `/case/${caseId}/library`)}
       onAdjustFits={() => fireFork("adjust", `/case/${caseId}/adjust`)}
       onSelectSite={setActiveTooth}
       onAskSwitch={handleAskSwitch}

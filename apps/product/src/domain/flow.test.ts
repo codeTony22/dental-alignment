@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  blockedReason,
   factsFromCaseSession,
   factsFromWorklistRow,
   furthestStage,
@@ -30,13 +31,75 @@ function facts(overrides: Partial<FlowFacts> = {}): FlowFacts {
     released: false,
     detectionDone: false,
     choicesComplete: false,
+    constructionChosen: false,
     ...overrides,
   };
 }
 
+describe("the construction library — the fourth page", () => {
+  const done = {
+    siteTotal: 2, siteReady: 2, siteFlagged: 0, runState: "done", detectionDone: true,
+  } as Partial<FlowFacts>;
+
+  it("opens only once the run is done and every site has a verdict", () => {
+    expect(isReachable("library", facts({ ...done }))).toBe(true);
+    expect(isReachable("library", facts({ ...done, runState: "running" }))).toBe(false);
+    expect(isReachable("library", facts({ ...done, siteReady: 1 }))).toBe(false);
+  });
+
+  it("says WHICH of the two is missing when it is blocked", () => {
+    expect(blockedReason("library", facts({ ...done, runState: "running" })))
+      .toContain("once the run completes");
+    expect(blockedReason("library", facts({ ...done, siteReady: 1 })))
+      .toContain("before you pick a construction part");
+  });
+
+  it("is complete when a part has been chosen, and not before", () => {
+    expect(isComplete("library", facts({ ...done }))).toBe(false);
+    expect(isComplete("library", facts({ ...done, constructionChosen: true }))).toBe(true);
+  });
+
+  it("GATES Delivery — the part is what Delivery prices and cuts", () => {
+    // the design's own rule: deliver needs a done run, every site resolved AND a part
+    expect(isReachable("deliver", facts({ ...done }))).toBe(false);
+    expect(blockedReason("deliver", facts({ ...done })))
+      .toContain("Pick a construction part in the library first");
+    expect(isReachable("deliver", facts({ ...done, constructionChosen: true }))).toBe(true);
+  });
+
+  it("names the part-shaped shortfall ONLY when nothing else is missing", () => {
+    // a case with no run is not missing a part — it is missing a run, and saying the
+    // wrong thing sends the operator to the wrong page
+    const noRun = facts({ siteTotal: 2, siteReady: 2, runState: "none" });
+    expect(blockedReason("deliver", noRun)).toContain("no run exists yet");
+  });
+
+  it("resumes at the library, not past it, once the run lands", () => {
+    expect(furthestStage(facts({ ...done }))).toBe("library");
+    expect(furthestStage(facts({ ...done, constructionChosen: true }))).toBe("deliver");
+  });
+
+  it("speaks the part in its sub-line once one is chosen", () => {
+    expect(stageSubLine("library", facts({ ...done }))).toContain("Pick the part");
+    expect(stageSubLine("library", facts({ ...done, constructionChosen: true })))
+      .toContain("cuts this part");
+  });
+});
+
 describe("the stage model", () => {
-  it("orders the product's four stages — not the demo's", () => {
-    expect(STAGE_ORDER).toEqual(["intake", "declare", "adjust", "deliver"]);
+  it("orders the product's FIVE stages — not the demo's", () => {
+    // the client's own flow (design "ArTech End-to-End Flow", 2026-08-01): the
+    // construction library becomes a page of its own, between the rework and the
+    // money. Keys are unchanged so every route, guard and session survives; only the
+    // titles and the new rung move.
+    expect(STAGE_ORDER).toEqual(["intake", "declare", "adjust", "library", "deliver"]);
+  });
+
+  it("carries the CLIENT'S titles, not the engineering keys", () => {
+    expect(STAGE_INFO.declare.title).toBe("Alignment");
+    expect(STAGE_INFO.adjust.title).toBe("Adjustment");
+    expect(STAGE_INFO.library.title).toBe("Construction library");
+    expect(STAGE_INFO.deliver.title).toBe("Delivery");
   });
 
   it("gives every stage a title and a one-liner", () => {
@@ -70,15 +133,19 @@ describe("reachability", () => {
     expect(
       isReachable("deliver", facts({ siteTotal: 3, siteReady: 2, runState: "done" })),
     ).toBe(false);
-    // all resolved over a completed run — flagged or clean, Deliver opens
+    // all resolved over a completed run AND a part picked — flagged or clean, Deliver
+    // opens. The part is the client's 2026-08-01 addition: the construction library is
+    // its own page and Delivery prices and cuts what was chosen there.
     expect(
       isReachable(
         "deliver",
-        facts({ siteTotal: 3, siteReady: 2, siteFlagged: 1, runState: "done" }),
+        facts({ siteTotal: 3, siteReady: 2, siteFlagged: 1, runState: "done",
+                constructionChosen: true }),
       ),
     ).toBe(true);
     expect(
-      isReachable("deliver", facts({ siteTotal: 2, siteReady: 2, runState: "done" })),
+      isReachable("deliver", facts({ siteTotal: 2, siteReady: 2, runState: "done",
+                                     constructionChosen: true })),
     ).toBe(true);
     // DELIBERATE change (5c, carried as flow.ts's note since 5a): every site ready
     // no longer opens Deliver on its own — the assurance table IS the run's
@@ -105,6 +172,7 @@ describe("reachability", () => {
       siteReady: 3,
       siteFlagged: 1,
       runState: "done",
+      constructionChosen: true,
     });
     expect(isComplete("adjust", flagged)).toBe(false); // there IS something to adjust
     expect(isReachable("deliver", flagged)).toBe(true); // and deliver opens anyway
@@ -266,7 +334,8 @@ describe("the rail's sub-line speaks the LIVE counts", () => {
   });
 
   it("deliver's sub-line reports the verdicts, then the release", () => {
-    const resolved = facts({ siteTotal: 3, siteReady: 2, siteFlagged: 1, runState: "done" });
+    const resolved = facts({ siteTotal: 3, siteReady: 2, siteFlagged: 1,
+                             runState: "done", constructionChosen: true });
     expect(stageSubLine("deliver", resolved)).toBe(
       "2 ready, 1 flagged — assurance ready to review.",
     );
@@ -361,15 +430,22 @@ describe("furthestStage — where a session resumes (AM-7)", () => {
     ).toBe("adjust");
   });
 
-  it("a fully resolved case resumes at deliver, flagged or clean", () => {
+  it("a fully resolved case resumes at deliver, flagged or clean — once a part is picked", () => {
     expect(
       furthestStage(
-        facts({ siteTotal: 3, siteReady: 2, siteFlagged: 1, runState: "done" }),
+        facts({ siteTotal: 3, siteReady: 2, siteFlagged: 1, runState: "done",
+                constructionChosen: true }),
       ),
     ).toBe("deliver");
     expect(
-      furthestStage(facts({ siteTotal: 2, siteReady: 2, runState: "done", confirmed: true })),
+      furthestStage(facts({ siteTotal: 2, siteReady: 2, runState: "done",
+                            confirmed: true, constructionChosen: true })),
     ).toBe("deliver");
+    // and WITHOUT one it resumes at the library — the furthest stage that is actually
+    // reachable, which is the whole contract of this function
+    expect(
+      furthestStage(facts({ siteTotal: 2, siteReady: 2, runState: "done" })),
+    ).toBe("library");
   });
 });
 
@@ -432,7 +508,7 @@ describe("the two payload projections agree", () => {
       detection: {
         proposals: [{ tooth_guess: 3 }, { tooth_guess: 14 }, { tooth_guess: 19 }],
       },
-      choices: { complete: true },
+      choices: { complete: true, effective_construction: { value: "dess/ti-base" } },
       session: { run_state: "done", confirmed: false, released: false },
     });
     // The centre count and the DETECTED count are the two facts only the DETAIL

@@ -44,7 +44,7 @@ describe("a worklist row", () => {
 
   it("links to the session's furthest stage (AM-7 resume)", () => {
     const html = screenHtml({ kind: "ok", data: [row] });
-    expect(html).toContain('href="/case/case-flagged/deliver"');
+    expect(html).toContain('href="/case/case-flagged/library"');
   });
 
   it("the run chip carries AM-3's live state (5c) — queued|running|done|refused", () => {

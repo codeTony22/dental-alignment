@@ -150,7 +150,9 @@ describe("the case shell view", () => {
       </StaticRouter>,
     );
     expect(html).toContain('href="/case/case-a/adjust"'); // a run exists
-    expect(html).toContain('href="/case/case-a/deliver"'); // flagged-with-run delivers
+    // the library is now the furthest reachable stage for a resolved, run case that
+    // has picked no construction part (client 2026-08-01)
+    expect(html).toContain('href="/case/case-a/library"'); // flagged-with-run delivers
   });
 });
 

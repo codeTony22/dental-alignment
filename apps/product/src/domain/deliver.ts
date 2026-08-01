@@ -1307,3 +1307,45 @@ export function previewTabs(
   }
   return tabs;
 }
+
+/* --- THE CONSTRUCTION LIBRARY AS ITS OWN PAGE (client 2026-08-01) ------------------
+ *
+ * The client's flow makes the construction choice a page between Adjustment and
+ * Delivery. The OPTIONS are the catalog's (`intake.constructionOptions`) and the
+ * effective value is the BFF's (`constructionStepInfo`) — this adds only the page's
+ * own words, so there is no fourth copy of the part list anywhere.
+ */
+
+export function libraryNote(chosen: boolean): string {
+  return chosen
+    ? "Delivery cuts this part for every site that ships."
+    : "Pick the part Delivery should cut for this case.";
+}
+
+export function libraryForwardLabel(chosen: boolean): string {
+  return chosen ? "Continue to Delivery" : "Pick a construction part first";
+}
+
+/**
+ * WHY THE PREVIEW PANEL SAYS NOTHING YET.
+ *
+ * The client asked for "preview of the boolean with the construction and the scan
+ * unified in a view". The design comp appears to answer it and does not: its preview
+ * is a static CSS disc with no data bindings at all — it does not read the chosen
+ * part, the scan, the run or any geometry, and it wears the SCAN CAP's own palette, so
+ * it depicts the cap rather than a union. Porting it would ship a control that looks
+ * like an answer and is not, which is the silent no-op this codebase forbids
+ * everywhere else (the chordal-span note's precedent).
+ *
+ * The real thing needs a mesh the BFF does not serve today: `library.py` serves a
+ * catalog part alone, and the only unified geometry that exists is the RUN's own baked
+ * `-arch-with-constructions.stl`, which is emitted after this page rather than before
+ * it. So the panel states the gap rather than dressing it.
+ */
+export function libraryPreviewPending(): string {
+  return (
+    "The unified construction-and-scan preview is not built yet — the only unified " +
+    "mesh that exists today is the one the run bakes after this step. What you pick " +
+    "here is what Delivery cuts."
+  );
+}

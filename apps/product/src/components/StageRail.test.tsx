@@ -29,18 +29,20 @@ const freshFacts: FlowFacts = {
   // intake done per slice 4's rule: detection ran AND the case-level choices made
   detectionDone: true,
   choicesComplete: true,
+      constructionChosen: true,
 };
 
 describe("the stage rail", () => {
-  it("renders all four stages with their numbers and titles", () => {
+  it("renders all five stages with their numbers and the CLIENT'S titles", () => {
     const html = railHtml(freshFacts);
-    for (const title of ["Intake", "Declare", "Adjust", "Deliver"]) {
+    for (const title of ["Intake", "Alignment", "Adjustment",
+                         "Construction library", "Delivery"]) {
       expect(html).toContain(title);
     }
     // intake already ticks (detection ran, choices made); the rest still number
     expect(html).toContain(">✓<");
     expect(html).toContain(">2<");
-    expect(html).toContain(">4<");
+    expect(html).toContain(">5<");
   });
 
   it("reachable stages are links into the case's routes", () => {
@@ -73,10 +75,12 @@ describe("the stage rail", () => {
       released: false,
       detectionDone: true,
       choicesComplete: true,
+      constructionChosen: true,
     };
     const html = railHtml(resolved, "deliver");
-    // intake, declare and adjust are complete on a clean, run case
-    expect(html.match(/✓/g)?.length).toBe(3);
+    // intake, declare, adjust AND the library are complete on a clean, run case that
+    // has picked its part — four ticks, with only Delivery left to earn its own
+    expect(html.match(/✓/g)?.length).toBe(4);
   });
 
   it("the sub-line under a stage speaks the LIVE count, not the static one-liner", () => {
@@ -90,6 +94,7 @@ describe("the stage rail", () => {
       released: false,
       detectionDone: true,
       choicesComplete: true,
+      constructionChosen: true,
     };
     const html = railHtml(flagged, "adjust");
     expect(html).toContain("1 flagged to rework.");
@@ -110,6 +115,7 @@ describe("the stage rail", () => {
       released: false,
       detectionDone: false,
       choicesComplete: false,
+      constructionChosen: true,
     };
     // An empty case has nothing to count, so Intake keeps its standing sentence —
     // "0 of 0 sites" would be noise dressed as information.
@@ -128,6 +134,7 @@ describe("the stage rail", () => {
       released: false,
       detectionDone: true,
       choicesComplete: true,
+      constructionChosen: true,
     };
     expect(railHtml(halfMarked)).toContain("2 of 4 sites still without a centre.");
   });
@@ -143,6 +150,7 @@ describe("the stage rail", () => {
       released: false,
       detectionDone: true,
       choicesComplete: true,
+      constructionChosen: true,
     };
     const html = railHtml(flagged, "declare");
     expect(html).toContain('href="/case/c1/deliver"');

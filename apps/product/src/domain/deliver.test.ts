@@ -10,6 +10,9 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  libraryForwardLabel,
+  libraryNote,
+  libraryPreviewPending,
   ATTESTATION_PENDING_CAVEAT,
   CHECKOUT_SEAL_WORDS,
   ackRequired,
@@ -1466,5 +1469,29 @@ describe("the construction step's label does not say the vendor twice", () => {
       [{ path_id: "acme/part.stl", label: "part", vendor: "acme" }],
     );
     expect(info.vendor).toBe("acme");
+  });
+});
+
+/* THE CONSTRUCTION LIBRARY AS A PAGE (client 2026-08-01, design "ArTech End-to-End
+   Flow"). The words are this app's; the OPTIONS are the catalog's and the effective
+   value is the BFF's, both already modelled above. */
+describe("the construction library page's words", () => {
+  it("asks for a part until one is effective, then says what it is for", () => {
+    expect(libraryNote(false)).toBe("Pick the part Delivery should cut for this case.");
+    expect(libraryNote(true)).toBe("Delivery cuts this part for every site that ships.");
+  });
+
+  it("names the forward act, or what is missing before it", () => {
+    expect(libraryForwardLabel(true)).toBe("Continue to Delivery");
+    expect(libraryForwardLabel(false)).toBe("Pick a construction part first");
+  });
+
+  it("REFUSES to claim a preview it does not render", () => {
+    // the design comp's preview is a static CSS disc with no data bindings — it reads
+    // as the cap, not as construction unified with the scan. Shipping it would be the
+    // silent no-op this codebase forbids, so the panel says what it is instead.
+    const words = libraryPreviewPending();
+    expect(words).toContain("not built yet");
+    expect(words.toLowerCase()).not.toContain("preview of the boolean");
   });
 });

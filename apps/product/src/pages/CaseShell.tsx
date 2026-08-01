@@ -29,6 +29,7 @@ import {
   stageStates,
   type StageId,
 } from "../domain/flow";
+import { LibraryStage } from "../components/LibraryStage";
 import { AdjustStage } from "../components/AdjustStage";
 import { DeclareStage } from "../components/DeclareStage";
 import { DeliverStage } from "../components/DeliverStage";
@@ -132,6 +133,8 @@ export function CaseShellView({
             <DeclareStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
           ) : stage === "adjust" ? (
             <AdjustStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
+          ) : stage === "library" ? (
+            <LibraryStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
           ) : (
             <DeliverStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
           )}
