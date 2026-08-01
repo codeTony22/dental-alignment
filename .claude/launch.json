@@ -44,7 +44,12 @@
         "--port",
         "8001",
         "--app-dir",
-        "src"
+        "src",
+        "--reload",
+        "--reload-dir",
+        "src",
+        "--reload-dir",
+        "../worker/src/case_prep/application"
       ],
       "port": 8001
     },
