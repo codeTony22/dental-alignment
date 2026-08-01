@@ -439,9 +439,16 @@ export function paneColumns(viewportW: number): 1 | 2 | 3 {
 /**
  * The whole layout decision, as one pure function of what was measured.
  *
- * `solo` is deliberately judged on the MULTI-pane arithmetic even while solo is already in
- * effect. Judging it on the resulting stage would oscillate: solo enlarges the stage, the
- * enlarged stage looks roomy, the fallback releases, the panes shrink, and so on forever.
+ * THE SOLO FALLBACK IS DEAD (client 2026-08-01, the day it shipped: "The 3 views of
+ * the declare disappears i never said that i wanted independent views the idea is to
+ * see everything at once"). It was the design prototype's rule — below a threshold,
+ * hide two panes and offer a 1/2/3 switcher — and the client rejected it on sight.
+ * The rule is now the client's: the layout may shrink panes and step chrome aside
+ * (the compact/tiny ladder below), but NOTHING short of the operator's own maximize
+ * ever shows fewer than three panes. Three small panes, honestly small, beat two
+ * hidden ones. `solo`/`soloIfUnmaximized` stay in the plan's shape as permanent
+ * falses so the callers keep one contract; if a future direction revives a fallback
+ * it must arrive as the client's ask, not a measured guess.
  */
 export function planPaneLayout(metrics: PaneStageMetrics, maximized: boolean): PaneLayoutPlan {
   const { availH, viewportW } = metrics;
@@ -450,12 +457,10 @@ export function planPaneLayout(metrics: PaneStageMetrics, maximized: boolean): P
   const rows: 1 | 2 | 3 = columns === 1 ? 3 : columns === 2 ? 2 : 1;
   const multiRowH = Math.floor((availH - PANE_GRID_GAP_PX * (rows - 1)) / rows);
   const multiStageH = multiRowH - PANE_STAGE_CHROME_PX;
-  const soloIfUnmaximized = multiStageH < SOLO_FALLBACK_STAGE_PX;
-  const solo = !maximized && soloIfUnmaximized;
-  const stageH = maximized || solo ? availH - PANE_STAGE_CHROME_PX : multiStageH;
+  const stageH = maximized ? availH - PANE_STAGE_CHROME_PX : multiStageH;
   const chrome: PaneChrome =
     stageH < TINY_STAGE_PX ? "tiny" : stageH < COMPACT_STAGE_PX ? "compact" : "full";
-  return { measured: true, columns, rows, stageH, solo, soloIfUnmaximized, chrome };
+  return { measured: true, columns, rows, stageH, solo: false, soloIfUnmaximized: false, chrome };
 }
 
 /** Measure the grid the panes live in. A ResizeObserver rather than a window listener alone

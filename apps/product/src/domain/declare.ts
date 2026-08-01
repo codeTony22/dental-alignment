@@ -1003,7 +1003,13 @@ export function alignmentStats(
      has published none. Clocking and pairs have no preview analogue: the preview seats
      a cap, it does not read a notch residual or place a correspondence. */
   const usePreview = row === undefined && preview !== null;
-  const devSource = usePreview ? preview.source : "run";
+  /* One short word, not the payload's provenance sentence. The strip inlined
+     `preview.source` verbatim — "area-uniform surface samples (the acceptance
+     difference map)" — which made the toolbar read as nested parentheses (client
+     screenshot, 2026-08-01). Run-vs-preview is the distinction the operator needs
+     here; the instrument's full name stays on the union pane's stats line, which is
+     the surface that owns it. */
+  const devSource = usePreview ? "preview" : "run";
   const devRms = usePreview ? mmWordsOr(preview.rmsMm, absent) : mmWordsOr(row?.["deviation_rms_mm"], absent);
   const devP90 = usePreview ? mmWordsOr(preview.p90Mm, absent) : mmWordsOr(row?.["deviation_p90_mm"], absent);
   const devLabel = (key: string) =>

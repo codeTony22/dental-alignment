@@ -248,12 +248,16 @@ describe("planPaneLayout", () => {
     expect(planPaneLayout({ availH: 497, viewportW: 1280 }, false).chrome).toBe("tiny");
   });
 
-  it("falls back to ONE pane when a row can no longer carry a cap at all", () => {
+  it("NEVER hides panes on its own — three stay up however short the stage (client 2026-08-01)", () => {
+    /* The prototype's solo fallback shipped in R3 and the client hit it the same
+       day: "The 3 views of the declare disappears i never said that i wanted
+       independent views the idea is to see everything at once." The rule is now
+       the client's, not the prototype's: the layout may shrink panes and step
+       chrome aside, but only the OPERATOR's explicit maximize ever shows one
+       pane. A short stage gets three small panes, honestly small. */
     const plan = planPaneLayout({ availH: 397, viewportW: 1280 }, false);
-    expect(plan.solo).toBe(true);
-    // and the fallback is worth taking: 336px of stage instead of a 131px sliver
-    expect(plan.stageH).toBe(397 - PANE_STAGE_CHROME_PX);
-    expect(plan.chrome).toBe("full");
+    expect(plan.solo).toBe(false);
+    expect(plan.columns).toBe(2);
   });
 
   it("never forces solo on a pane the operator maximized — that IS the whole height", () => {
@@ -279,74 +283,39 @@ describe("planPaneLayout", () => {
     expect(plan.stageH).toBe(Math.floor((900 - 24) / 3) - PANE_STAGE_CHROME_PX);
   });
 
-  it("cannot oscillate: solo is judged on the MULTI-pane layout, never on the solo one", () => {
-    // The bug this rules out: solo enlarges the stage, an enlarged stage looks roomy, the
-    // fallback releases, the stage shrinks, and the panes flicker forever.
-    const multi = planPaneLayout({ availH: 397, viewportW: 1280 }, false);
-    expect(multi.solo).toBe(true);
-    expect(planPaneLayout({ availH: multi.stageH + PANE_STAGE_CHROME_PX, viewportW: 1280 }, false).solo)
-      .toBe(true);
+  it("solo cannot engage at ANY height — the whole sweep", () => {
+    for (const availH of [80, 150, 170, 250, 397, 600, 1200]) {
+      expect(planPaneLayout({ availH, viewportW: 1280 }, false).solo).toBe(false);
+    }
   });
 });
 
-describe("SitePanesView — the solo fallback says why", () => {
-  it("shows one pane and names the reason when the window cannot carry three", () => {
+describe("SitePanesView — three panes, always (client 2026-08-01)", () => {
+  it("shows all three at the height that used to trigger the solo fallback", () => {
     const markup = view({
       layoutPlan: planPaneLayout({ availH: 397, viewportW: 1280 }, false),
       onToggleMaximized: () => undefined,
     });
-    expect(markup).toContain('data-role="pane-solo-note"');
-    expect([...markup.matchAll(/class="verify-panel"/g)]).toHaveLength(1);
-    // and the switcher is there to reach the other two
-    expect([...markup.matchAll(/data-role="pane-switch"/g)]).toHaveLength(3);
-  });
-
-  it("offers no 'show all three' while there is no all-three to go back to", () => {
-    const markup = view({
-      layoutPlan: planPaneLayout({ availH: 397, viewportW: 1280 }, false),
-      onToggleMaximized: () => undefined,
-    });
-    expect(markup).not.toContain("show all three");
-  });
-
-  it("leaves the three-pane layout alone at every size that can carry it", () => {
-    const markup = view({ layoutPlan: planPaneLayout({ availH: 563, viewportW: 1280 }, false) });
     expect(markup).not.toContain('data-role="pane-solo-note"');
     expect([...markup.matchAll(/class="verify-panel"/g)]).toHaveLength(3);
   });
 
-  /* THE GUARD WAS DEAD CODE (design review 2026-07-31). `maximizedId !== null &&
-     !plan.solo` can never be false: planPaneLayout forces solo=false whenever
-     maximized is true. So the moment the operator clicked a 1/2/3 switch on a stage
-     below the threshold, "⤡ show all three" appeared — and clicking it gave them ONE
-     pane plus "too short for three panes". `soloIfUnmaximized` is the arithmetic
-     without the maximize, which is the fact both controls actually need. */
-  it("still refuses 'show all three' after a 1/2/3 click on a too-short stage", () => {
+  it("shows all three even at a height that can barely draw them", () => {
+    const markup = view({
+      layoutPlan: planPaneLayout({ availH: 150, viewportW: 1280 }, false),
+      onToggleMaximized: () => undefined,
+    });
+    expect([...markup.matchAll(/class="verify-panel"/g)]).toHaveLength(3);
+  });
+
+  it("one pane exists only as the operator's own maximize, with the way back offered", () => {
     const markup = view({
       layoutPlan: planPaneLayout({ availH: 397, viewportW: 1280 }, true),
       maximizedId: "scan",
       onToggleMaximized: () => undefined,
     });
-    expect(markup).not.toContain("show all three");
-  });
-
-  it("offers it again as soon as the stage could really carry three", () => {
-    const markup = view({
-      layoutPlan: planPaneLayout({ availH: 563, viewportW: 1600 }, true),
-      maximizedId: "scan",
-      onToggleMaximized: () => undefined,
-    });
+    expect([...markup.matchAll(/class="verify-panel"/g)]).toHaveLength(1);
     expect(markup).toContain("show all three");
-  });
-
-  it("the pressed switch does not promise three panels the stage cannot show", () => {
-    const markup = view({
-      layoutPlan: planPaneLayout({ availH: 397, viewportW: 1280 }, true),
-      maximizedId: "scan",
-      onToggleMaximized: () => undefined,
-    });
-    expect(markup).not.toContain("back to all three panels");
-    expect(markup).toContain("too short for three panes");
   });
 });
 
