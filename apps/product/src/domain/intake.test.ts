@@ -147,18 +147,64 @@ describe("detectionMarkers — what the 3D stage rings", () => {
     ]);
   });
 
-  it("still rings a proposal no site has claimed — the unassigned candidate", () => {
+  it("rings an unclaimed candidate ONLY when its capture verdict is pass", () => {
+    /* Client 2026-08-01, over a stage ringing four dots: "we just need to mark the
+       proper healing cap we will work on, just mark when you are highly confident."
+       On the case in their screenshot, THREE of the four rings were unclaimed
+       candidates whose own capture gate said "rescan" — the gate's calibrated word
+       for a capture it does not trust. The confidence word is the SERVER'S
+       (capture.verdict, the calibrated capture gate), never a threshold invented
+       here: pass rings, marginal and rescan stay off the stage and live in the
+       unassigned-proposals panel line instead. */
     const detail = caseSessionDetail({
       sites: [siteView({ tooth: 19, center: [1, 2, 3] })],
       detection: detectionView([
         detectedProposal({ tooth_guess: 19, center: [1.1, 2.1, 3.1] }),
-        detectedProposal({ tooth_guess: null, center: [5, 5, 5] }),
+        detectedProposal({
+          tooth_guess: null,
+          center: [5, 5, 5],
+          capture: { verdict: "pass", rim_z_mm: 4.0, checks: [] },
+        }),
+        detectedProposal({
+          tooth_guess: null,
+          center: [6, 6, 6],
+          capture: { verdict: "rescan", rim_z_mm: 3.1, checks: [] },
+        }),
+        detectedProposal({
+          tooth_guess: null,
+          center: [7, 7, 7],
+          capture: { verdict: "marginal", rim_z_mm: 5.0, checks: [] },
+        }),
       ]),
     });
     expect(detectionMarkers(detail)).toEqual([
       { center: [1, 2, 3], radiusMm: 2.6 },
       { center: [5, 5, 5], radiusMm: 2.6 },
     ]);
+  });
+
+  it("an unclaimed candidate with NO capture assessment does not ring — absence is not confidence", () => {
+    const detail = caseSessionDetail({
+      sites: [],
+      detection: detectionView([
+        detectedProposal({ tooth_guess: null, center: [5, 5, 5], capture: undefined }),
+      ]),
+    });
+    expect(detectionMarkers(detail)).toEqual([]);
+  });
+
+  it("a curated SITE always rings, whatever its capture said — it is the work", () => {
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 29, center: [2, 2, 2] })],
+      detection: detectionView([
+        detectedProposal({
+          tooth_guess: 29,
+          center: [2.1, 2.1, 2.1],
+          capture: { verdict: "marginal", rim_z_mm: 5.0, checks: [] },
+        }),
+      ]),
+    });
+    expect(detectionMarkers(detail)).toEqual([{ center: [2, 2, 2], radiusMm: 2.6 }]);
   });
 
   it("before detection: curated sites still ring — the stage never goes blank", () => {

@@ -151,11 +151,17 @@ export function detectionMarkers(detail: CaseSessionDetail): readonly SiteMarker
     const center = asVec3(site.center);
     if (center !== null) markers.push({ center, radiusMm: MARKER_RADIUS_MM });
   }
-  // Proposals no site has claimed stay visible — they are the unassigned
-  // candidates the "A cap the detection missed" panel talks about.
+  // Proposals no site has claimed ring ONLY when the capture gate's own verdict is
+  // "pass" (client 2026-08-01: "just mark when you are highly confident" — said over
+  // a stage ringing three candidates the gate itself had judged RESCAN). The word is
+  // the server's calibrated capture verdict, never a threshold invented here, and
+  // absence of a verdict is absence of confidence, not a pass. The quieter
+  // candidates are still named by the unassigned-proposals panel line, and the
+  // missed-cap door still lets the operator mark any cap by eye.
   const proposals: readonly DetectedProposalView[] = detail.detection?.proposals ?? [];
   for (const p of proposals) {
     if (p.tooth_guess !== null && siteTeeth.has(p.tooth_guess)) continue;
+    if (p.capture?.verdict !== "pass") continue;
     const center = asVec3(p.center);
     if (center !== null) markers.push({ center, radiusMm: MARKER_RADIUS_MM });
   }
