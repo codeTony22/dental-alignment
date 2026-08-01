@@ -217,6 +217,85 @@ export type SitePick =
   | { readonly kind: "miss" }
   | { readonly kind: "ambiguous"; readonly teeth: readonly number[] };
 
+/**
+ * THE CENTRE ON SCREEN IS NOT ALWAYS THE ONE THE DETECTOR MEASURED (client 2026-08-01:
+ * "centre is wrong from the beginning").
+ *
+ * `SiteView.center` prefers the operator's mark, then the CASE'S CURATED centre
+ * (bff/resources/case_sessions.py) — the live detector's proposal is not in that chain
+ * at all. On the fleet's labelled arches the curated centre is a FROZEN COPY of an old
+ * proposal (cap7030's own sites.json says so: "centre = top proposal"), and the
+ * detector has moved since: measured 2026-08-01 on cap7030 tooth 29, the curated seed
+ * sits 1.739mm from the cap's shipped axis while today's detector proposes 0.253mm —
+ * seven times closer. The operator is shown the stale one, on a cap of radius 3.25mm,
+ * which is exactly the visibly off-centre marker they reported.
+ *
+ * THIS ONLY DISCLOSES. It does not re-centre anything: a centre is one measurement
+ * owned at its source, and five attempts at backend self-correction broke calibrated
+ * contracts (the re-click pair-integrity record). The operator already has the act —
+ * "Re-mark this cap's centre" — and what they were missing is the reason to use it.
+ *
+ * THE BOUND is the fleet's measured operator click scatter, p90 0.61mm (the same
+ * figure `MIN_SPAN_MM` is derived from in the worker's adjust module). Below it the two
+ * centres differ by less than one click's own noise and there is nothing to say.
+ */
+export const CENTRE_DISAGREEMENT_MM = 0.61;
+
+export function detectorDisagreement(
+  detail: CaseSessionDetail,
+  tooth: number,
+): { readonly mm: number; readonly detected: readonly number[] } | null {
+  const site = detail.sites.find((s) => s.tooth === tooth);
+  const shown = site ? siteCentre(site) : null;
+  if (shown === null) return null;
+  let best: { mm: number; detected: readonly number[] } | null = null;
+  for (const proposal of detail.detection?.proposals ?? []) {
+    const centre = asVec3(proposal.center);
+    if (centre === null) continue;
+    const mm = Math.hypot(
+      centre[0] - shown[0],
+      centre[1] - shown[1],
+      centre[2] - shown[2],
+    );
+    if (best === null || mm < best.mm) best = { mm, detected: centre };
+  }
+  if (best === null || best.mm <= CENTRE_DISAGREEMENT_MM) return null;
+  return best;
+}
+
+/**
+ * SHOULD THE SITE PICKER BE OFFERED AT ALL (client 2026-08-01: "this button does
+ * nothing")?
+ *
+ * It did do something — it armed a pick. But a pick resolves to one of the sites it
+ * can reach, so on a case with a single pickable site its only possible outcome was
+ * re-selecting the site already selected. The operator armed a mode, clicked, and
+ * watched nothing change; a control that cannot change anything reads as broken, and
+ * being told WHY costs one sentence.
+ *
+ * The count is of sites a click could actually RESOLVE to — `pickSiteAt` skips any
+ * site without a usable centre, so a site with no centre is not a candidate however
+ * it renders in the list.
+ */
+export function sitePickerOffered(
+  sites: readonly SiteView[],
+): { readonly offered: boolean; readonly why: string | null } {
+  const pickable = sites.filter((site) => siteCentre(site) !== null).length;
+  if (pickable === 0) {
+    return {
+      offered: false,
+      why: "No site on this case carries a centre yet, so there is nothing on the scan to pick.",
+    };
+  }
+  if (pickable === 1) {
+    return {
+      offered: false,
+      why: "This case has only one site with a centre — it is already the active one, so there is nothing to pick between.",
+    };
+  }
+  return { offered: true, why: null };
+}
+
 export function pickSiteAt(
   sites: readonly SiteView[],
   point: readonly [number, number, number],

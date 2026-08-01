@@ -19,6 +19,8 @@ import {
   rescanNotices,
   shouldAutoDetect,
   siteCentre,
+  detectorDisagreement,
+  sitePickerOffered,
   siteEvidence,
   type MarkDraft,
   OFF_SCAN_MISS_WORDS,
@@ -411,6 +413,77 @@ describe("siteEvidence — what the server already knows about a site", () => {
       detection: detectionView([detectedProposal({ tooth_guess: 19 })]),
     });
     expect(siteEvidence(detail, detail.sites[0]!).map((f) => f.key)).toEqual(["variant"]);
+  });
+});
+
+describe("detectorDisagreement — the centre on screen vs the one the detector measured", () => {
+  const detail = (siteCentre: number[] | null, proposals: number[][]) =>
+    ({
+      sites: [siteView({ tooth: 29, center: siteCentre })],
+      detection: {
+        proposals: proposals.map((c) => ({ center: c, tooth_guess: 29 })),
+      },
+    }) as never;
+
+  it("says nothing when the two agree inside the operator's own click scatter", () => {
+    expect(detectorDisagreement(detail([10, 0, 0], [[10.3, 0, 0]]), 29)).toBeNull();
+  });
+
+  it("reports the distance when they disagree by more than click noise", () => {
+    // cap7030's real numbers: the curated seed is a FROZEN COPY of an old proposal
+    // (its own sites.json says "centre = top proposal"), and today's detector lands
+    // 7x closer to the cap's axis. The operator was shown the stale one.
+    const found = detectorDisagreement(detail([10, 0, 0], [[11.74, 0, 0]]), 29);
+    expect(found).not.toBeNull();
+    expect(found!.mm).toBeCloseTo(1.74, 2);
+    expect(found!.detected).toEqual([11.74, 0, 0]);
+  });
+
+  it("says nothing when the detector proposed nothing for that tooth", () => {
+    expect(detectorDisagreement(detail([10, 0, 0], []), 29)).toBeNull();
+  });
+
+  it("says nothing when the site has no centre to compare", () => {
+    expect(detectorDisagreement(detail(null, [[11.74, 0, 0]]), 29)).toBeNull();
+  });
+
+  it("compares against the NEAREST proposal, never an unrelated cap", () => {
+    const found = detectorDisagreement(
+      detail([10, 0, 0], [[40, 0, 0], [11.74, 0, 0]]),
+      29,
+    );
+    expect(found!.mm).toBeCloseTo(1.74, 2);
+  });
+});
+
+describe("sitePickerOffered — a picker with one candidate is a dead control", () => {
+  const site = (tooth: number, centre: number[] | null) =>
+    siteView({ tooth, center: centre });
+
+  it("is not offered when only one site could ever be picked", () => {
+    // the client's report: the button armed a pick whose only possible outcome was
+    // re-selecting the site already selected. A control that cannot change anything
+    // is worse than absent — it reads as broken.
+    const offered = sitePickerOffered([site(29, [1, 2, 3])]);
+    expect(offered.offered).toBe(false);
+    expect(offered.why).toContain("only one");
+  });
+
+  it("is not offered when no site carries a centre to pick by", () => {
+    const offered = sitePickerOffered([site(29, null), site(30, null)]);
+    expect(offered.offered).toBe(false);
+    expect(offered.why).toContain("centre");
+  });
+
+  it("IS offered as soon as two sites can be told apart on the scan", () => {
+    const offered = sitePickerOffered([site(29, [1, 2, 3]), site(30, [9, 9, 9])]);
+    expect(offered.offered).toBe(true);
+    expect(offered.why).toBeNull();
+  });
+
+  it("counts only the sites that a click could actually resolve to", () => {
+    // one centred, one not: still nothing to choose between
+    expect(sitePickerOffered([site(29, [1, 2, 3]), site(30, null)]).offered).toBe(false);
   });
 });
 

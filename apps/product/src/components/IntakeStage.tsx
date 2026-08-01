@@ -38,7 +38,9 @@ import {
   remarkWords,
   rescanNotices,
   shouldAutoDetect,
+  detectorDisagreement,
   siteCentre,
+  sitePickerOffered,
   siteEvidence,
   SITE_PICK_RADIUS_MM,
   type MarkDraft,
@@ -236,6 +238,7 @@ function SiteList({
   onConfirmRemark,
   onCancelRemark,
 }: SiteListProps) {
+  const picker = sitePickerOffered(detail.sites);
   const unassigned =
     detail.detection?.proposals.filter((p) => p.tooth_guess === null).length ?? 0;
   const active = detail.sites.find((s) => s.tooth === activeTooth) ?? null;
@@ -291,6 +294,23 @@ function SiteList({
               ? `Tooth ${active.tooth} is framed on the scan.`
               : `Tooth ${active.tooth} has no centre yet — the stage cannot frame it.`}
           </p>
+          {(() => {
+            /* THE STALE CURATED CENTRE, SAID OUT LOUD (client 2026-08-01: "centre is
+               wrong from the beginning"). The centre on screen prefers the operator's
+               mark then the case's CURATED seed — the live detector's proposal is not
+               in that chain, and on the labelled arches that seed is a frozen copy of
+               an older proposal. This only DISCLOSES; the act it points at is the
+               re-mark control immediately below. */
+            const off = detectorDisagreement(detail, active.tooth);
+            if (off === null) return null;
+            return (
+              <p data-role="centre-disagreement" className="panel__hint">
+                The detector places this cap's centre {off.mm.toFixed(2)}mm from the
+                one shown, which came with the case rather than from this scan. If the
+                marker looks off the cap, re-mark it.
+              </p>
+            );
+          })()}
           <RemarkSiteControl
             tooth={active.tooth}
             confirming={remarkConfirming}
@@ -318,7 +338,7 @@ function SiteList({
             Cancel
           </button>
         </p>
-      ) : (
+      ) : picker.offered ? (
         <div className="panel__actions">
           <button
             type="button"
@@ -329,6 +349,14 @@ function SiteList({
             Pick a site on the scan
           </button>
         </div>
+      ) : (
+        /* A PICK THAT CANNOT CHANGE ANYTHING IS NOT OFFERED (client 2026-08-01: "this
+           button does nothing"). It armed a mode whose only outcome was re-selecting
+           the site already selected. The reason is stated rather than the control
+           silently vanishing — a missing button is its own small mystery. */
+        <p data-role="pick-unavailable" className="panel__hint">
+          {picker.why}
+        </p>
       )}
       {pickMiss !== null && (
         <p data-role="pick-miss" className="panel__hint intake-site__miss">
