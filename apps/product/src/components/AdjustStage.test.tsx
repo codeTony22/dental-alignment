@@ -604,6 +604,43 @@ describe("the pair set: its ceiling, and starting over", () => {
     expect(html).toContain("8 at most");
   });
 
+  /* THE VACUOUS RMS, BEFORE THE CLICK (defect cap6020-neodent-gm, 2026-08-01). The
+     operator applied one pair, the cap turned −50.9°, and the outcome said "marks
+     agree to 0.000mm RMS" — a residual that is zero by construction. The caution
+     rides in the pair set, beside a LIVE Apply: the act stays possible. */
+  it("cautions the one-pair fit beside the Apply that will run it", () => {
+    const html = view({ tool: "fit-by-points", drafts: [complete] });
+    expect(html).toContain('data-role="cross-check-caution"');
+    expect(html).toContain("no agreement number");
+    // and the control is still live — this is disclosure, not a refusal
+    expect(html).toContain('data-role="apply-pairs"');
+    expect(html).toContain("Apply the fit");
+  });
+
+  it("drops the caution once a second pair stands", () => {
+    const second = withPick(
+      withPick(newPairDraft("p2", false), "part", [2, 0, 1]),
+      "scan",
+      [6, 5, 5],
+    );
+    expect(view({ tool: "fit-by-points", drafts: [complete, second] })).not.toContain(
+      'data-role="cross-check-caution"',
+    );
+  });
+
+  it("cautions auto-mark's single accepted proposal the same way — one mechanic", () => {
+    const landmarks: LandmarkView[] = [
+      { id: "notch-a", kind: "notch", point: [1.5, 0, 2], lever_arm_mm: 1.5,
+        azimuth_deg: 0 },
+    ];
+    const html = view({
+      tool: "auto-mark",
+      autoMarkLandmarks: landmarks,
+      drafts: [withPick(autoMarkDrafts(landmarks)[0]!, "scan", [5, 5, 5])],
+    });
+    expect(html).toContain('data-role="cross-check-caution"');
+  });
+
   it("offers one bulk clear once anything is placed", () => {
     const html = view({ tool: "fit-by-points", drafts: [complete] });
     expect(html).toContain('data-role="clear-pairs"');

@@ -753,6 +753,18 @@ export interface AssuranceCorrespondence {
   observations: number | null;
   max_pairs: number | null;
   residual_rms_mm: number | null;
+  /**
+   * WHETHER `residual_rms_mm` IS A MEASUREMENT (defect cap6020-neodent-gm,
+   * 2026-08-01). A fit built from ONE observation is exactly determined for rotation:
+   * its residual is zero by construction, so the RMS over it is arithmetic and the
+   * server reports no figure at all. `false` says the fit stands on a single
+   * observation; `null` is a row folded before the fact existed and carrying no
+   * observation count to derive it from — never "assume it was checked".
+   *
+   * Derived server-side and sealed with the rest of the row. This app renders it; it
+   * never re-derives it from `observations`.
+   */
+  cross_checked: boolean | null;
 }
 
 export interface AssuranceClamp {
@@ -1151,6 +1163,14 @@ export interface AdjustOutcomeView {
    * span reads as radial, its direction), each with its own residual. */
   pairs: Array<Record<string, unknown>>;
   residual_rms_mm: number | null;
+  /**
+   * WHETHER THAT RMS IS EVIDENCE (defect cap6020-neodent-gm, 2026-08-01). `false` on a
+   * fit-by-points that landed on ONE observation — exactly determined, residual zero by
+   * construction, and `residual_rms_mm` null for the same reason. `null` on every tool
+   * that produces no residual at all: "not applicable" and "the number would have meant
+   * nothing" are different answers, and only the server may give either.
+   */
+  cross_checked: boolean | null;
   click_azimuth_deg: number | null;
   matched_feature_azimuth_deg: number | null;
 }

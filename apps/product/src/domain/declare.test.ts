@@ -1048,6 +1048,34 @@ describe("alignmentStats — the strip's facts, every one the SERVER's", () => {
     expect(statOf(stats, "pairs")).toBe("4");
   });
 
+  /* THE VACUOUS RMS, IN THE STRIP (defect cap6020-neodent-gm, 2026-08-01). "1 / 8"
+     reads exactly like "3 / 8" — a fit that happened — and says nothing about the one
+     way the two differ: a single observation has nothing to cross-check it. The word
+     is the SERVER's own `cross_checked`, never a `pairs === 1` test here. */
+  it("a fit the server did not cross-check says so beside its count", () => {
+    const stats = alignmentStats(
+      [{ tooth: 19, correspondence: { pairs: 1, max_pairs: 8, cross_checked: false } }],
+      19,
+      null,
+    );
+    expect(statOf(stats, "pairs")).toBe("1 / 8 · unchecked");
+  });
+
+  it("a cross-checked fit carries no such word — and neither does a silent server", () => {
+    const checked = alignmentStats(
+      [{ tooth: 19, correspondence: { pairs: 3, max_pairs: 8, cross_checked: true } }],
+      19,
+      null,
+    );
+    expect(statOf(checked, "pairs")).toBe("3 / 8");
+    const silent = alignmentStats(
+      [{ tooth: 19, correspondence: { pairs: 1, max_pairs: 8 } }],
+      19,
+      null,
+    );
+    expect(statOf(silent, "pairs")).toBe("1 / 8");
+  });
+
   /* NO RUN IS NOT A MEASUREMENT (design review 2026-07-31). The strip printed "—" in
      every numeric cell before a run — the same dash the queue rows deliberately refuse
      because "in a deviation column it reads as a measured zero". It says the absence

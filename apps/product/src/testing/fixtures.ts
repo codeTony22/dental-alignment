@@ -399,6 +399,8 @@ export function reworkedAssuranceSite(
       observations: 5,
       max_pairs: 8,
       residual_rms_mm: 0.08,
+      // five observations: the RMS beside them is a measurement, not arithmetic
+      cross_checked: true,
     },
     stale_metrics: ["rim_agreement_mm", "guidance"],
     // the rework re-derived the measurements and could not re-derive the gate, so

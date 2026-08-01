@@ -30,6 +30,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from case_prep.application.adjust import cross_checked
 from case_prep.application.cases import CaseRecord
 from case_prep.domain.acceptance import evaluate_acceptance
 
@@ -272,7 +273,21 @@ class AssuranceCorrespondence(BaseModel):
 
     ``max_pairs`` is the wire's own cap, carried so a surface renders "3/8" from a
     server fact instead of hard-coding the bound. All fields are Optional: a row
-    folded before this shape existed simply carries fewer of them."""
+    folded before this shape existed simply carries fewer of them.
+
+    ``cross_checked`` IS WHETHER ``residual_rms_mm`` IS A MEASUREMENT (the vacuous-RMS
+    defect, cap6020-neodent-gm 2026-08-01). A fit built from ONE observation is exactly
+    determined for rotation: that single delta IS the answer, its residual is zero by
+    construction, and the RMS over it is arithmetic. The activity log of a real case
+    reads "run completed — verdicts written for 1 site, none flagged" at 14:32:30 and
+    "fit by 1 point pair(s) → 1 observation(s): rotated -50.9° … marks agree to 0.000mm
+    RMS" at 14:32:52; the site left at 0.451mm RMS / 0.745mm p90. Nothing on this row
+    could have told the operator that the 0.000mm was not evidence of anything.
+
+    So the fact rides on the row the confirmation is signed over, and — because
+    ``sealed_facts()`` is a ``model_dump`` — into the canonical bytes with it. False
+    means the fit stands on a single observation; None means the row cannot say (see
+    ``_correspondence_view``), and inventing True there would be this defect again."""
 
     pairs: Optional[int] = None
     observations: Optional[int] = None
@@ -280,6 +295,7 @@ class AssuranceCorrespondence(BaseModel):
     directions_used: Optional[int] = None
     max_pairs: Optional[int] = None
     residual_rms_mm: Optional[float] = None
+    cross_checked: Optional[bool] = None
 
 
 class AssuranceSite(BaseModel):
@@ -444,6 +460,29 @@ def _site_qc_images(run: RunSession, case_id: str, tooth: int) -> List[str]:
                   if _tooth_of_file(n, case_id, [tooth]) == tooth)
 
 
+def _correspondence_view(block: dict) -> AssuranceCorrespondence:
+    """The row's correspondence block, projected — with ONE derivation.
+
+    ``cross_checked`` is written by ``adjust._fold_outcome`` on every fit landed since
+    the vacuous-RMS defect was closed. A block folded BEFORE that still has to answer
+    the question, and it already carries the number the answer is a pure function of,
+    so it is re-derived from ``observations`` by the worker's own predicate — the same
+    definition, in one place, never a second threshold living here. A block that never
+    carried the count says None rather than guessing: a fit nobody can size is exactly
+    where an invented "cross-checked" would repeat the defect.
+
+    Server-side by the rule this codebase applies to every judgment about evidence —
+    "is this number a measurement?" is not a question a browser gets to answer."""
+    fields = {k: block.get(k)
+              for k in ("pairs", "observations", "spans", "directions_used",
+                        "max_pairs", "residual_rms_mm")}
+    checked = block.get("cross_checked")
+    if checked is None and isinstance(block.get("observations"), int):
+        checked = cross_checked(int(block["observations"]))
+    return AssuranceCorrespondence(
+        **fields, cross_checked=(None if checked is None else bool(checked)))
+
+
 def _assurance_site(row: dict, session: CaseSession, run: RunSession,
                     case_id: str) -> AssuranceSite:
     tooth = int(row.get("tooth", -1))
@@ -498,11 +537,8 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession,
         withhold_intent=(site.withhold_intent if site is not None else False),
         stale_metrics=stale_metrics,
         matching_diameter_mm=best_fit.get("matching_diameter_mm"),
-        correspondence=(AssuranceCorrespondence(**{
-            k: correspondence.get(k)
-            for k in ("pairs", "observations", "spans", "directions_used",
-                      "max_pairs", "residual_rms_mm")})
-            if correspondence is not None else None),
+        correspondence=(_correspondence_view(correspondence)
+                        if correspondence is not None else None),
         qc_images=_site_qc_images(run, case_id, tooth),
         references={key: metrics[key] for key in _REFERENCE_KEYS if key in metrics},
     )

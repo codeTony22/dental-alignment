@@ -74,6 +74,7 @@ import {
   releasedClosingWords,
   sealedTermsHref,
   staleMetricsWords,
+  crossCheckWords,
   turnaroundWords,
   withholdOffered,
   type Disposition,
@@ -254,6 +255,12 @@ function AssuranceRow({
   // not have to open a panel to learn that some of what they are signing predates the
   // fit on the site (review 2026-07-28, finding E).
   const stale = staleMetricsWords(site);
+  // WHETHER THIS ROW'S FIT HAD ANYTHING TO CHECK IT (defect cap6020-neodent-gm,
+  // 2026-08-01). Same placement and same reason as `stale`: a confirmation seals this
+  // table, and "the RMS beside this rotation was arithmetic" is not a fact a reader
+  // should have to open a panel to find. The server's own word — never a count this
+  // browser compared.
+  const crossCheck = crossCheckWords(site);
   return (
     <>
       <tr
@@ -350,6 +357,18 @@ function AssuranceRow({
             {stale !== null && (
               <span data-role="stale-metrics" className="assurance-sub assurance-stale">
                 {stale}
+              </span>
+            )}
+            {/* THE VACUOUS RMS (defect cap6020-neodent-gm, 2026-08-01). Beside the
+                staleness line and for the same reason: both say which of this row's
+                numbers a signature would be covering under false pretences. This cell
+                is where the row's SENTENCES live — the rotation cell holds figures. */}
+            {crossCheck !== null && (
+              <span
+                data-role="cross-check"
+                className="assurance-sub assurance-cross-check"
+              >
+                {crossCheck}
               </span>
             )}
             {/* THE DISCLOSURE GAP THIS CLOSES (plan §10-E): a shared construction

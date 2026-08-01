@@ -64,16 +64,32 @@ const VIEWS: readonly {
   readonly id: AnatomyViewId;
   readonly label: string;
   readonly title: string;
+  /** The word the CAPTION uses for this view, carried on the same row as the button that
+   *  selects it so the two cannot drift. The caption used to say "front view" whatever the
+   *  camera was doing, because that word was hard-coded a hundred lines from the control
+   *  that changed it (seen on screen 2026-08-01: Top selected, caption still claiming the
+   *  front). A label naming a direction it is not looking from is the same defect the pane
+   *  audit raised against a static OCCLUSAL string. */
+  readonly caption: string;
 }[] = [
-  { id: "front", label: "Front", title: "Face the front of the mouth" },
-  { id: "left", label: "Left", title: "View from the left of the front view" },
-  { id: "right", label: "Right", title: "View from the right of the front view" },
-  { id: "occlusal", label: "Top", title: "Look straight down at the crowns (occlusal view)" },
+  { id: "front", label: "Front", title: "Face the front of the mouth", caption: "front" },
+  { id: "left", label: "Left", title: "View from the left of the front view", caption: "left" },
+  { id: "right", label: "Right", title: "View from the right of the front view",
+    caption: "right" },
+  { id: "occlusal", label: "Top", title: "Look straight down at the crowns (occlusal view)",
+    caption: "top" },
 ];
+
+/** The caption's word for a view id. Falls back to the front — where the camera starts —
+ *  rather than inventing a word for a view that does not exist. */
+function viewCaption(view: AnatomyViewId): string {
+  return VIEWS.find((row) => row.id === view)?.caption ?? "front";
+}
 
 interface OrientationBarProps {
   readonly subject: StageSubject;
   readonly siteAvailable: boolean;
+  readonly activeView: AnatomyViewId;
   readonly onSelect: (subject: StageSubject) => void;
   readonly onSelectView: (view: AnatomyViewId) => void;
 }
@@ -84,7 +100,7 @@ interface OrientationBarProps {
  * "Top" is looking straight down at the cap. "Whole arch" is the operator's way home
  * and it stays put once chosen.
  */
-function OrientationBar({ subject, siteAvailable, onSelect, onSelectView }: OrientationBarProps) {
+function OrientationBar({ subject, siteAvailable, activeView, onSelect, onSelectView }: OrientationBarProps) {
   const choices: readonly {
     readonly id: StageSubject;
     readonly label: string;
@@ -110,7 +126,14 @@ function OrientationBar({ subject, siteAvailable, onSelect, onSelectView }: Orie
           <button
             key={view.id}
             type="button"
-            className="view-orient__button"
+            // Pressed like the SUBJECT row directly beneath it, which has carried its state
+            // since the parity slice. These four carried none at all — measured on screen
+            // 2026-08-01, every one reported aria-pressed null — so nothing told the
+            // operator which view they were in.
+            aria-pressed={activeView === view.id}
+            className={`view-orient__button${
+              activeView === view.id ? " view-orient__button--active" : ""
+            }`}
             title={view.title}
             onClick={() => onSelectView(view.id)}
           >
@@ -157,6 +180,9 @@ export interface MainStageViewProps {
   readonly onSelectSubject: (subject: StageSubject) => void;
   /** One click = one named camera view (the direction presets — parity fix). */
   readonly onSelectView: (view: AnatomyViewId) => void;
+  /** Which named view the camera was last put in. Drives BOTH the pressed button and the
+   *  caption's word, so the control and the sentence cannot disagree. */
+  readonly activeView?: AnatomyViewId;
   /** The 3D surface itself — the container passes Viewer3D; tests pass a stub. */
   readonly viewerSlot: ReactNode;
 }
@@ -170,6 +196,7 @@ export function MainStageView({
   activeTooth,
   onSelectSubject,
   onSelectView,
+  activeView = "front",
   viewerSlot,
 }: MainStageViewProps) {
   return (
@@ -182,6 +209,7 @@ export function MainStageView({
         <OrientationBar
           subject={subject}
           siteAvailable={siteAvailable}
+          activeView={activeView}
           onSelect={onSelectSubject}
           onSelectView={onSelectView}
         />
@@ -205,7 +233,7 @@ export function MainStageView({
         )}
         {scanState.kind === "ready" && subject === "site" && activeTooth !== null && (
           <p data-role="stage-status" className="main-stage__notice">
-            Framed on tooth {activeTooth} — front view.
+            Framed on tooth {activeTooth} — {viewCaption(activeView)} view.
           </p>
         )}
       </div>
@@ -243,6 +271,9 @@ export function MainStage({
   const viewerRef = useRef<Viewer3DHandle | null>(null);
   const [scanState, setScanState] = useState<ScanLoadState>({ kind: "loading" });
   const [subject, setSubject] = useState<StageSubject>("site");
+  // The camera starts on the front view (the controller's own default), and the caption
+  // and the pressed button both read this rather than each carrying their own idea.
+  const [activeView, setActiveView] = useState<AnatomyViewId>("front");
   /** Bumped when the stage's content is replaced — half the route identity (see siteRouting). */
   const [contentGeneration, setContentGeneration] = useState(0);
   const routedKeyRef = useRef<string | null>(null);
@@ -292,10 +323,23 @@ export function MainStage({
   // Markers follow the payload, not click history: whatever the BFF's detection
   // record says, after every load and on every change (an empty list CLEARS — a
   // re-detected case must not keep stale rings).
+  // KEYED ON CONTENT, NOT ARRAY IDENTITY (2026-08-01). IntakeStage passes
+  // `markers={detectionMarkers(detail)}` — a fresh array on every render — so this
+  // effect re-ran on every parent re-render, not just when detection changed. That was
+  // merely wasteful while setMarkers only rebuilt spheres; it stopped being wasteful
+  // when the centre RING landed, because fitting each ring scans the mesh vertices
+  // around its marker. Same rings, same clearing semantics (an empty list still
+  // CLEARS) — the work now happens when the markers actually differ.
+  const markerKey = (markers ?? [])
+    .map((m) => `${m.center[0]},${m.center[1]},${m.center[2]}`)
+    .join("|");
   useEffect(() => {
     if (scanState.kind !== "ready") return;
     viewerRef.current?.setMarkers(markers ?? []);
-  }, [markers, scanState.kind]);
+    // markers is intentionally absent: markerKey IS its content, and depending on the
+    // array too would defeat the whole point.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markerKey, scanState.kind]);
 
   /* MARKING ARMS THE CONTROLLER'S OWN POINT PICK (client 2026-07-28). The machinery
      has existed since the viewer was lifted — enterPointPick is what the demo's mark
@@ -346,6 +390,7 @@ export function MainStage({
    *  controller's own contract; a click before any anatomy frame exists is a no-op. */
   const handleSelectView = useCallback((view: AnatomyViewId) => {
     viewerRef.current?.setAnatomyView(view);
+    setActiveView(view);
   }, []);
 
   return (
@@ -357,6 +402,7 @@ export function MainStage({
       activeTooth={activeSite?.tooth ?? null}
       onSelectSubject={handleSelectSubject}
       onSelectView={handleSelectView}
+      activeView={activeView}
       viewerSlot={<Viewer3D ref={viewerRef} ariaLabel="3D viewer of the doctor's scan" />}
     />
   );

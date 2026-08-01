@@ -96,7 +96,13 @@ ROUND_DECIMALS = 6
 # date is the honest one — two shape moves landed on 2026-07-31 and pretending the
 # second happened tomorrow would misplace it in exactly the history this string exists
 # to let a reader reconstruct.
-BUNDLE_VERSION = "2026-07-31-b"
+#
+# BUMPED to "2026-08-01" (the vacuous-RMS defect): ``AssuranceCorrespondence`` gained
+# ``cross_checked``, so ``sealed_facts()`` emits a key it did not before. The whole
+# point of that key is that a confirmation cannot be signed over a fit whose quality
+# number was arithmetic — so bundles sealed before it existed genuinely do not carry
+# what this one carries, and re-confirming is the honest path.
+BUNDLE_VERSION = "2026-08-01"
 
 # the run directory's evidence store: runs/<run_id>/evidence/<sha256>.json
 EVIDENCE_DIRNAME = "evidence"

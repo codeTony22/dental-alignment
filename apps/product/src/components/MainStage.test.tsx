@@ -39,6 +39,16 @@ describe("the direction presets — the demo's one-click named views (parity fix
     expect(html).toMatch(/view-orient__button[^>]*>Top</);
   });
 
+  /* The four buttons carried NO selected state at all — no aria-pressed, no active class —
+     so the operator could not tell which view they were in (measured on screen 2026-08-01:
+     every button reported aria-pressed null). The subject row beside them has had a pressed
+     state since the parity slice; these are the same kind of control. */
+  it("marks the view the camera is actually in, like the subject row beside it", () => {
+    const html = view({ activeView: "occlusal" });
+    expect(html).toMatch(/aria-pressed="true"[^>]*>Top</);
+    expect(html).toMatch(/aria-pressed="false"[^>]*>Front</);
+  });
+
   it("keeps the demo's own titles — Top is the occlusal view, Left/Right are screen-relative", () => {
     const html = view();
     expect(html).toContain("occlusal view");
@@ -71,10 +81,24 @@ describe("the stage's honest load states", () => {
     expect(view({ scanState: { kind: "loading" } })).toContain("Loading upper_jaw.stl");
   });
 
-  it("ready on a site states what the stage is framed on — front view", () => {
+  it("ready on a site states what the stage is framed on, and WHICH view it is", () => {
     const html = view({ scanState: { kind: "ready" }, activeTooth: 19 });
     expect(html).toContain("Framed on tooth 19");
     expect(html).toContain("front view");
+  });
+
+  /* The caption used to read "front view" whatever the camera was doing — clicking Top
+     showed the occlusal view under a caption still claiming the front (seen on screen
+     2026-08-01). A label that names a direction it is not looking from is the same defect
+     the pane audit raised against a static OCCLUSAL string. */
+  it("names the view the operator actually chose, not a fixed word", () => {
+    expect(view({ activeView: "occlusal" })).toContain("top view");
+    expect(view({ activeView: "left" })).toContain("left view");
+    expect(view({ activeView: "right" })).toContain("right view");
+  });
+
+  it("no longer claims the front once the camera has been moved off it", () => {
+    expect(view({ activeView: "occlusal" })).not.toContain("front view.");
   });
 
   it("a scan 404 reads as a refusal — the service answered, the scan is missing", () => {

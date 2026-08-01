@@ -24,6 +24,7 @@ import {
   autoMarkDrafts,
   autoMarkSourceLabel,
   autoMarkSummary,
+  crossCheckCaution,
   diameterBandWords,
   dropLabel,
   dropNote,
@@ -740,6 +741,64 @@ describe("the pair set's own overview — the cap, before it is exceeded", () =>
   });
 });
 
+/**
+ * THE VACUOUS RMS, BEFORE THE CLICK (defect cap6020-neodent-gm, 2026-08-01).
+ *
+ * One pair fixes the rotation exactly, so the fit it produces has nothing to
+ * cross-check it against. The operator used to learn this — if at all — from an
+ * outcome sentence that claimed "marks agree to 0.000mm RMS". The set the Apply
+ * control is about to send says it first.
+ */
+describe("the one-pair caution, before the fit is applied", () => {
+  const complete = (id: string) =>
+    withPick(withPick(newPairDraft(id, false), "part", [1, 0, 1]), "scan", [5, 5, 5]);
+  const completeSpan = (id: string) =>
+    withPick(
+      withPick(withPick(newPairDraft(id, true), "part", [1, 0, 1]), "scan", [5, 5, 5]),
+      "scan",
+      [6, 5, 5],
+    );
+
+  it("warns on exactly one complete pair, and says what it costs", () => {
+    const words = crossCheckCaution([complete("a")]);
+    expect(words).not.toBeNull();
+    expect(words).toContain("one observation");
+    expect(words).toContain("no agreement number");
+  });
+
+  it("says the act is legitimate — it is a caution, never a refusal", () => {
+    // the worker deliberately allows one correspondence, and a single pair is the
+    // documented answer where the automatic reader has no evidence at all
+    const words = crossCheckCaution([complete("a")])!;
+    expect(words.toLowerCase()).toContain("legitimate");
+    // and Apply stays live: the caution and the blocker are different questions
+    expect(applyBlockedReason([complete("a")])).toBeNull();
+  });
+
+  it("is silent once a second pair stands", () => {
+    expect(crossCheckCaution([complete("a"), complete("b")])).toBeNull();
+  });
+
+  it("is silent with nothing placed — there is no fit to caution about yet", () => {
+    expect(crossCheckCaution([])).toBeNull();
+    expect(crossCheckCaution([newPairDraft("a", false)])).toBeNull();
+  });
+
+  it("does not count half-built pairs as the second one", () => {
+    const words = crossCheckCaution([complete("a"), newPairDraft("b", false)]);
+    expect(words).not.toBeNull();
+  });
+
+  it("a lone SPAN is cautioned in the conditional the physics actually has", () => {
+    // a span emits its direction ONLY where the server reads it as radial; a chord
+    // across the feature contributes its midpoint alone. This app may not decide
+    // which — so it states the condition rather than either answer.
+    const words = crossCheckCaution([completeSpan("a")])!;
+    expect(words).toContain("radial");
+    expect(words).not.toContain("one observation.");
+  });
+});
+
 describe("the flagged-exception pointer (the act lives on Deliver's row)", () => {
   it("says a flagged site can still ship, and where the act is made", () => {
     const words = flaggedExceptionWords("flagged");
@@ -793,6 +852,8 @@ describe("outcomeMovedTheRow — when the run's summary row must be re-read", ()
         best_fit: null,
         pairs: [],
         residual_rms_mm: null,
+        // a rotation produces no residual at all — "not applicable", not "unchecked"
+        cross_checked: null,
         click_azimuth_deg: null,
         matched_feature_azimuth_deg: null,
       },

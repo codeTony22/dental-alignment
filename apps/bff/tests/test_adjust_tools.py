@@ -318,7 +318,49 @@ class TestTheLanding:
             "sites"] if r["tooth"] == 4)
         assert row4["correspondence"] == {"pairs": 2, "observations": 3,
                                           "spans": 1, "directions_used": 1,
-                                          "max_pairs": 8, "residual_rms_mm": 0.06}
+                                          "max_pairs": 8, "residual_rms_mm": 0.06,
+                                          "cross_checked": True}
+
+    def test_a_one_observation_fit_is_folded_as_not_cross_checked(
+            self, settings, product_root, monkeypatch):
+        """THE VACUOUS-RMS DEFECT (cap6020-neodent-gm, 2026-08-01), on the row the
+        confirmation seals. One pair produces one observation, its residual is zero by
+        construction, and the RMS over it is arithmetic — so the block carries no
+        figure AND says why, rather than leaving a reader to infer the difference
+        between "no number" and "a number that means nothing".
+
+        Derived from the OBSERVATION COUNT this same block states, by the worker's own
+        predicate, so ``observations`` and ``cross_checked`` cannot disagree here."""
+        client, _ = tooled(settings, product_root, monkeypatch, result=outcome(
+            4, operation="fit-by-points",
+            pairs=[{"observation": "point", "residual_mm": 0.0}],
+            residual_rms_mm=None, cross_checked=False))
+        assert client.post(f"{BASE}/4/fit-by-points", json={"pairs": [
+            {"feature_id": "code-1", "scan_point": [0.0, 0.0, 0.0]}]},
+        ).status_code == 200
+        row4 = next(r for r in client.get(f"/api/case-sessions/{CASE}/run").json()[
+            "sites"] if r["tooth"] == 4)
+        assert row4["correspondence"]["observations"] == 1
+        assert row4["correspondence"]["cross_checked"] is False
+        assert row4["correspondence"]["residual_rms_mm"] is None
+
+    def test_the_outcome_view_carries_the_cross_check_fact_to_the_surface(
+            self, settings, product_root, monkeypatch):
+        """The tool panel must be able to say it at the moment it happens, not two
+        stages later — so the fact rides on the response the Apply click reads."""
+        client, _ = tooled(settings, product_root, monkeypatch, result=outcome(
+            4, operation="fit-by-points",
+            detail=("fit by 1 point pair(s) → 1 observation(s): rotated -50.9° "
+                    "(cumulative -50.9°), a single observation fixes the rotation "
+                    "exactly — there is no second mark for it to disagree with, so "
+                    "this fit has no agreement number"),
+            pairs=[{"observation": "point", "residual_mm": 0.0}],
+            residual_rms_mm=None, cross_checked=False))
+        body = client.post(f"{BASE}/4/fit-by-points", json={"pairs": [
+            {"feature_id": "code-1", "scan_point": [0.0, 0.0, 0.0]}]}).json()
+        assert body["outcome"]["cross_checked"] is False
+        assert body["outcome"]["residual_rms_mm"] is None
+        assert "0.000mm RMS" not in body["outcome"]["detail"]
 
     def test_a_rotation_reset_drops_the_correspondence_with_the_best_fit_block(
             self, settings, product_root, monkeypatch):

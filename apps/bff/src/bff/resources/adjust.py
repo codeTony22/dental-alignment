@@ -60,7 +60,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from case_prep.application.adjust import (AdjustInvalid, AdjustOutcome, AdjustRefused,
                                           AlreadyOptimal, Correspondence,
                                           align_to_correspondence, align_to_mark,
-                                          best_fit_site, clock_landmarks, load_site,
+                                          best_fit_site, clock_landmarks,
+                                          cross_checked, load_site,
                                           rederived_reading, rotate_site,
                                           seated_payload)
 from case_prep.application.cases import CaseRecord
@@ -239,6 +240,12 @@ class AdjustOutcomeView(BaseModel):
     # one row per OBSERVATION (a span contributes two), each with its own residual
     pairs: List[dict] = Field(default_factory=list)
     residual_rms_mm: Optional[float] = None
+    # WHETHER THAT RMS IS EVIDENCE (the vacuous-RMS defect, 2026-08-01). A fit built
+    # from ONE observation is exactly determined: the residual is zero by construction
+    # and the RMS over it is arithmetic, so the worker reports no figure at all and
+    # says so here. None on every tool that produces no residual in the first place —
+    # "not applicable" and "the number would have meant nothing" are different answers.
+    cross_checked: Optional[bool] = None
     click_azimuth_deg: Optional[float] = None
     matched_feature_azimuth_deg: Optional[float] = None
 
@@ -407,15 +414,23 @@ def _fold_outcome(run: RunSession, tooth: int, outcome: AdjustOutcome,
     # is the invariant this function's own docstring was rewritten for (finding E,
     # 2026-07-28), so any applied act that is not the fit-by-points which WROTE the
     # block drops it.
+    #
+    # AND WHETHER THE RESIDUAL BESIDE IT IS EVIDENCE (the vacuous-RMS defect,
+    # 2026-08-01). ``cross_checked`` is derived HERE from the observation count this
+    # same block states, by the worker's own predicate, so the two numbers in one block
+    # can never disagree — a fit of ONE observation is exactly determined, its residual
+    # is zero by construction, and ``residual_rms_mm`` arrives as None for that reason.
     if correspondence_pairs is not None:
         kinds = [str(p.get("observation") or "") for p in outcome.pairs
                  if isinstance(p, dict)]
+        observations = len(outcome.pairs)
         row["correspondence"] = {"pairs": correspondence_pairs,
-                                 "observations": len(outcome.pairs),
+                                 "observations": observations,
                                  "spans": kinds.count("midpoint"),
                                  "directions_used": kinds.count("direction"),
                                  "max_pairs": _MAX_PAIRS,
-                                 "residual_rms_mm": outcome.residual_rms_mm}
+                                 "residual_rms_mm": outcome.residual_rms_mm,
+                                 "cross_checked": cross_checked(observations)}
     else:
         row.pop("correspondence", None)
     for name in outcome.files:
@@ -477,6 +492,7 @@ def _result(case: CaseRecord, session: CaseSession, settings: Settings,
             stability_excess_mm=outcome.stability_excess_mm,
             best_fit=outcome.best_fit, pairs=list(outcome.pairs),
             residual_rms_mm=outcome.residual_rms_mm,
+            cross_checked=outcome.cross_checked,
             click_azimuth_deg=outcome.click_azimuth_deg,
             matched_feature_azimuth_deg=outcome.matched_feature_azimuth_deg),
         pane_payload=outcome.pane_payload,

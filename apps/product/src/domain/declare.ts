@@ -979,12 +979,23 @@ export function alignmentStats(
   // "3 / 8" only where the SERVER supplied the cap. A hard-coded 8 here would be a
   // second copy of a bound the wire already carries (deliver.AssuranceCorrespondence),
   // and "0 / 8" on a site nobody has fit by points would be an invented fact.
-  const pairsWords =
+  /* AND WHETHER THAT FIT HAD ANYTHING TO CHECK IT (defect cap6020-neodent-gm,
+     2026-08-01). "1 / 8" renders exactly like "3 / 8" — a fit that happened — and hides
+     the one way they differ: a single observation is exactly determined, its residual
+     is zero by construction, and the fit reports no agreement number at all. The word
+     is the SERVER's `cross_checked` (bff/resources/deliver._correspondence_view), never
+     a `pairs === 1` test here: the count of PAIRS cannot answer it — one radial span is
+     two observations and IS cross-checked. A server that says nothing gets no word. */
+  const counted =
     typeof pairs !== "number"
       ? absent
       : typeof maxPairs === "number"
         ? `${pairs} / ${maxPairs}`
         : `${pairs}`;
+  const pairsWords =
+    typeof pairs === "number" && correspondence?.["cross_checked"] === false
+      ? `${counted} · unchecked`
+      : counted;
   /* THE SOURCE IS PART OF THE FIGURE. Two acts measure this site's deviation — the run,
      and the pre-run preview seat — on the same instrument at different moments, and a
      cell that showed one under the other's name would be the quietest possible lie. So

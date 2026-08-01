@@ -5191,3 +5191,30 @@ button.package-files__link:hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+
+/* ============================================================================
+   THE VACUOUS RMS (defect on cap6020-neodent-gm, 2026-08-01)
+   ============================================================================ */
+
+/* The one-pair caution in the PAIR SET. `.adjust-pairs__caution` already carries the
+   right amber tone; this modifier only re-homes it, because the set-level caution is
+   NOT inside an `.adjust-pairs__row` grid the way the span caution is. */
+.adjust-pairs__caution--set {
+  grid-column: auto;
+  margin: 8px 0 4px;
+  max-width: 52ch;
+}
+
+/* The same fact on Deliver's assurance row. Amber rather than the quiet provenance
+   ink `.assurance-stale` uses: this is something the operator must WEIGH before
+   signing, which is the line that rule's own comment draws. */
+.assurance-cross-check {
+  display: block;
+  max-width: 46ch;
+  margin-top: 4px;
+  padding-left: 8px;
+  color: var(--color-amber);
+  border-left: 2px solid var(--color-amber-border);
+  line-height: 1.4;
+}

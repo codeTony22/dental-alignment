@@ -377,7 +377,47 @@ class TestTheAlignmentMetricsAreTyped:
         client = landed_client(settings, product_root, rows)
         assert self.site(client, 4)["correspondence"] == {
             "pairs": 3, "observations": 5, "spans": 2, "directions_used": 2,
-            "max_pairs": 8, "residual_rms_mm": 0.08}
+            "max_pairs": 8, "residual_rms_mm": 0.08, "cross_checked": True}
+
+    def test_a_one_observation_fit_reaches_the_row_as_not_cross_checked(
+            self, settings, product_root):
+        """THE VACUOUS-RMS DEFECT (cap6020-neodent-gm, 2026-08-01) on the document the
+        signature covers. A fit built from one pair rotated a site by -50.9° and
+        reported "marks agree to 0.000mm RMS" — a residual that is zero BY
+        CONSTRUCTION, because a single observation has nothing to disagree with.
+
+        The row now carries the fact itself, so a confirmation cannot be signed over a
+        quality number that was never a measurement."""
+        rows = self.rows_with({"correspondence": {
+            "pairs": 1, "observations": 1, "spans": 0, "directions_used": 0,
+            "max_pairs": 8, "residual_rms_mm": None, "cross_checked": False}})
+        block = self.site(landed_client(settings, product_root, rows),
+                          4)["correspondence"]
+        assert block["cross_checked"] is False
+        assert block["residual_rms_mm"] is None
+
+    def test_a_block_folded_before_the_field_existed_is_judged_by_its_own_count(
+            self, settings, product_root):
+        """A run landed before ``cross_checked`` was written still has to answer the
+        question — and it already carries the number the answer is a function of. So
+        the projection derives it from ``observations`` by the worker's own predicate
+        rather than rendering "unknown" over the exact case the defect was about."""
+        rows = self.rows_with({"correspondence": {
+            "pairs": 1, "observations": 1, "spans": 0, "directions_used": 0,
+            "max_pairs": 8, "residual_rms_mm": 0.0}})
+        block = self.site(landed_client(settings, product_root, rows),
+                          4)["correspondence"]
+        assert block["cross_checked"] is False
+
+    def test_a_legacy_block_with_no_observation_count_claims_nothing(
+            self, settings, product_root):
+        """The one honest "unknown": a block that never carried the count cannot have
+        the fact derived from it, and inventing True over a fit nobody can size would
+        be the defect again with a different number."""
+        rows = self.rows_with({"correspondence": {"pairs": 2, "max_pairs": 8}})
+        block = self.site(landed_client(settings, product_root, rows),
+                          4)["correspondence"]
+        assert block["cross_checked"] is None
 
     def test_three_chord_spans_no_longer_read_like_three_single_clicks(
             self, settings, product_root):

@@ -30,6 +30,7 @@ import {
   assuranceCountsWords,
   confirmBlockers,
   confirmWireBody,
+  crossCheckWords,
   effectiveDisposition,
   evidenceSummary,
   formatBytes,
@@ -52,7 +53,7 @@ import {
   flaggedAssuranceSite,
   invoiceView,
 } from "../testing/fixtures";
-import type { ArtifactsView } from "../api/client";
+import type { ArtifactsView, AssuranceCorrespondence } from "../api/client";
 
 const TWO_SITES = assuranceView(); // flagged tooth 30 pinned first, ready tooth 19
 
@@ -446,6 +447,54 @@ describe("staleMetricsWords — what a reworked row's numbers still describe", (
     // operator must see
     expect(staleMetricsWords(assuranceSite({ stale_metrics: ["some_new_metric"] })))
       .toContain("some_new_metric");
+  });
+});
+
+/**
+ * THE VACUOUS RMS, ON THE ROW THE SIGNATURE COVERS (defect cap6020-neodent-gm,
+ * 2026-08-01). A fit built from one pair rotated a site −50.9° and reported "marks
+ * agree to 0.000mm RMS"; the site left at 0.451mm RMS / 0.745mm p90. The row this app
+ * renders before a confirmation carried no trace of it.
+ */
+describe("crossCheckWords — whether this row's fit had anything to check it", () => {
+  const withPairs = (block: Partial<AssuranceCorrespondence>) =>
+    assuranceSite({
+      correspondence: {
+        pairs: 1,
+        observations: 1,
+        max_pairs: 8,
+        residual_rms_mm: null,
+        cross_checked: false,
+        ...block,
+      },
+    });
+
+  it("says nothing on a site that stands on no correspondence at all", () => {
+    expect(crossCheckWords(assuranceSite({ correspondence: null }))).toBeNull();
+  });
+
+  it("says nothing on a cross-checked fit — that row's RMS speaks for itself", () => {
+    expect(
+      crossCheckWords(
+        withPairs({ pairs: 3, observations: 5, residual_rms_mm: 0.08, cross_checked: true }),
+      ),
+    ).toBeNull();
+  });
+
+  it("names the fact and what confirming does with it", () => {
+    const words = crossCheckWords(withPairs({}))!;
+    expect(words).toContain("single observation");
+    expect(words).toContain("no agreement number");
+    expect(words).toContain("Confirming seals");
+  });
+
+  it("renders the SERVER's word, never a count compared in this browser", () => {
+    // the observation count is on the wire, and the temptation is to read
+    // `observations === 1` here. "Is this number a measurement?" is a judgment about
+    // evidence, and this codebase does not make those in a browser: a server that
+    // says cross_checked is silent about a one-observation row, and this must obey it.
+    expect(crossCheckWords(withPairs({ cross_checked: true }))).toBeNull();
+    expect(crossCheckWords(withPairs({ cross_checked: null }))).toBeNull();
   });
 });
 

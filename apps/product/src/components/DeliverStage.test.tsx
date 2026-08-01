@@ -567,6 +567,69 @@ describe("a reworked row says which of its numbers predate the rework (finding E
   });
 });
 
+/**
+ * THE VACUOUS RMS, ON THE ROW THAT SIGNS (defect cap6020-neodent-gm, 2026-08-01).
+ * A fit built from one pair turned a site −50.9° and reported "marks agree to 0.000mm
+ * RMS" — arithmetic, not evidence. The assurance table carried no trace of it, so a
+ * confirmation could be signed over a quality number that never existed.
+ */
+describe("a fit with nothing to cross-check it says so on the row", () => {
+  const oneObservation = (overrides = {}) =>
+    assuranceSite({
+      tooth: 19,
+      correspondence: {
+        pairs: 1,
+        observations: 1,
+        max_pairs: 8,
+        residual_rms_mm: null,
+        cross_checked: false,
+      },
+      ...overrides,
+    });
+
+  it("rides in the ROW, beside the other things confirming seals", () => {
+    const html = view({
+      reportOpen: true,
+      assurance: {
+        kind: "ok",
+        data: assuranceView({ sites: [oneObservation()] }),
+      },
+    });
+    expect(html).toContain('data-role="cross-check"');
+    expect(html).toContain("single observation");
+    expect(html).toContain("no agreement number");
+    expect(html).toContain("Confirming seals it as it stands");
+  });
+
+  it("a cross-checked fit carries no such line", () => {
+    const html = view({
+      reportOpen: true,
+      assurance: {
+        kind: "ok",
+        data: assuranceView({
+          sites: [
+            assuranceSite({
+              tooth: 19,
+              correspondence: {
+                pairs: 3,
+                observations: 5,
+                max_pairs: 8,
+                residual_rms_mm: 0.08,
+                cross_checked: true,
+              },
+            }),
+          ],
+        }),
+      },
+    });
+    expect(html).not.toContain('data-role="cross-check"');
+  });
+
+  it("a row standing on no correspondence at all carries none either", () => {
+    expect(view({ reportOpen: true })).not.toContain('data-role="cross-check"');
+  });
+});
+
 describe("the production note — a disclosure gap closed (plan §10-E)", () => {
   const NOTE =
     "single construction part shared across sites identifying 2 distinct " +

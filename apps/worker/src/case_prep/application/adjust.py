@@ -898,6 +898,13 @@ class AdjustOutcome:
     best_fit: Optional[dict] = None
     pairs: List[dict] = field(default_factory=list)
     residual_rms_mm: Optional[float] = None
+    # WHETHER ``residual_rms_mm`` IS EVIDENCE (``cross_checked``, the vacuous-RMS defect
+    # 2026-08-01). None on every tool that reports no residual at all; False on the
+    # 1-observation fit-by-points, where ``residual_rms_mm`` is None for the same reason.
+    # Carried BESIDE the number rather than left to be inferred from an empty field:
+    # "there is no figure" and "the figure means nothing" are different facts, and a
+    # surface must be able to say the second one out loud.
+    cross_checked: Optional[bool] = None
     click_azimuth_deg: Optional[float] = None
     matched_feature_azimuth_deg: Optional[float] = None
     applied: bool = True
@@ -1302,6 +1309,45 @@ def residual_rows(observations: Sequence[Observation],
     return rows, rms
 
 
+# --- THE CROSS-CHECK FLOOR (defect, cap6020-neodent-gm 2026-08-01) -----------------------
+#
+# A fit-by-points built from ONE observation is exactly determined for rotation: that
+# single delta IS the answer, its residual is zero BY CONSTRUCTION, and the RMS over one
+# zero is 0.000mm. The number is arithmetic, not evidence — there is nothing for it to
+# disagree with — and the outcome sentence spent it in the same words a genuinely
+# cross-checked fit earns. The real case: 14:32:30 a clean run, 14:32:52 "fit by 1 point
+# pair(s) → 1 observation(s): rotated -50.9° (cumulative -50.9°), marks agree to 0.000mm
+# RMS", and a site that left at 0.451mm RMS / 0.745mm p90.
+#
+# THE ACT STAYS POSSIBLE. One correspondence is the documented answer where the automatic
+# reader has no evidence at all, and the physics supports it — raising the minimum to two
+# would delete a capability instead of disclosing a limit. What changes is that the fit
+# says WHICH of the two it is, in every place it speaks.
+CROSS_CHECK_MIN_OBSERVATIONS = 2
+
+
+def cross_checked(n_observations: int) -> bool:
+    """Whether this fit's residual RMS is a MEASUREMENT or a tautology.
+
+    Two is the floor because two is where a residual first has something to disagree
+    with. Counted in OBSERVATIONS, never in pairs: one radial span is two observations
+    and is genuinely cross-checked, while one chordal span is one and is not — a count
+    of pairs would get both backwards."""
+    return n_observations >= CROSS_CHECK_MIN_OBSERVATIONS
+
+
+def agreement_words(n_observations: int, rms_mm: float) -> str:
+    """The QC clause of a fit-by-points' outcome sentence.
+
+    THE ONE-OBSERVATION BRANCH PRINTS NO MILLIMETRES, deliberately and not merely as
+    phrasing: any figure it could print is the arithmetic of a single zero, and a
+    reader who sees millimetres in this clause is entitled to read them as agreement."""
+    if not cross_checked(n_observations):
+        return ("a single observation fixes the rotation exactly — there is no second "
+                "mark for it to disagree with, so this fit has no agreement number")
+    return f"marks agree to {rms_mm:.3f}mm RMS"
+
+
 def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
                             pairs: Sequence[Correspondence]) -> AdjustOutcome:
     """FIT BY POINTS: the operator names a feature on the LIBRARY PART and the same
@@ -1312,6 +1358,13 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
     a 3-trench cap and unusable where the automatic reader has no evidence at all.
     More than one pair adds a QC number the operator can read: the per-observation
     residual in millimetres at its own lever arm.
+
+    AND EXACTLY ONE OBSERVATION HAS NO SUCH NUMBER — the concession this docstring made
+    in passing, now stated on the wire (``cross_checked``, the 2026-08-01 defect). One
+    observation is exactly determined for rotation, so its residual is zero by
+    construction. The fit is still legitimate and still applied — it is the documented
+    answer where the automatic reader has no evidence — but it reports NO agreement
+    figure rather than a 0.000mm RMS that means nothing.
 
     Still a PROPOSAL: the same ring-fixed kinematics, the same stability bound, the
     same certification gates, the same re-read and re-emit."""
@@ -1375,18 +1428,25 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
     applied = circular_mean_deg([o.delta_deg for o in observations],
                                 [o.weight for o in observations])
     residuals, rms = residual_rows(observations, applied)
+    checked = cross_checked(len(observations))
+    # THE RESIDUAL THAT CANNOT EXIST IS NOT REPORTED AS A NUMBER. ``residual_rms_mm`` is
+    # Optional on this outcome, on the BFF's view, in the row's correspondence block and
+    # on the wire's TypeScript — None was already legal everywhere, and it is the only
+    # honest value here: a 0.000 travelling in a float field is a quality figure to every
+    # surface that renders it, however carefully the sentence beside it is worded.
+    reported_rms = round(rms, 3) if checked else None
 
     _base, prior_cum = _rotation_state(ctx)
     cumulative = prior_cum + applied
     cand, excess = judge_rotation(ctx.template, ctx.local_points, ctx.pose_local,
                                   applied)
     detail = (f"fit by {len(pairs)} point pair(s) → {len(observations)} observation(s): "
-              f"rotated {applied:+.1f}° (cumulative {cumulative:+.1f}°), marks agree "
-              f"to {rms:.3f}mm RMS")
+              f"rotated {applied:+.1f}° (cumulative {cumulative:+.1f}°), "
+              f"{agreement_words(len(observations), rms)}")
     clocking, nudge_fields, files = _adopt_rotation(
         ctx, cand, applied, cumulative, "fit-by-points", detail,
         {"pairs": audit_pairs, "residuals": residuals,
-         "residual_rms_mm": round(rms, 3)})
+         "residual_rms_mm": reported_rms, "cross_checked": checked})
     payload, deviation, stale = _post_adjustment_reading(ctx)
     return AdjustOutcome(
         tooth=tooth, operation="fit-by-points", detail=detail, files=files,
@@ -1394,7 +1454,7 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
         nudge=nudge_fields,
         applied_delta_deg=round(applied, 1), cumulative_deg=round(cumulative, 1),
         stability_excess_mm=(round(excess, 3) if excess is not None else None),
-        pairs=residuals, residual_rms_mm=round(rms, 3),
+        pairs=residuals, residual_rms_mm=reported_rms, cross_checked=checked,
         pane_payload=payload)
 
 

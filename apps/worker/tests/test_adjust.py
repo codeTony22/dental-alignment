@@ -32,14 +32,17 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from case_prep.application.adjust import (MIN_SPAN_MM, SPAN_RADIAL_TOLERANCE_DEG,
+from case_prep.application.adjust import (CROSS_CHECK_MIN_OBSERVATIONS, MIN_SPAN_MM,
+                                          SPAN_RADIAL_TOLERANCE_DEG,
                                           STALE_AFTER_REWORK, AdjustInvalid,
                                           AdjustRefused, AlreadyOptimal, Correspondence,
-                                          SiteClicks, align_to_correspondence,
+                                          SiteClicks, agreement_words,
+                                          align_to_correspondence,
                                           align_to_mark, anchor_certified_pose,
                                           azimuth_deg, best_fit_refusal, best_fit_site,
                                           circular_mean_deg, clock_landmarks,
-                                          clock_reference, direction_delta,
+                                          clock_reference, cross_checked,
+                                          direction_delta,
                                           landmark_point, load_site, observation_weight,
                                           observations_for, rederived_reading,
                                           require_clock_lever, reset_discards,
@@ -490,6 +493,44 @@ class TestResidualRows:
     def test_a_row_with_nothing_to_explain_carries_no_note_key(self):
         rows, _rms = residual_rows([self._obs("point", 0.0, 2.0, 4.0)], applied=0.0)
         assert "note" not in rows[0]
+
+
+# --- THE VACUOUS RMS (defect, cap6020-neodent-gm 2026-08-01) -----------------------------
+#
+# 14:32:30 the run completed with verdicts written for 1 site and none flagged.
+# 14:32:52 a fit-by-points said "fit by 1 point pair(s) → 1 observation(s): rotated
+# -50.9° (cumulative -50.9°), marks agree to 0.000mm RMS" and the site left the stage at
+# DEV RMS 0.451mm / P90 0.745mm. The 0.000mm was not evidence of anything: with ONE
+# observation the residual is zero BY CONSTRUCTION, so the RMS over it is arithmetic.
+# The sentence spent a QC number's credibility on a fit that had no QC number.
+
+
+class TestCrossCheck:
+    def test_one_observation_is_not_cross_checked_and_two_are(self):
+        """The floor, stated once: a residual first has something to disagree with at
+        two observations. Below that the number is a tautology."""
+        assert cross_checked(1) is False
+        assert cross_checked(2) is True
+        assert cross_checked(CROSS_CHECK_MIN_OBSERVATIONS) is True
+
+    def test_a_cross_checked_fit_reports_the_rms_it_measured(self):
+        assert agreement_words(3, 0.021) == "marks agree to 0.021mm RMS"
+
+    def test_a_single_observation_reports_no_agreement_number_at_all(self):
+        """THE DEFECT'S OWN SENTENCE. The clause a 1-observation fit prints must not
+        be the cross-checked one with a zero in it — it must say what it is."""
+        words = agreement_words(1, 0.0)
+        assert "marks agree" not in words
+        assert "RMS" not in words
+        assert "0.000" not in words
+        assert "single observation" in words
+
+    def test_the_single_observation_clause_carries_no_millimetre_figure(self):
+        """Belt and braces on the one thing that must never appear: a fit with
+        nothing to cross-check cannot print millimetres of agreement, at ANY rms the
+        arithmetic happens to produce."""
+        assert "mm" not in agreement_words(1, 0.0)
+        assert "mm" not in agreement_words(1, 0.451)
 
 
 # --- RESET IS NOT A FREE ACT (review 2026-07-28, finding D) ------------------------------

@@ -500,6 +500,51 @@ export function pairSetWords(drafts: readonly PairDraft[]): string {
   return `${counted}${half}.`;
 }
 
+/**
+ * THE VACUOUS RMS, SAID BEFORE THE CLICK (defect cap6020-neodent-gm, 2026-08-01).
+ *
+ * A fit built from ONE observation is exactly determined for rotation: that single
+ * delta IS the answer and its residual is zero by construction. The outcome used to
+ * report that zero as "marks agree to 0.000mm RMS" — a quality number where no quality
+ * number can exist — and a real case took a −50.9° rotation off a clean run on the
+ * strength of it. The server no longer says that. This says it one act EARLIER, so the
+ * choice is informed rather than discovered.
+ *
+ * A CAUTION, NEVER A BLOCKER. The worker deliberately allows one correspondence and
+ * `applyBlockedReason` deliberately refuses at zero, not at one: a single pair is the
+ * documented answer where the automatic reader has no evidence at all, and removing the
+ * capability is not the fix. So this returns words and touches no control.
+ *
+ * IT PREDICTS NO VERDICT. Whether the fit really lands on one observation is the
+ * server's to say — a two-point SPAN emits its direction only where the server reads it
+ * as radial, and a chord across the feature contributes its midpoint alone. So the span
+ * branch states the CONDITION rather than either answer, and the fact that decides it
+ * arrives afterwards on `AdjustOutcomeView.cross_checked`, derived server-side.
+ */
+export function crossCheckCaution(drafts: readonly PairDraft[]): string | null {
+  const complete = drafts.filter(isComplete);
+  if (complete.length !== 1) return null;
+  const only = complete[0]!;
+  if (only.span) {
+    return (
+      "One pair only. This span counts as two observations only where the server " +
+      "reads it as radial; a chord across the feature contributes its midpoint " +
+      "alone, and then this fit stands on a single observation — the rotation is " +
+      "fixed exactly, nothing disagrees with it, and no agreement number exists. " +
+      "That is a legitimate fit where the automatic reader has no evidence. Place a " +
+      "second pair if you want the rotation cross-checked."
+    );
+  }
+  return (
+    "One pair only — one observation. It fixes the rotation exactly, so there is " +
+    "nothing to cross-check it against and the fit reports no agreement number: if " +
+    "this mark is on the wrong feature, the cap turns by whatever it says and no " +
+    "number here can tell. That is a legitimate fit where the automatic reader has " +
+    "no evidence. Place a second pair elsewhere on the cap to get a residual you " +
+    "can read."
+  );
+}
+
 // --- auto-mark: the software proposes the part half (client 2026-07-29, item 3) ------
 //
 // "We also need another tool where we automatically mark the points in the library and

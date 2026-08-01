@@ -8,6 +8,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { FEATURE_COLOR, PALETTE, type CompositePartSpec, type FeatureKind, type PartRole } from "./palette";
 import { computeAnatomyFrame, type AnatomyFrame } from "./anatomyOrientation";
 import { computePartFrame, rawFromFeature, type PartFrame } from "./partFrame";
+import { fitCenterRingPlane, type CenterRingFit } from "./centerRing";
 
 // Light blue backdrop (client request 2026-07-24) — airy, keeps contrast with the
 // cream scan, green cap, and steel-blue construction.
@@ -1844,7 +1845,11 @@ export class SceneController {
   }
 
   /**
-   * Size every proposal marker against the CURRENT framing (see MARKER_RADIUS_FRACTION).
+   * Size every proposal marker's DOT against the CURRENT framing (see MARKER_RADIUS_FRACTION).
+   * Rings (see buildCenterRingLine) are deliberately SKIPPED here — a ring's radius is fit in real
+   * millimetres from the cap's own rim, and rescaling it by the view-fraction rule that sizes
+   * the dot would drift it away from the actual geometry it is supposed to hug (the whole point
+   * is that it matches the rim from any framing, not just the one active when it was drawn).
    *
    * Called both when markers are placed and again on every framing change — the mount order
    * is markers-then-frame at least as often as the reverse, so a pane that frames after its
@@ -1857,14 +1862,99 @@ export class SceneController {
         ? Math.max(this.lastFrameRadius * MARKER_RADIUS_FRACTION, MARKER_MIN_RADIUS_MM)
         : MARKER_BASE_RADIUS_MM;
     for (const child of this.markerGroup.children) {
-      child.scale.setScalar(radius / MARKER_BASE_RADIUS_MM);
+      if (child instanceof THREE.Mesh) {
+        child.scale.setScalar(radius / MARKER_BASE_RADIUS_MM);
+      }
     }
   }
 
-  /** Drop glowing marker spheres at the given points, in the same coordinate frame as the loaded mesh. */
+  /**
+   * Mesh vertices within `radiusMm` of `center` (plain distance-to-POINT, not to a picking ray
+   * — setMarkers places markers from data, never a click, so there is no ray to anchor to; see
+   * fitCenterRingPlane's doc for why this is still the right local sample). Empty when no mesh
+   * is loaded or it carries no position attribute — the ring fit degrades to "no ring" from an
+   * empty sample, same fallback as a genuinely sparse one.
+   */
+  private collectNearbyVertices(center: THREE.Vector3, radiusMm: number): (readonly [number, number, number])[] {
+    const mesh = this.meshObject;
+    if (!mesh) return [];
+    const positionAttr = mesh.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+    if (!positionAttr) return [];
+
+    const isIdentityTransform = mesh.matrixWorld.equals(IDENTITY_MATRIX4);
+    const vertex = new THREE.Vector3();
+    const array = positionAttr.array;
+    const radiusSq = radiusMm * radiusMm;
+    const out: (readonly [number, number, number])[] = [];
+    for (let i = 0; i < positionAttr.count; i += 1) {
+      const base = i * 3;
+      vertex.set(array[base] as number, array[base + 1] as number, array[base + 2] as number);
+      if (!isIdentityTransform) vertex.applyMatrix4(mesh.matrixWorld);
+      if (vertex.distanceToSquared(center) > radiusSq) continue;
+      out.push([vertex.x, vertex.y, vertex.z]);
+    }
+    return out;
+  }
+
+  /** The same tight-then-widen ball resolveCenterPlacement's corridor scan uses (see its doc
+   *  and CENTER_BALL_RADIUS_MM/CENTER_BALL_WIDE_RADIUS_MM/CENTER_BALL_MIN_VERTICES), reused
+   *  here as the ring fit's raw sample — fitCenterRingPlane applies its own (separate,
+   *  intentionally duplicated — see that module's doc) minimum-vertex floor regardless. */
+  private nearbyVerticesForRing(center: THREE.Vector3): (readonly [number, number, number])[] {
+    const tight = this.collectNearbyVertices(center, CENTER_BALL_RADIUS_MM);
+    if (tight.length >= CENTER_BALL_MIN_VERTICES) return tight;
+    return this.collectNearbyVertices(center, CENTER_BALL_WIDE_RADIUS_MM);
+  }
+
+  /**
+   * The ring line for a fitted plane — a flat 48-gon standing in for a circle (WebGL has no
+   * primitive circle; a segment count this high is visually indistinguishable from one at the
+   * radii these rings are drawn at). `u`/`v` are an ARBITRARY orthonormal in-plane basis (any
+   * starting axis not parallel to the normal works — see perpendicularSeed's twin in
+   * centerRing.ts): the ring has no preferred roll, unlike the pose triad's axes, so there is
+   * no "which way is up in-plane" question to get wrong here.
+   */
+  private buildCenterRingLine(center: THREE.Vector3, ring: CenterRingFit): THREE.Line {
+    const normal = new THREE.Vector3(ring.normal[0], ring.normal[1], ring.normal[2]);
+    const arbitrary = Math.abs(normal.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    const u = new THREE.Vector3().crossVectors(normal, arbitrary).normalize();
+    const v = new THREE.Vector3().crossVectors(normal, u).normalize();
+
+    const segments = 48;
+    const points: THREE.Vector3[] = [];
+    for (let i = 0; i <= segments; i += 1) {
+      const theta = (i / segments) * Math.PI * 2;
+      points.push(
+        center
+          .clone()
+          .addScaledVector(u, Math.cos(theta) * ring.radiusMm)
+          .addScaledVector(v, Math.sin(theta) * ring.radiusMm),
+      );
+    }
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color: MARKER_COLOR });
+    const line = new THREE.Line(geometry, material);
+    // Same render-through-geometry indicator convention as the dot it accompanies (see
+    // makeIndicatorVisible's doc) — a ring drawn WITH depth testing would half-vanish behind
+    // the very rim it exists to trace, which is worse than the dot alone.
+    makeIndicatorVisible(material, line);
+    return line;
+  }
+
+  /**
+   * Drop glowing marker spheres at the given points, in the same coordinate frame as the loaded
+   * mesh — plus, wherever the local mesh honestly supports it, a ring in the cap's own top-ring
+   * plane hugging the rim around each dot (see centerRing.ts's header for the full diagnosis:
+   * the client-reported "marker sits on the rim, not the centre" defect, and why a ring anchors
+   * a hovering dot from any camera angle where a plain sphere cannot). Degrades to the plain
+   * dot alone — never a ring at a guessed orientation — on a missing/sparse mesh or a
+   * neighbourhood too linear to fit (fitCenterRingPlane returns null; see its doc).
+   */
   setMarkers(markers: readonly MarkerSpec[]): void {
     this.clearMarkers();
     for (const marker of markers) {
+      const centerVec = new THREE.Vector3(marker.center[0], marker.center[1], marker.center[2]);
+
       // Built at the BASE radius and scaled by applyMarkerScale below — marker.radiusMm is
       // deliberately not used as an absolute size (see MARKER_RADIUS_FRACTION).
       const geometry = new THREE.SphereGeometry(MARKER_BASE_RADIUS_MM, 20, 16);
@@ -1875,11 +1965,19 @@ export class SceneController {
         roughness: 0.35,
       });
       const sphere = new THREE.Mesh(geometry, material);
-      sphere.position.set(marker.center[0], marker.center[1], marker.center[2]);
+      sphere.position.copy(centerVec);
       // Same render-through-geometry indicator convention as every other marker kind — a
       // proposal sphere is exactly as much "not a physical object on the surface" as the rest.
       makeIndicatorVisible(material, sphere);
       this.markerGroup.add(sphere);
+
+      const ring = fitCenterRingPlane(
+        [centerVec.x, centerVec.y, centerVec.z],
+        this.nearbyVerticesForRing(centerVec),
+      );
+      if (ring) {
+        this.markerGroup.add(this.buildCenterRingLine(centerVec, ring));
+      }
     }
     this.applyMarkerScale();
   }
@@ -1893,6 +1991,14 @@ export class SceneController {
           child.material.forEach((m) => m.dispose());
         } else {
           child.material.dispose();
+        }
+      } else if (child instanceof THREE.Line) {
+        child.geometry.dispose();
+        const material = child.material;
+        if (Array.isArray(material)) {
+          material.forEach((m) => m.dispose());
+        } else {
+          material.dispose();
         }
       }
     }

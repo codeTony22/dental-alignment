@@ -64,6 +64,7 @@ import {
   autoMarkDrafts,
   autoMarkSourceLabel,
   autoMarkSummary,
+  crossCheckCaution,
   diameterBandWords,
   dropLabel,
   dropNote,
@@ -293,6 +294,22 @@ function PairsList({
       <p data-role="pair-set" className="panel__hint">
         {pairSetWords(drafts)}
       </p>
+      {/* THE VACUOUS RMS, BEFORE THE CLICK (defect cap6020-neodent-gm, 2026-08-01).
+          One pair fixes the rotation exactly, so the fit it produces has nothing to
+          cross-check it — and the outcome used to report that as "marks agree to
+          0.000mm RMS". It rides in the SET, above the Apply control it is about, and
+          it changes no control: the worker deliberately allows one correspondence,
+          and a single pair is the documented answer where the automatic reader has
+          no evidence at all. */}
+      {crossCheckCaution(drafts) !== null && (
+        <p
+          data-role="cross-check-caution"
+          role="status"
+          className="adjust-pairs__caution adjust-pairs__caution--set"
+        >
+          {crossCheckCaution(drafts)}
+        </p>
+      )}
       <ul data-role="pair-list" className="adjust-pairs">
         {drafts.map((draft, index) => (
           <li key={draft.id} data-role="pair-row" data-span={draft.span}

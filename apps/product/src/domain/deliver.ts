@@ -773,6 +773,33 @@ export function staleMetricsWords(site: AssuranceSite): string | null {
 }
 
 /**
+ * WHETHER THIS ROW'S FIT HAD ANYTHING TO CHECK IT (defect cap6020-neodent-gm,
+ * 2026-08-01), on the document the signature covers.
+ *
+ * A fit-by-points built from ONE observation is exactly determined for rotation: that
+ * single delta IS the answer and its residual is zero by construction. A real case's
+ * activity log reads "run completed — verdicts written for 1 site, none flagged" at
+ * 14:32:30 and "fit by 1 point pair(s) → 1 observation(s): rotated −50.9° … marks agree
+ * to 0.000mm RMS" at 14:32:52; the site left at 0.451mm RMS / 0.745mm p90. The 0.000mm
+ * was arithmetic, and nothing on this table said so.
+ *
+ * THE SERVER'S OWN WORD, NOT A COUNT COMPARED HERE. `observations` is on the wire and
+ * the shortcut would be `observations === 1` — but "is this number a measurement?" is a
+ * judgment about evidence, and this app makes none of those (AM-4). `cross_checked` is
+ * derived in `bff/resources/deliver._correspondence_view` from the count the same block
+ * states, and sealed with it. `null` is a row that cannot say, and it says nothing.
+ */
+export function crossCheckWords(site: AssuranceSite): string | null {
+  if (site.correspondence?.cross_checked !== false) return null;
+  return (
+    "This fit stands on a single observation — the rotation is fixed exactly by one " +
+    "mark, so there is nothing to cross-check it against and the fit has no " +
+    "agreement number. A legitimate fit where the automatic reader had no evidence, " +
+    "and one no residual can vouch for. Confirming seals it as it stands."
+  );
+}
+
+/**
  * THE FORK, IN WORDS, WHERE THE CONFIRM IS (review 2026-07-28). The BFF folds the
  * Delivery-vs-Skip decision into the evidence hash, so a confirmation already covers
  * whether the fits were reworked or waved through — but a hash shows nobody
