@@ -36,6 +36,62 @@ function facts(overrides: Partial<FlowFacts> = {}): FlowFacts {
   };
 }
 
+describe("changing the part does NOT strand the case", () => {
+  /* THE LOAD-BEARING CLAIM behind shipping the library page before `emit_from_poses`
+     (§10-M). Changing the effective construction is a reset boundary: the BFF clears
+     the current-run pointer and regresses every site's preview. The design's own
+     gating then makes the library unreachable — it needs a DONE run — so the worry is
+     that picking a part on page four locks the case out of pages four AND five with
+     nowhere to go.
+
+     It does not, and this pins why: the reset lands the operator back on Alignment,
+     which is reachable, states what it needs, and re-runs. Verified as facts rather
+     than by clicking, because every case on this fleet with a done run is also
+     RELEASED, and proving a claim must not cost a confirmation. */
+  const afterPartChange = facts({
+    siteTotal: 2,
+    siteDeclared: 2,
+    siteReady: 0, // invalidate_preview regressed them
+    siteFlagged: 0,
+    runState: "none", // clear_current_run
+    detectionDone: true,
+    choicesComplete: true,
+    constructionChosen: true, // the NEW part stands
+  });
+
+  it("leaves a reachable stage to land on, and it is Alignment", () => {
+    expect(furthestStage(afterPartChange)).toBe("declare");
+    expect(isReachable("declare", afterPartChange)).toBe(true);
+  });
+
+  it("closes the three stages that genuinely have nothing to show", () => {
+    for (const stage of ["adjust", "library", "deliver"] as const) {
+      expect(isReachable(stage, afterPartChange)).toBe(false);
+      // and none of them goes dead silently — the rail says what is missing
+      expect(blockedReason(stage, afterPartChange)).toMatch(/\S/);
+    }
+  });
+
+  it("names the NEXT act, and never the part the operator just picked", () => {
+    // the part IS chosen, so telling them to pick one would be a lie. What the reset
+    // actually left them is a set of sites to review again — and Deliver names THAT
+    // rather than the missing run, because reviewing is the act that comes first and
+    // the run fires off the back of it. (Written expecting "no run exists yet"; the
+    // ordering in blockedReason is better than the expectation was.)
+    expect(blockedReason("library", afterPartChange)).toContain("once the run completes");
+    const deliver = blockedReason("deliver", afterPartChange)!;
+    expect(deliver).toContain("still awaiting review");
+    expect(deliver).not.toContain("construction part");
+  });
+
+  it("re-opens the library the moment the re-run lands", () => {
+    const reRun = { ...afterPartChange, siteReady: 2, runState: "done" };
+    expect(isReachable("library", reRun)).toBe(true);
+    expect(isReachable("deliver", reRun)).toBe(true);
+    expect(furthestStage(reRun)).toBe("deliver");
+  });
+});
+
 describe("the construction library — the fourth page", () => {
   const done = {
     siteTotal: 2, siteReady: 2, siteFlagged: 0, runState: "done", detectionDone: true,
