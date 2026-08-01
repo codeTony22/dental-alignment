@@ -1353,6 +1353,34 @@ export async function postMarkedSite(
   });
 }
 
+/**
+ * RE-MARK an EXISTING site's centre (PUT /{id}/sites/{tooth}/mark — client
+ * 2026-08-01, the tooth-29 gap: the detector's proposed centre sat visibly off
+ * the cap, and the operator had no door to correct it).
+ *
+ * `postMarkedSite`'s exact complement — the tooth is already the path, not the
+ * body, because the site already exists. The centre is sent exactly as clicked,
+ * same as a first mark: the re-click pair-integrity rule says a human's mark is
+ * fixed here or refused, never quietly re-centred downstream, so a re-mark
+ * REPLACES the old mark whole.
+ *
+ * THIS RESET IS NEVER SPRUNG. The BFF retires the site's preview and review, the
+ * current run and any confirmation over it, but the words that say so
+ * (domain/intake.remarkWords) must be shown and CONFIRMED before the click that
+ * calls this is ever armed — this function only fires the already-consented act.
+ */
+export async function putRemarkedSite(
+  caseId: string,
+  tooth: number,
+  center: readonly number[],
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(siteActionPath(caseId, tooth, "mark"), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ center: [...center] }),
+  });
+}
+
 // --- Auto-mark (client 2026-07-29, item 3): the software proposes the part half -------
 
 /**

@@ -19,6 +19,7 @@ import {
   postDetect,
   postMarkedSite,
   putChoices,
+  putRemarkedSite,
   type CaseSessionDetail,
   type ChoicesUpdate,
 } from "../api/client";
@@ -33,6 +34,8 @@ import {
   markOnArmMark,
   markOnArmPick,
   pickSiteAt,
+  remarkRetiresSomething,
+  remarkWords,
   rescanNotices,
   shouldAutoDetect,
   siteCentre,
@@ -90,6 +93,14 @@ interface SiteListProps {
   readonly pickMiss: string | null;
   readonly onArmPick: () => void;
   readonly onCancelPick: () => void;
+  /** Re-marking the ACTIVE site's centre (client 2026-08-01) — see RemarkSiteControl. */
+  readonly remarkConfirming: boolean;
+  readonly remarkArmed: boolean;
+  readonly remarkSaving: boolean;
+  readonly remarkError: string | null;
+  readonly onAskRemark: () => void;
+  readonly onConfirmRemark: () => void;
+  readonly onCancelRemark: () => void;
 }
 
 /** The chip's demo clothes: pass/marginal/rescan traffic-light tones, muted "none". */
@@ -97,6 +108,107 @@ function captureChipClass(verdict: string | null): string {
   return verdict === null
     ? "chip chip--capture-none"
     : `chip chip--capture-${verdict}`;
+}
+
+interface RemarkSiteControlProps {
+  readonly tooth: number;
+  /** THE WORDS SHOWN, AWAITING CONSENT (client 2026-08-01) — true only while a
+   * reset the BFF would actually cause has been named and not yet confirmed. */
+  readonly confirming: boolean;
+  /** the next stage click is the NEW centre for this tooth */
+  readonly armed: boolean;
+  readonly saving: boolean;
+  /** the BFF's own refusal, verbatim */
+  readonly error: string | null;
+  readonly onAsk: () => void;
+  readonly onConfirm: () => void;
+  readonly onCancel: () => void;
+}
+
+/**
+ * RE-MARK THIS CAP'S CENTRE (client 2026-08-01, the tooth-29 gap: a detector
+ * centre visibly off the cap, and no door to correct it). THE BLAST RADIUS IN
+ * WORDS BEFORE THE ACT (the visible-reset doctrine — DeclareStage's
+ * SwitchConfirm, mirrored): a re-mark that would retire a preview, a review, the
+ * current run or anything signed over it says so and waits for an explicit
+ * confirm BEFORE the pick is armed, never discovered as a reset after the click
+ * already landed. A re-mark with nothing to retire (domain/intake.
+ * remarkRetiresSomething) arms straight away — a confirmation over zero
+ * consequences would be the checkbox-over-nothing AM-8 already forbids for a
+ * system switch.
+ */
+function RemarkSiteControl({
+  tooth,
+  confirming,
+  armed,
+  saving,
+  error,
+  onAsk,
+  onConfirm,
+  onCancel,
+}: RemarkSiteControlProps) {
+  return (
+    <div data-role="remark-site" className="panel__actions">
+      {confirming ? (
+        <div data-role="remark-confirm" role="alert" className="switch-confirm">
+          <p className="switch-confirm__words">{remarkWords(tooth)}</p>
+          <div className="switch-confirm__actions">
+            <button
+              type="button"
+              data-role="remark-confirm-go"
+              className="button button--primary button--small"
+              onClick={onConfirm}
+            >
+              Re-mark this cap's centre
+            </button>
+            <button
+              type="button"
+              data-role="remark-confirm-cancel"
+              className="button button--secondary button--small"
+              onClick={onCancel}
+            >
+              Keep the current centre
+            </button>
+          </div>
+        </div>
+      ) : armed ? (
+        <>
+          <p data-role="remark-prompt" className="panel__hint">
+            Click the new centre for tooth {tooth} on the scan.
+          </p>
+          <button
+            type="button"
+            data-role="remark-cancel"
+            className="button button--ghost button--small"
+            disabled={saving}
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          data-role="remark-ask"
+          className="button button--ghost button--small"
+          onClick={onAsk}
+        >
+          Re-mark this cap's centre
+        </button>
+      )}
+      {saving && (
+        <div data-role="remark-saving" className="busy-state" role="status">
+          <span className="busy-state__spinner" aria-hidden="true" />
+          <span>Saving the new centre…</span>
+        </div>
+      )}
+      {error !== null && (
+        <div data-role="remark-error" role="alert" className="panel__error">
+          {error}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -116,6 +228,13 @@ function SiteList({
   pickMiss,
   onArmPick,
   onCancelPick,
+  remarkConfirming,
+  remarkArmed,
+  remarkSaving,
+  remarkError,
+  onAskRemark,
+  onConfirmRemark,
+  onCancelRemark,
 }: SiteListProps) {
   const unassigned =
     detail.detection?.proposals.filter((p) => p.tooth_guess === null).length ?? 0;
@@ -166,11 +285,23 @@ function SiteList({
         ))}
       </ul>
       {active !== null && (
-        <p data-role="site-framed" className="panel__hint">
-          {siteCentre(active) !== null
-            ? `Tooth ${active.tooth} is framed on the scan.`
-            : `Tooth ${active.tooth} has no centre yet — the stage cannot frame it.`}
-        </p>
+        <>
+          <p data-role="site-framed" className="panel__hint">
+            {siteCentre(active) !== null
+              ? `Tooth ${active.tooth} is framed on the scan.`
+              : `Tooth ${active.tooth} has no centre yet — the stage cannot frame it.`}
+          </p>
+          <RemarkSiteControl
+            tooth={active.tooth}
+            confirming={remarkConfirming}
+            armed={remarkArmed}
+            saving={remarkSaving}
+            error={remarkError}
+            onAsk={onAskRemark}
+            onConfirm={onConfirmRemark}
+            onCancel={onCancelRemark}
+          />
+        </>
       )}
       {/* The other direction of the same pick: point at the cap instead of reading the
           list. The stage's one-shot point pick resolves it (MainStage's markArmed door),
@@ -501,6 +632,14 @@ export interface IntakeStageViewProps {
   readonly pickMiss?: string | null;
   readonly onArmPick?: () => void;
   readonly onCancelPick?: () => void;
+  /** Re-marking the ACTIVE site's centre (client 2026-08-01, the tooth-29 gap). */
+  readonly remarkConfirming?: boolean;
+  readonly remarkArmed?: boolean;
+  readonly remarkSaving?: boolean;
+  readonly remarkError?: string | null;
+  readonly onAskRemark?: () => void;
+  readonly onConfirmRemark?: () => void;
+  readonly onCancelRemark?: () => void;
 }
 
 /** The stage's whole surface, pure payload → markup — statically testable. */
@@ -528,6 +667,13 @@ export function IntakeStageView({
   pickMiss = null,
   onArmPick = () => undefined,
   onCancelPick = () => undefined,
+  remarkConfirming = false,
+  remarkArmed = false,
+  remarkSaving = false,
+  remarkError = null,
+  onAskRemark = () => undefined,
+  onConfirmRemark = () => undefined,
+  onCancelRemark = () => undefined,
 }: IntakeStageViewProps) {
   const facts = factsFromCaseSession(detail);
   const declareOpen = isReachable("declare", facts);
@@ -566,6 +712,13 @@ export function IntakeStageView({
           pickMiss={pickMiss}
           onArmPick={onArmPick}
           onCancelPick={onCancelPick}
+          remarkConfirming={remarkConfirming}
+          remarkArmed={remarkArmed}
+          remarkSaving={remarkSaving}
+          remarkError={remarkError}
+          onAskRemark={onAskRemark}
+          onConfirmRemark={onConfirmRemark}
+          onCancelRemark={onCancelRemark}
         />
         <MarkMissedCap
           armed={markArmed}
@@ -611,10 +764,11 @@ export function IntakeStageView({
           sites={detail.sites}
           markers={detectionMarkers(detail)}
           activeTooth={activeTooth}
-          // ONE point-pick door, two callers (client 2026-07-31): the stage arms the
-          // viewer's one-shot pick while EITHER the missed-cap mark or the site picker
-          // is armed, and the container routes the resolved point to whichever asked.
-          markArmed={markArmed || pickArmed}
+          // ONE point-pick door, THREE callers (client 2026-07-31, extended
+          // 2026-08-01): the stage arms the viewer's one-shot pick while the
+          // missed-cap mark, the site picker OR a confirmed re-mark is armed, and
+          // the container routes the resolved point to whichever asked.
+          markArmed={markArmed || pickArmed || remarkArmed}
           onMark={onStagePoint}
           onMarkMissed={onStageMiss}
         />
@@ -668,6 +822,11 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
     setActiveTooth(tooth);
     setPickArmed(false);
     setPickMiss(null);
+    // a re-mark in flight is ABOUT the previously active site — a new selection
+    // makes its words (and any armed pick) stale, so it is discarded, not carried
+    setRemarkConfirming(false);
+    setRemarkArmed(false);
+    setRemarkError(null);
   }, []);
 
   const handleArmPick = useCallback(() => {
@@ -677,6 +836,9 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
     // 2026-07-31: this used to reset the whole draft, silently destroying a placed
     // centre the operator had hunted down in 3D). The rule lives in domain/intake.
     setMark(markOnArmPick);
+    setRemarkConfirming(false);
+    setRemarkArmed(false);
+    setRemarkError(null);
   }, []);
 
   const handleCancelPick = useCallback(() => {
@@ -684,20 +846,94 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
     setPickMiss(null);
   }, []);
 
-  /* The stage resolved a surface point. Whoever armed the pick owns it — the site
-     picker first, because arming it disarms the mark. A click that lands on no cap is
-     SAID, not snapped to the least-far site: the operator would otherwise watch the
-     stage fly to a tooth they did not click. */
+  /* RE-MARKING THE ACTIVE SITE'S CENTRE (client 2026-08-01, the tooth-29 gap).
+     THE BLAST RADIUS IN WORDS BEFORE THE ACT (the visible-reset doctrine —
+     DeclareStage's SwitchConfirm, mirrored): asking either arms the pick straight
+     away (nothing to retire — domain/intake.remarkRetiresSomething) or shows the
+     words first and waits for an explicit confirm. Either way it shares the
+     stage's ONE point pick with the missed-cap mark and the site picker, so
+     arming it disarms them and vice versa — the same "one pick, one owner"
+     doctrine, extended to a third door. */
+  const [remarkConfirming, setRemarkConfirming] = useState(false);
+  const [remarkArmed, setRemarkArmed] = useState(false);
+  const [remarkSaving, setRemarkSaving] = useState(false);
+  const [remarkError, setRemarkError] = useState<string | null>(null);
+
+  const handleAskRemark = useCallback(() => {
+    const active = detail.sites.find((s) => s.tooth === activeTooth) ?? null;
+    if (active === null) return;
+    setRemarkError(null);
+    if (remarkRetiresSomething(active, detail)) {
+      setRemarkConfirming(true);
+      setRemarkArmed(false);
+      return;
+    }
+    setRemarkConfirming(false);
+    setRemarkArmed(true);
+    setMark(markOnArmPick);
+    setPickArmed(false);
+    setPickMiss(null);
+  }, [activeTooth, detail]);
+
+  const handleConfirmRemark = useCallback(() => {
+    setRemarkConfirming(false);
+    setRemarkArmed(true);
+    setMark(markOnArmPick);
+    setPickArmed(false);
+    setPickMiss(null);
+  }, []);
+
+  const handleCancelRemark = useCallback(() => {
+    setRemarkConfirming(false);
+    setRemarkArmed(false);
+    setRemarkError(null);
+  }, []);
+
+  const handleRemarkResolved = useCallback(
+    (point: readonly [number, number, number]) => {
+      if (activeTooth === null) return;
+      const tooth = activeTooth;
+      setRemarkArmed(false);
+      setRemarkSaving(true);
+      setRemarkError(null);
+      void putRemarkedSite(caseId, tooth, point).then((result) => {
+        setRemarkSaving(false);
+        // ApiResult is a {kind} union — result.kind === "ok" → result.data, the
+        // detail replaces WHOLE (AM-4: what the BFF derived, never a local patch)
+        if (result.kind === "ok") {
+          onDetail(result.data);
+          return;
+        }
+        setRemarkError(result.detail);
+      });
+    },
+    [activeTooth, caseId, onDetail],
+  );
+
+  /* The stage resolved a surface point. Whoever armed the pick owns it — a
+     confirmed re-mark first (it is the most recently armed of the three by
+     construction: asking for it disarms the other two), then the site picker,
+     then the missed-cap mark. A click that lands on no cap is SAID, not snapped
+     to the least-far site: the operator would otherwise watch the stage fly to a
+     tooth they did not click. */
   /* An armed click that hit only the sky. The viewer KEEPS the pick armed (the fix
      of 2026-08-01 — before that the click vanished with the controls still off), so
      this only says it out loud, in whichever panel armed the click. */
   const handleStageMiss = useCallback(() => {
+    if (remarkArmed) {
+      setRemarkError(OFF_SCAN_MISS_WORDS);
+      return;
+    }
     if (pickArmed) setPickMiss(OFF_SCAN_MISS_WORDS);
     else setMark((now) => ({ ...now, error: OFF_SCAN_MISS_WORDS }));
-  }, [pickArmed]);
+  }, [pickArmed, remarkArmed]);
 
   const handleStagePoint = useCallback(
     (point: readonly [number, number, number]) => {
+      if (remarkArmed) {
+        handleRemarkResolved(point);
+        return;
+      }
       if (!pickArmed) {
         handleMarkPlaced(point);
         return;
@@ -724,7 +960,7 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
       setPickMiss(null);
       setActiveTooth(pick.tooth);
     },
-    [detail.sites, handleMarkPlaced, pickArmed],
+    [detail.sites, handleMarkPlaced, handleRemarkResolved, pickArmed, remarkArmed],
   );
 
   const handleSubmitMark = useCallback(() => {
@@ -820,6 +1056,9 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
         setMark(markOnArmMark);
         setPickArmed(false); // one point pick, one owner
         setPickMiss(null);
+        setRemarkConfirming(false);
+        setRemarkArmed(false);
+        setRemarkError(null);
       }}
       onCancelMark={resetMark}
       onMarkTooth={(tooth) => setMark((prev) => ({ ...prev, tooth }))}
@@ -833,6 +1072,13 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
       pickMiss={pickMiss}
       onArmPick={handleArmPick}
       onCancelPick={handleCancelPick}
+      remarkConfirming={remarkConfirming}
+      remarkArmed={remarkArmed}
+      remarkSaving={remarkSaving}
+      remarkError={remarkError}
+      onAskRemark={handleAskRemark}
+      onConfirmRemark={handleConfirmRemark}
+      onCancelRemark={handleCancelRemark}
     />
   );
 }

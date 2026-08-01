@@ -407,6 +407,13 @@ ACT_DETECTED = "detected"
 ACT_CHOICES_SET = "choices-set"
 ACT_SYSTEM_DECLARED = "system-declared"
 ACT_SITE_MARKED = "site-marked"
+# a DIFFERENT act from the one above, deliberately its own word (2026-08-01): a
+# fresh mark buys the operator work to do (post_marked_site's own doctrine), while
+# a re-mark is a reset boundary — it retires a preview, a review, the current run
+# and any confirmation sealed over it. Conflating the two under one event would
+# have a reader of the case's narrative unable to tell "detection missed this
+# site" from "the operator corrected a bad centre" apart without opening the diff.
+ACT_SITE_REMARKED = "site-remarked"
 ACT_SITE_DECLARED = "site-declared"
 ACT_SITE_WITHHOLD_INTENT = "site-withhold-intent"
 ACT_SITE_PREVIEWED = "site-previewed"

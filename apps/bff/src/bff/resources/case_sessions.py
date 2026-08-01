@@ -26,6 +26,11 @@ The ACTIONS (slices 4-5b) — writes that carry no claimed outcomes:
     recorded: an act about the Adjust STAGE, keyed to the run, gating nothing.
   - ``PUT .../sites/{tooth}/withhold`` (2026-07-31) — dropping a cap: the DRAFT of
     the confirmation's own disposition, reachable from Adjust and reversible.
+  - ``PUT .../sites/{tooth}/mark`` (2026-08-01) — an EXISTING site's centre
+    corrected by hand: ``post_marked_site``'s exact complement, and a reset
+    boundary of its own (a preview, a review, the current run and any
+    confirmation sealed over it — all named to the operator before the click
+    that fires it, not discovered after).
 
 Every status is still DERIVED: cases and suggestions from ``case_prep.application``,
 statuses from the session store. The doctrine is structural and tested: every non-GET
@@ -59,7 +64,8 @@ from ..ports.worker import JobState, WorkerPort
 from ..session import (ACT_ADJUST_DECISION, ACT_CHOICES_SET, ACT_DETECTED,
                        ACT_RUN_AUTHORIZED, ACT_RUN_LANDED, ACT_RUN_REFUSED,
                        ACT_RUN_WITHDRAWN, ACT_SITE_DECLARED, ACT_SITE_MARKED,
-                       ACT_SITE_PREVIEWED, ACT_SITE_REVIEW_WITHDRAWN,
+                       ACT_SITE_PREVIEWED, ACT_SITE_REMARKED,
+                       ACT_SITE_REVIEW_WITHDRAWN,
                        ACT_SITE_REVIEWED, ACT_SITE_WITHHOLD_INTENT,
                        ACT_SYSTEM_DECLARED,
                        AdjustDecisionRecord, CaseChoices, CaseSession,
@@ -473,6 +479,26 @@ class MarkedSiteIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tooth: int
+    center: List[float]
+
+
+class RemarkedSiteIn(BaseModel):
+    """RE-MARKING a site the case ALREADY HAS (client 2026-08-01) — ``MarkedSiteIn``
+    minus ``tooth``, because the path already names it (the path names an existing
+    subresource; the body carries only what changed about it).
+
+    One field, the same operator act in the allowlist's sense: WHERE the better
+    centre is. Not a status, a verdict or a gate — the tooth's declared VARIANT
+    (which cap) is untouched; only the physics derived from the old centre falls,
+    through the reset boundary this route drives.
+
+    The centre is sent exactly as clicked, never re-centred or averaged server-side
+    — the re-click pair-integrity record (five attempts, all of which broke
+    calibrated contracts) says a human's mark is fixed at the UI or refused, and a
+    RE-mark is a NEW mark replacing the old one WHOLE, never a nudge to it."""
+
+    model_config = ConfigDict(extra="forbid")
+
     center: List[float]
 
 
@@ -1340,9 +1366,12 @@ def post_marked_site(case_id: str, body: MarkedSiteIn,
     Judged INSIDE the mutation against the fresh document (commit 25604e7's rule):
     a rival mark landing on the same tooth between load and save must lose loudly,
     not overwrite. Refuses a tooth that is already a site — re-marking an existing
-    cap is a different act with different consequences (it would invalidate a
-    preview and a review), and conflating the two here would let a mis-typed tooth
-    number silently retire an attestation."""
+    cap is a DIFFERENT act with different consequences (it invalidates a preview
+    and a review, and the run cropped around the old centre), and conflating the
+    two here would let a mis-typed tooth number silently retire an attestation.
+    That different act now exists (2026-08-01) — ``put_remarked_site``, below —
+    and this refusal names it: the two routes point at each other, so a tooth
+    number has exactly one legal door and a refusal always says which."""
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
 
@@ -1359,13 +1388,114 @@ def post_marked_site(case_id: str, body: MarkedSiteIn,
         if body.tooth in known:
             raise HTTPException(
                 409, f"tooth {body.tooth} is already a site on case {case.id!r} — "
-                     f"marking is for caps detection MISSED, and re-marking an "
-                     f"existing site would retire its preview and its review")
+                     f"marking is for caps detection MISSED; to correct this "
+                     f"site's centre, use PUT .../sites/{body.tooth}/mark instead")
         session.sites[str(body.tooth)] = SiteSession(
             marked_center=[float(c) for c in body.center])
         record_activity(session, ACT_SITE_MARKED,
                         "healing cap centre marked by hand — detection missed this "
                         "site", tooth=body.tooth)
+
+    session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
+@router.put("/{case_id}/sites/{tooth}/mark", response_model=CaseSessionDetail)
+def put_remarked_site(case_id: str, tooth: int, body: RemarkedSiteIn,
+                      request: Request) -> CaseSessionDetail:
+    """Re-mark an EXISTING site's centre (client 2026-08-01, the tooth-29 gap on
+    case cap6020-neodent-gm: the detector's proposed centre sat visibly off the
+    cap, and the operator had no way to correct it).
+
+    ``post_marked_site``'s EXACT COMPLEMENT — a tooth must already BE a site here,
+    404 otherwise (naming that route back), where that one refuses a tooth that
+    already is one (409, naming this one). Between the two, every tooth number has
+    exactly one legal door.
+
+    THE CONSEQUENCES ``post_marked_site``'S OLD DOCSTRING NAMED NOW ACTUALLY FIRE,
+    on the ONE site whose centre moved, and ONLY when the centre actually changes
+    (judged over the EFFECTIVE value — the site's own mark if it has one, else the
+    case's suggestion — the same ``withModel`` equality guard the system and
+    choices routes use, so an identical re-PUT costs nothing):
+
+      * the rung drops through ``status.invalidate_preview`` — the SAME per-site
+        reset ``put_choices`` uses for a changed construction/jaw/relief, because a
+        moved centre is the same CLASS of fact: the declared VARIANT survives (the
+        cap did not change, only where it sits), only the physics derived from the
+        OLD centre falls;
+      * ``SiteSession.clear_preview_facts`` forgets the seat facts that physics
+        produced, so they can never drift out of step with the rung that
+        justified them (the reset boundaries' one home for that pairing);
+      * ``clear_current_run`` drops the case's current-run pointer — the run was
+        CROPPED around the old centre, so it is stale physics the instant the
+        centre moves, the same boundary ``put_choices``/``put_system``/
+        ``put_declaration`` already fire for their own triggers (the run
+        directory survives on disk as immutable history; only the pointer falls).
+
+    A STANDING CONFIRMATION IS ALSO RETIRED HERE, and that is this boundary's ONE
+    deliberate divergence from those three siblings. ``clear_current_run``'s own
+    docstring documents that choices/system/declaration changes leave a
+    confirmation standing on purpose — it goes inert the moment its run_id no
+    longer names the current run, and every act that could disclose or charge
+    against it (``deliver._require_done_run_for_act``) already refuses on that
+    mismatch, so under-claiming there costs nothing. That argument does not
+    survive a re-mark: what stood confirmed was sealed over evidence measured
+    from the exact centre the operator has just said is WRONG, and the words this
+    surface must show BEFORE arming the pick name the run "and anything signed
+    over it" as retired — a promise made out loud before the act, which must come
+    true here rather than merely become unreachable three requests later behind a
+    gate nobody was shown. ``clear_confirmation`` is the one-home helper for
+    exactly this (session.py) — called here, never hand-rolled.
+
+    Validation is ``MarkedSiteIn``'s minus the tooth (the path already names it):
+    finite [x, y, z], sent exactly as clicked and never re-centred here — the
+    re-click pair-integrity record says a human's mark is fixed at the UI or
+    refused, and a re-mark REPLACES the old mark whole rather than nudging it.
+    Judged and applied INSIDE the mutation (25604e7's rule): a rival re-mark, a
+    declaration or a run landing between the load and the save must be judged
+    against the fresh document, never a stale one."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+
+    if len(body.center) != 3 or not all(math.isfinite(c) for c in body.center):
+        raise HTTPException(422, "the mark's centre must be a finite [x, y, z] point "
+                                 "in the scan's own frame")
+
+    suggested_center = next(
+        (s.get("center") for s in case.suggested_sites if int(s["tooth"]) == tooth),
+        None)
+
+    def apply(session: CaseSession) -> None:
+        known = ({int(s["tooth"]) for s in case.suggested_sites}
+                 | {int(k) for k in session.sites})
+        if tooth not in known:
+            raise HTTPException(
+                404, f"tooth {tooth} is not a site on case {case.id!r} yet — "
+                     f"re-marking is for a site the case already has; a cap "
+                     f"detection MISSED is marked through POST .../sites instead")
+        site = session.sites.get(str(tooth), SiteSession())
+        effective_before = (site.marked_center if site.marked_center is not None
+                            else suggested_center)
+        new_center = [float(c) for c in body.center]
+        if effective_before == new_center:
+            return   # an identical re-assertion states nothing new (no act, no reset)
+        site.marked_center = new_center
+        site.status = status.invalidate_preview(site.status)
+        site.clear_preview_facts()
+        # the run boundary (5c, mirrored for a fourth trigger): the current run
+        # was cropped around the OLD centre, so stale physics can never
+        # masquerade as current the instant the centre moves
+        clear_current_run(session)
+        # THE ONE DIVERGENCE FROM CHOICES/SYSTEM/DECLARATION (see the docstring
+        # above): what was confirmed here was sealed over evidence measured from
+        # the centre this act has just said is wrong, and the words shown before
+        # this pick was armed promised it retires
+        clear_confirmation(session)
+        session.sites[str(tooth)] = site
+        record_activity(session, ACT_SITE_REMARKED,
+                        "healing cap centre re-marked by hand — the previous "
+                        "mark's preview, review, the run cropped around it and "
+                        "any confirmation over it were retired", tooth=tooth)
 
     session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)

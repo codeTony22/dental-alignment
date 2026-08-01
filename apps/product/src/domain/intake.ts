@@ -138,18 +138,25 @@ export function siteCentre(site: SiteView): readonly [number, number, number] | 
 }
 
 export function detectionMarkers(detail: CaseSessionDetail): readonly SiteMarker[] {
+  // SITES FIRST, AT THE CENTRE THEY ACTUALLY STAND ON (client 2026-08-01). This
+  // used to draw every PROPOSAL and fall back to the site only where no proposal
+  // guessed its tooth — so after the operator re-marked a bad detector centre, the
+  // stage kept ringing the detector's point while the server, the run and the
+  // invoice all stood on the correction. SiteView.center is already the server's
+  // own precedence (the operator's mark, else the case record): the stage must
+  // draw what the run will use, or the picture disagrees with the physics.
   const markers: SiteMarker[] = [];
-  const proposals: readonly DetectedProposalView[] = detail.detection?.proposals ?? [];
-  const guessedTeeth = new Set(
-    proposals.map((p) => p.tooth_guess).filter((t): t is number => t !== null),
-  );
-  for (const p of proposals) {
-    const center = asVec3(p.center);
+  const siteTeeth = new Set(detail.sites.map((s) => s.tooth));
+  for (const site of detail.sites) {
+    const center = asVec3(site.center);
     if (center !== null) markers.push({ center, radiusMm: MARKER_RADIUS_MM });
   }
-  const unmatched = (site: SiteView) => !guessedTeeth.has(site.tooth);
-  for (const site of detail.sites.filter(unmatched)) {
-    const center = asVec3(site.center);
+  // Proposals no site has claimed stay visible — they are the unassigned
+  // candidates the "A cap the detection missed" panel talks about.
+  const proposals: readonly DetectedProposalView[] = detail.detection?.proposals ?? [];
+  for (const p of proposals) {
+    if (p.tooth_guess !== null && siteTeeth.has(p.tooth_guess)) continue;
+    const center = asVec3(p.center);
     if (center !== null) markers.push({ center, radiusMm: MARKER_RADIUS_MM });
   }
   return markers;
@@ -275,6 +282,53 @@ export function markOnArmPick(mark: MarkDraft): MarkDraft {
 /** Arming the mark: a stale refusal from the last attempt is not about this one. */
 export function markOnArmMark(mark: MarkDraft): MarkDraft {
   return { ...mark, armed: true, error: null };
+}
+
+/**
+ * RE-MARKING AN EXISTING SITE'S CENTRE (client 2026-08-01, the tooth-29 gap: the
+ * detector's proposed centre sat visibly off the cap on case cap6020-neodent-gm,
+ * and the operator had no door to correct it). `post_marked_site`'s own words
+ * named the reason a re-mark refused there — "a different act with different
+ * consequences" — without building the act; `PUT .../sites/{tooth}/mark` is that
+ * act, and THE BLAST RADIUS MUST BE SAID BEFORE THE CLICK IS ARMED, the same
+ * visible-reset doctrine `declare.switchWords` already carries for a system
+ * switch: a control that arms first and explains the reset only after the point
+ * lands has already spent the operator's undo.
+ */
+
+/**
+ * Whether re-marking THIS site's centre would retire anything the BFF's boundary
+ * (`put_remarked_site`) actually retires: a preview or review past DECLARED (the
+ * physics derived from the OLD centre), or a run standing over the WHOLE case —
+ * the run is cropped around every site's centre at once, so it falls the instant
+ * ANY site's centre moves, even one that itself never previewed. A site still at
+ * detected/declared with no case run has nothing to retire; asking there would be
+ * the checkbox-over-nothing `DeclareStage.handleAskSwitch` already refuses to ask
+ * for a system switch that resets zero declarations.
+ */
+export function remarkRetiresSomething(
+  site: SiteView,
+  detail: CaseSessionDetail,
+): boolean {
+  const pastDeclared = site.status !== "detected" && site.status !== "declared";
+  return pastDeclared || detail.session.run_state !== "none";
+}
+
+/**
+ * THE VISIBLE-RESET WORDS (`declare.switchWords`'s pattern, mirrored): named
+ * consequences, said before the pick is armed. "Anything signed over it" is
+ * deliberate and exact, not loose scare language — `put_remarked_site` is the one
+ * reset boundary in this app that ALSO retires a standing confirmation (the three
+ * siblings — choices, system, declaration — leave it standing, protected by a
+ * gate instead), precisely so this sentence can be kept literally rather than
+ * merely become true three requests later behind a refusal nobody was shown.
+ */
+export function remarkWords(tooth: number): string {
+  return (
+    `Re-marking tooth ${tooth}'s centre retires this site's preview and review, ` +
+    `the current run and anything signed over it — the run was cropped around ` +
+    `the centre you are about to move.`
+  );
 }
 
 /**

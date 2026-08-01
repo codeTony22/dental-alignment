@@ -18,8 +18,8 @@ from fastapi.testclient import TestClient
 
 from bff.main import create_app
 from bff.resources import case_sessions
-from bff.session import (RunSession, SeatedSelection, SessionStore, SiteSession,
-                         SiteStatus)
+from bff.session import (ConfirmationRecord, RunSession, SeatedSelection,
+                         SessionStore, SiteSession, SiteStatus)
 
 
 class InterferingStore(SessionStore):
@@ -1473,6 +1473,16 @@ class TestStatusesAreNeverClientWritable:
         # is a draft, and the body of THIS route has no field a claimed fit-outcome
         # could ride in on.
         ("PUT", "/api/case-sessions/{case_id}/sites/{tooth}/withhold"),
+        # RE-MARKING AN EXISTING SITE'S CENTRE (client 2026-08-01, the tooth-29 gap):
+        # {"center": [x, y, z]} — post_marked_site's exact complement (WHERE, over a
+        # tooth that must already BE a site rather than must not be). One field,
+        # sent exactly as clicked and never re-centred here — the re-click
+        # pair-integrity rule. It is a reset boundary like the choices/system/
+        # declaration routes, both a compute-derivation trigger and an operator
+        # act, but no field on this body could ever carry a claimed outcome: the
+        # reset it causes is entirely the status machine's and session.py's
+        # boundary helpers, never a value in this request.
+        ("PUT", "/api/case-sessions/{case_id}/sites/{tooth}/mark"),
     }
     STATUS_SHAPED = {"status", "state", "verdict", "gate", "flagged", "ready",
                      "confirmed"}
@@ -1637,3 +1647,148 @@ class TestMarkingACapTheDetectorMissed:
                         json={"tooth": 7, "center": [0.0, 0.0, 0.0],
                               "status": "ready"})
         assert r.status_code == 422
+
+    def test_marking_an_existing_site_now_points_at_the_re_mark_door(self, client):
+        # THE OLD REFUSAL NAMED A REASON WITHOUT NAMING THE DOOR (gap
+        # ``re-mark-a-sites-centre``, 2026-08-01): the two routes now point at each
+        # other so an operator who hits the wrong one learns where the right one is.
+        r = client.post("/api/case-sessions/neodent-gm/sites",
+                        json={"tooth": 13, "center": [0.0, 0.0, 0.0]})
+        assert r.status_code == 409
+        assert "/sites/13/mark" in r.json()["detail"]
+
+
+class TestReMarkingAnExistingSite:
+    """Client 2026-08-01 (the tooth-29 gap on case cap6020-neodent-gm: the
+    detector's proposed centre sat visibly off the cap, and the operator had no way
+    to correct it). ``post_marked_site`` refuses an existing tooth and NAMES the
+    reason without building the act — 're-marking an existing cap is a different
+    act with different consequences (it would invalidate a preview and a review)'.
+    This is that act: post_marked_site's EXACT COMPLEMENT, both in validation
+    (finite [x, y, z], nothing else) and in which tooth it accepts."""
+
+    def test_re_marking_a_curated_site_replaces_its_centre_on_the_surface(self, client):
+        # tooth 4 is curated (conftest's suggested_sites, centre [1, 2, 3]) and was
+        # never operator-marked — re-marking must still work on it
+        r = client.put("/api/case-sessions/neodent-gm/sites/4/mark",
+                       json={"center": [9.0, 8.0, 7.0]})
+        assert r.status_code == 200, r.text
+        site = next(s for s in r.json()["sites"] if s["tooth"] == 4)
+        assert site["center"] == [9.0, 8.0, 7.0]
+        # marking buys work, never a rung — re-marking must not either
+        assert site["status"] == "detected"
+
+    def test_re_marking_a_previously_hand_marked_site_replaces_it_again(self, client):
+        marked = client.post("/api/case-sessions/neodent-gm/sites",
+                             json={"tooth": 7, "center": [1.0, 1.0, 1.0]})
+        assert marked.status_code == 200, marked.text
+        r = client.put("/api/case-sessions/neodent-gm/sites/7/mark",
+                       json={"center": [2.0, 2.0, 2.0]})
+        assert r.status_code == 200, r.text
+        site = next(s for s in r.json()["sites"] if s["tooth"] == 7)
+        assert site["center"] == [2.0, 2.0, 2.0]
+
+    def test_re_marking_a_tooth_that_is_not_a_site_yet_REFUSES(self, client):
+        # the exact complement of post_marked_site's guard — 404, not 409: the path
+        # names a subresource the case does not have yet
+        r = client.put("/api/case-sessions/neodent-gm/sites/9/mark",
+                       json={"center": [0.0, 0.0, 0.0]})
+        assert r.status_code == 404
+        assert "POST" in r.json()["detail"]
+        assert "/sites" in r.json()["detail"]
+
+    def test_a_centre_that_is_not_three_numbers_refuses(self, client):
+        r = client.put("/api/case-sessions/neodent-gm/sites/4/mark",
+                       json={"center": [0.0, 0.0]})
+        assert r.status_code == 422, r.text
+
+    def test_a_NON_FINITE_centre_refuses_even_though_json_cannot_normally_carry_one(
+            self, client):
+        r = client.put("/api/case-sessions/neodent-gm/sites/4/mark",
+                       content='{"center": [0.0, 0.0, NaN]}',
+                       headers={"content-type": "application/json"})
+        assert r.status_code == 422, r.text
+        assert "finite" in r.json()["detail"]
+
+    def test_the_body_cannot_carry_a_tooth_or_anything_else(self, client):
+        # extra=forbid: the tooth is the path segment, never a second source of truth
+        assert client.put("/api/case-sessions/neodent-gm/sites/4/mark",
+                          json={"center": [0.0, 0.0, 0.0], "tooth": 4}
+                          ).status_code == 422
+        assert client.put("/api/case-sessions/neodent-gm/sites/4/mark",
+                          json={"center": [0.0, 0.0, 0.0], "status": "ready"}
+                          ).status_code == 422
+
+    def test_an_identical_re_mark_is_not_an_act(self, client, product_root):
+        # tooth 4's suggested centre is [1.0, 2.0, 3.0] (conftest.make_data_tree) —
+        # resending it EXACTLY changes nothing (the SeatedSelection precedent: an
+        # identical re-assertion flips no equality and costs nobody a reset)
+        before = SessionStore(product_root).load("neodent-gm")
+        r = client.put("/api/case-sessions/neodent-gm/sites/4/mark",
+                       json={"center": [1.0, 2.0, 3.0]})
+        assert r.status_code == 200, r.text
+        after = SessionStore(product_root).load("neodent-gm")
+        assert after.activity_recorded == before.activity_recorded
+        assert "4" not in after.sites   # nothing was ever written for it
+
+    def test_re_marking_retires_the_sites_preview_review_and_the_run(
+            self, client, product_root):
+        store = SessionStore(product_root)
+        session = store.load("neodent-gm")
+        session.sites["4"] = SiteSession(
+            status=SiteStatus.READY, declared_variant="5020",
+            seat_method="rim-seat", rim_agreement_mm=0.07,
+            seated_selection=seated())
+        session.run = RunSession(job_id="run-1", run_id="run-1", state="done",
+                                 summary={"sites": [{"tooth": 4}]})
+        store.save(session)
+
+        r = client.put("/api/case-sessions/neodent-gm/sites/4/mark",
+                       json={"center": [9.0, 8.0, 7.0]})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        site = next(s for s in body["sites"] if s["tooth"] == 4)
+        # the declared VARIANT survives — the cap did not change, only its centre —
+        # but every fact derived from the OLD centre falls
+        assert site["declared_variant"] == "5020"
+        assert site["status"] == "declared"
+        assert site["seat_method"] is None
+        assert site["rim_agreement_mm"] is None
+        # the run was cropped around the old centre; stale physics never
+        # masquerades as current (5c's boundary, mirrored for a fourth trigger)
+        assert body["session"]["run_state"] == "none"
+
+    def test_re_marking_retires_a_standing_confirmation_too(self, client, product_root):
+        """THE ONE PLACE THIS BOUNDARY GOES FURTHER than its three siblings
+        (choices/system/declaration — session.clear_current_run's own docstring,
+        pinned by test_pricing: they deliberately LEAVE a standing confirmation
+        alone, protected only by the deliver-side gates re-checking the run id).
+        A re-mark is different in kind: what stands confirmed there was sealed over
+        evidence measured from the exact centre the operator has just said is
+        WRONG, and the words this app must show before arming the pick (client
+        2026-08-01) promise 'anything signed over it' retires. A promise made out
+        loud before the act must come true, not merely become unreachable behind a
+        gate three requests later."""
+        store = SessionStore(product_root)
+        session = store.load("neodent-gm")
+        session.run = RunSession(job_id="run-1", run_id="run-1", state="done",
+                                 summary={"sites": [{"tooth": 4}]})
+        session.confirmation = ConfirmationRecord(
+            at="2026-08-01T00:00:00+00:00", run_id="run-1",
+            evidence_sha256="0" * 64, dispositions={"4": "release"})
+        store.save(session)
+
+        r = client.put("/api/case-sessions/neodent-gm/sites/4/mark",
+                       json={"center": [9.0, 8.0, 7.0]})
+        assert r.status_code == 200, r.text
+        assert r.json()["session"]["confirmed"] is False
+        assert SessionStore(product_root).load("neodent-gm").confirmation is None
+
+    def test_the_activity_log_names_a_re_mark_differently_from_a_first_mark(
+            self, client, product_root):
+        r = client.put("/api/case-sessions/neodent-gm/sites/4/mark",
+                       json={"center": [9.0, 8.0, 7.0]})
+        assert r.status_code == 200, r.text
+        session = SessionStore(product_root).load("neodent-gm")
+        assert session.activity[-1].event == "site-remarked"
+        assert session.activity[-1].tooth == 4

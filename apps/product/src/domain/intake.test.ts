@@ -14,6 +14,8 @@ import {
   markOnArmMark,
   markOnArmPick,
   pickSiteAt,
+  remarkRetiresSomething,
+  remarkWords,
   rescanNotices,
   shouldAutoDetect,
   siteCentre,
@@ -123,7 +125,13 @@ describe("captureChipLabel", () => {
 });
 
 describe("detectionMarkers — what the 3D stage rings", () => {
-  it("marks every proposal, and curated sites the detector missed", () => {
+  it("rings each SITE at the centre it actually stands on, not the raw proposal", () => {
+    /* THE PRECEDENCE FLIPPED (client 2026-08-01). The marker used to draw the
+       proposal's centre wherever a proposal guessed the tooth — so after the
+       operator RE-MARKED a bad detector centre, the stage kept ringing the wrong
+       point while the server, the run and the invoice all stood on the correction.
+       SiteView.center is already the server's own resolution (the operator's mark,
+       else the case record): the stage draws what the run will use. */
     const detail = caseSessionDetail({
       sites: [
         siteView({ tooth: 19, center: [1, 2, 3] }),
@@ -134,8 +142,22 @@ describe("detectionMarkers — what the 3D stage rings", () => {
       ]),
     });
     expect(detectionMarkers(detail)).toEqual([
-      { center: [1.1, 2.1, 3.1], radiusMm: 2.6 },
+      { center: [1, 2, 3], radiusMm: 2.6 },
       { center: [9, 9, 9], radiusMm: 2.6 },
+    ]);
+  });
+
+  it("still rings a proposal no site has claimed — the unassigned candidate", () => {
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 19, center: [1, 2, 3] })],
+      detection: detectionView([
+        detectedProposal({ tooth_guess: 19, center: [1.1, 2.1, 3.1] }),
+        detectedProposal({ tooth_guess: null, center: [5, 5, 5] }),
+      ]),
+    });
+    expect(detectionMarkers(detail)).toEqual([
+      { center: [1, 2, 3], radiusMm: 2.6 },
+      { center: [5, 5, 5], radiusMm: 2.6 },
     ]);
   });
 
@@ -438,5 +460,56 @@ describe("the off-scan miss (client 2026-08-01: 'buttons are not working')", () 
     // the on-scan miss names SITE_PICK_RADIUS_MM; this one must not, because the
     // click resolved no point to measure from
     expect(OFF_SCAN_MISS_WORDS).not.toContain("mm");
+  });
+});
+
+describe("re-marking an existing site's centre (client 2026-08-01, the tooth-29 gap)", () => {
+  describe("remarkRetiresSomething — the blast radius, judged BEFORE the click is armed", () => {
+    it("nothing to retire on a fresh site with no case run", () => {
+      const detail = caseSessionDetail({ sites: [siteView({ tooth: 4, status: "detected" })] });
+      expect(remarkRetiresSomething(siteView({ tooth: 4, status: "detected" }), detail)).toBe(
+        false,
+      );
+    });
+
+    it("still nothing once declared but not yet previewed", () => {
+      const detail = caseSessionDetail({ sites: [siteView({ tooth: 4, status: "declared" })] });
+      expect(remarkRetiresSomething(siteView({ tooth: 4, status: "declared" }), detail)).toBe(
+        false,
+      );
+    });
+
+    it("a preview or a review is something to retire", () => {
+      const detail = caseSessionDetail();
+      for (const rung of ["previewed", "ready", "flagged", "adjusted"] as const) {
+        expect(
+          remarkRetiresSomething(siteView({ tooth: 4, status: rung }), detail),
+        ).toBe(true);
+      }
+    });
+
+    it("a case-wide run is something to retire even for an undeclared site", () => {
+      // the run is cropped around EVERY site's centre, not just the one moving —
+      // it falls the instant any site's centre changes, so the words must warn
+      // even about a site that itself never previewed
+      const detail = caseSessionDetail({
+        session: { ...caseSessionDetail().session, run_state: "done" },
+      });
+      expect(
+        remarkRetiresSomething(siteView({ tooth: 4, status: "detected" }), detail),
+      ).toBe(true);
+    });
+  });
+
+  describe("remarkWords — the promise made BEFORE the pick is armed", () => {
+    it("names the tooth and everything the BFF's boundary actually retires", () => {
+      const words = remarkWords(29);
+      expect(words).toContain("29");
+      expect(words).toContain("retires");
+      expect(words).toContain("preview");
+      expect(words).toContain("review");
+      expect(words).toContain("current run");
+      expect(words).toContain("anything signed over it");
+    });
   });
 });

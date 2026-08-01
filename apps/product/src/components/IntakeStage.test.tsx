@@ -386,3 +386,54 @@ describe("picking a site by clicking it on the scan (client 2026-07-31)", () => 
     expect(html).toContain("within 6.0mm of 2 sites");
   });
 });
+
+describe("re-marking the active site's centre (client 2026-08-01, the tooth-29 gap)", () => {
+  it("offers no door at all without an active site", () => {
+    expect(view()).not.toContain('data-role="remark-site"');
+  });
+
+  it("an active site offers the door, closed, when nothing is in flight", () => {
+    const html = view({ activeTooth: 19 });
+    expect(html).toContain('data-role="remark-ask"');
+    expect(html).toContain("Re-mark this cap");
+    expect(html).not.toContain('data-role="remark-confirm"');
+    expect(html).not.toContain('data-role="remark-prompt"');
+  });
+
+  it("confirming shows the blast radius in words and both ways out", () => {
+    const html = view({ activeTooth: 19, remarkConfirming: true });
+    expect(html).toContain('data-role="remark-confirm"');
+    // the words name the tooth and every consequence the BFF's boundary retires
+    expect(html).toContain("tooth 19");
+    expect(html).toContain("retires");
+    expect(html).toContain("anything signed over it");
+    expect(html).toContain('data-role="remark-confirm-go"');
+    expect(html).toContain('data-role="remark-confirm-cancel"');
+    // the idle door is not ALSO offered while the words are up
+    expect(html).not.toContain('data-role="remark-ask"');
+  });
+
+  it("armed, it asks for the click and offers a way out", () => {
+    const html = view({ activeTooth: 19, remarkArmed: true });
+    expect(html).toContain('data-role="remark-prompt"');
+    expect(html).toContain("Click the new centre for tooth 19");
+    expect(html).toContain('data-role="remark-cancel"');
+    expect(html).not.toContain('data-role="remark-confirm"');
+    expect(html).not.toContain('data-role="remark-ask"');
+  });
+
+  it("saving is stated while the PUT is in flight (optimism is OFF)", () => {
+    const html = view({ activeTooth: 19, remarkArmed: true, remarkSaving: true });
+    expect(html).toContain('data-role="remark-saving"');
+    expect(html).toContain("Saving the new centre");
+  });
+
+  it("shows the BFF's own refusal rather than a summary of it", () => {
+    const html = view({
+      activeTooth: 19,
+      remarkError: "tooth 19 is not a site on case 'neodent-gm' yet",
+    });
+    expect(html).toContain('data-role="remark-error"');
+    expect(html).toContain("is not a site on case");
+  });
+});
