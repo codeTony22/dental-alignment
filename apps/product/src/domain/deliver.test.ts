@@ -46,6 +46,12 @@ import {
   termsText,
   withholdOffered,
   qcPreviews,
+  constructionChangeRetiresSomething,
+  constructionChangeWords,
+  constructionGroups,
+  constructionStepWords,
+  previewTabs,
+  type ConstructionOption,
 } from "./deliver";
 import {
   assuranceSite,
@@ -1210,5 +1216,255 @@ describe("qcPreviews — the three main artifacts, previewed on the page (client
       assuranceView({ sites: [assuranceSite({ tooth: 29, qc_images: [] })] }),
     );
     expect(rows).toEqual([]);
+  });
+});
+
+// --- the construction step moved into Deliver (client 2026-08-01) ---------------------
+
+const NEODENT_GM: ConstructionOption = {
+  path_id: "neodent/gm.stl",
+  label: "GM scan body",
+  vendor: "neodent",
+};
+const DESS_CONICAL: ConstructionOption = {
+  path_id: "dess/conical-scanbody.stl",
+  label: "Conical scan body",
+  vendor: "dess",
+};
+const NEODENT_GM2: ConstructionOption = {
+  path_id: "neodent/gm2.stl",
+  label: "GM2 scan body",
+  vendor: "neodent",
+};
+
+describe("constructionGroups — the picker's rows, grouped by vendor", () => {
+  it("buckets by vendor in first-appearance order, options in their own order", () => {
+    const groups = constructionGroups([NEODENT_GM, DESS_CONICAL, NEODENT_GM2]);
+    expect(groups.map((g) => g.vendor)).toEqual(["neodent", "dess"]);
+    expect(groups[0]!.options).toEqual([NEODENT_GM, NEODENT_GM2]);
+    expect(groups[1]!.options).toEqual([DESS_CONICAL]);
+  });
+
+  it("no options is no groups", () => {
+    expect(constructionGroups([])).toEqual([]);
+  });
+});
+
+describe("constructionStepWords — the effective construction, resolved against the picker's own rows", () => {
+  it("resolves the label and vendor off the SAME options the picker offers", () => {
+    const info = constructionStepWords(
+      {
+        construction_path: "dess/conical-scanbody.stl",
+        jaw: "lower",
+        gingival_offset_mm: 0.2,
+        gingival_offset_default_mm: 0.2,
+        effective_construction: { value: "dess/conical-scanbody.stl", source: "chosen" },
+        effective_jaw: { value: "lower", source: "chosen" },
+        effective_relief: { value: 0.2, source: "chosen" },
+        complete: true,
+      },
+      [NEODENT_GM, DESS_CONICAL],
+    );
+    expect(info).toEqual({
+      pathId: "dess/conical-scanbody.stl",
+      label: "Conical scan body",
+      vendor: "dess",
+      suggested: false,
+    });
+  });
+
+  it("wears the suggested tag only from the server's own attribution", () => {
+    const info = constructionStepWords(
+      {
+        construction_path: null,
+        jaw: null,
+        gingival_offset_mm: null,
+        gingival_offset_default_mm: 0.2,
+        effective_construction: { value: "neodent/gm.stl", source: "suggested" },
+        effective_jaw: { value: null, source: "none" },
+        effective_relief: { value: 0.2, source: "default" },
+        complete: true,
+      },
+      [NEODENT_GM],
+    );
+    expect(info.suggested).toBe(true);
+  });
+
+  it("an effective value absent from the picker's rows still reads honestly (the raw path, not a lie)", () => {
+    const info = constructionStepWords(
+      {
+        construction_path: "vendor/archived.stl",
+        jaw: "lower",
+        gingival_offset_mm: 0.2,
+        gingival_offset_default_mm: 0.2,
+        effective_construction: { value: "vendor/archived.stl", source: "chosen" },
+        effective_jaw: { value: "lower", source: "chosen" },
+        effective_relief: { value: 0.2, source: "chosen" },
+        complete: true,
+      },
+      [NEODENT_GM],
+    );
+    expect(info.label).toBe("vendor/archived.stl");
+    expect(info.vendor).toBeNull();
+  });
+
+  it("no construction chosen at all says so, never a blank", () => {
+    const info = constructionStepWords(
+      {
+        construction_path: null,
+        jaw: null,
+        gingival_offset_mm: null,
+        gingival_offset_default_mm: 0.2,
+        effective_construction: { value: null, source: "none" },
+        effective_jaw: { value: null, source: "none" },
+        effective_relief: { value: 0.2, source: "default" },
+        complete: false,
+      },
+      [NEODENT_GM],
+    );
+    expect(info).toEqual({
+      pathId: null,
+      label: "No construction part chosen yet",
+      vendor: null,
+      suggested: false,
+    });
+  });
+});
+
+describe("constructionChangeRetiresSomething — the checkbox-over-nothing guard", () => {
+  it("a case with no run at all has nothing extra to retire", () => {
+    expect(constructionChangeRetiresSomething({ run_state: "none" })).toBe(false);
+  });
+
+  it("a done (or queued, or refused) run is something a change would retire", () => {
+    expect(constructionChangeRetiresSomething({ run_state: "done" })).toBe(true);
+    expect(constructionChangeRetiresSomething({ run_state: "refused" })).toBe(true);
+    expect(constructionChangeRetiresSomething({ run_state: "queued" })).toBe(true);
+  });
+});
+
+describe("constructionChangeWords — the blast radius, before the PUT", () => {
+  it("names the candidate and the confirmation falling, when one is standing", () => {
+    const words = constructionChangeWords("Conical scan body", true);
+    expect(words).toContain("Conical scan body");
+    expect(words).toContain("re-processes the case");
+    expect(words).toContain("a new run re-bores and re-renders everything");
+    expect(words).toContain("the standing confirmation falls");
+    expect(words).toContain("confirm again over the new evidence");
+  });
+
+  it("never claims a confirmation falls when none is standing", () => {
+    const words = constructionChangeWords("Conical scan body", false);
+    expect(words).not.toContain("confirmation falls");
+    expect(words).toContain("Declare confirms them again");
+  });
+});
+
+// --- the three 3D preview tabs (client 2026-08-01) -------------------------------------
+
+describe("previewTabs — the demo's three tabs, matched onto the run's own package files", () => {
+  it("all three present: alignment, construction-in-arch, one construction-alone per tooth", () => {
+    const tabs = previewTabs(
+      [
+        "case-a-arch-with-healingcaps.stl",
+        "case-a-arch-with-constructions.stl",
+        "case-a-19-prosthesis_cad.stl",
+        "case-a-30-prosthesis_cad.stl",
+        "case-a-19-healingcap-aligned.stl",
+      ],
+      [30, 19], // the assurance's own worst-first order
+    );
+    expect(tabs.map((t) => t.key)).toEqual([
+      "alignment",
+      "construction-in-arch",
+      "construction-tooth-30",
+      "construction-tooth-19",
+    ]);
+    expect(tabs[0]).toEqual({
+      key: "alignment",
+      label: "1 · Healing-cap alignment",
+      filename: "case-a-arch-with-healingcaps.stl",
+      tooth: null,
+      role: "cap",
+    });
+    expect(tabs[1]!.label).toBe("2 · Construction in arch");
+    expect(tabs[1]!.role).toBe("construction");
+    expect(tabs[2]).toEqual({
+      key: "construction-tooth-30",
+      label: "3 · Construction alone — tooth 30",
+      filename: "case-a-30-prosthesis_cad.stl",
+      tooth: 30,
+      role: "construction",
+    });
+  });
+
+  it("a tab whose file the package does not name is simply absent — no placeholder", () => {
+    const tabs = previewTabs(["case-a-arch-with-healingcaps.stl"], [19]);
+    expect(tabs).toEqual([
+      {
+        key: "alignment",
+        label: "1 · Healing-cap alignment",
+        filename: "case-a-arch-with-healingcaps.stl",
+        tooth: null,
+        role: "cap",
+      },
+    ]);
+  });
+
+  it("an empty package is zero tabs, never an error", () => {
+    expect(previewTabs([], [19])).toEqual([]);
+  });
+
+  it("only a tooth actually named gets a construction-alone tab — never invented for one missing its file", () => {
+    const tabs = previewTabs(["case-a-19-prosthesis_cad.stl"], [19, 30]);
+    expect(tabs.map((t) => t.tooth)).toEqual([19]);
+  });
+
+  it("never confuses a two-digit tooth's file for a different tooth's (suffix anchoring)", () => {
+    // tooth 9's file must not be matched by a search for tooth 19's suffix, or vice
+    // versa — both suffixes share the same tail once the leading digit is dropped
+    const tabs = previewTabs(
+      ["case-a-19-prosthesis_cad.stl", "case-a-9-prosthesis_cad.stl"],
+      [9],
+    );
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0]!.filename).toBe("case-a-9-prosthesis_cad.stl");
+  });
+});
+
+describe("the construction step's label does not say the vendor twice", () => {
+  it("drops the vendor when the catalog's own label already carries it", () => {
+    // Seen on screen 2026-08-01: "dess — neodent-gm-scanbody · dess". The catalog
+    // labels a part vendor-first ("dess — neodent-gm-scanbody"), so appending the
+    // vendor again reads as a stutter, not as provenance.
+    const info = constructionStepWords(
+      {
+        ...caseSessionDetail().choices,
+        effective_construction: {
+          value: "dess/neodent-gm-scanbody.stl",
+          source: "suggested" as const,
+        },
+      },
+      [
+        {
+          path_id: "dess/neodent-gm-scanbody.stl",
+          label: "dess — neodent-gm-scanbody",
+          vendor: "dess",
+        },
+      ],
+    );
+    expect(info.label).toBe("dess — neodent-gm-scanbody");
+    expect(info.vendor).toBeNull();
+  });
+
+  it("keeps the vendor where the label does NOT name it — provenance still shows", () => {
+    const info = constructionStepWords(
+      {
+        ...caseSessionDetail().choices,
+        effective_construction: { value: "acme/part.stl", source: "chosen" as const },
+      },
+      [{ path_id: "acme/part.stl", label: "part", vendor: "acme" }],
+    );
+    expect(info.vendor).toBe("acme");
   });
 });

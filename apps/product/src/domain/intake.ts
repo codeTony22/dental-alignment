@@ -404,15 +404,27 @@ export function siteEvidence(
 
 /** The construction dropdown's rows, extracted from the worker-shaped catalog rows
  * (untyped on the wire until Declare gives them real shapes — slice 5a): a row without
- * a string path_id cannot be chosen and is dropped rather than rendered as a lie. */
+ * a string path_id cannot be chosen and is dropped rather than rendered as a lie.
+ *
+ * `vendor` rides along (worker's `construction_entries`: every row is
+ * `{vendor, filename, path_id, label}`) — ADDITIVE (client 2026-08-01, Deliver's own
+ * copy of this picker groups by vendor); Intake's flat `<select>` ignores the extra
+ * field, so this stays the one catalog reader both surfaces share. */
 export function constructionOptions(
   detail: CaseSessionDetail,
-): readonly { readonly path_id: string; readonly label: string }[] {
+): readonly { readonly path_id: string; readonly label: string; readonly vendor: string }[] {
   return detail.catalog.constructions.flatMap((row) => {
     const path = row["path_id"];
     if (typeof path !== "string") return [];
     const label = row["label"];
-    return [{ path_id: path, label: typeof label === "string" ? label : path }];
+    const vendor = row["vendor"];
+    return [
+      {
+        path_id: path,
+        label: typeof label === "string" ? label : path,
+        vendor: typeof vendor === "string" ? vendor : "unknown vendor",
+      },
+    ];
   });
 }
 

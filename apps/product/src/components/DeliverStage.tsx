@@ -30,16 +30,19 @@
  * own words. The evidence-drift 409 ("the case changed since it was confirmed") keeps
  * its own flow: reload the evidence and ask again — never a silent retry.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { CheckoutDialog } from "../pages/CheckoutPage";
+import { DeliverPreview } from "./DeliverPreview";
 import {
   fetchArtifactBlob,
   fetchArtifacts,
   fetchAssurance,
   fetchInvoice,
+  fetchRun,
   postConfirm,
   postDeliveryReset,
   postRelease,
+  putChoices,
   qcImageUrl,
   type ArtifactsView,
   type AssuranceSite,
@@ -47,7 +50,9 @@ import {
   type CaseSessionDetail,
   type FetchState,
   type InvoiceView,
+  type RunFactsView,
 } from "../api/client";
+import { choicesUpdateFrom, constructionOptions } from "../domain/intake";
 import {
   ATTESTATION_PENDING_CAVEAT,
   CHECKOUT_SEAL_WORDS,
@@ -59,6 +64,10 @@ import {
   assuranceCountsWords,
   confirmBlockers,
   confirmWireBody,
+  constructionChangeRetiresSomething,
+  constructionChangeWords,
+  constructionGroups,
+  constructionStepWords,
   effectiveDisposition,
   evidenceSummary,
   formatBytes,
@@ -68,6 +77,7 @@ import {
   needsAcknowledgment,
   orderLines,
   orderTotal,
+  previewTabs,
   receiptWords,
   releaseDisclosureWords,
   releaseSteps,
@@ -77,6 +87,9 @@ import {
   crossCheckWords,
   turnaroundWords,
   withholdOffered,
+  type ConstructionGroup,
+  type ConstructionOption,
+  type ConstructionStepInfo,
   type Disposition,
   type DispositionMap,
   qcPreviews,
@@ -214,6 +227,178 @@ function TermsAcceptance({
         </p>
       )}
     </div>
+  );
+}
+
+interface ConstructionStepProps {
+  /** The effective construction, resolved against the picker's own rows — the
+   *  server's value and attribution, never re-derived here. */
+  readonly info: ConstructionStepInfo;
+  readonly groups: readonly ConstructionGroup[];
+  readonly editing: boolean;
+  /** A candidate picked but not yet confirmed — null until the operator chooses
+   *  something OTHER than the effective construction. */
+  readonly pending: string | null;
+  readonly saving: boolean;
+  readonly error: string | null;
+  /** Whether a confirmation is standing to fall — feeds constructionChangeWords so
+   *  the blast-radius sentence never claims a consequence that is not real. */
+  readonly confirmed: boolean;
+  readonly onEdit: () => void;
+  readonly onCancelEdit: () => void;
+  readonly onPick: (pathId: string) => void;
+  readonly onCancelPending: () => void;
+  readonly onConfirmChange: () => void;
+}
+
+/**
+ * THE CONSTRUCTION STEP (client 2026-08-01: "we also forgot the selection of the
+ * construction, and we need to put the construction library after the Confirmation
+ * in the Delivery step"). Positioned as its OWN `<li>` between Confirmed and Paid in
+ * the release ladder's `<ol>` (DeliverStageView, below) — not folded into
+ * `releaseSteps`'s done/current/waiting state machine, because this step is never
+ * "finished": the effective construction is always shown and always changeable, so
+ * giving it a state would either freeze the ladder's "exactly one current step"
+ * invariant or contradict it.
+ *
+ * The picker is a SECOND copy of Intake's own construction select — reusing
+ * `domain/intake.constructionOptions`/`domain/deliver.constructionGroups`, never a
+ * second catalog reader — because the client's own ask was to put the library HERE
+ * too, not to remove it from Intake.
+ */
+function ConstructionStep({
+  info,
+  groups,
+  editing,
+  pending,
+  saving,
+  error,
+  confirmed,
+  onEdit,
+  onCancelEdit,
+  onPick,
+  onCancelPending,
+  onConfirmChange,
+}: ConstructionStepProps) {
+  const pendingOption: ConstructionOption | null =
+    pending !== null
+      ? groups.flatMap((group) => group.options).find((option) => option.path_id === pending) ??
+        null
+      : null;
+  return (
+    <li
+      data-role="release-step"
+      data-step="construction"
+      className="release-step release-step--construction"
+    >
+      <span className="release-step__marker" aria-hidden="true">
+        ⚙
+      </span>
+      <div className="release-step__body">
+        <strong className="release-step__title">Construction</strong>
+        <span data-role="construction-current" className="release-step__detail">
+          {info.pathId === null ? (
+            info.label
+          ) : (
+            <>
+              {info.label}
+              {info.vendor !== null && <> · {info.vendor}</>}
+              {info.suggested && (
+                <span
+                  data-role="construction-suggested"
+                  className="library-badge library-badge--suggested"
+                >
+                  {" "}
+                  suggested
+                </span>
+              )}
+            </>
+          )}
+        </span>
+        {!editing && (
+          <div className="release-step__actions">
+            <button
+              type="button"
+              data-role="construction-edit"
+              className="button button--ghost button--small"
+              onClick={onEdit}
+            >
+              Change construction part
+            </button>
+          </div>
+        )}
+        {editing && (
+          <div className="release-step__actions construction-edit">
+            <select
+              data-role="construction-select"
+              aria-label="Construction part"
+              className="decode-select"
+              value={pending ?? info.pathId ?? ""}
+              disabled={saving}
+              onChange={(event) => onPick(event.target.value)}
+            >
+              <option value="">choose a construction part…</option>
+              {groups.map((group) => (
+                <optgroup key={group.vendor} label={group.vendor}>
+                  {group.options.map((option) => (
+                    <option key={option.path_id} value={option.path_id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            {/* THE BLAST RADIUS, BEFORE THE PUT (the visible-reset doctrine —
+                DeclareStage's SwitchConfirm, mirrored a third time). */}
+            {pending !== null && pendingOption !== null && (
+              <div
+                data-role="construction-change-confirm"
+                role="alert"
+                className="switch-confirm"
+              >
+                <p data-role="construction-change-words" className="switch-confirm__words">
+                  {constructionChangeWords(pendingOption.label, confirmed)}
+                </p>
+                <div className="switch-confirm__actions">
+                  <button
+                    type="button"
+                    data-role="construction-confirm-change"
+                    className="button button--primary button--small"
+                    disabled={saving}
+                    onClick={onConfirmChange}
+                  >
+                    {saving ? "Changing…" : `Change to ${pendingOption.label}`}
+                  </button>
+                  <button
+                    type="button"
+                    data-role="construction-cancel-change"
+                    className="button button--secondary button--small"
+                    disabled={saving}
+                    onClick={onCancelPending}
+                  >
+                    Keep {info.label}
+                  </button>
+                </div>
+              </div>
+            )}
+            <button
+              type="button"
+              data-role="construction-close-edit"
+              className="button button--ghost button--small"
+              disabled={saving}
+              onClick={onCancelEdit}
+            >
+              Close
+            </button>
+          </div>
+        )}
+        {error !== null && (
+          <div data-role="construction-error" role="alert" className="panel__error">
+            {error}
+          </div>
+        )}
+      </div>
+    </li>
   );
 }
 
@@ -536,6 +721,21 @@ export interface DeliverStageViewProps {
   readonly artifacts?: FetchState<ArtifactsView> | null;
   /** True while "download all" is walking the list one file at a time. */
   readonly downloadingAll?: boolean;
+  /** The current run's package file list (client 2026-08-01) — feeds the 3D preview
+   *  tabs (`previewTabs`); null until every static test written before it existed
+   *  keeps compiling, and the tabs then simply do not render (an honest absence). */
+  readonly runFacts?: FetchState<RunFactsView> | null;
+  /** THE CONSTRUCTION STEP's own interactive state (client 2026-08-01) — the
+   *  container owns it so a re-confirm cycle or a fresh detail can reset it. */
+  readonly constructionEditing?: boolean;
+  readonly constructionPending?: string | null;
+  readonly constructionSaving?: boolean;
+  readonly constructionError?: string | null;
+  readonly onConstructionEdit?: () => void;
+  readonly onConstructionCancelEdit?: () => void;
+  readonly onConstructionPick?: (pathId: string) => void;
+  readonly onConstructionCancelPending?: () => void;
+  readonly onConstructionConfirm?: () => void;
   readonly onDisposition: (tooth: number, act: Disposition) => void;
   readonly onAcknowledge: (tooth: number, on: boolean) => void;
   readonly onToggleExpand: (tooth: number) => void;
@@ -572,6 +772,16 @@ export function DeliverStageView({
   staleWords = null,
   artifacts = null,
   downloadingAll = false,
+  runFacts = null,
+  constructionEditing = false,
+  constructionPending = null,
+  constructionSaving = false,
+  constructionError = null,
+  onConstructionEdit = () => undefined,
+  onConstructionCancelEdit = () => undefined,
+  onConstructionPick = () => undefined,
+  onConstructionCancelPending = () => undefined,
+  onConstructionConfirm = () => undefined,
   onDisposition,
   onAcknowledge,
   onToggleExpand,
@@ -588,6 +798,12 @@ export function DeliverStageView({
   onDownloadAll = () => undefined,
 }: DeliverStageViewProps) {
   const session = detail.session;
+  // THE CONSTRUCTION STEP's pure derivations — the picker's rows (Intake's own
+  // catalog reader, regrouped by vendor) and the effective construction resolved
+  // against them (never re-derived; the BFF's own value and attribution).
+  const constructionOptionsList = constructionOptions(detail);
+  const constructionGroupsList = constructionGroups(constructionOptionsList);
+  const constructionInfo = constructionStepWords(detail.choices, constructionOptionsList);
   // ONE derivation, read by the stage's confirm and the modal footer's alike
   const blockers =
     assurance.kind === "ok"
@@ -604,6 +820,14 @@ export function DeliverStageView({
   const statusOf = (tooth: number): string =>
     detail.sites.find((s) => s.tooth === tooth)?.status ?? "unknown";
   const groups = artifacts?.kind === "ok" ? groupArtifacts(artifacts.data.files) : [];
+  // THE 3D PREVIEW TABS (client 2026-08-01) — matched against the run's OWN package
+  // file list; the teeth are the assurance's own worst-first site order, so a tab
+  // reads in the same order as the table above it. `runFacts` may still be loading
+  // or absent (every static test written before it existed) — the tabs are then
+  // simply not there yet, never a placeholder.
+  const packageFiles = runFacts?.kind === "ok" ? runFacts.data.package_files : [];
+  const previewTeeth = assurance.kind === "ok" ? assurance.data.sites.map((s) => s.tooth) : [];
+  const meshPreviewTabs = previewTabs(packageFiles, previewTeeth);
 
   const confirmButton = (key: string) => (
     <button
@@ -667,8 +891,8 @@ export function DeliverStageView({
               with what it needs. No step is ever inert without saying why. */}
           <ol data-role="release-steps" className="release-steps">
             {steps.map((step, index) => (
+              <Fragment key={step.id}>
               <li
-                key={step.id}
                 data-role="release-step"
                 data-step={step.id}
                 data-state={step.state}
@@ -906,6 +1130,29 @@ export function DeliverStageView({
                   )}
                 </div>
               </li>
+              {/* THE CONSTRUCTION STEP (client 2026-08-01), positioned right AFTER
+                  Confirmed and before Paid — the client's own words. It is not part
+                  of `steps`'s done/current/waiting machine: the effective
+                  construction is always shown and always changeable, so it never
+                  "finishes", and folding it in would either freeze or break the
+                  ladder's "exactly one current step" invariant. */}
+              {step.id === "confirmed" && (
+                <ConstructionStep
+                  info={constructionInfo}
+                  groups={constructionGroupsList}
+                  editing={constructionEditing}
+                  pending={constructionPending}
+                  saving={constructionSaving}
+                  error={constructionError}
+                  confirmed={detail.session.confirmed}
+                  onEdit={onConstructionEdit}
+                  onCancelEdit={onConstructionCancelEdit}
+                  onPick={onConstructionPick}
+                  onCancelPending={onConstructionCancelPending}
+                  onConfirmChange={onConstructionConfirm}
+                />
+              )}
+              </Fragment>
             ))}
           </ol>
         </section>
@@ -1119,6 +1366,13 @@ export function DeliverStageView({
                   Open the full report
                 </button>
               </div>
+              {/* THE 3D PREVIEW TABS (client 2026-08-01: "we also have the previews
+                  of the artifacts") — the demo's three named views of the run's own
+                  result, ABOVE the flat QC strip below: these are the interactive
+                  views, the QC renders stay the flat evidence. `DeliverPreview`
+                  renders nothing at all when the package names none of the three
+                  files (an honest absence). */}
+              <DeliverPreview caseId={detail.case.id} tabs={meshPreviewTabs} />
               {/* THE THREE MAIN ARTIFACTS, PREVIEWED (client 2026-08-01): the run's
                   own pictures of the fit — alignment proof, clock view, deviation
                   map — on the page, not one click away inside the report. Each card
@@ -1316,6 +1570,17 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
   const [staleWords, setStaleWords] = useState<string | null>(null);
   const [artifacts, setArtifacts] = useState<FetchState<ArtifactsView> | null>(null);
   const [downloadingAll, setDownloadingAll] = useState(false);
+  // THE RUN'S PACKAGE FILE LIST (client 2026-08-01) — feeds the 3D preview tabs
+  // (`previewTabs`). Read-only like the assurance/invoice fetches: no gate to pass,
+  // evidence class, ungated (see the BFF's preview-mesh endpoint doctrine).
+  const [runFacts, setRunFacts] = useState<FetchState<RunFactsView>>({ kind: "loading" });
+  // THE CONSTRUCTION STEP's own interactive state (client 2026-08-01) — separate
+  // from `phase`: changing the construction is its own act, not one of the three
+  // gated POSTs the rest of this container drives.
+  const [constructionEditing, setConstructionEditing] = useState(false);
+  const [constructionPending, setConstructionPending] = useState<string | null>(null);
+  const [constructionSaving, setConstructionSaving] = useState(false);
+  const [constructionError, setConstructionError] = useState<string | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -1385,6 +1650,83 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
       if (mountedRef.current) setArtifacts(result);
     });
   }, [caseId, released]);
+
+  // The package file list — same trigger as the assurance re-load: a new run
+  // renames or drops the files the preview tabs can offer.
+  useEffect(() => {
+    setRunFacts({ kind: "loading" });
+    void fetchRun(caseId).then((result) => {
+      if (mountedRef.current) setRunFacts(result);
+    });
+  }, [caseId, runState]);
+
+  const handleConstructionEdit = useCallback(() => {
+    setConstructionEditing(true);
+    setConstructionError(null);
+  }, []);
+
+  const handleConstructionCancelEdit = useCallback(() => {
+    setConstructionEditing(false);
+    setConstructionPending(null);
+    setConstructionError(null);
+  }, []);
+
+  // THE ONE PUT, whichever door fires it (a direct apply or the confirmed change
+  // below) — the WHOLE choices document, PUT semantics (Intake's own assembly rule,
+  // `choicesUpdateFrom`), so this second copy of the picker can never un-choose the
+  // jaw or the relief by omission.
+  const fireConstructionChange = useCallback(
+    (pathId: string) => {
+      setConstructionSaving(true);
+      setConstructionError(null);
+      void putChoices(
+        caseId,
+        choicesUpdateFrom(detail, { construction_path: pathId }),
+      ).then((result) => {
+        if (!mountedRef.current) return;
+        setConstructionSaving(false);
+        if (result.kind === "ok") {
+          onDetail(result.data);
+          setConstructionEditing(false);
+          setConstructionPending(null);
+        } else {
+          setConstructionError(result.detail);
+        }
+      });
+    },
+    [caseId, detail, onDetail],
+  );
+
+  /** The visible-reset doctrine, precisely (DeclareStage's `handleAskSwitch`,
+   * mirrored a third time): a pick that would RETIRE the current run (and
+   * everything standing on it) asks in words first; a pick back onto the
+   * effective construction offers nothing to confirm at all (the server's own
+   * "identical re-PUT resets nothing" equality guard); and — on the rare reachable
+   * case with no run yet — a pick that would retire nothing extra beyond the
+   * ordinary choices-change reset applies directly, the same checkbox-over-nothing
+   * rule the system switch and the re-mark door both already follow. */
+  const handleConstructionPick = useCallback(
+    (pathId: string) => {
+      if (pathId === "" || pathId === detail.choices.effective_construction.value) {
+        setConstructionPending(null);
+        return;
+      }
+      if (!constructionChangeRetiresSomething(detail.session)) {
+        fireConstructionChange(pathId);
+        return;
+      }
+      setConstructionPending(pathId);
+    },
+    [detail, fireConstructionChange],
+  );
+
+  const handleConstructionCancelPending = useCallback(() => {
+    setConstructionPending(null);
+  }, []);
+
+  const handleConstructionConfirm = useCallback(() => {
+    if (constructionPending !== null) fireConstructionChange(constructionPending);
+  }, [constructionPending, fireConstructionChange]);
 
   const handleDisposition = useCallback((tooth: number, act: Disposition) => {
     setDispositions((current) => ({ ...current, [tooth]: act }));
@@ -1530,6 +1872,16 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
       staleWords={staleWords}
       artifacts={artifacts}
       downloadingAll={downloadingAll}
+      runFacts={runFacts}
+      constructionEditing={constructionEditing}
+      constructionPending={constructionPending}
+      constructionSaving={constructionSaving}
+      constructionError={constructionError}
+      onConstructionEdit={handleConstructionEdit}
+      onConstructionCancelEdit={handleConstructionCancelEdit}
+      onConstructionPick={handleConstructionPick}
+      onConstructionCancelPending={handleConstructionCancelPending}
+      onConstructionConfirm={handleConstructionConfirm}
       onDisposition={handleDisposition}
       onAcknowledge={handleAcknowledge}
       onToggleExpand={handleToggleExpand}

@@ -289,14 +289,32 @@ describe("constructionOptions — worker catalog rows, defensively typed", () =>
       catalog: {
         groups: [],
         constructions: [
-          { path_id: "dess/a.stl", label: "dess — a" },
+          { path_id: "dess/a.stl", label: "dess — a", vendor: "dess" },
           { path_id: 42, label: "broken row" },
           { label: "no id at all" },
         ],
       },
     });
     expect(constructionOptions(detail)).toEqual([
-      { path_id: "dess/a.stl", label: "dess — a" },
+      { path_id: "dess/a.stl", label: "dess — a", vendor: "dess" },
+    ]);
+  });
+
+  // Deliver's own copy of this picker (client 2026-08-01) groups by vendor — this
+  // pins the field it reads off the SAME rows rather than a second catalog reader.
+  it("carries the vendor along, honestly unknown when the row does not name one", () => {
+    const detail = caseSessionDetail({
+      catalog: {
+        groups: [],
+        constructions: [
+          { path_id: "dess/a.stl", label: "dess — a", vendor: "dess" },
+          { path_id: "b.stl", label: "no vendor field" },
+        ],
+      },
+    });
+    expect(constructionOptions(detail)).toEqual([
+      { path_id: "dess/a.stl", label: "dess — a", vendor: "dess" },
+      { path_id: "b.stl", label: "no vendor field", vendor: "unknown vendor" },
     ]);
   });
 });

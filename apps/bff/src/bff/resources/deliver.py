@@ -858,6 +858,50 @@ def case_qc_image(case_id: str, filename: str, request: Request) -> FileResponse
     return FileResponse(path, media_type="image/png", filename=filename)
 
 
+_PREVIEW_MESH_MEDIA_STL = "model/stl"
+_PREVIEW_MESH_MEDIA_DEFAULT = "application/octet-stream"
+
+
+@router.get("/{case_id}/runs/current/preview-mesh/{filename}")
+def case_preview_mesh(case_id: str, filename: str, request: Request) -> FileResponse:
+    """One PACKAGE MESH's bytes, for IN-APP RENDERING (client 2026-08-01: "the
+    previews of the artifacts") — EVIDENCE class, ungated like the QC images.
+
+    The disclosure decision, stated once so it never has to be re-litigated: a
+    RENDERED view of what the run produced is evidence in exactly the sense the QC
+    images are — the operator must see what they are signing and paying for before
+    they sign and pay for it. The artifact DOWNLOAD list stays release-gated exactly
+    as it is ("even listing is disclosure" holds for a mill-ready download); this
+    endpoint serves geometry for RENDERING, named by the server, and is not a
+    download route in disguise — it refuses any filename the run's own package does
+    not name, the same as the QC endpoint refuses one that is not a QC image.
+
+    ACT-flavored preconditions (409, not 404), unlike the QC endpoint: this feeds a
+    live in-app render the operator is mid-decision over, the same conflict class as
+    confirm/release rather than a plain missing resource."""
+    settings, store = _context(request)
+    _case_or_404(settings, case_id)
+    session = store.load(case_id)
+    run = _require_done_run_for_act(session, case_id, "preview")
+    # defense in depth: an encoded slash survives the route match into the param,
+    # so shape-refuse before the membership check ever touches a path (the QC
+    # endpoint's own guard, mirrored)
+    if "/" in filename or "\\" in filename or filename.startswith("."):
+        raise HTTPException(404, f"{filename!r} is not among the run's package "
+                                 f"files")
+    if filename not in run.package_files:
+        raise HTTPException(404, f"{filename!r} is not among the run's package "
+                                 f"files")
+    path = _run_dir(settings, case_id, run) / filename
+    if not path.is_file():
+        raise HTTPException(404, f"{filename!r} is missing from the run directory "
+                                 f"— the run's package claims it, but the file is "
+                                 f"not there to serve")
+    media_type = (_PREVIEW_MESH_MEDIA_STL if filename.endswith(".stl")
+                  else _PREVIEW_MESH_MEDIA_DEFAULT)
+    return FileResponse(path, media_type=media_type, filename=filename)
+
+
 # --- no operator header, deliberately (client 2026-07-27) -------------------------------
 #
 # "WE dont need operator name the checkmark is sufficient."

@@ -5281,3 +5281,65 @@ button.package-files__link:hover {
   color: var(--color-text-muted);
   white-space: nowrap;
 }
+
+
+/* ============================================================================
+   THE CONSTRUCTION STEP + THE DEMO'S THREE PREVIEW VIEWS (client 2026-08-01:
+   "we also forgot the selection of the construction, and we need to put the
+   construction library after the Confirmation in the Delivery step")
+   ============================================================================ */
+
+/* The construction step never "finishes" the way Confirmed/Paid/Released do — it is a
+   standing choice, not a rung — so its marker carries the body ink rather than the
+   ladder's done/current/waiting palette. */
+.release-step--construction .release-step__marker {
+  color: var(--color-text);
+}
+
+.construction-edit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.deliver-mesh-preview {
+  margin-top: 10px;
+}
+
+.deliver-mesh-preview__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+/* A pane container clips its own children; a bare grid item does not — the canvas
+   needs the explicit overflow or the scene bleeds past the rounded corner. */
+.deliver-mesh-preview__canvas {
+  position: relative;
+  height: 360px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #d8e8f2;
+}
+
+.deliver-mesh-preview__canvas .verify-viewer {
+  width: 100%;
+  height: 100%;
+}
+
+/* Loading and refusal both speak ON the glass, over the stage they describe. */
+.deliver-mesh-preview__notice {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.82);
+}

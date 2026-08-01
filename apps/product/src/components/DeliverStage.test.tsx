@@ -457,6 +457,166 @@ describe("the agreement — confirm and accept terms is one act (plan §10-A)", 
   });
 });
 
+const CATALOG_WITH_CONSTRUCTIONS = {
+  groups: [],
+  constructions: [
+    { path_id: "dess/conical-scanbody.stl", label: "Conical scan body", vendor: "dess" },
+    { path_id: "neodent/gm.stl", label: "GM scan body", vendor: "neodent" },
+  ],
+};
+
+function detailWithConstruction(
+  overrides: Partial<CaseSessionDetail["session"]> = {},
+  source: "chosen" | "suggested" | "default" | "none" = "chosen",
+): CaseSessionDetail {
+  const base = deliverableDetail(overrides);
+  return {
+    ...base,
+    catalog: CATALOG_WITH_CONSTRUCTIONS,
+    choices: {
+      ...base.choices,
+      construction_path: "dess/conical-scanbody.stl",
+      effective_construction: { value: "dess/conical-scanbody.stl", source },
+    },
+  };
+}
+
+describe("the Construction step (client 2026-08-01): after Confirmed, before Paid", () => {
+  it("sits between the Confirmed and Paid steps in the ladder", () => {
+    const html = view();
+    const confirmed = html.indexOf('data-step="confirmed"');
+    const construction = html.indexOf('data-step="construction"');
+    const paid = html.indexOf('data-step="paid"');
+    expect(confirmed).toBeGreaterThan(-1);
+    expect(construction).toBeGreaterThan(confirmed);
+    expect(paid).toBeGreaterThan(construction);
+  });
+
+  it("no construction chosen yet says so, never a blank", () => {
+    expect(view()).toContain("No construction part chosen yet");
+  });
+
+  it("shows the effective construction — label, vendor and the suggested tag", () => {
+    const html = view({ detail: detailWithConstruction({}, "suggested") });
+    expect(html).toContain('data-role="construction-current"');
+    expect(html).toContain("Conical scan body");
+    expect(html).toContain("dess");
+    expect(html).toContain('data-role="construction-suggested"');
+  });
+
+  it("an operator's own chosen construction wears no suggested tag", () => {
+    const html = view({ detail: detailWithConstruction() });
+    expect(html).not.toContain('data-role="construction-suggested"');
+  });
+
+  it("the picker is closed by default, offering only the change affordance", () => {
+    const html = view({ detail: detailWithConstruction() });
+    expect(html).toContain('data-role="construction-edit"');
+    expect(html).not.toContain('data-role="construction-select"');
+  });
+
+  it("open, the picker groups the SAME rows Intake reads, by vendor", () => {
+    const html = view({ detail: detailWithConstruction(), constructionEditing: true });
+    expect(html).toContain('data-role="construction-select"');
+    expect(html).toMatch(/<optgroup label="dess">/);
+    expect(html).toMatch(/<optgroup label="neodent">/);
+    expect(html).toContain("Conical scan body");
+    expect(html).toContain("GM scan body");
+  });
+
+  it("a picked candidate shows the blast radius BEFORE the PUT — never silent", () => {
+    const html = view({
+      detail: detailWithConstruction(CONFIRMED),
+      constructionEditing: true,
+      constructionPending: "neodent/gm.stl",
+    });
+    expect(html).toContain('data-role="construction-change-confirm"');
+    expect(html).toContain('data-role="construction-change-words"');
+    expect(html).toContain("re-processes the case");
+    expect(html).toContain("a new run re-bores and re-renders everything");
+    expect(html).toContain("the standing confirmation falls");
+    expect(html).toContain('data-role="construction-confirm-change"');
+    expect(html).toContain('data-role="construction-cancel-change"');
+  });
+
+  it("with nothing confirmed yet, the words never claim a confirmation falls", () => {
+    const html = view({
+      detail: detailWithConstruction(),
+      constructionEditing: true,
+      constructionPending: "neodent/gm.stl",
+    });
+    expect(html).toContain('data-role="construction-change-words"');
+    expect(html).not.toContain("confirmation falls");
+  });
+
+  it("no pending pick shows no blast-radius panel — a re-selection of the current value is not a change", () => {
+    const html = view({ detail: detailWithConstruction(), constructionEditing: true });
+    expect(html).not.toContain('data-role="construction-change-confirm"');
+  });
+
+  it("busy and error states render honestly", () => {
+    const busy = view({
+      detail: detailWithConstruction(),
+      constructionEditing: true,
+      constructionPending: "neodent/gm.stl",
+      constructionSaving: true,
+    });
+    expect(busy).toContain("Changing…");
+    const errored = view({
+      detail: detailWithConstruction(),
+      constructionEditing: true,
+      constructionError: "HTTP 422 — unknown construction part",
+    });
+    expect(errored).toContain('data-role="construction-error"');
+    expect(errored).toContain("unknown construction part");
+  });
+});
+
+describe("the 3D preview tabs — the demo's three views of the run's result (client 2026-08-01)", () => {
+  function runFactsOk(packageFiles: readonly string[]) {
+    return {
+      kind: "ok" as const,
+      data: {
+        run_id: "r1",
+        job_id: "r1",
+        state: "done" as const,
+        refusal: null,
+        summary: null,
+        sites: [],
+        package_files: [...packageFiles],
+      },
+    };
+  }
+
+  it("renders a tab per file the package actually names", () => {
+    const html = view({
+      runFacts: runFactsOk([
+        "case-a-arch-with-healingcaps.stl",
+        "case-a-arch-with-constructions.stl",
+        "case-a-19-prosthesis_cad.stl",
+      ]),
+    });
+    expect(html).toContain('data-role="deliver-mesh-preview"');
+    expect(html).toContain("1 · Healing-cap alignment");
+    expect(html).toContain("2 · Construction in arch");
+    expect(html).toContain("3 · Construction alone — tooth 19");
+  });
+
+  it("a file the package does not name is simply not a tab — no placeholder", () => {
+    const html = view({ runFacts: runFactsOk(["case-a-arch-with-healingcaps.stl"]) });
+    expect(html).toContain("1 · Healing-cap alignment");
+    expect(html).not.toContain("Construction in arch");
+    expect(html).not.toContain("Construction alone");
+  });
+
+  it("no package files yet renders no preview panel at all", () => {
+    expect(view({ runFacts: { kind: "loading" } })).not.toContain(
+      'data-role="deliver-mesh-preview"',
+    );
+    expect(view({ runFacts: null })).not.toContain('data-role="deliver-mesh-preview"');
+  });
+});
+
 describe("the artifacts — grouped by site, with names and sizes (#6)", () => {
   const releasedDetail = () =>
     deliverableDetail({ ...CONFIRMED, ...PAID, ...RELEASED });

@@ -24,6 +24,7 @@ import {
   putChoices,
   putDeclaration,
   putSystem,
+  previewMeshUrl,
   qcImageUrl,
   refusalDetail,
   scanUrlFor,
@@ -270,6 +271,15 @@ describe("the Deliver calls (slice 8) — no actor rides on any of them", () => 
     );
     expect(qcImageUrl("a/b", "x y.png")).toBe(
       "/api/case-sessions/a%2Fb/runs/current/qc/x%20y.png",
+    );
+  });
+
+  it("the preview-mesh URL addresses the ungated evidence endpoint, encoded", () => {
+    expect(previewMeshUrl("case-a", "case-a-arch-with-healingcaps.stl")).toBe(
+      "/api/case-sessions/case-a/runs/current/preview-mesh/case-a-arch-with-healingcaps.stl",
+    );
+    expect(previewMeshUrl("a/b", "x y.stl")).toBe(
+      "/api/case-sessions/a%2Fb/runs/current/preview-mesh/x%20y.stl",
     );
   });
 

@@ -966,6 +966,19 @@ export function qcImageUrl(caseId: string, filename: string): string {
   return `/api/case-sessions/${encodeURIComponent(caseId)}/runs/current/qc/${encodeURIComponent(filename)}`;
 }
 
+/**
+ * A RUN MESH's URL, for the 3D preview tabs (client 2026-08-01: "the previews of the
+ * artifacts") — EVIDENCE class, ungated like the QC images: an in-app RENDERED view
+ * of what the run produced is what the operator judges before they sign and pay for
+ * it, the same class as the QC renders and the invoice. The DOWNLOAD list stays
+ * release-gated exactly as it is — this endpoint serves geometry for rendering only,
+ * named by the server, never a path this client invents. Handed to the viewer
+ * package's STL loader; the bytes never pass through this JSON client.
+ */
+export function previewMeshUrl(caseId: string, filename: string): string {
+  return `/api/case-sessions/${encodeURIComponent(caseId)}/runs/current/preview-mesh/${encodeURIComponent(filename)}`;
+}
+
 // NO ACTOR HEADER (client 2026-07-27: "WE dont need operator name the checkmark is
 // sufficient"). Every gating call used to carry `X-Operator` and the BFF 422'd
 // without it. A self-typed name behind no authentication was a text field, not

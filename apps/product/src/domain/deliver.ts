@@ -1102,3 +1102,208 @@ export function groupArtifacts(
     };
   });
 }
+
+// --- the construction step, moved into Deliver (client 2026-08-01: "we also forgot
+// the selection of the construction, and we need to put the construction library
+// after the Confirmation in the Delivery step") ----------------------------------------
+//
+// STRUCTURAL FACT (application/run.py ~155): ``construction_path`` is a REQUIRED run
+// input — one run aligns, bores the CHOSEN construction and emits the whole package.
+// Changing it after a run exists is truthfully a RE-PROCESS, never a same-evidence
+// edit: the choices PUT fires the existing reset boundary (``clear_current_run``),
+// and whatever this screen would otherwise be signing over stops describing anything
+// once the run it was measured against is gone. The words below say so BEFORE the
+// PUT — the visible-reset doctrine ``declare.switchWords``/``intake.remarkWords``
+// already carry, applied a third time to the one choice Deliver itself can change.
+
+/** One picker row — the same shape Intake's own catalog reader
+ * (``domain/intake.constructionOptions``) now serves; this module reuses it rather
+ * than reading ``detail.catalog.constructions`` a second way. */
+export interface ConstructionOption {
+  readonly path_id: string;
+  readonly label: string;
+  readonly vendor: string;
+}
+
+export interface ConstructionGroup {
+  readonly vendor: string;
+  readonly options: readonly ConstructionOption[];
+}
+
+/**
+ * THE PICKER'S OPTIONS, GROUPED BY VENDOR — display grouping over Intake's own rows,
+ * in the vendor order those rows already arrive in (the catalog's own directory
+ * listing order; this module invents no ordering of its own).
+ */
+export function constructionGroups(
+  options: readonly ConstructionOption[],
+): readonly ConstructionGroup[] {
+  const order: string[] = [];
+  const buckets = new Map<string, ConstructionOption[]>();
+  for (const option of options) {
+    if (!buckets.has(option.vendor)) {
+      buckets.set(option.vendor, []);
+      order.push(option.vendor);
+    }
+    buckets.get(option.vendor)!.push(option);
+  }
+  return order.map((vendor) => ({ vendor, options: buckets.get(vendor) ?? [] }));
+}
+
+export interface ConstructionStepInfo {
+  readonly pathId: string | null;
+  readonly label: string;
+  readonly vendor: string | null;
+  /** The BFF's own attribution (``ChoicesView.effective_construction.source``) —
+   *  "suggested" wears the tag exactly like every other effective-choice chip on
+   *  Intake; this module never decides suggestedness by comparing values itself. */
+  readonly suggested: boolean;
+}
+
+/**
+ * THE EFFECTIVE CONSTRUCTION, for the step's summary line — the BFF's own value and
+ * attribution (never re-derived), resolved against the SAME options list the picker
+ * offers so the label and vendor read like the picker's own rows, never a bare
+ * ``vendor/file.stl`` path id.
+ */
+export function constructionStepWords(
+  choices: ChoicesView,
+  options: readonly ConstructionOption[],
+): ConstructionStepInfo {
+  const effective = choices.effective_construction;
+  if (effective.value === null) {
+    return {
+      pathId: null,
+      label: "No construction part chosen yet",
+      vendor: null,
+      suggested: false,
+    };
+  }
+  const match = options.find((o) => o.path_id === effective.value);
+  const label = match?.label ?? effective.value;
+  const vendor = match?.vendor ?? null;
+  return {
+    pathId: effective.value,
+    label,
+    // The catalog labels a part VENDOR-FIRST ("dess — neodent-gm-scanbody"), so
+    // repeating the vendor beside it reads as a stutter rather than as provenance
+    // ("dess — neodent-gm-scanbody · dess", seen on screen 2026-08-01). Kept where
+    // the label does NOT name it, because there the vendor is the missing fact.
+    vendor: vendor !== null && !label.includes(vendor) ? vendor : null,
+    suggested: effective.source === "suggested",
+  };
+}
+
+/**
+ * WHETHER A CHANGE HERE WOULD RETIRE ANYTHING (the checkbox-over-nothing doctrine —
+ * ``intake.remarkRetiresSomething``'s sibling, applied to this third door). A case
+ * with no run at all yet has nothing beyond the ORDINARY choices-change reset every
+ * case-level choice already causes — asking for extra consent over zero extra
+ * consequence would be the same empty confirmation AM-8 already forbids for a system
+ * switch declared before anything was declared.
+ */
+export function constructionChangeRetiresSomething(
+  session: Pick<SessionView, "run_state">,
+): boolean {
+  return session.run_state !== "none";
+}
+
+/**
+ * THE BLAST RADIUS, IN WORDS, BEFORE THE PUT (the visible-reset doctrine —
+ * ``declare.switchWords``/``intake.remarkWords``, mirrored a third time). Names the
+ * candidate's own label, the way ``switchWords`` names the target system, and states
+ * the confirmation clause only when one is actually standing to fall — a case never
+ * confirmed has nothing there to lose, and saying otherwise would be exactly the
+ * false consequence this doctrine exists to keep out of a reset warning.
+ */
+export function constructionChangeWords(label: string, confirmed: boolean): string {
+  const consequence = confirmed
+    ? "the standing confirmation falls — you confirm again over the new evidence"
+    : "every site's preview and review resets — Declare confirms them again before " +
+      "a new run can fire";
+  return (
+    `Changing the construction part to ${label} re-processes the case: a new run ` +
+    `re-bores and re-renders everything, and ${consequence}.`
+  );
+}
+
+// --- the three 3D preview tabs (client 2026-08-01: "we also have the previews of
+// the artifacts" — the demo's three labelled tabs) --------------------------------------
+//
+// The demo composited these client-side from raw scan + per-part STLs
+// (apps/web/src/components/ViewerControls.tsx). This product's worker now bakes each
+// of the three views as ONE pre-composited mesh instead (auto_flow.py: `arch-with-
+// healingcaps.stl`, `arch-with-constructions.stl`, `{tooth}-prosthesis_cad.stl`), so
+// a tab here is a single filename MATCH, never a client-built composite.
+
+/** The tinting role a tab's single mesh renders with — the viewer package's own
+ *  PartRole values, carried by NAME rather than imported: this module stays
+ *  framework-free (no dependency on the three.js-backed viewer package), and the
+ *  caller indexes its own palette with the string. */
+export type PreviewMeshRole = "cap" | "construction";
+
+export interface PreviewTab {
+  readonly key: string;
+  readonly label: string;
+  readonly filename: string;
+  readonly tooth: number | null;
+  readonly role: PreviewMeshRole;
+}
+
+const ALIGNMENT_SUFFIX = "-arch-with-healingcaps.stl";
+const CONSTRUCTION_ARCH_SUFFIX = "-arch-with-constructions.stl";
+const CONSTRUCTION_SUFFIX = "-prosthesis_cad.stl";
+
+/**
+ * THE THREE TABS, MATCHED BY SUFFIX, NEVER CONSTRUCTED: each candidate is the
+ * worker's own fixed tail (auto_flow.py/output_package.py's exact export names),
+ * matched against the run's OWN ``package_files`` list — the same suffix-matching
+ * discipline ``qcPreviews`` already applies to the QC images. A tab whose file the
+ * package does not carry is simply ABSENT (an honest gap, never a disabled button):
+ * an older run, or one with no constructions built yet, renders fewer tabs rather
+ * than a broken one.
+ *
+ * ``teeth`` drives tab 3 ONLY — one per site that actually has its own construction
+ * file, in the CALLER's order (the assurance's own worst-first order, so these tabs
+ * read in the same order as the table above them). Nothing here parses a tooth
+ * number back OUT of a filename (this app never re-parses a filename to attribute
+ * it); the teeth are named by the caller and only checked for membership.
+ */
+export function previewTabs(
+  packageFiles: readonly string[],
+  teeth: readonly number[],
+): readonly PreviewTab[] {
+  const tabs: PreviewTab[] = [];
+  const alignment = packageFiles.find((f) => f.endsWith(ALIGNMENT_SUFFIX));
+  if (alignment !== undefined) {
+    tabs.push({
+      key: "alignment",
+      label: "1 · Healing-cap alignment",
+      filename: alignment,
+      tooth: null,
+      role: "cap",
+    });
+  }
+  const archConstruction = packageFiles.find((f) => f.endsWith(CONSTRUCTION_ARCH_SUFFIX));
+  if (archConstruction !== undefined) {
+    tabs.push({
+      key: "construction-in-arch",
+      label: "2 · Construction in arch",
+      filename: archConstruction,
+      tooth: null,
+      role: "construction",
+    });
+  }
+  for (const tooth of teeth) {
+    const file = packageFiles.find((f) => f.endsWith(`-${tooth}${CONSTRUCTION_SUFFIX}`));
+    if (file === undefined) continue;
+    tabs.push({
+      key: `construction-tooth-${tooth}`,
+      label: `3 · Construction alone — tooth ${tooth}`,
+      filename: file,
+      tooth,
+      role: "construction",
+    });
+  }
+  return tabs;
+}
