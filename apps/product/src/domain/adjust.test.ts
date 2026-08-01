@@ -49,6 +49,7 @@ import {
   pairWords,
   queueSummary,
   spanLeverCaution,
+  markLeverGuard,
   reworkWords,
   staleMetricsPhrase,
   withPick,
@@ -362,8 +363,8 @@ describe("fit by points: the drafts the operator builds", () => {
   });
 
   it("Apply names what is missing rather than going quietly dead", () => {
-    expect(applyBlockedReason([])).toContain("at least one complete pair");
-    expect(applyBlockedReason([newPairDraft("p1", false)])).toContain(
+    expect(applyBlockedReason([], null, null)).toContain("at least one complete pair");
+    expect(applyBlockedReason([newPairDraft("p1", false)], null, null)).toContain(
       "at least one complete pair",
     );
     const complete = withPick(
@@ -371,7 +372,7 @@ describe("fit by points: the drafts the operator builds", () => {
       "scan",
       [5, 5, 5],
     );
-    expect(applyBlockedReason([complete])).toBeNull();
+    expect(applyBlockedReason([complete], null, null)).toBeNull();
   });
 
   it("refuses more than the server's own cap, in the server's own number", () => {
@@ -384,7 +385,7 @@ describe("fit by points: the drafts the operator builds", () => {
       ...complete,
       id: `p${i}`,
     }));
-    expect(applyBlockedReason(many)).toContain(`capped at ${MAX_PAIRS} pairs`);
+    expect(applyBlockedReason(many, null, null)).toContain(`capped at ${MAX_PAIRS} pairs`);
   });
 
   it("each pair's line says what it is and what it still needs", () => {
@@ -684,6 +685,118 @@ describe("spanLeverCaution — warn before the span earns a 422", () => {
   });
 });
 
+describe("markLeverGuard — the server's own quantity, so the client may refuse", () => {
+  const pose = { origin: [0, 0, 0], axis: [0, 0, 1] };
+  // THE WHOLE POINT: the MEASURED rim centre is not the pose origin. That gap is why
+  // the old guard could only caution — refusing on the approximation risked refusing a
+  // span the server would have accepted.
+  const clock = { rim_centre: [1, 0, 0], min_lever_mm: 0.5 };
+  const span = (a: number[], b: number[]) => {
+    let d = newPairDraft("s1", true);
+    d = withPick(d, "part", [5, 0, 0]);
+    d = withPick(d, "scan", a);
+    return withPick(d, "scan", b);
+  };
+  const point = (p: number[]) => {
+    let d = newPairDraft("p1", false);
+    d = withPick(d, "part", [5, 0, 0]);
+    return withPick(d, "scan", p);
+  };
+
+  it("refuses a span about the MEASURED rim centre, where the approximation was quiet", () => {
+    // midpoint lands on the measured centre (lever 0) but a full 1mm from the pose
+    // origin — the old caution reads 1mm and says nothing at all
+    const draft = span([2, 0, 0], [0, 0, 0]);
+    expect(spanLeverCaution(draft, pose)).toBeNull();
+    const guard = markLeverGuard(draft, pose, clock);
+    expect(guard?.kind).toBe("refusal");
+    expect(guard?.message).toContain("screw access");
+  });
+
+  it("refuses a SINGLE mark on the access — the case that had no warning at all", () => {
+    const guard = markLeverGuard(point([1, 0, 0]), pose, clock);
+    expect(guard?.kind).toBe("refusal");
+  });
+
+  it("reads the bound off the wire, never a mirrored constant", () => {
+    // 0.6mm clears the mirrored 0.5 and fails the server's own 0.8
+    const guard = markLeverGuard(point([1.6, 0, 0]), pose, {
+      rim_centre: [1, 0, 0],
+      min_lever_mm: 0.8,
+    });
+    expect(guard?.kind).toBe("refusal");
+    expect(guard?.message).toContain("0.8");
+  });
+
+  it("stays silent on a mark out on the coded band", () => {
+    expect(markLeverGuard(point([4, 0, 0]), pose, clock)).toBeNull();
+  });
+
+  it("PROJECTS ALONG THE AXIS — depth is not a lever arm", () => {
+    // THE OPERATION THAT MAKES THIS NUMBER THE SERVER'S. The worker measures in the
+    // canonical xy plane; this measures perpendicular to the pose axis. A mark 5mm
+    // from the rim centre but entirely ALONG the axis has NO lever arm, and a guard
+    // that took the plain 3-D distance would read 5mm and wave the screw access
+    // through. Real poses are tilted (the occlusal proxy runs 6.2°-42.0° off the
+    // real axis), so an axis-aligned-only test proves nothing here.
+    const tilted = { origin: [0, 0, 0], axis: [0, 1, 0] };
+    const deep = { rim_centre: [0, 0, 0], min_lever_mm: 0.5 };
+    const guard = markLeverGuard(point([0, 5, 0]), tilted, deep);
+    expect(guard?.kind).toBe("refusal");
+    expect(guard?.message).toContain("0.00mm");
+  });
+
+  it("degrades rather than refusing on a reference it cannot measure", () => {
+    // §10-F's whole contract: never block a correction the server would take. The API
+    // layer casts the response without validating, so these shapes are reachable, and
+    // BOTH used to end in a refusal — one reading "NaNmm", one throwing mid-render.
+    const short = { rim_centre: [1], min_lever_mm: 0.5 };
+    expect(markLeverGuard(point([1, 0, 0]), pose, short)).toBeNull();
+    const noBound = { rim_centre: [1, 0, 0] } as unknown as {
+      rim_centre: number[];
+      min_lever_mm: number;
+    };
+    expect(() => markLeverGuard(point([1, 0, 0]), pose, noBound)).not.toThrow();
+    expect(markLeverGuard(point([1, 0, 0]), pose, noBound)).toBeNull();
+  });
+
+  it("CAUTIONS rather than refuses when the reference has not arrived", () => {
+    // without the server's quantity the client has only the pose origin, and an
+    // approximation may warn but must never block a correction the server would take
+    const guard = markLeverGuard(span([2, 0, 0], [-2, 0, 0]), pose, null);
+    expect(guard?.kind).toBe("caution");
+  });
+});
+
+describe("applyBlockedReason — a local refusal blocks Apply, a caution does not", () => {
+  const pose = { origin: [0, 0, 0], axis: [0, 0, 1] };
+  const clock = { rim_centre: [0, 0, 0], min_lever_mm: 0.5 };
+  const onAccess = () => {
+    let d = newPairDraft("p1", false);
+    d = withPick(d, "part", [5, 0, 0]);
+    return withPick(d, "scan", [0.1, 0, 0]);
+  };
+
+  it("blocks, naming WHICH pair, when a mark cannot anchor a rotation", () => {
+    const good = () => {
+      let d = newPairDraft("p0", false);
+      d = withPick(d, "part", [5, 0, 0]);
+      return withPick(d, "scan", [4, 0, 0]);
+    };
+    const words = applyBlockedReason([good(), onAccess()], pose, clock);
+    expect(words).not.toBeNull();
+    expect(words).toContain("screw access");
+    // the worker's refusal names the offending pair so the repair is one undo; a
+    // blocked control that only describes the fault leaves the operator hunting for
+    // which of the marks on screen it means
+    expect(words).toContain("Pair 2");
+  });
+
+  it("stays live when only the approximation is available", () => {
+    expect(applyBlockedReason([onAccess()], pose, null)).toBeNull();
+  });
+});
+
 describe("needsReconfirmStatus — the predicate over the WIRE'S raw status", () => {
   it("is true for the adjusted rung and false for every other one", () => {
     expect(needsReconfirmStatus("adjusted")).toBe(true);
@@ -772,7 +885,7 @@ describe("the one-pair caution, before the fit is applied", () => {
     const words = crossCheckCaution([complete("a")])!;
     expect(words.toLowerCase()).toContain("legitimate");
     // and Apply stays live: the caution and the blocker are different questions
-    expect(applyBlockedReason([complete("a")])).toBeNull();
+    expect(applyBlockedReason([complete("a")], null, null)).toBeNull();
   });
 
   it("is silent once a second pair stands", () => {

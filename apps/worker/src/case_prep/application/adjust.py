@@ -1305,7 +1305,23 @@ def residual_rows(observations: Sequence[Observation],
         if obs.note:
             row["note"] = obs.note
         rows.append(row)
-    rms = float(np.sqrt(np.mean([r["residual_mm"] ** 2 for r in rows])))
+    # COMBINED THE WAY THE ROTATION WAS (review 2026-08-01). The RMS answers "did the
+    # observations agree with the answer they produced?", and that answer is the
+    # INVERSE-VARIANCE weighted mean above — so the agreement statistic must carry the
+    # same weights. A plain root-mean-square hands a reading the estimator almost
+    # ignored a full vote in the number that judges the estimate: a span's DIRECTION
+    # rides a short in-plane baseline (weight L²/2) while its residual is measured at
+    # the PART's arm like every other row, so on a legitimate radial span at R=3.0mm,
+    # L=1.5mm, 29° off — inside this module's own SPAN_RADIAL_TOLERANCE_DEG, i.e. what
+    # two ±0.3mm clicks produce on their own — the unweighted figure read 1.014mm
+    # against a 1.0mm gate while the estimator had already discounted it to +1.65°.
+    # That is the equal-weighting bug ``observation_weight`` exists to end, reappearing
+    # one function later. The motivating defect is unmoved: three free points at
+    # near-equal arms carry near-equal weights (2.355mm plain, 2.360mm weighted).
+    weights = np.array([float(o.weight) for o in observations], float)
+    squares = np.array([r["residual_mm"] ** 2 for r in rows], float)
+    total = float(weights.sum())
+    rms = float(np.sqrt(float((weights * squares).sum()) / total)) if total > 0 else 0.0
     return rows, rms
 
 
@@ -1346,6 +1362,67 @@ def agreement_words(n_observations: int, rms_mm: float) -> str:
         return ("a single observation fixes the rotation exactly — there is no second "
                 "mark for it to disagree with, so this fit has no agreement number")
     return f"marks agree to {rms_mm:.3f}mm RMS"
+
+
+# --- THE EVIDENCE GATE ON A CROSS-CHECKED FIT (defect, cap7030-zimmer-4.5 2026-08-01) ---
+#
+# The cross-check floor above answers "is this RMS a measurement?". It does not answer
+# "and did the measurement PASS?" — so a fit whose marks disagreed by 2.349mm carried
+# ``cross_checked: true`` and rode through every gate onto a sealed confirmation:
+# "fit by 3 point pair(s) → 3 observation(s): rotated -85.3° (cumulative -85.3°), marks
+# agree to 2.349mm RMS". The three pairs missed the adopted rotation by 15°, 38° and
+# 108°; they named three different rotations and their weighted mean was an average of
+# answers, not an answer.
+#
+# WHY NO EXISTING GATE CATCHES IT. ``judge_rotation`` judges the POSE, never the
+# evidence: a ring-fixed candidate turns the part about its own axis, which moves the
+# rim by almost nothing at any angle, so the 0.35mm stability bound passes -85.3° as
+# readily as -0.3°. The certification gates read the same pose. Nothing downstream reads
+# the RMS either — the product's caution fires only on ``cross_checked === false``
+# (domain/deliver.ts), i.e. on the fit that has NO number, so the fit with a BAD number
+# said nothing at all.
+#
+# THE BOUND, and what it is derived from rather than invented from: this module already
+# carries the fleet's measured operator click-scatter — p90 0.61mm, from ±0.3mm clicks
+# (see ``MIN_SPAN_MM``). Residuals at that scatter land a few tenths of a millimetre;
+# 1.0mm is the same line ``MIN_SPAN_MM`` draws for the same measured reason, the point
+# where a reading is signal rather than scatter. It is a wide gate on purpose: the
+# healthy fits on this fleet measure 0.02-0.08mm RMS and the defect measured 2.349mm, so
+# the bound sits in an empty gap between them and refuses only what is unambiguous.
+MAX_PAIR_DISAGREEMENT_MM = 1.0
+
+
+def require_pair_agreement(rows: Sequence[dict], rms_mm: float) -> None:
+    """Refuse a cross-checked fit whose marks do not agree with each other.
+
+    ``rows`` and ``rms_mm`` are ONE measurement — ``residual_rows``' own return — so the
+    observation COUNT is derived here rather than passed alongside them: three
+    independent arguments describing one reading can disagree, and a count that
+    disagreed with the rows would have reached ``max()`` on an empty sequence and
+    raised ``ValueError`` where this contract is ``AdjustInvalid``.
+
+    Silent on a fit that is not cross-checked: with one observation the residual is
+    zero BY CONSTRUCTION, so there is no disagreement to judge and none to refuse. That
+    limit is DISCLOSED (``agreement_words``) rather than gated — one correspondence is
+    the documented answer where the automatic reader has no evidence at all, and
+    refusing it here would delete a capability instead of reading a measurement.
+
+    Names the WORST-missing pair, because the operator's cheapest repair is one undo:
+    the same affordance ``require_clock_lever``'s refusal offers, and the same one the
+    product's error footer already promises ("undo just the one the message names")."""
+    if not cross_checked(len(rows)):
+        return None
+    if rms_mm <= MAX_PAIR_DISAGREEMENT_MM:
+        return None
+    worst = max(rows, key=lambda r: r["residual_mm"])
+    raise AdjustInvalid(
+        f"the marks disagree with each other by {rms_mm:.3f}mm RMS, past the "
+        f"{MAX_PAIR_DISAGREEMENT_MM:.2f}mm bound — the fleet's measured click scatter "
+        f"is 0.61mm at p90, so a disagreement this size is not click noise: these "
+        f"marks name DIFFERENT rotations, and their weighted mean would be an average "
+        f"of answers rather than an answer. {worst['feature_id']!r} misses the fit by "
+        f"the most ({worst['residual_mm']:.3f}mm) — undo that pair and re-place it on "
+        f"the feature it was meant to match, rather than starting the set again")
 
 
 def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
@@ -1428,6 +1505,11 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
     applied = circular_mean_deg([o.delta_deg for o in observations],
                                 [o.weight for o in observations])
     residuals, rms = residual_rows(observations, applied)
+    # THE MEASUREMENT IS READ, not merely reported (defect cap7030-zimmer-4.5). Before
+    # any candidate pose is formed, because no POSE gate can see this: a ring-fixed turn
+    # moves the rim by almost nothing at any angle, so ``judge_rotation`` would pass a
+    # rotation these marks never agreed on. See ``MAX_PAIR_DISAGREEMENT_MM``.
+    require_pair_agreement(residuals, rms)
     checked = cross_checked(len(observations))
     # THE RESIDUAL THAT CANNOT EXIST IS NOT REPORTED AS A NUMBER. ``residual_rms_mm`` is
     # Optional on this outcome, on the BFF's view, in the row's correspondence block and

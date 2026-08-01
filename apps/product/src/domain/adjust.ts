@@ -460,7 +460,18 @@ export function pairBody(draft: PairDraft): CorrespondencePairBody {
 /** Why the Apply control is inert, or null when it is live. Never a bare "disabled":
  * the blockedReason doctrine — a surface that cannot act says exactly what is
  * holding it. */
-export function applyBlockedReason(drafts: readonly PairDraft[]): string | null {
+/**
+ * `pose` and `clock` are REQUIRED though both are nullable (review 2026-08-01). As
+ * optional trailing params they type-checked when omitted and silently returned a live
+ * Apply into a guaranteed 422 — the same silent-loss shape the BFF passthrough tests
+ * exist to close. Null is a claim ("no reference in hand"); absence was an oversight,
+ * and the type system can tell them apart.
+ */
+export function applyBlockedReason(
+  drafts: readonly PairDraft[],
+  pose: { readonly origin: readonly number[]; readonly axis: readonly number[] } | null,
+  clock: ClockReferenceLike | null,
+): string | null {
   const complete = drafts.filter(isComplete);
   if (complete.length === 0) {
     return "Place at least one complete pair — a spot on the part and where you see it on the scan.";
@@ -469,6 +480,20 @@ export function applyBlockedReason(drafts: readonly PairDraft[]): string | null 
     return `A correspondence is capped at ${MAX_PAIRS} pairs — remove ${
       complete.length - MAX_PAIRS
     }.`;
+  }
+  // THE LOCAL PRE-REFUSAL (client 2026-07-29). Only a `refusal` blocks: it is the
+  // SERVER'S OWN quantity against the SERVER'S OWN bound, so a mark that fails it is
+  // one the round trip would refuse anyway. A `caution` is the old approximation and
+  // must never make this control inert — see `markLeverGuard`.
+  for (const [index, draft] of complete.entries()) {
+    const guard = markLeverGuard(draft, pose, clock);
+    // NAME WHICH PAIR, like the worker's own refusal does. A blocked control that
+    // describes the fault but not its owner leaves the operator hunting for which of
+    // the marks on screen it means — the per-draft notice makes it discoverable, this
+    // makes it addressable. Position in the SET, matching the slot labels.
+    if (guard !== null && guard.kind === "refusal") {
+      return `Pair ${index + 1}: ${guard.message}`;
+    }
   }
   return null;
 }
@@ -1054,4 +1079,84 @@ export function spanLeverCaution(
     `server will refuse it. Undo one end and span a coded trench along its own ` +
     `radius instead.`
   );
+}
+
+/**
+ * THE MEASURED RIM CENTRE, as the worker publishes it (plan §10-F; worker half landed
+ * in 08edf02 and the BFF forwards it). `rim_centre` is in WORLD coordinates and
+ * `min_lever_mm` is the guard's own bound — read off the wire rather than mirrored, so
+ * the server stays the single authority on both the reference and the threshold.
+ */
+export interface ClockReferenceLike {
+  readonly rim_centre: readonly number[];
+  readonly min_lever_mm: number;
+}
+
+export type LeverGuard = {
+  /** `refusal` only when the SERVER'S OWN quantity was in hand. */
+  readonly kind: "refusal" | "caution";
+  readonly message: string;
+};
+
+/**
+ * THE CLIENT-SIDE PRE-REFUSAL the client asked for (2026-07-29: "refuse before you
+ * place the span, not after").
+ *
+ * §10-F recorded why this could only ever CAUTION: the server measures a mark's arm
+ * from the scan's MEASURED rim centre, and the client had only the seated pose's
+ * origin — close, but not the same point, so refusing on it risked refusing a span the
+ * server would have taken. That gap is now closed: `clock_reference` carries the
+ * server's own centre and bound, so with it in hand this measures the SAME quantity
+ * `require_clock_lever` does and may refuse locally with no risk of disagreeing.
+ *
+ * WITHOUT it, the old approximation is all there is, so the old verdict is all this
+ * returns — a caution. The distinction rides on the result rather than being inferred,
+ * because "the server will refuse this" and "this looks wrong from here" are different
+ * claims and only one of them may block a control.
+ *
+ * Covers a SINGLE mark as well as a span. The server has always guarded both
+ * (`require_clock_lever(..., span=False)`); the client warned about neither until the
+ * span case, so a lone click on the access earned a 422 with no warning at all.
+ */
+export function markLeverGuard(
+  draft: PairDraft,
+  pose: { readonly origin: readonly number[]; readonly axis: readonly number[] } | null,
+  clock: ClockReferenceLike | null,
+): LeverGuard | null {
+  if (clock === null) {
+    const words = spanLeverCaution(draft, pose);
+    return words === null ? null : { kind: "caution", message: words };
+  }
+  if (pose === null) return null;
+  const a = draft.scanPoint;
+  if (a === null) return null;
+  let probe: readonly number[] = a;
+  if (draft.span) {
+    const b = draft.scanPointEnd;
+    if (b === null) return null;
+    probe = [(a[0]! + b[0]!) / 2, (a[1]! + b[1]!) / 2, (a[2]! + b[2]!) / 2];
+  }
+  const radius = inPlaneRadius(probe, clock.rim_centre, pose.axis);
+  // DEGRADE, NEVER REFUSE, ON A REFERENCE WE CANNOT MEASURE (review 2026-08-01). The
+  // API layer casts the response rather than validating it, so a short `rim_centre` or
+  // an absent `min_lever_mm` is reachable — and both used to land in the refusal
+  // branch, because `NaN >= x` and `x >= undefined` are alike false. One produced a
+  // permanently inert Apply reading "NaNmm"; the other threw inside render. A guard
+  // whose whole justification is "never block a correction the server would take" must
+  // fail OPEN on its own inputs.
+  if (!Number.isFinite(radius) || !Number.isFinite(clock.min_lever_mm)) return null;
+  if (radius >= clock.min_lever_mm) return null;
+  const bound = clock.min_lever_mm.toFixed(2);
+  return {
+    kind: "refusal",
+    message: draft.span
+      ? `This span crosses the screw access: its midpoint sits ${radius.toFixed(2)}mm ` +
+        `from the cap's measured rim centre, and inside ${bound}mm a mark names the ` +
+        `part AXIS rather than a clock angle — neither end of it can anchor a ` +
+        `rotation. Undo one end and span a coded trench along its own radius instead.`
+      : `This mark sits ${radius.toFixed(2)}mm from the cap's measured rim centre — ` +
+        `that is the screw access, and inside ${bound}mm a mark names the part AXIS ` +
+        `rather than a clock angle, so it cannot anchor a rotation. Click the coded ` +
+        `trench out on the cap's face instead.`,
+  };
 }

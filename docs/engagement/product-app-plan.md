@@ -369,3 +369,184 @@ re-reads the catalog per query) is orders of magnitude, so a wide bound loses no
 real while surviving a loaded box. The genuine budget belongs in a benchmark that owns
 the machine and compares against a baseline rather than a constant; it is not a
 correctness fact and does not belong in this lane.
+
+**F — CORRECTED 2026-08-01, and the correction is the point.** The paragraph above says
+the pre-refusal "is worker + BFF + product and wants the worker battery". That was true
+when written and false by the time anyone read it: commit `08edf02` landed
+`clock_reference {rim_centre (world xyz), min_lever_mm}` on the seated payload
+(`application/adjust.clock_reference`), on every tool result's `pane_payload`, on
+re-preview and on Declare's preview (`application/preview.measured_rim_centre_world`).
+The BFF forwarded it — but ACCIDENTALLY: `pane_payload` is a bare `dict` on
+`AdjustResultView` and the seated handler returns an untyped dict, and no test named the
+field, so a tidy-up that added a `response_model` would have deleted it in silence.
+
+LANDED 2026-08-01, product-only plus the passthrough pins:
+
+- `markLeverGuard` (`product/src/domain/adjust.ts`) returns `refusal` when the SERVER's
+  own centre and bound are in hand, and `caution` when they are not — the split rides on
+  the result rather than being inferred, because "the server will refuse this" and "this
+  looks wrong from here" are different claims and only one may block a control. Without
+  `clock_reference` the old `spanLeverCaution` approximation is all there is, and it
+  still only warns. §10-F's original reasoning is preserved exactly, not overridden.
+- It covers a SINGLE mark as well as a span. The server has guarded both since
+  2026-07-28 (`require_clock_lever(..., span=False)`); the client warned about neither
+  until the span case, so a lone click on the screw access earned a 422 with no warning
+  of any kind.
+- `applyBlockedReason` consults it, so Apply is inert with the reason on it rather than
+  live into a round trip that 422s.
+- Two BFF tests now pin the passthrough (`test_adjust_tools.TestSeatedRead`) — the
+  seated read and a tool result's `pane_payload`. The second one failed first.
+
+**H. THE FIT-BY-POINTS EVIDENCE GATE (defect, cap7030-zimmer-4.5 2026-08-01; landed).**
+
+The measured half of the client's "this case is not well aligned". On 2026-08-01 at
+18:16:36, on that case's tooth 29:
+
+```
+site-adjusted | fit-by-points — fit by 3 point pair(s) → 3 observation(s):
+                rotated -85.3° (cumulative -85.3°), marks agree to 2.349mm RMS
+site-reviewed | reviewed over the live panes                    (nine seconds later)
+confirmed     | confirmation sealed over run 20260801-181556-40f164
+```
+
+Three pairs missing the adopted rotation by 15°, 38° and 108° — they named three
+different rotations, their weighted mean was an average of answers, and NOTHING refused
+it. The fleet's measured click scatter is 0.61mm at p90; 2.349mm is not click noise.
+
+WHY NO EXISTING GATE SAW IT, which is the part worth keeping: `judge_rotation` judges the
+POSE, never the evidence. A ring-fixed candidate turns the part about its own axis, which
+moves the rim by almost nothing at ANY angle, so the 0.35mm stability bound passes −85.3°
+as readily as −0.3°; the certification gates read the same pose. And the disclosure that
+landed the day before for the neighbouring defect reads `cross_checked === false` — the
+fit with NO number — so the fit with a BAD number said nothing anywhere. The surface
+treated three mutually inconsistent marks as better evidenced than one honest mark.
+
+`require_pair_agreement` (`application/adjust.py`) refuses a CROSS-CHECKED fit past
+`MAX_PAIR_DISAGREEMENT_MM = 1.0`, before any candidate pose is formed, naming the
+worst-missing pair so the repair is one undo — the affordance the screw-access refusal
+already offers and the product's error footer already promises. Silent below the
+cross-check floor: with one observation the residual is zero by construction, there is no
+disagreement to judge, and refusing there would delete the documented one-correspondence
+capability instead of reading a measurement. The bound is derived, not invented: it is
+`MIN_SPAN_MM`'s own line for the same measured reason, and it sits in an empty gap —
+healthy fits on this fleet measure 0.02–0.08mm RMS, the defect measured 2.349mm.
+
+STILL OPEN on this case: with the −85.3° refused, cap7030's automatic pose is
+position-good and clock-UNVERIFIED (notch corr 0.502 PASSES, prominence 0.079 FAILS the
+0.10 gate). §10 does not yet say what the product should offer an operator there.
+
+**I. THE FIVE-PAGE DIRECTION (client, 2026-08-01) — three rulings needed before code.**
+
+Asked: 1 Intake (import scan, mark the cap + its centre, declare the implant SYSTEM) ·
+2 Alignment (declare the VARIANT, align over the three panes) · 3 Adjustment (the
+tooling, CONFIRMATION, terms and conditions, the alignment reports) · 4 Construction
+(pick the construction library, preview the BOOLEAN of construction + scan unified) ·
+5 Delivery (payment, then artifacts with previews and downloads).
+
+1. **T&C placement contradicts §10-A.** §10-A deliberately moved the agreement to the
+   commercial moment, once, and what shipped binds terms to the CONFIRM act
+   (`deliver.py` refuses a confirmation without `terms_accepted`); the client's own
+   2026-07-30 words quoted in `deliver.py` say Delivery. Page 3 moves the signature two
+   pages upstream, before the construction library is chosen and before a price is seen.
+   RECOMMENDED: split the act — alignment reports and an explicit "I accept this
+   alignment" review on Adjustment, terms + authorization still gating payment on
+   Delivery. If the client insists, record §10-A as SUPERSEDED in the same commit.
+2. **The literal page order is self-defeating.** Changing `construction_path` calls
+   `clear_current_run`, so Construction on page 4 retires the run the page-3 confirmation
+   was measured over — on the happy path, not as an edge case. Either order it
+   Intake / Alignment / Construction / Adjustment(confirm) / Delivery, or keep
+   confirmation on Delivery.
+3. **"Two meshes in the scan" does not hold on the data we have.** Measured over all 9
+   fleet scans: 6 are a SINGLE connected component, including the arch whose `sites.json`
+   records a true healing cap. On the 3 with a second body (cap6020/6030/7030) that body
+   is the sealed screw recess — watertight, NEGATIVE volume, max radius 1.52mm; on
+   cap6030 it supplies 1219 of the 1262 points in the detector's own core disc. A
+   connected-component split returns nothing on two thirds of the fleet and the recess
+   mislabelled as the cap on the rest. Ask whether they mean two FILES instead:
+   `application/cases.py` takes `stls[0]` and DISCARDS every other STL in a case folder,
+   so a cap-only companion mesh is already being thrown away, and that is plumbing rather
+   than segmentation.
+
+Also queued from the same direction, not blocked on a ruling:
+
+- **The cap-only cut.** The display crop is a 9mm sphere (`CAP_REGION_RADIUS_MM`); the
+  ALIGNMENT already fits a ≤5.4mm ball at rim height (`_cap_patch_roi`), TIGHTER than the
+  display, so "make the alignment based on this mesh" is already true in the strong sense
+  and inadmissible in the literal one (a client-chosen bound reaching the aligner is the
+  trust inversion the status allowlist exists to prevent). The real defect is that four
+  crops exist for four jobs and nothing on screen discloses it. Note the 9mm was the
+  CLIENT's own choice over a cap-tight view (`viewer/siteRouting.ts`), for reasons worth
+  putting back to them; and `CAP_REGION_RADIUS_MM` is aliased as `SITE_FRAME_RADIUS_MM`,
+  so retuning it in place silently re-frames the main stage. A second constant, with crop
+  + camera radius + caption moved together.
+- **Two library points** (client 2026-08-01). The library half takes exactly one point at
+  every layer (`PairIn` is `extra="forbid"` with no `part_point_end`). A library span adds
+  no degree of freedom — the unknown is one scalar — but it replaces an ASSUMPTION with a
+  MEASUREMENT: the part-side span direction is the radial model today, and the whole
+  30° chordal-drop branch exists to catch that assumption failing. Expressible only on the
+  free `part_point` path; `PartFeature` carries no direction or extent, so a `feature_id`
+  pair and the auto-mark proposer have no second point to offer.
+
+**H, amended after adversarial review (2026-08-01) — the gate's first bound was wrong,
+and how it was wrong is the part worth keeping.**
+
+`MAX_PAIR_DISAGREEMENT_MM` is derived from operator CLICK SCATTER, which is the right
+derivation for a `point` or a `midpoint` row. It is the wrong one for a `direction` row,
+and the mismatch made the gate refuse legitimate corrections.
+
+A span's direction rides its IN-PLANE BASELINE, so `observation_weight` gives it `L²/2`
+while a midpoint at the same feature carries `2R²` — on a real trench that is 1.1 against
+24.5, and the estimator is right to nearly ignore it. But `residual_rows` measures EVERY
+row's residual at the PART's arm, and the RMS over those rows was UNWEIGHTED. So the
+reading the estimator had discounted voted at full strength in the statistic that vetoed
+the whole fit. Reproduced with the module's own functions:
+
+```
+R=3.0mm L=1.5mm 29° off radial   applied +1.65°   rms 1.014  REFUSED   (weighted 0.357)
+R=3.5mm L=1.5mm 25° off radial   applied +1.07°   rms 1.035  REFUSED   (weighted 0.313)
+R=2.5mm L=1.5mm 25° off radial   applied +2.01°   rms 0.712  passed    (weighted 0.300)
+```
+
+Every refused row there is a span the module's OWN `SPAN_RADIAL_TOLERANCE_DEG = 30°`
+calls radial — "what two ±0.3mm clicks on a short trench produce on their own" — adopting
+a rotation of one to two degrees, i.e. the midpoint's own answer. Crossover is R ≈ 2.7mm
+and landed fits carry part arms of 1.2–2.63mm with `rmax` ~3.5mm on a 7mm cap, so the
+band is inside the domain, not a corner. And the refusal's words would have been false
+besides: with one pair there is no other mark to "re-place it to match".
+
+FIXED by combining the RMS THE WAY THE ROTATION WAS — inverse-variance weighted, the same
+weights `circular_mean_deg` used. This changes a PUBLISHED number (`residual_rms_mm` on
+the wire and in "marks agree to Xmm RMS"), deliberately: the number reported and the
+number judged must be the same number, or an operator reads an agreement figure that
+passed a bound it appears to exceed. The motivating defect is unmoved — three free points
+at near-equal arms carry near-equal weights (2.355mm plain, 2.360mm weighted).
+
+Also from the same review, fixed here:
+
+- `require_pair_agreement(rows, rms)` derives the observation count from the rows rather
+  than taking it alongside them. As three independent arguments they could disagree, and
+  a count that outran the rows reached `max()` on an empty sequence — `ValueError` where
+  the contract is `AdjustInvalid`.
+- `markLeverGuard` FAILS OPEN on a reference it cannot measure. The API layer casts
+  rather than validates, so a short `rim_centre` or an absent `min_lever_mm` is
+  reachable; `NaN >= x` and `x >= undefined` are both false, so both landed in the
+  REFUSAL branch — one produced a permanently inert Apply reading "NaNmm", the other
+  threw inside render. A guard justified by "never block a correction the server would
+  take" must not fail closed on its own inputs.
+- `applyBlockedReason`'s `pose`/`clock` are REQUIRED (still nullable). As optional
+  trailing params, an omitted call type-checked and silently returned a live Apply into a
+  guaranteed 422; the typechecker found five such call sites the moment they were made
+  required. Null is a claim, absence was an oversight.
+- The blocked reason names WHICH pair ("Pair 2: …"), matching the worker refusal's own
+  one-undo affordance.
+- Two tests that were previously unprovable: the axis PROJECTION in `inPlaneRadius` (every
+  earlier test used `axis: [0,0,1]` with `z = 0`, where projecting and not projecting are
+  numerically identical — a client that skipped it would silently stop refusing the very
+  mark this slice exists to catch), and the component wiring (severing `clock={clock}` is
+  now a failing test; before, it left the whole product suite green).
+
+DEFERRED, recorded rather than done: an advisory band below the bound (a 0.99mm fit still
+renders identically to a 0.02mm one, which is a narrower version of the same complaint
+this item is written against); `data-role="span-caution"` now also carries single-mark
+refusals and should be renamed `mark-guard`; `ClockReference.rim_centre` should be a
+`readonly [number, number, number]` tuple rather than `number[]`.

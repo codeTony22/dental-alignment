@@ -86,7 +86,8 @@ import {
   reasonCountWords,
   reconfirmControl,
   reworkWords,
-  spanLeverCaution,
+  markLeverGuard,
+  type ClockReferenceLike,
   withPick,
   type AdjustQueueEntry,
   type AdjustToolId,
@@ -166,6 +167,9 @@ export interface AdjustStageViewProps {
   /** The seated pose, for the pre-flight span caution (client 2026-07-29). Null until
    *  a payload has landed; the caution simply stays quiet then. */
   readonly pose?: { readonly origin: readonly number[]; readonly axis: readonly number[] } | null;
+  /** The server's MEASURED rim centre and its own bound (plan §10-F). With it the
+   *  lever guard becomes a local pre-refusal; without it, the old caution. */
+  readonly clock?: ClockReferenceLike | null;
   /** Which tooth's gate reasons the dialog is showing, if any (client 2026-07-29).
    *  OPTIONAL with a null default: static callers predate the dialog, and a bare
    *  `!== null` check let an omitted prop (undefined) open an empty dialog — caught by
@@ -271,10 +275,14 @@ function PairsList({
   onClearPairs,
   clearLabel,
   sourceLabelFor,
+  clock,
 }: {
   readonly drafts: readonly PairDraft[];
   readonly busy: boolean;
   readonly pose: { readonly origin: readonly number[]; readonly axis: readonly number[] } | null;
+  /** The server's measured rim centre + bound; absent degrades the guard to a
+   *  caution rather than to a wrong refusal (`markLeverGuard`). */
+  readonly clock: ClockReferenceLike | null;
   readonly onRemovePair: (id: string) => void;
   readonly onRemovePoint: (id: string, slot: PairSlot) => void;
   readonly onApplyPairs: () => void;
@@ -284,7 +292,7 @@ function PairsList({
   readonly clearLabel: string;
   readonly sourceLabelFor?: (draft: PairDraft) => string | null;
 }) {
-  const applyBlocked = applyBlockedReason(drafts);
+  const applyBlocked = applyBlockedReason(drafts, pose, clock);
   return (
     <>
       {/* THE CEILING, BEFORE IT IS HIT (design review 2026-07-31): MAX_PAIRS used to
@@ -366,15 +374,22 @@ function PairsList({
                 </li>
               ))}
             </ol>
-            {spanLeverCaution(draft, pose) !== null && (
-              <p
-                data-role="span-caution"
-                role="status"
-                className="adjust-pairs__caution"
-              >
-                {spanLeverCaution(draft, pose)}
-              </p>
-            )}
+            {(() => {
+              const guard = markLeverGuard(draft, pose, clock);
+              if (guard === null) return null;
+              // a REFUSAL is the server's own verdict and is announced as one; a
+              // caution is this app's approximation and stays a status line
+              return (
+                <p
+                  data-role="span-caution"
+                  data-guard={guard.kind}
+                  role={guard.kind === "refusal" ? "alert" : "status"}
+                  className="adjust-pairs__caution"
+                >
+                  {guard.message}
+                </p>
+              );
+            })()}
             <button
               type="button"
               data-role="remove-pair"
@@ -461,6 +476,7 @@ export function AdjustStageView({
   seatedPhase = "idle",
   seatedPayloadPresent = false,
   pose = null,
+  clock = null,
   reasonsFor = null,
   onOpenReasons = () => undefined,
   onCloseReasons = () => undefined,
@@ -743,6 +759,7 @@ export function AdjustStageView({
                     drafts={drafts}
                     busy={busy}
                     pose={pose}
+                    clock={clock}
                     onRemovePair={onRemovePair}
                     onRemovePoint={onRemovePoint}
                     onApplyPairs={onApplyPairs}
@@ -788,6 +805,7 @@ export function AdjustStageView({
                     drafts={drafts}
                     busy={busy}
                     pose={pose}
+                    clock={clock}
                     onRemovePair={onRemovePair}
                     onRemovePoint={onRemovePoint}
                     onApplyPairs={onApplyPairs}
@@ -1619,6 +1637,7 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       seatedPhase={seatedPhase}
       seatedPayloadPresent={payload !== null}
       pose={payload?.pose ?? null}
+      clock={payload?.clock_reference ?? null}
       reasonsFor={reasonsFor}
       onOpenReasons={setReasonsFor}
       onCloseReasons={() => setReasonsFor(null)}

@@ -617,6 +617,47 @@ describe("the pair set: its ceiling, and starting over", () => {
     expect(html).toContain("Apply the fit");
   });
 
+  /* THE PRE-REFUSAL'S WIRING (review 2026-08-01). The BFF passthrough is pinned by
+     tests because dropping it would silence the guard with nothing failing — and the
+     same argument applies one layer up: without this test, deleting
+     `clock={payload?.clock_reference ?? null}` or either `clock={clock}` prop leaves
+     the whole product suite green and the operator back on the 422. */
+  it("refuses a mark on the screw access locally, and makes Apply say so", () => {
+    const onAccess = withPick(
+      withPick(newPairDraft("p1", false), "part", [2, 0, 1]),
+      "scan",
+      [5.1, 5, 5],
+    );
+    const html = view({
+      tool: "fit-by-points",
+      drafts: [onAccess],
+      pose: { origin: [5, 5, 5], axis: [0, 0, 1] },
+      clock: { rim_centre: [5, 5, 5], min_lever_mm: 0.5 },
+    });
+    expect(html).toContain('data-guard="refusal"');
+    expect(html).toContain("screw access");
+    // and the control is INERT with the reason on it — not live into a 422
+    expect(html).toContain("Pair 1");
+  });
+
+  it("keeps Apply live when the server's reference has not arrived", () => {
+    // the old approximation may caution, but it must never block: refusing on it
+    // could refuse a correction the server would have accepted (plan §10-F)
+    const onAccess = withPick(
+      withPick(newPairDraft("p1", false), "part", [2, 0, 1]),
+      "scan",
+      [5.1, 5, 5],
+    );
+    const html = view({
+      tool: "fit-by-points",
+      drafts: [onAccess],
+      pose: { origin: [5, 5, 5], axis: [0, 0, 1] },
+      clock: null,
+    });
+    expect(html).not.toContain('data-guard="refusal"');
+    expect(html).toContain("Apply the fit");
+  });
+
   it("drops the caution once a second pair stands", () => {
     const second = withPick(
       withPick(newPairDraft("p2", false), "part", [2, 0, 1]),

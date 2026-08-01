@@ -352,6 +352,23 @@ export interface PreviewSeat {
 }
 
 /**
+ * THE SCAN'S MEASURED RIM CENTRE, in WORLD coordinates, beside the guard's own bound
+ * (plan §10-F; worker: application/adjust.clock_reference, application/preview.
+ * measured_rim_centre_world). This is the quantity `require_clock_lever` refuses
+ * against — publishing it is what lets this app pre-refuse a mark on the screw access
+ * locally instead of learning it from a 422.
+ *
+ * OPTIONAL on purpose: it rides every seated/tool/re-preview/Declare-preview payload
+ * today, but a payload that predates it, or a future one that cannot measure a rim,
+ * must degrade to the old CAUTION rather than to a wrong refusal — `markLeverGuard`
+ * makes that split explicit.
+ */
+export interface ClockReference {
+  rim_centre: number[];
+  min_lever_mm: number;
+}
+
+/**
  * The preview payload (POST /{id}/sites/{tooth}/preview — plan §7 slice 5b): the
  * union pane's whole render, response-only (the BFF persists only the seat FACTS).
  * Shape is the worker's deviation payload VERBATIM (application/preview.py — the
@@ -365,6 +382,8 @@ export interface SitePreviewPayload {
   frame: string;
   units: string;
   pose: PreviewPose;
+  /** Present on every payload the worker builds today; see `ClockReference`. */
+  clock_reference?: ClockReference | null;
   n_points: number;
   points: number[][];
   faces: number[][];

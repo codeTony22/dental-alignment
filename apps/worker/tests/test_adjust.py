@@ -40,12 +40,13 @@ from case_prep.application.adjust import (CROSS_CHECK_MIN_OBSERVATIONS, MIN_SPAN
                                           align_to_correspondence,
                                           align_to_mark, anchor_certified_pose,
                                           azimuth_deg, best_fit_refusal, best_fit_site,
-                                          circular_mean_deg, clock_landmarks,
+                                          Observation, circular_mean_deg, clock_landmarks,
                                           clock_reference, cross_checked,
                                           direction_delta,
                                           landmark_point, load_site, observation_weight,
                                           observations_for, rederived_reading,
-                                          require_clock_lever, reset_discards,
+                                          require_clock_lever, require_pair_agreement,
+                                          reset_discards, MAX_PAIR_DISAGREEMENT_MM,
                                           reset_target, residual_rows, rotate_site,
                                           seated_payload, site_clicks, span_readings,
                                           validate_span)
@@ -494,6 +495,23 @@ class TestResidualRows:
         rows, _rms = residual_rows([self._obs("point", 0.0, 2.0, 4.0)], applied=0.0)
         assert "note" not in rows[0]
 
+    def test_the_rms_is_combined_THE_WAY_THE_ROTATION_WAS(self):
+        """The RMS answers "did the observations agree with the answer they produced?",
+        and that answer is an INVERSE-VARIANCE weighted mean. An unweighted RMS over
+        weighted observations is a mismatched statistic — it hands a reading the
+        estimator deliberately almost ignored a full vote in the number that judges the
+        estimate. That is the equal-weighting bug ``observation_weight`` exists to end,
+        reappearing one function later."""
+        rows, rms = residual_rows(
+            [self._obs("midpoint", +1.0, 2.0, 24.0),    # heavy: the arm carries it
+             self._obs("direction", -9.0, 2.0, 1.0)],   # light: almost no baseline
+            applied=0.0)
+        heavy, light = rows[0]["residual_mm"], rows[1]["residual_mm"]
+        weighted = math.sqrt((24.0 * heavy ** 2 + 1.0 * light ** 2) / 25.0)
+        assert rms == pytest.approx(weighted)
+        # and it is NOT the plain root-mean-square, which the light reading dominates
+        assert rms < math.sqrt((heavy ** 2 + light ** 2) / 2.0)
+
 
 # --- THE VACUOUS RMS (defect, cap6020-neodent-gm 2026-08-01) -----------------------------
 #
@@ -531,6 +549,99 @@ class TestCrossCheck:
         arithmetic happens to produce."""
         assert "mm" not in agreement_words(1, 0.0)
         assert "mm" not in agreement_words(1, 0.451)
+
+
+# --- THE DISAGREEMENT THAT WAS MEASURED AND NEVER JUDGED ---------------------------------
+#
+# cap7030-zimmer-4.5 tooth 29, 2026-08-01: "fit by 3 point pair(s) → 3 observation(s):
+# rotated -85.3° (cumulative -85.3°), marks agree to 2.349mm RMS", reviewed nine seconds
+# later and sealed by a confirmation thirty-six seconds after that.
+#
+# 2.349mm is not click scatter — the fleet's measured click-scatter p90 is 0.61mm, and the
+# three pairs missed the adopted rotation by 15°, 38° and 108°. They named three different
+# rotations. The RMS SAID SO and nothing read it: the cross-check floor landed the day
+# before for the neighbouring defect (a 1-observation fit's vacuous 0.000mm), so this fit
+# carried ``cross_checked: true`` and rendered no caution anywhere — the surface treated
+# three mutually inconsistent marks as BETTER evidenced than one honest mark.
+
+
+class TestPairAgreementIsJudged:
+    """A cross-checked RMS is a measurement, and a measurement that fails must refuse.
+    ``judge_rotation``'s three gates cannot catch this: a ring-fixed rotation moves the
+    rim by almost nothing at ANY angle, so the stability bound passes a −85.3° as
+    readily as a −0.3°. The evidence gate is the only thing that reads the marks."""
+
+    def _rows(self, *residual_mm: float) -> list:
+        return [{"feature_id": f"point-{i + 1}", "observation": "point",
+                 "residual_mm": r} for i, r in enumerate(residual_mm)]
+
+    def test_marks_that_name_different_rotations_are_refused(self):
+        """THE DEFECT'S OWN NUMBERS."""
+        with pytest.raises(AdjustInvalid) as exc:
+            require_pair_agreement(self._rows(0.94, 1.50, 3.60), 2.349)
+        assert "2.349" in str(exc.value)
+
+    def test_the_refusal_names_the_worst_mark_so_one_pair_can_be_undone(self):
+        """The screw-access refusal's own affordance (adjust.py:305-311): a refusal
+        that names the offending mark costs one undo; one that does not costs the
+        whole pair set. The worst residual is the pair to re-place."""
+        with pytest.raises(AdjustInvalid) as exc:
+            require_pair_agreement(self._rows(0.94, 3.60, 1.50), 2.349)
+        assert "point-2" in str(exc.value)
+
+    def test_the_refusal_states_the_bound_it_applied(self):
+        with pytest.raises(AdjustInvalid) as exc:
+            require_pair_agreement(self._rows(4.0, 4.0), 4.0)
+        assert f"{MAX_PAIR_DISAGREEMENT_MM:.2f}mm" in str(exc.value)
+
+    def test_marks_that_agree_within_the_bound_pass(self):
+        assert require_pair_agreement(self._rows(0.02, 0.01, 0.03), 0.021) is None
+
+    def test_the_bound_is_inclusive_at_its_own_edge(self):
+        """The one behavioural edge of a constant whose derivation runs 25 lines."""
+        assert require_pair_agreement(self._rows(1.0, 1.0), MAX_PAIR_DISAGREEMENT_MM) is None
+        with pytest.raises(AdjustInvalid):
+            require_pair_agreement(self._rows(1.0, 1.0), MAX_PAIR_DISAGREEMENT_MM + 0.001)
+
+    def test_a_fit_with_nothing_to_cross_check_is_not_judged_by_this_gate(self):
+        """A 1-observation fit's residual is zero BY CONSTRUCTION (``cross_checked``).
+        There is no disagreement to measure, so there is none to refuse — the limit is
+        DISCLOSED by ``agreement_words``, and inventing a refusal here would delete the
+        documented one-correspondence capability instead."""
+        assert require_pair_agreement(self._rows(0.0), 99.0) is None
+
+    def test_no_rows_at_all_refuses_nothing_rather_than_crashing(self):
+        """The count and the rows are ONE measurement, so they cannot disagree — and
+        an empty reading has nothing to judge. Previously the two arrived as separate
+        arguments and ``max()`` raised ValueError where the contract is AdjustInvalid."""
+        assert require_pair_agreement([], 5.0) is None
+
+    def test_a_span_the_module_calls_RADIAL_is_not_refused_for_being_one(self):
+        """THE REVIEW'S H1, pinned. A single radial span whose direction sits inside
+        ``SPAN_RADIAL_TOLERANCE_DEG`` is what the module says two ±0.3mm clicks on a
+        short trench produce ON THEIR OWN — a legitimate correction, not a mistake.
+
+        Its direction rides a short in-plane baseline, so ``observation_weight`` gives
+        it almost no say (L²/2 = 1.1 against the midpoint's 2R² = 24.5) and the adopted
+        rotation is essentially the midpoint's own answer. But the residual is measured
+        at the PART's arm for every row alike, so an UNWEIGHTED rms let that near-ignored
+        reading veto the fit it barely influenced: measured 1.014mm at R=3.0, L=1.5,
+        29° — past the bound, on a part arm the real fleet reaches."""
+        mid = Observation(label="trench-01", kind="midpoint", part_azimuth_deg=0.0,
+                          observed_deg=0.0, delta_deg=0.0, lever_mm=3.0,
+                          weight=observation_weight("midpoint", 3.0))
+        off = SPAN_RADIAL_TOLERANCE_DEG - 1.0
+        direction = Observation(label="trench-01", kind="direction",
+                                part_azimuth_deg=0.0, observed_deg=off, delta_deg=off,
+                                lever_mm=3.0,
+                                weight=observation_weight("direction", 3.0,
+                                                          span_length_mm=1.5))
+        obs = [mid, direction]
+        applied = circular_mean_deg([o.delta_deg for o in obs],
+                                    [o.weight for o in obs])
+        rows, rms = residual_rows(obs, applied)
+        assert abs(applied) < 3.0, "the estimator already discounted the direction"
+        assert require_pair_agreement(rows, rms) is None
 
 
 # --- RESET IS NOT A FREE ACT (review 2026-07-28, finding D) ------------------------------
@@ -959,6 +1070,27 @@ class TestFitByPointsAndSpans:
         with pytest.raises(AdjustInvalid) as exc:
             align_to_correspondence(_real_case(), warmed_run, WARMED_TOOTH, pairs)
         assert "names the axis, not a clock angle" in str(exc.value)
+
+    def test_marks_that_name_different_rotations_refuse_without_touching_a_byte(
+            self, warmed_run):
+        """THE cap7030 DEFECT, on the adoption path. Three free points clicked a
+        quarter- and a half-turn away from the part features they claim to match: the
+        weighted mean still produces A number, and every pose gate still passes it
+        (a ring-fixed turn moves the rim by almost nothing at any angle). The marks'
+        own disagreement is the only thing that knows, and it must refuse BEFORE the
+        rotation is adopted — a refused adjustment leaves every byte where it was."""
+        case = _real_case()
+        part = [2.0, 0.0, 1.0]                       # canonical azimuth 0°, arm 2.0mm
+        pairs = [Correspondence(scan_point=self._site_point(warmed_run, off),
+                                part_point=list(part))
+                 for off in ((2.0, 0.0, 0.4),        # ~agrees
+                             (0.0, 2.0, 0.4),        # ~a quarter turn off
+                             (-2.0, 0.0, 0.4))]      # ~a half turn off
+        before = _fingerprint(warmed_run)
+        with pytest.raises(AdjustInvalid) as exc:
+            align_to_correspondence(case, warmed_run, WARMED_TOOTH, pairs)
+        assert "disagree with each other" in str(exc.value)
+        assert _fingerprint(warmed_run) == before
 
     def test_a_span_records_both_ends_and_its_observations_for_replay(self, warmed_run):
         """The audit half of the ask: whichever way the gates go, the geometry must be

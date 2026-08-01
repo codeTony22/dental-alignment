@@ -738,6 +738,37 @@ class TestSeatedRead:
         client, _ = tooled(settings, product_root, monkeypatch, rows=[row(13)])
         assert client.get(f"{BASE}/4/seated").status_code == 422
 
+    def test_the_measured_rim_centre_survives_the_passthrough(self, settings,
+                                                              product_root, monkeypatch):
+        """THE PRE-REFUSAL'S ONE DEPENDENCY (plan §10-F). ``clock_reference`` is the
+        SERVER'S own rim centre and bound, and the product refuses a screw-access mark
+        locally against it — but only while it actually arrives. Nothing else in this
+        suite names the field, so a tidy-up that gave these handlers a response_model
+        would drop it and the pre-refusal would go quiet with no test failing. This is
+        that test."""
+        payload = {"tooth": 4, "preview": False, "points": [], "faces": [],
+                   "clock_reference": {"rim_centre": [1.0, 2.0, 3.0],
+                                       "min_lever_mm": 0.5}}
+        monkeypatch.setattr(adjust_resource, "seated_payload",
+                            lambda case, run_dir, tooth: payload)
+        client, _ = tooled(settings, product_root, monkeypatch)
+        body = client.get(f"{BASE}/4/seated").json()
+        assert body["clock_reference"] == {"rim_centre": [1.0, 2.0, 3.0],
+                                           "min_lever_mm": 0.5}
+
+    def test_a_tool_result_carries_the_rim_centre_onto_its_pane_payload(
+            self, settings, product_root, monkeypatch):
+        """The same field on the OTHER path: after an adjustment the panes re-read from
+        the tool's own ``pane_payload``, and the next mark is guarded against the rim
+        centre THAT pose measured — not the one the stage opened on."""
+        client, _ = tooled(settings, product_root, monkeypatch, result=outcome(
+            pane_payload={"tooth": 4, "preview": False,
+                          "clock_reference": {"rim_centre": [0.0, 0.0, 1.0],
+                                              "min_lever_mm": 0.5}}))
+        res = client.post(f"{BASE}/4/rotation", json={"step_deg": 1.0})
+        assert res.status_code == 200
+        assert res.json()["pane_payload"]["clock_reference"]["min_lever_mm"] == 0.5
+
     def test_reading_the_seat_writes_nothing(self, settings, product_root, monkeypatch):
         monkeypatch.setattr(adjust_resource, "seated_payload",
                             lambda case, run_dir, tooth: {"tooth": tooth})
