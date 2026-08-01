@@ -231,6 +231,31 @@ def find_cap_sites(vertices: np.ndarray, max_sites: int = 8,
                     best = (ratio, c0 + [dx, dy])
         if best is None or best[0] > _RATIO_MAX:
             continue
+        # THE Z BELONGS TO THE REPORTED XY (fleet sweep, 2026-08-01). rim_z above was
+        # sampled around the COARSE candidate c0; the fine search just moved the xy up
+        # to 3mm away (measured travel c0->cxy 1.46-3.35mm, median 2.12), and pairing
+        # the refined xy with the stale z put the fleet's axial error at 0.559mm RMS —
+        # on one arch the proposed centre floated +0.758mm ABOVE the surface, the one
+        # marker that visibly hung in the air. Re-sample the ring at the point actually
+        # being reported. The ADMISSION gate above deliberately keeps judging the c0
+        # sample — this change moves no site in or out of the proposal set, it only
+        # makes the reported point's two halves come from the same place. The sparse
+        # fallback keeps the c0 sample rather than dropping the site, for the same
+        # reason.
+        # The band subset can be sparse at the refined xy (measured: one real-arch
+        # proposal kept its stale z through the fallback and still sat +0.44mm off) —
+        # widen the annulus once before giving up. Only if even that is sparse does
+        # the c0 sample survive, and then only because a site is never dropped for
+        # the crime of being hard to measure (recall-first).
+        rim_near = None
+        for ring_r in (_RING_R[1], _RING_R[1] * 1.5):
+            ring_near = L[xy_tree.query_ball_point(best[1], ring_r)]
+            if len(ring_near) >= 30:
+                rim_near = ring_near
+                break
+        if rim_near is not None:
+            rim_z = float(np.percentile(rim_near[:, 2], 75))
+            below = cusp_line - rim_z
         found.append((best[0], best[1], rim_z, below))
 
     # dedupe by void quality, then back to world frame

@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 import trimesh
 
-from case_prep.adapters.cap_detection import crown_up_axis, find_cap_sites
+from case_prep.adapters.cap_detection import _RING_R, crown_up_axis, find_cap_sites
 
 NEODENT_SCAN = Path(__file__).resolve().parents[1] / "data/real/scans/doctor-neodent-gm/upper_jaw.stl"
 
@@ -184,3 +184,58 @@ def test_dr_arch_batch_caps_are_proposed(rel, center, note):
               for s in sites)
     assert hit, f"known cap ({note}) not among {len(sites)} proposals"
     assert len(sites) <= 6, f"proposal count {len(sites)} exceeds the accepted candidate budget"
+
+
+_ALL_REAL_ARCHES = sorted(
+    p.name for p in (Path(__file__).parents[1] / "data/real/scans").glob("doctor-*")
+) if (Path(__file__).parents[1] / "data/real/scans").exists() else []
+
+
+@pytest.mark.parametrize("folder", _ALL_REAL_ARCHES)
+@pytest.mark.slow
+def test_a_proposal_sits_at_its_own_rims_height(folder):
+    """THE Z/XY SPLIT (measured 2026-08-01, fleet sweep in the offset investigation):
+    ``rim_z`` was sampled in the ring around the COARSE farthest-point candidate, the
+    fine search then moved the xy up to 3mm away (measured travel 1.46-3.35mm,
+    median 2.12), and the reported point paired the refined xy with the stale z.
+    Fleet consequence: axial RMS 0.559mm, and on cap6020 the proposed centre floated
+    +0.758mm ABOVE the surface — the one marker on the fleet that visibly hung in
+    the air, which is exactly the case the client reported.
+
+    The property is self-referential, so it needs no ground truth and must hold for
+    every proposal, true or false positive alike: the centre's height along the
+    crown axis agrees with the 75th-percentile height of ITS OWN rim annulus."""
+    scan_dir = Path(__file__).parents[1] / "data/real/scans" / folder
+    stls = sorted(scan_dir.glob("*.stl"))
+    if not stls:
+        pytest.skip("no scan in this arch folder")
+    scan = trimesh.load(stls[0], force="mesh")
+    verts = np.asarray(scan.vertices, float)
+    normals = np.asarray(scan.vertex_normals, float)
+    sites = find_cap_sites(verts, normals=normals)
+    if not sites:
+        pytest.skip("no proposals on this arch — nothing to measure")
+    axis = crown_up_axis(verts, normals)
+    heights = verts @ axis
+    for site in sites:
+        center = np.asarray(site.center, float)
+        in_plane = np.linalg.norm(
+            (verts - center) - np.outer((verts - center) @ axis, axis), axis=1)
+        ring = heights[(in_plane >= _RING_R[0]) & (in_plane <= _RING_R[1])]
+        assert len(ring) >= 30, f"{folder}: ring under the proposal is too sparse to judge"
+        rim = float(np.percentile(ring, 75))
+        offset = float(center @ axis - rim)
+        # Two tolerances, and the reason is the TEST's own reconstruction, not the
+        # detector: this test re-derives the ring over ALL mesh vertices in the
+        # crown-axis frame, while the detector samples its band-filtered subset in
+        # its level frame. On a real cap the two agree closely (measured ≤0.24mm
+        # across the fleet after the fix). On a ragged scan-edge FALSE POSITIVE
+        # (instrumented: void 0.833, 0.6mm below the cusp line) the band subset and
+        # the full mesh legitimately see different surface, so the weak tail gets
+        # room for reconstruction disagreement — NOT for a z/xy split, which at the
+        # measured 1.5-3.4mm of coarse->fine travel produces offsets well past it.
+        bound = 0.35 if site.void_ratio < 0.5 else 0.6
+        assert abs(offset) <= bound, (
+            f"{folder}: proposal at {np.round(center, 2).tolist()} "
+            f"(void {site.void_ratio:.2f}) sits {offset:+.3f}mm off its own rim's "
+            f"height — the z belongs to a different xy than the one reported")
