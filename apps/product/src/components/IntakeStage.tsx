@@ -39,6 +39,7 @@ import {
   siteEvidence,
   SITE_PICK_RADIUS_MM,
   type MarkDraft,
+  OFF_SCAN_MISS_WORDS,
 } from "../domain/intake";
 import { MainStage } from "./MainStage";
 
@@ -490,6 +491,8 @@ export interface IntakeStageViewProps {
   readonly onCancelMark?: () => void;
   readonly onMarkTooth?: (tooth: string) => void;
   readonly onStagePoint?: (point: readonly [number, number, number]) => void;
+  /** An armed click that hit only the sky — the pick stays armed; the panel says so. */
+  readonly onStageMiss?: () => void;
   readonly onSubmitMark?: () => void;
   /** Picking a site — from its row, or by clicking the cap on the scan (client 2026-07-31). */
   readonly activeTooth?: number | null;
@@ -517,6 +520,7 @@ export function IntakeStageView({
   onCancelMark = () => undefined,
   onMarkTooth = () => undefined,
   onStagePoint = () => undefined,
+  onStageMiss = () => undefined,
   onSubmitMark = () => undefined,
   activeTooth = null,
   onSelectSite = () => undefined,
@@ -612,6 +616,7 @@ export function IntakeStageView({
           // is armed, and the container routes the resolved point to whichever asked.
           markArmed={markArmed || pickArmed}
           onMark={onStagePoint}
+          onMarkMissed={onStageMiss}
         />
       </div>
     </div>
@@ -683,6 +688,14 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
      picker first, because arming it disarms the mark. A click that lands on no cap is
      SAID, not snapped to the least-far site: the operator would otherwise watch the
      stage fly to a tooth they did not click. */
+  /* An armed click that hit only the sky. The viewer KEEPS the pick armed (the fix
+     of 2026-08-01 — before that the click vanished with the controls still off), so
+     this only says it out loud, in whichever panel armed the click. */
+  const handleStageMiss = useCallback(() => {
+    if (pickArmed) setPickMiss(OFF_SCAN_MISS_WORDS);
+    else setMark((now) => ({ ...now, error: OFF_SCAN_MISS_WORDS }));
+  }, [pickArmed]);
+
   const handleStagePoint = useCallback(
     (point: readonly [number, number, number]) => {
       if (!pickArmed) {
@@ -811,6 +824,7 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
       onCancelMark={resetMark}
       onMarkTooth={(tooth) => setMark((prev) => ({ ...prev, tooth }))}
       onStagePoint={handleStagePoint}
+      onStageMiss={handleStageMiss}
       onSubmitMark={handleSubmitMark}
       onRetryDetect={fireDetect}
       activeTooth={activeTooth}

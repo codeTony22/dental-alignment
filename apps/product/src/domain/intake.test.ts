@@ -19,6 +19,7 @@ import {
   siteCentre,
   siteEvidence,
   type MarkDraft,
+  OFF_SCAN_MISS_WORDS,
 } from "./intake";
 import {
   captureAssessment,
@@ -424,5 +425,18 @@ describe("the two doors onto the stage's ONE point pick (audit 2026-07-31)", () 
 
   it("discarding is the only thing that empties the draft", () => {
     expect(EMPTY_MARK).toEqual({ armed: false, pending: null, tooth: "", error: null });
+  });
+});
+
+describe("the off-scan miss (client 2026-08-01: 'buttons are not working')", () => {
+  it("says the pick is STILL armed — a miss is an attempt, not a cancellation", () => {
+    expect(OFF_SCAN_MISS_WORDS).toContain("Still armed");
+    expect(OFF_SCAN_MISS_WORDS).toContain("click the scan surface");
+  });
+
+  it("claims no radius — the sky has no distance to a site", () => {
+    // the on-scan miss names SITE_PICK_RADIUS_MM; this one must not, because the
+    // click resolved no point to measure from
+    expect(OFF_SCAN_MISS_WORDS).not.toContain("mm");
   });
 });

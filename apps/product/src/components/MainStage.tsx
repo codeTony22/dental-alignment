@@ -248,6 +248,9 @@ export interface MainStageProps {
   /** Detected-site rings (slice 4 Intake) — the copied viewer's marker surface.
    * Omitted = no markers, which keeps Declare's mount unchanged. */
   readonly markers?: readonly MarkerSpec[];
+  /** Called when an ARMED click lands off the scan (the sky). The pick stays armed —
+   *  a miss is an attempt, not a cancellation — and the surface says so. */
+  readonly onMarkMissed?: (() => void) | null;
   /** The operator's active site (slice 5a — Declare's queue drives the routing).
    * Omitted/null = the stage's own default, the first site with a usable centre. */
   readonly activeTooth?: number | null;
@@ -264,6 +267,7 @@ export function MainStage({
   scanFilename,
   sites,
   markers,
+  onMarkMissed = null,
   activeTooth,
   markArmed = false,
   onMark = null,
@@ -348,8 +352,15 @@ export function MainStage({
      feel broken, and orbiting is what this stage is mostly for. */
   useEffect(() => {
     if (!markArmed || onMark === null) return;
-    viewerRef.current?.enterPointPick((point) => onMark(point));
-  }, [markArmed, onMark]);
+    viewerRef.current?.enterPointPick((point) => onMark(point), onMarkMissed ?? undefined);
+    // THE CLEANUP IS THE FIX (client 2026-08-01: "buttons are not working").
+    // Disarming — the Cancel button, a site switch, unmount — used to leave the
+    // controller's pick armed with the ORBIT CONTROLS DISABLED, permanently: arm,
+    // cancel, and the scan would neither select nor rotate again. enterPointPick
+    // turns the controls off; only exitPointPick turns them back on, and nothing
+    // called it on the way out.
+    return () => viewerRef.current?.exitPointPick();
+  }, [markArmed, onMark, onMarkMissed]);
 
   const routeTarget = useMemo(
     () =>

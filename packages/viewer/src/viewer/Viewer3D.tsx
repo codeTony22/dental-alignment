@@ -51,7 +51,10 @@ export interface Viewer3DHandle {
   enterMarkMode(rowIndex: number, kind: MarkKind, onPlaced: (point: [number, number, number]) => void): void;
   exitMarkMode(): void;
   isMarkModeActive(): boolean;
-  enterPointPick(onPicked: (point: [number, number, number]) => void): void;
+  enterPointPick(
+    onPicked: (point: [number, number, number]) => void,
+    onMissed?: () => void,
+  ): void;
   exitPointPick(): void;
   isPointPickActive(): boolean;
   setSiteMarker(rowIndex: number, kind: MarkKind, point: readonly [number, number, number]): void;
@@ -175,8 +178,8 @@ export const Viewer3D = forwardRef<Viewer3DHandle, Viewer3DProps>(function Viewe
       isMarkModeActive() {
         return controllerRef.current?.isMarkModeActive() ?? false;
       },
-      enterPointPick(onPicked) {
-        controllerRef.current?.enterPointPick(onPicked);
+      enterPointPick(onPicked, onMissed) {
+        controllerRef.current?.enterPointPick(onPicked, onMissed);
       },
       exitPointPick() {
         controllerRef.current?.exitPointPick();

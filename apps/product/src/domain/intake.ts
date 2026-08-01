@@ -184,6 +184,17 @@ export function detectionMarkers(detail: CaseSessionDetail): readonly SiteMarker
  * loud, exactly the way a bare-arch click is said rather than snapped — the operator
  * settles it with one more click, and the stage never flies to a tooth on a guess.
  */
+/**
+ * AN ARMED CLICK THAT LANDED OFF THE SCAN (client 2026-08-01: "buttons are not
+ * working"). Until this existed the click vanished silently — the pick stayed armed
+ * with the orbit controls disabled and no message, so the stage read as dead. The
+ * pick STAYS armed (a miss is an attempt, not a cancellation), and this sentence
+ * says what to do instead.
+ */
+export const OFF_SCAN_MISS_WORDS =
+  "That click landed off the scan — click the scan surface itself. " +
+  "Still armed: try again, or cancel.";
+
 export const SITE_PICK_RADIUS_MM = 6.0;
 
 /** What one click on the scan resolved to. `ambiguous` carries the teeth in reach,

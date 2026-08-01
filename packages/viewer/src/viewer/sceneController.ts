@@ -374,7 +374,10 @@ export class SceneController {
   // caller, and immediately exit — like enterMarkMode but owning NO marker sphere and NO row:
   // the click is a transient input to the align-to-mark endpoint, not a committed site mark,
   // so nothing must survive on screen (and no row's ⊕/◐ spheres may be clobbered by it).
-  private pointPick: { onPicked: (point: [number, number, number]) => void } | null = null;
+  private pointPick: {
+    onPicked: (point: [number, number, number]) => void;
+    onMissed?: () => void;
+  } | null = null;
 
   // Multi-click rim-BORDER points: enableRimPoints(rowIndex) arms EVERY subsequent pointerdown
   // (not just the next one) to raycast-place one small blue sphere and stay armed, mirroring the
@@ -1108,7 +1111,10 @@ export class SceneController {
    * picked point is a transient input (the align-to-mark POST), not a committed site mark.
    * Mutually exclusive with the brush, single-shot mark mode, and rim-points collection.
    */
-  enterPointPick(onPicked: (point: [number, number, number]) => void): void {
+  enterPointPick(
+    onPicked: (point: [number, number, number]) => void,
+    onMissed?: () => void,
+  ): void {
     if (this.brushEnabled) {
       this.disableBrush();
     }
@@ -1116,7 +1122,7 @@ export class SceneController {
     if (this.rimPointsRowIndex !== null) {
       this.cancelRimPoints();
     }
-    this.pointPick = { onPicked };
+    this.pointPick = { onPicked, onMissed };
     this.controls.enabled = false;
     this.renderer.domElement.style.cursor = "crosshair";
   }
@@ -1623,7 +1629,15 @@ export class SceneController {
     // A plain on-surface raycast hit — the picked trench point genuinely IS a surface
     // point (unlike the centre mark's recess-hole corridor placement).
     const point = this.raycastClientPoint(event.clientX, event.clientY);
-    if (!point) return;
+    if (!point) {
+      // A click on the SKY is an attempt, not a resolution: stay armed — the
+      // operator is mid-act — and tell the caller, so the surface can say it out
+      // loud. Until 2026-08-01 this returned silently: armed, orbit controls
+      // disabled, no message — the whole stage read as dead, which is exactly how
+      // the client reported it ("buttons are not working").
+      this.pointPick.onMissed?.();
+      return;
+    }
     const { onPicked } = this.pointPick;
     this.exitPointPick();
     onPicked([point.x, point.y, point.z]);
