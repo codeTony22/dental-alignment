@@ -1010,10 +1010,26 @@ export function pairSlots(draft: PairDraft): readonly PairSlotView[] {
     {
       key: "part",
       where: "Library part · pane 1",
-      label: "the feature on the part",
+      label: draft.partSpan
+        ? "one END of the feature on the part"
+        : "the feature on the part",
       placed: draft.partPoint !== null,
       active: slot === "part",
     },
+  ];
+  // THE LIBRARY SPAN'S SECOND CLICK IS A SLOT LIKE ANY OTHER. Shipped without one: the
+  // operator placed four marks against a three-row checklist, and the row that would
+  // have carried its `undo` never rendered.
+  if (draft.partSpan) {
+    slots.push({
+      key: "part-end",
+      where: "Library part · pane 1",
+      label: "the OTHER end of the feature on the part",
+      placed: draft.partPointEnd !== null,
+      active: slot === "part-end",
+    });
+  }
+  slots.push(
     {
       key: "scan",
       where: "Scanned cap · pane 2 or 3",
@@ -1021,7 +1037,7 @@ export function pairSlots(draft: PairDraft): readonly PairSlotView[] {
       placed: draft.scanPoint !== null,
       active: slot === "scan",
     },
-  ];
+  );
   if (draft.span) {
     slots.push({
       key: "scan-end",
@@ -1050,7 +1066,14 @@ export function pairSlots(draft: PairDraft): readonly PairSlotView[] {
 export function withoutPick(draft: PairDraft, slot: PairSlot): PairDraft {
   switch (slot) {
     case "part":
-      return { ...draft, partPoint: null };
+      // A LIBRARY SPAN'S FIRST END PROMOTES ITS SECOND, exactly as the scan half does
+      // below: a draft left holding only an END has no slot that could ever fill the
+      // start again, so the mark would be unreachable and the pair unfinishable.
+      return draft.partSpan && draft.partPointEnd !== null
+        ? { ...draft, partPoint: draft.partPointEnd, partPointEnd: null }
+        : { ...draft, partPoint: null };
+    case "part-end":
+      return { ...draft, partPointEnd: null };
     case "scan":
       return draft.span && draft.scanPointEnd !== null
         ? { ...draft, scanPoint: draft.scanPointEnd, scanPointEnd: null }

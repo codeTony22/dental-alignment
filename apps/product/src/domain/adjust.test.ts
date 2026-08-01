@@ -722,6 +722,35 @@ describe("the library span — two points on the part, not one", () => {
     expect(d.span).toBe(true);
   });
 
+  it("shows FOUR slots — a four-click pair that lists three is lying about itself", () => {
+    // shipped broken: `pairSlots` predates the library span, so the operator placed
+    // four marks against a three-row checklist and the row for the second library
+    // click never appeared — there was no `undo` for it either
+    const slots = pairSlots(libSpan());
+    expect(slots.map((s) => s.key)).toEqual(["part", "part-end", "scan", "scan-end"]);
+    expect(slots[1]!.where).toContain("Library part");
+    expect(slots[1]!.label).toContain("OTHER end");
+  });
+
+  it("marks the library end placed once it is placed, so undo can reach it", () => {
+    let d = withPick(libSpan(), "part", [2, 0, 1]);
+    expect(pairSlots(d)[1]!.active).toBe(true);
+    d = withPick(d, "part", [2, 1, 1]);
+    expect(pairSlots(d)[1]!.placed).toBe(true);
+  });
+
+  it("undoes either library end, promoting the survivor like the scan side does", () => {
+    let d = withPick(withPick(libSpan(), "part", [2, 0, 1]), "part", [2, 1, 1]);
+    // the SECOND end alone
+    expect(withoutPick(d, "part-end").partPointEnd).toBeNull();
+    expect(withoutPick(d, "part-end").partPoint).toEqual([2, 0, 1]);
+    // the FIRST end promotes the survivor rather than stranding it — the scan half's
+    // own rule (a draft holding only an END has no slot that could fill the start)
+    const undone = withoutPick(d, "part");
+    expect(undone.partPoint).toEqual([2, 1, 1]);
+    expect(undone.partPointEnd).toBeNull();
+  });
+
   it("keeps the LIBRARY pane armed for the span's second click", () => {
     // without this the operator can start a library span and then find pane 1 dead —
     // the draft waits for a click no pane will accept
