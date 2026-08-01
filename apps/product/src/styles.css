@@ -5343,3 +5343,73 @@ button.package-files__link:hover {
   color: var(--color-text);
   background: rgba(255, 255, 255, 0.82);
 }
+
+/* THE CONSTRUCTION LIBRARY'S PART LIST (client 2026-08-01, page four).
+
+   Only the list needs rules of its own: the page's structure is the workbench's
+   existing two columns and its cards are plain `.panel`s, so there is no new layout
+   here — a fifth stage that invented its own page shell would be the drift the
+   shared primitives exist to prevent. */
+.library-parts__group + .library-parts__group {
+  margin-top: 12px;
+}
+
+.library-parts__vendor {
+  margin: 0 0 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3, #5c655f);
+}
+
+.library-parts__options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* One row, one act. Full width so the whole row is the target rather than the label —
+   a part list is picked with the eye, and a narrow hit area on a 356px column is a
+   miss waiting to happen. */
+.library-part {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  border: 1px solid var(--line, #dfe4e1);
+  border-radius: 9px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.library-part:hover:not(:disabled) {
+  border-color: var(--green-dark, #12994a);
+}
+
+.library-part:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* The SELECTED row carries a ring as well as a border: on a list this short the border
+   alone reads as hover, and the operator is about to spend a re-run on this choice. */
+.library-part--on {
+  border-color: var(--green-dark, #12994a);
+  background: #f2fbf5;
+  box-shadow: 0 0 0 2px rgba(18, 153, 74, 0.18);
+}
+
+.library-part__label {
+  font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

@@ -76,28 +76,30 @@ export function LibraryStageView({
   const previewTab = libraryPreviewTab(packageFiles);
 
   return (
-    <div data-role="library-stage" className="stage library-stage">
-      <header className="stage__head">
-        <h2 className="stage__title">Construction library</h2>
-        <p data-role="library-note" className="stage__lede">
-          {libraryNote(chosen)}
-        </p>
-      </header>
+    /* TWO CHILDREN, because `.stage-contents` is `display: contents` — a stage's own
+       children become the workbench grid's columns. The picker is a CONTROL, so it
+       belongs in the narrow work column beside every other stage's controls; the
+       union preview is the SUBJECT, so it takes the stage. Rendering one wrapper put
+       the whole page in the 356px control column (caught by running it, not by a
+       test — every assertion here is on markup, and markup cannot see a column). */
+    <>
+      <div data-role="library-stage" className="workbench__work">
+        {error !== null && <ErrorBanner detail={error} />}
 
-      {error !== null && <ErrorBanner detail={error} />}
-
-      <div className="library-stage__body">
         <section data-role="library-parts" className="panel">
-          <h3 className="panel__title">Parts</h3>
+          <h2 className="panel__title">Construction library</h2>
+          <p data-role="library-note" className="panel__hint">
+            {libraryNote(chosen)}
+          </p>
           {groups.length === 0 ? (
             <p className="panel__hint">
               This data tree carries no construction parts, so there is nothing to pick.
             </p>
           ) : (
             groups.map((group) => (
-              <div key={group.vendor} className="library-stage__group">
-                <p className="library-stage__vendor">{group.vendor}</p>
-                <ul className="library-stage__options">
+              <div key={group.vendor} className="library-parts__group">
+                <p className="library-parts__vendor">{group.vendor}</p>
+                <ul className="library-parts__options">
                   {group.options.map((option) => {
                     const active = option.path_id === (candidate ?? info.pathId);
                     return (
@@ -109,13 +111,13 @@ export function LibraryStageView({
                           data-active={active ? "true" : "false"}
                           className={
                             active
-                              ? "library-stage__part library-stage__part--on"
-                              : "library-stage__part"
+                              ? "library-part library-part--on"
+                              : "library-part"
                           }
                           disabled={saving}
                           onClick={() => onPick(option.path_id)}
                         >
-                          <span className="library-stage__part-name">{option.label}</span>
+                          <span className="library-part__label">{option.label}</span>
                           {option.path_id === info.pathId && (
                             <span className="chip chip--ready">
                               {info.suggested ? "suggested" : "selected"}
@@ -131,83 +133,88 @@ export function LibraryStageView({
           )}
         </section>
 
-        <section data-role="library-preview" className="panel">
-          <h3 className="panel__title">Preview</h3>
-          {/* NO PLACEHOLDER DISC. The design comp's preview reads no data at all and
-              wears the scan cap's palette, so porting it would depict the cap and imply
-              a union that is not there. Where the RUN has built a real unified mesh
-              this renders that; where it has not, the gap is stated. */}
-          {previewTab === null ? (
-            <p data-role="library-preview-pending" className="panel__hint">
-              {libraryPreviewPending()}
+        {candidate !== null && (
+          <section data-role="library-confirm" className="panel">
+            <p className="panel__hint">
+              {constructionChangeWords(
+                options.find((o) => o.path_id === candidate)?.label ?? candidate,
+                detail.session.confirmed,
+              )}
             </p>
-          ) : (
-            <>
-              <DeliverPreview caseId={caseId} tabs={[previewTab]} />
-              <p data-role="library-preview-caption" className="panel__hint">
-                {libraryPreviewCaption(info.label)}
-              </p>
-            </>
-          )}
+            <div className="panel__actions">
+              <button
+                type="button"
+                data-role="library-commit"
+                className="button button--primary button--small"
+                disabled={saving}
+                onClick={onCommit}
+              >
+                {constructionChangeRetiresSomething(detail.session)
+                  ? "Change the part and retire the run"
+                  : "Set this part"}
+              </button>
+              <button
+                type="button"
+                data-role="library-cancel"
+                className="button button--ghost button--small"
+                disabled={saving}
+                onClick={onCancel}
+              >
+                Keep the current part
+              </button>
+            </div>
+          </section>
+        )}
+
+        <section className="panel">
+          <div className="panel__actions">
+            <a
+              data-role="library-back"
+              className="button button--ghost button--small"
+              href={`/case/${caseId}/adjust`}
+            >
+              Back to Adjustment
+            </a>
+            {chosen ? (
+              <a
+                data-role="library-forward"
+                className="button button--primary button--small"
+                href={`/case/${caseId}/deliver`}
+              >
+                {libraryForwardLabel(true)}
+              </a>
+            ) : (
+              <span
+                data-role="library-forward"
+                className="button button--primary button--small"
+                aria-disabled="true"
+              >
+                {libraryForwardLabel(false)}
+              </span>
+            )}
+          </div>
         </section>
       </div>
 
-      {candidate !== null && (
-        <section data-role="library-confirm" className="panel panel--warn">
-          <p className="panel__hint">
-            {constructionChangeWords(
-              options.find((o) => o.path_id === candidate)?.label ?? candidate,
-              detail.session.confirmed,
-            )}
+      <section data-role="library-preview" className="workbench__stage">
+        {/* NO PLACEHOLDER DISC. The design comp's preview reads no data at all and
+            wears the scan cap's palette, so porting it would depict the cap and imply
+            a union that is not there. Where the RUN built a real unified mesh this
+            renders that; where it did not, the gap is stated. */}
+        {previewTab === null ? (
+          <p data-role="library-preview-pending" className="panel__hint">
+            {libraryPreviewPending()}
           </p>
-          <div className="panel__actions">
-            <button
-              type="button"
-              data-role="library-commit"
-              className="button button--primary button--small"
-              disabled={saving}
-              onClick={onCommit}
-            >
-              {constructionChangeRetiresSomething(detail.session)
-                ? "Change the part and retire the run"
-                : "Set this part"}
-            </button>
-            <button
-              type="button"
-              data-role="library-cancel"
-              className="button button--ghost button--small"
-              disabled={saving}
-              onClick={onCancel}
-            >
-              Keep the current part
-            </button>
-          </div>
-        </section>
-      )}
-
-      <footer className="stage__foot">
-        <a
-          data-role="library-back"
-          className="button button--ghost"
-          href={`/case/${caseId}/adjust`}
-        >
-          Back to Adjustment
-        </a>
-        {chosen ? (
-          <a
-            data-role="library-forward"
-            className="button button--primary"
-            href={`/case/${caseId}/deliver`}
-          >
-            {libraryForwardLabel(true)}
-          </a>
         ) : (
-          <span data-role="library-forward" className="button button--primary is-inert">
-            {libraryForwardLabel(false)}
-          </span>
+          <>
+            <DeliverPreview caseId={caseId} tabs={[previewTab]} />
+            <p data-role="library-preview-caption" className="panel__hint">
+              {libraryPreviewCaption(info.label)}
+            </p>
+          </>
         )}
-      </footer>
-    </div>
+      </section>
+    </>
   );
 }
 
