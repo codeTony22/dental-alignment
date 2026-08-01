@@ -10,6 +10,8 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  libraryPreviewCaption,
+  libraryPreviewTab,
   libraryForwardLabel,
   libraryNote,
   libraryPreviewPending,
@@ -1493,5 +1495,45 @@ describe("the construction library page's words", () => {
     const words = libraryPreviewPending();
     expect(words).toContain("not built yet");
     expect(words.toLowerCase()).not.toContain("preview of the boolean");
+  });
+});
+
+describe("the library page's own preview tab", () => {
+  const FILES = [
+    "case-lower.stl",
+    "case-arch-with-healingcaps.stl",
+    "case-arch-with-constructions.stl",
+    "case-29-prosthesis_cad.stl",
+  ];
+
+  it("is the run's OWN unified construction-in-arch mesh, matched by suffix", () => {
+    const tab = libraryPreviewTab(FILES);
+    expect(tab).not.toBeNull();
+    expect(tab!.filename).toBe("case-arch-with-constructions.stl");
+    expect(tab!.role).toBe("construction");
+  });
+
+  it("takes ONLY the unified view — not the cap arch, not a per-site part", () => {
+    // the client asked for construction AND scan unified in ONE view; the cap arch is
+    // the scan without constructions and the prosthesis is the part without the scan,
+    // so neither answers the ask and neither belongs on this page
+    const tab = libraryPreviewTab(FILES);
+    expect(tab!.filename).not.toContain("healingcaps");
+    expect(tab!.filename).not.toContain("prosthesis");
+  });
+
+  it("is ABSENT when the run emitted no unified mesh — an honest gap", () => {
+    expect(libraryPreviewTab(["case-lower.stl"])).toBeNull();
+    expect(libraryPreviewTab([])).toBeNull();
+  });
+
+  it("says WHICH part the preview shows, because it is the run's, not the pick's", () => {
+    const words = libraryPreviewCaption("Conical scanbody");
+    expect(words).toContain("Conical scanbody");
+    expect(words).toContain("re-run");
+  });
+
+  it("still states the gap when there is no unified mesh to show", () => {
+    expect(libraryPreviewPending()).toContain("not built yet");
   });
 });

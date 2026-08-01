@@ -24,6 +24,7 @@ function view(overrides: Partial<Parameters<typeof LibraryStageView>[0]> = {}) {
   return renderToStaticMarkup(
     <LibraryStageView
       detail={runnableDetail({ catalog: CATALOG })}
+      packageFiles={[]}
       saving={false}
       error={null}
       candidate={null}
@@ -94,5 +95,19 @@ describe("the construction library page", () => {
   it("renders the BFF's refusal verbatim when one arrives", () => {
     expect(view({ error: "the construction part is unknown to this data tree" }))
       .toContain("unknown to this data tree");
+  });
+
+  it("renders the RUN's own unified mesh when the package carries one", () => {
+    // the client's ask, answered with geometry that already exists: the library page
+    // is only reachable over a done run, so -arch-with-constructions.stl is on disk
+    const html = view({ packageFiles: ["case-arch-with-constructions.stl"] });
+    expect(html).not.toContain('data-role="library-preview-pending"');
+    expect(html).toContain('data-role="library-preview-caption"');
+    expect(html).toContain("cannot change it until the case is re-run");
+  });
+
+  it("shows the gap, not a fake, when the run built no unified mesh", () => {
+    const html = view({ packageFiles: ["case-lower.stl"] });
+    expect(html).toContain('data-role="library-preview-pending"');
   });
 });

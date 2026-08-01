@@ -738,3 +738,39 @@ condition it always meant — and the skip fork lands on the library rather than
 STILL OPEN: the confirmation's placement. The design's rail sub-line puts it on
 Adjustment ("tooling, reports, confirmation"), which is §10-I ruling 1 and remains
 unanswered; confirmation is untouched by this slice and still lives on Delivery.
+
+**M2. THE UNIFIED PREVIEW, ANSWERED WITH GEOMETRY THAT ALREADY EXISTED (2026-08-01).**
+
+§10-M shipped the library page stating that the client's "preview of the boolean with the
+construction and the scan unified in a view" was not built. That was true of the DESIGN's
+preview and false of the system: the run already emits exactly that mesh.
+
+`-arch-with-constructions.stl` (auto_flow.py:2471) is the arch with every site's
+construction part posed into it — construction ∪ scan, in one file. The library page is
+reachable ONLY over a done run (`flow.isReachable("library")`), so on this page that file
+is on disk by construction, `previewTabs` already matches it by suffix, and
+`GET /runs/current/preview-mesh/{filename}` already serves it behind the same done-run
+precondition. No new worker code, no new BFF route, no new geometry — the answer was one
+suffix match and a component that already existed.
+
+ONE TAB, not Deliver's three. Deliver shows the cap arch, the construction arch and the
+per-site prostheses because Deliver is reviewing everything that ships. This page asks one
+question — what does the construction look like ON the scan — so the cap arch (the scan
+WITHOUT constructions) and the prosthesis (the part WITHOUT the scan) are both off-topic
+and deliberately absent.
+
+WHAT THE CAPTION HAS TO SAY, and why it is not decoration: the mesh is the RUN's, built
+with the part the run used — not the one the operator is hovering over. Picking a
+different part cannot change the image until the case re-runs. Saying so is the whole
+difference between a preview and a promise; a surface that let the operator believe the
+picture tracked their selection would be claiming geometry nobody computed. That is the
+same rule the fit's chordal-direction note and the cross-check caution already follow.
+
+The gap words survive for the case they were written for: a run that emitted no such file
+renders the stated gap rather than a dead viewer, the same discipline `previewTabs`
+applies to every tab it cannot fill.
+
+STILL NOT BUILT, and now the only part that isn't: previewing a part the case has NOT run.
+That needs `emit_from_poses` (§10-M's hazard list) or a client-side compose of the catalog
+part mesh against each site's shipped pose. The second is cheaper than it looks — the page
+has the poses and `library.py` already serves a part mesh — and is the natural next slice.

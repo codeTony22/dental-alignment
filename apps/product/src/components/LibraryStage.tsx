@@ -22,9 +22,9 @@
  * never be redone. It is priced and not built, so this page tells the truth about the
  * cost rather than pretending it is free.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CaseSessionDetail } from "../api/client";
-import { putChoices } from "../api/client";
+import { fetchRun, putChoices } from "../api/client";
 import { constructionOptions } from "../domain/intake";
 import {
   constructionChangeRetiresSomething,
@@ -33,12 +33,19 @@ import {
   constructionStepWords,
   libraryForwardLabel,
   libraryNote,
+  libraryPreviewCaption,
   libraryPreviewPending,
+  libraryPreviewTab,
 } from "../domain/deliver";
+import { DeliverPreview } from "./DeliverPreview";
 import { ErrorBanner } from "./ErrorBanner";
 
 export interface LibraryStageViewProps {
   readonly detail: CaseSessionDetail;
+  /** The current run's own package list, from GET /{id}/run — the same source
+   *  Deliver's preview reads. Empty while it loads, which renders the honest gap
+   *  rather than a flash of a preview that is not there yet. */
+  readonly packageFiles: readonly string[];
   readonly saving: boolean;
   readonly error: string | null;
   /** A part picked but not yet committed — null unless it differs from the effective
@@ -51,6 +58,7 @@ export interface LibraryStageViewProps {
 
 export function LibraryStageView({
   detail,
+  packageFiles,
   saving,
   error,
   candidate,
@@ -63,6 +71,9 @@ export function LibraryStageView({
   const groups = constructionGroups(options);
   const chosen = info.pathId !== null;
   const caseId = detail.case.id;
+  // the run's OWN unified mesh, where it built one — this page is only reachable over
+  // a done run, so the file the route serves is on disk by construction
+  const previewTab = libraryPreviewTab(packageFiles);
 
   return (
     <div data-role="library-stage" className="stage library-stage">
@@ -123,11 +134,21 @@ export function LibraryStageView({
         <section data-role="library-preview" className="panel">
           <h3 className="panel__title">Preview</h3>
           {/* NO PLACEHOLDER DISC. The design comp's preview reads no data at all and
-              wears the scan cap's palette, so porting it would depict the cap and
-              imply a union that is not there. The gap is stated instead. */}
-          <p data-role="library-preview-pending" className="panel__hint">
-            {libraryPreviewPending()}
-          </p>
+              wears the scan cap's palette, so porting it would depict the cap and imply
+              a union that is not there. Where the RUN has built a real unified mesh
+              this renders that; where it has not, the gap is stated. */}
+          {previewTab === null ? (
+            <p data-role="library-preview-pending" className="panel__hint">
+              {libraryPreviewPending()}
+            </p>
+          ) : (
+            <>
+              <DeliverPreview caseId={caseId} tabs={[previewTab]} />
+              <p data-role="library-preview-caption" className="panel__hint">
+                {libraryPreviewCaption(info.label)}
+              </p>
+            </>
+          )}
         </section>
       </div>
 
@@ -200,6 +221,20 @@ export function LibraryStage({
   const [candidate, setCandidate] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [packageFiles, setPackageFiles] = useState<readonly string[]>([]);
+
+  // the run's own receipt, the same read Deliver's preview makes. A failure is not
+  // surfaced as an error here: the page's JOB is picking a part, and it does that with
+  // or without a preview — so a missing receipt degrades to the stated gap.
+  useEffect(() => {
+    let live = true;
+    void fetchRun(detail.case.id).then((result) => {
+      if (live && result.kind === "ok") setPackageFiles(result.data.package_files);
+    });
+    return () => {
+      live = false;
+    };
+  }, [detail.case.id]);
 
   const commit = async () => {
     if (candidate === null) return;
@@ -223,6 +258,7 @@ export function LibraryStage({
   return (
     <LibraryStageView
       detail={detail}
+      packageFiles={packageFiles}
       saving={saving}
       error={error}
       candidate={candidate}

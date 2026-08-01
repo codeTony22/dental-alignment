@@ -1342,6 +1342,46 @@ export function libraryForwardLabel(chosen: boolean): string {
  * `-arch-with-constructions.stl`, which is emitted after this page rather than before
  * it. So the panel states the gap rather than dressing it.
  */
+/**
+ * THE UNIFIED VIEW THE CLIENT ASKED FOR, where one already exists.
+ *
+ * "Preview of the boolean with the construction and the scan unified in a view" — and
+ * the run has already built exactly that: `-arch-with-constructions.stl` is the arch
+ * with every site's construction part posed into it. The library page is only reachable
+ * over a DONE run (`flow.isReachable`), so on this page that file is on disk and the
+ * existing preview-mesh route already serves it. No new worker code, no new geometry.
+ *
+ * ONE TAB, not three. Deliver shows the cap arch, the construction arch and the
+ * per-site parts because Deliver is reviewing everything that ships. This page is
+ * asking one question — what does the construction look like ON the scan — so the cap
+ * arch (the scan WITHOUT constructions) and the prosthesis (the part WITHOUT the scan)
+ * are both off-topic here.
+ *
+ * ABSENT rather than broken when the run carried no such file, the same discipline
+ * `previewTabs` already applies: an older run renders no preview rather than a dead one.
+ */
+export function libraryPreviewTab(
+  packageFiles: readonly string[],
+): PreviewTab | null {
+  return previewTabs(packageFiles, []).find(
+    (tab) => tab.key === "construction-in-arch",
+  ) ?? null;
+}
+
+/**
+ * WHOSE PART THE PREVIEW IS SHOWING. It is the RUN's — the part the emitted mesh was
+ * built with — which is not necessarily the one the operator is hovering over. Saying
+ * so is the difference between a preview and a promise: picking a different part
+ * cannot change this image until the case re-runs, and a surface that let the operator
+ * believe otherwise would be claiming geometry nobody computed.
+ */
+export function libraryPreviewCaption(label: string): string {
+  return (
+    `This is the run's own unified mesh, built with ${label}. Choosing a different ` +
+    `part cannot change it until the case is re-run.`
+  );
+}
+
 export function libraryPreviewPending(): string {
   return (
     "The unified construction-and-scan preview is not built yet — the only unified " +
