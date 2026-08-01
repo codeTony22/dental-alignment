@@ -772,7 +772,7 @@ export function IntakeStageView({
               className="button button--primary"
               to={`/case/${detail.case.id}/declare`}
             >
-              Continue to Declare
+              Continue to Alignment
             </Link>
           ) : (
             <span
@@ -780,7 +780,7 @@ export function IntakeStageView({
               aria-disabled="true"
               className="button button--secondary button--blocked"
             >
-              Continue to Declare — {blockedReason("declare", facts)}
+              Continue to Alignment — {blockedReason("declare", facts)}
             </span>
           )}
         </div>

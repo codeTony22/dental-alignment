@@ -544,7 +544,7 @@ describe("the way onward from Adjust's own rail", () => {
     expect(html).toContain('data-role="adjust-advance"');
     expect(html).toContain('data-role="adjust-back"');
     expect(html).toContain('data-role="adjust-forward"');
-    expect(html).toContain("Back to Declare");
+    expect(html).toContain("Back to Alignment");
   });
 
   it("says what leaving the rest of the queue costs — Declare's own words", () => {

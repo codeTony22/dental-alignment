@@ -621,7 +621,8 @@ export function DeclareStageView({
                line per site, what each tick actually stood on — tooth, declared cap,
                and the seat facts the preview produced. Short of that, the sites
                still owed are NAMED (the blockedReason doctrine).
-            2. THE FORK IS EXPLICIT. "Skip adjustments — go to Deliver" and "Adjust
+            2. THE FORK IS EXPLICIT. "Skip adjustments — go to the construction
+               library" and "Adjust
                the fits" replace one button that silently chose for the operator.
                Each RECORDS the decision (it rides into the evidence bundle) and then
                navigates. Reachability is untouched: skipping never closes Adjust. */}
@@ -662,7 +663,7 @@ export function DeclareStageView({
                   disabled={forkSaving !== "idle"}
                   onClick={onSkipAdjustments}
                 >
-                  Skip adjustments — go to Deliver
+                  Skip adjustments — go to the construction library
                 </button>
                 <button
                   type="button"
@@ -697,7 +698,11 @@ export function DeclareStageView({
                 aria-disabled="true"
                 className="button button--secondary button--blocked"
               >
-                Skip adjustments — {blockedReason("deliver", facts)}
+                {/* the reason for the page this fork LEADS TO. It quoted Deliver's,
+                    which since the library landed can read "pick a construction part
+                    in the library first" — advice about a page two stages on, offered
+                    as the reason this door is shut. */}
+                Skip adjustments — {blockedReason("library", facts)}
               </span>
               <span
                 data-role="fork-adjust"

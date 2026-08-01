@@ -1033,7 +1033,7 @@ export function AdjustStageView({
               className="button button--secondary"
               onClick={onBack}
             >
-              Back to Declare
+              Back to Alignment
             </button>
             {deliverBlockedReason === null ? (
               <button

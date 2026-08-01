@@ -329,6 +329,25 @@ describe("the moment of moving forward — the set faced, the fork explicit", ()
     expect(html).toContain("Nothing is flagged");
   });
 
+  it("names where the skip actually GOES — the library, not Delivery", () => {
+    // the fork skips the ADJUSTMENT stage, and since 2026-08-01 the next page is the
+    // construction library, not Delivery. The label said Deliver while the handler
+    // routed to /library — caught by walking the app, not by a test over markup.
+    const html = view({ detail: cleanRun() });
+    expect(html).toContain("construction library");
+    expect(html).not.toContain("go to Deliver");
+  });
+
+  it("a BLOCKED skip quotes the reason for the page it leads to", () => {
+    // it quoted Deliver's, which since the library landed can read "pick a
+    // construction part in the library first" — advice about a page two stages on,
+    // offered as the reason this fork is shut. The fork is gated on the library, so
+    // the library's reason is the only honest one to print.
+    const html = view();
+    expect(html).toMatch(/data-role="fork-skip"[^>]*aria-disabled="true"/);
+    expect(html).not.toContain("Pick a construction part in the library first");
+  });
+
   it("a recorded decision is shown, with the note that it rides into the evidence", () => {
     const decided = cleanRun();
     const html = view({
