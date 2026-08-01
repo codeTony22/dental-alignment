@@ -551,6 +551,77 @@ class TestCrossCheck:
         assert "mm" not in agreement_words(1, 0.451)
 
 
+# --- TOOL 1 OF THE CLIENT'S TWO (2026-08-01): THE LIBRARY SPAN ---------------------------
+#
+# "Fit by points needs to have TWO points in the library."
+#
+# The part half has always contributed ONE azimuth, and the span's expected bearing on
+# the part was therefore ASSUMED: the radial model, "both ends of a trench lie along the
+# radius through its azimuth". ``SPAN_RADIAL_TOLERANCE_DEG`` and the whole chordal-drop
+# branch exist for one reason — to catch that assumption failing.
+#
+# Spanning the SAME feature on the library replaces the assumption with a MEASUREMENT.
+# It buys no degree of freedom (the unknown is one scalar rotation, and it always was),
+# but it makes a reading VALID that the radial model has to throw away: a chord across a
+# feature, matched by a chord across the same feature, names a real angular difference.
+
+
+class TestTheLibrarySpanMeasuresWhatTheRadialModelAssumed:
+    def _chordal(self, part_direction):
+        """A scan span running 60° off its own radius — a CHORD across the feature,
+        which the radial model refuses to read a direction from."""
+        return observations_for(
+            Correspondence(scan_point=[2.0, -0.87, 0.0], scan_point_end=[2.0, 0.87, 0.0],
+                           part_point=[2.0, 0.0, 1.0]),
+            "point-1", part_azimuth=0.0, lever_mm=2.0, clicks=_flat_clicks(),
+            max_span_mm=8.0, audit={}, part_direction=part_direction)
+
+    def test_without_a_library_span_a_chord_still_loses_its_direction(self):
+        """The standing behaviour, unchanged where nothing new was said."""
+        obs = self._chordal(None)
+        assert [o.kind for o in obs] == ["midpoint"]
+        assert "chord across the feature" in (obs[0].note or "")
+
+    def test_a_chord_matched_by_a_LIBRARY_chord_keeps_its_direction(self):
+        """The whole value of the second library point. The scan span is the same
+        chord in both tests; what changed is that the part's bearing is now MEASURED
+        rather than assumed radial, so the two bearings are comparable and the reading
+        is real."""
+        obs = self._chordal(90.0)
+        assert [o.kind for o in obs] == ["midpoint", "direction"]
+        assert obs[1].note is None
+
+    def test_the_direction_is_read_against_the_LIBRARY_bearing_not_the_azimuth(self):
+        """The number itself, hand-computable: the scan chord bears 90° and the
+        library chord bears 90°, so they agree — the rotation this observation asks
+        for is 0°, NOT the 90° the radial model would have inferred from an azimuth
+        of 0°."""
+        obs = self._chordal(90.0)
+        assert obs[1].delta_deg == pytest.approx(0.0, abs=1e-6)
+
+    def test_a_library_span_says_which_reference_it_read_against(self):
+        """NOT SILENT (the doctrine). Two fits of the same clicks can now produce
+        different numbers, so the record must say which model each was read under —
+        the chordal-drop note's own precedent, applied to the reason a direction
+        COUNTED rather than the reason it did not."""
+        audit: dict = {}
+        observations_for(
+            Correspondence(scan_point=[2.0, -0.87, 0.0], scan_point_end=[2.0, 0.87, 0.0],
+                           part_point=[2.0, 0.0, 1.0]),
+            "point-1", part_azimuth=0.0, lever_mm=2.0, clicks=_flat_clicks(),
+            max_span_mm=8.0, audit=audit, part_direction=90.0)
+        assert audit["span"]["direction_reference"] == "library-span"
+
+    def test_the_radial_model_is_named_as_the_model_it_is(self):
+        audit: dict = {}
+        observations_for(
+            Correspondence(scan_point=[1.5, 0.0, 0.0], scan_point_end=[2.5, 0.0, 0.0],
+                           part_point=[2.0, 0.0, 1.0]),
+            "point-1", part_azimuth=0.0, lever_mm=2.0, clicks=_flat_clicks(),
+            max_span_mm=8.0, audit=audit, part_direction=None)
+        assert audit["span"]["direction_reference"] == "radial-model"
+
+
 # --- THE DISAGREEMENT THAT WAS MEASURED AND NEVER JUDGED ---------------------------------
 #
 # cap7030-zimmer-4.5 tooth 29, 2026-08-01: "fit by 3 point pair(s) → 3 observation(s):
@@ -821,6 +892,29 @@ class TestRefusalsBeforeAnyPhysics:
         with pytest.raises(AdjustInvalid) as exc:
             align_to_correspondence(_case(tmp_path), tmp_path, 13, pairs)
         assert "named twice" in str(exc.value)
+
+    def test_a_named_feature_cannot_carry_a_second_part_point(self, tmp_path):
+        """A LIBRARY SPAN IS ONLY EXPRESSIBLE ON THE FREE PART POINT (client
+        2026-08-01, tool 1). ``PartFeature`` carries azimuth, radius and z — no
+        direction and no extent — so a feature id has no second point to offer, and a
+        pair that claims one is asking for a bearing nothing can supply."""
+        pairs = [Correspondence(scan_point=[0.0, 0.0, 0.0],
+                                scan_point_end=[1.0, 0.0, 0.0],
+                                feature_id="trench-01",
+                                part_point_end=[2.0, 0.0, 1.0])]
+        with pytest.raises(AdjustInvalid) as exc:
+            align_to_correspondence(_case(tmp_path), tmp_path, 13, pairs)
+        assert "no second point" in str(exc.value)
+
+    def test_a_library_span_needs_a_scan_span_to_compare_against(self, tmp_path):
+        """A bearing on the part and a single click on the scan have nothing to
+        subtract: the direction observation needs both ends on BOTH halves."""
+        pairs = [Correspondence(scan_point=[0.0, 0.0, 0.0],
+                                part_point=[2.0, 0.0, 1.0],
+                                part_point_end=[2.0, 1.0, 1.0])]
+        with pytest.raises(AdjustInvalid) as exc:
+            align_to_correspondence(_case(tmp_path), tmp_path, 13, pairs)
+        assert "both ends on the scan" in str(exc.value)
 
     def test_a_run_with_no_shipped_pose_for_the_tooth_refuses(self, tmp_path):
         with pytest.raises(AdjustInvalid) as exc:

@@ -371,7 +371,7 @@ export function alreadyOptimalFrom(
 // --- fit by points: the drafts the operator builds ----------------------------------------
 
 /** Which half of a pair the next click fills. */
-export type PairSlot = "part" | "scan" | "scan-end" | "complete";
+export type PairSlot = "part" | "part-end" | "scan" | "scan-end" | "complete";
 
 /**
  * One correspondence the operator is building. The PART half is a free canonical-frame
@@ -389,18 +389,42 @@ export type PairSlot = "part" | "scan" | "scan-end" | "complete";
 export interface PairDraft {
   readonly id: string;
   readonly span: boolean;
+  /** THE LIBRARY SPAN (client 2026-08-01, tool 1): both ends of the same feature on
+   *  the PART, which turns the part's span bearing from an assumption into a
+   *  measurement. It buys no degree of freedom — the unknown is one scalar rotation —
+   *  but it makes a reading valid that the radial model must throw away: a chord
+   *  matched by a chord names a real angular difference. */
+  readonly partSpan: boolean;
   readonly partPoint: readonly number[] | null;
+  readonly partPointEnd: readonly number[] | null;
   readonly scanPoint: readonly number[] | null;
   readonly scanPointEnd: readonly number[] | null;
 }
 
-export function newPairDraft(id: string, span: boolean): PairDraft {
-  return { id, span, partPoint: null, scanPoint: null, scanPointEnd: null };
+export function newPairDraft(
+  id: string,
+  span: boolean,
+  partSpan = false,
+): PairDraft {
+  return {
+    id,
+    // A LIBRARY SPAN FORCES THE SCAN SPAN. A bearing and a single click have nothing
+    // to subtract, and the worker refuses the shape outright — so the surface cannot
+    // let the operator build one. Normalized here rather than validated later: an act
+    // that can only 422 should not be constructible.
+    span: span || partSpan,
+    partSpan,
+    partPoint: null,
+    partPointEnd: null,
+    scanPoint: null,
+    scanPointEnd: null,
+  };
 }
 
 /** What this draft still needs — the surface's prompt, and the pick router's target. */
 export function pairSlot(draft: PairDraft): PairSlot {
   if (draft.partPoint === null) return "part";
+  if (draft.partSpan && draft.partPointEnd === null) return "part-end";
   if (draft.scanPoint === null) return "scan";
   if (draft.span && draft.scanPointEnd === null) return "scan-end";
   return "complete";
@@ -411,7 +435,11 @@ export function pairPrompt(draft: PairDraft | null): string {
   if (draft === null) return "Start a pair to place marks.";
   switch (pairSlot(draft)) {
     case "part":
-      return "Click the feature on the LIBRARY PART (pane 1).";
+      return draft.partSpan
+        ? "Click ONE END of the feature on the LIBRARY PART (pane 1)."
+        : "Click the feature on the LIBRARY PART (pane 1).";
+    case "part-end":
+      return "Click the OTHER END of that feature on the LIBRARY PART.";
     case "scan":
       return draft.span
         ? "Click ONE END of that feature on the scan (pane 2 or 3)."
@@ -437,6 +465,9 @@ export function withPick(
 ): PairDraft {
   const slot = pairSlot(draft);
   if (pane === "part" && slot === "part") return { ...draft, partPoint: [...point] };
+  if (pane === "part" && slot === "part-end") {
+    return { ...draft, partPointEnd: [...point] };
+  }
   if (pane === "scan" && slot === "scan") return { ...draft, scanPoint: [...point] };
   if (pane === "scan" && slot === "scan-end") {
     return { ...draft, scanPointEnd: [...point] };
@@ -451,6 +482,9 @@ export function pairBody(draft: PairDraft): CorrespondencePairBody {
     part_point: [...(draft.partPoint ?? [])],
     scan_point: [...(draft.scanPoint ?? [])],
   };
+  if (draft.partSpan && draft.partPointEnd !== null) {
+    body.part_point_end = [...draft.partPointEnd];
+  }
   if (draft.span && draft.scanPointEnd !== null) {
     return { ...body, scan_point_end: [...draft.scanPointEnd] };
   }
@@ -600,7 +634,12 @@ export function autoMarkDrafts(landmarks: readonly LandmarkView[]): PairDraft[] 
   return landmarks.map((landmark) => ({
     id: `auto-${landmark.id}`,
     span: false,
+    // AUTO-MARK PROPOSES ONE POINT PER LANDMARK, and cannot propose a library SPAN:
+    // `clock_landmarks` inverts (azimuth, radius) to a single point, and `PartFeature`
+    // carries no extent to span. A second proposed point would have to be invented.
+    partSpan: false,
     partPoint: [...landmark.point],
+    partPointEnd: null,
     scanPoint: null,
     scanPointEnd: null,
   }));
@@ -641,10 +680,16 @@ export function autoMarkSummary(landmarks: readonly LandmarkView[]): string {
 
 /** One pair's own line in the list: what it is, and what it still needs. */
 export function pairWords(draft: PairDraft, index: number): string {
-  const name = `${index + 1}. ${draft.span ? "span" : "point"}`;
+  const name = `${index + 1}. ${
+    draft.partSpan ? "library span" : draft.span ? "span" : "point"
+  }`;
   switch (pairSlot(draft)) {
     case "part":
-      return `${name} — waiting for the part mark`;
+      return draft.partSpan
+        ? `${name} — waiting for one end on the library part`
+        : `${name} — waiting for the part mark`;
+    case "part-end":
+      return `${name} — waiting for the library span's other end`;
     case "scan":
       return `${name} — waiting for the scan mark`;
     case "scan-end":
@@ -785,7 +830,11 @@ const TRENCH_HINT = "Click the coded cutout — the cap rotates its nearest code
 function draftHint(draft: PairDraft): string | null {
   switch (pairSlot(draft)) {
     case "part":
-      return "Click the feature on the library part.";
+      return draft.partSpan
+        ? "Click ONE END of the feature here."
+        : "Click the feature on the library part.";
+    case "part-end":
+      return "Click the OTHER END of the feature here.";
     case "scan":
       return draft.span
         ? "Click ONE END of that feature here."
@@ -817,7 +866,9 @@ export function paneArming(
   trenchArmed: boolean,
 ): PaneArming {
   const slot = openDraft === null ? null : pairSlot(openDraft);
-  const wantsPart = slot === "part";
+  // BOTH library slots arm pane 1 — a library span's second click has nowhere else
+  // to land, and a draft waiting on a dead pane is a dead end the operator cannot see
+  const wantsPart = slot === "part" || slot === "part-end";
   const wantsScan = slot === "scan" || slot === "scan-end";
   const hint = openDraft === null ? null : draftHint(openDraft);
   const scanHint = trenchArmed ? TRENCH_HINT : wantsScan ? hint : null;

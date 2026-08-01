@@ -250,6 +250,45 @@ class TestTheValidationCorpus:
         assert pair.scan_point_end == [2.0, 0.0, 0.0]
         assert pair.is_span is True
 
+    def test_a_library_span_reaches_the_application_with_both_part_ends(
+            self, settings, product_root, monkeypatch):
+        """TOOL 1'S WIRE FORM (client 2026-08-01): a second PART point on the same
+        pair. The BFF adds no geometry here either — whether the bearing it names is
+        usable is the application's read, not this layer's."""
+        client, calls = tooled(settings, product_root, monkeypatch)
+        res = client.post(f"{BASE}/4/fit-by-points", json={"pairs": [{
+            "part_point": [1.5, 0.0, 1.0],
+            "part_point_end": [1.5, 1.0, 1.0],
+            "scan_point": [1.0, 0.0, 0.0],
+            "scan_point_end": [2.0, 0.0, 0.0]}]})
+        assert res.status_code == 200
+        (pair,) = calls[0]["args"][0]
+        assert pair.part_point_end == [1.5, 1.0, 1.0]
+        assert pair.is_part_span is True
+
+    def test_a_second_part_point_beside_a_named_feature_is_refused_at_the_wire(
+            self, settings, product_root, monkeypatch):
+        """A marked feature carries an azimuth and a radius, never a direction — so
+        this shape can never produce a bearing and is decidable from the ask alone.
+        The application refuses it too; refusing at the corpus keeps the round trip
+        off the physics entirely."""
+        client, calls = tooled(settings, product_root, monkeypatch)
+        res = client.post(f"{BASE}/4/fit-by-points", json={"pairs": [{
+            "feature_id": "trench-01",
+            "part_point_end": [1.5, 1.0, 1.0],
+            "scan_point": [1.0, 0.0, 0.0],
+            "scan_point_end": [2.0, 0.0, 0.0]}]})
+        assert res.status_code == 422
+        assert calls == []
+
+    def test_a_non_finite_part_span_end_is_refused_like_every_other_coordinate(
+            self, settings, product_root, monkeypatch):
+        client, _ = tooled(settings, product_root, monkeypatch)
+        res = client.post(f"{BASE}/4/fit-by-points", json={"pairs": [{
+            "part_point": [1.5, 0.0, 1.0], "part_point_end": [1.5, 1.0],
+            "scan_point": [1.0, 0.0, 0.0], "scan_point_end": [2.0, 0.0, 0.0]}]})
+        assert res.status_code == 422
+
 
 # --- the landing -----------------------------------------------------------------------------
 

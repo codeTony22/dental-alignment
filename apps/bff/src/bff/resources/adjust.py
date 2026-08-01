@@ -161,10 +161,11 @@ class PairIn(BaseModel):
 
     feature_id: Optional[str] = None
     part_point: Optional[List[float]] = None
+    part_point_end: Optional[List[float]] = None
     scan_point: List[float]
     scan_point_end: Optional[List[float]] = None
 
-    @field_validator("scan_point", "scan_point_end", "part_point")
+    @field_validator("scan_point", "scan_point_end", "part_point", "part_point_end")
     @classmethod
     def _finite_xyz(cls, v, info):
         return _finite_triple(v, info.field_name)
@@ -173,6 +174,15 @@ class PairIn(BaseModel):
     def _one_part_half(self):
         if (self.feature_id is None) == (self.part_point is None):
             raise ValueError("each pair needs exactly one of feature_id or part_point")
+        # A LIBRARY SPAN NEEDS A FREE PART POINT TO BE A SPAN OF. A PartFeature carries
+        # an azimuth and a radius and no direction, so this shape can never name a
+        # bearing — decidable from the ask alone, so it is refused at the corpus and
+        # never reaches the physics. The application refuses it too; both, deliberately,
+        # because the wire is not the only caller.
+        if self.part_point_end is not None and self.feature_id is not None:
+            raise ValueError("a named feature has no second point — it carries an "
+                             "azimuth and a radius, not a direction; span the library "
+                             "with two free part points instead")
         return self
 
 
@@ -704,7 +714,8 @@ def post_fit_by_points(case_id: str, tooth: int, body: FitByPointsIn,
     pairs give a QC number the operator can read: each observation's residual at its
     own lever arm, and their RMS."""
     pairs = [Correspondence(scan_point=p.scan_point, scan_point_end=p.scan_point_end,
-                            feature_id=p.feature_id, part_point=p.part_point)
+                            feature_id=p.feature_id, part_point=p.part_point,
+                            part_point_end=p.part_point_end)
              for p in body.pairs]
     return _apply_tool(request, case_id, tooth,
                        lambda case, run_dir: align_to_correspondence(

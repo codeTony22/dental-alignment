@@ -148,6 +148,12 @@ _NUDGE_BAND_REFUSAL_MM = 1.6      # rim-band >= 1.6-and-worsening refusal
 
 _MARK_MAX_DISTANCE_MM = 15.0      # a trench mark belongs ON the site, not across the arch
 _CORRESPONDENCE_MAX_PAIRS = 8
+# A span on the LIBRARY part cannot be longer than the part. Healing caps in this
+# catalog run 4-8mm across, so 12mm is past every one of them with room for a click's
+# slack — a bound that catches a mis-click on the far side of the pane without ever
+# limiting a real feature. (The SCAN side derives its own bound from the seated
+# template's rmax; the part side is checked before a template is in hand.)
+_PART_SPAN_MAX_MM = 12.0
 
 _BEST_FIT_DEFAULT_DIAMETER_MM = 0.3
 _BEST_FIT_MIN_DIAMETER_MM = 0.05
@@ -1125,10 +1131,19 @@ class Correspondence:
     scan_point_end: Optional[Sequence[float]] = None
     feature_id: Optional[str] = None
     part_point: Optional[Sequence[float]] = None
+    # THE LIBRARY SPAN (client 2026-08-01, tool 1): both ends of the SAME feature on
+    # the part, which turns the part's span bearing from an assumption into a
+    # measurement. Only legal beside ``part_point`` — a ``PartFeature`` carries no
+    # direction or extent, so a named feature has no second point to give.
+    part_point_end: Optional[Sequence[float]] = None
 
     @property
     def is_span(self) -> bool:
         return self.scan_point_end is not None
+
+    @property
+    def is_part_span(self) -> bool:
+        return self.part_point_end is not None
 
 
 @dataclass(frozen=True)
@@ -1160,8 +1175,8 @@ class Observation:
 
 
 def _part_half(pair: Correspondence, ann: PartAnnotation, centre_xy: np.ndarray,
-               model: str, variant: Optional[str], free_index: int) -> Tuple[str, float,
-                                                                             float, dict]:
+               model: str, variant: Optional[str],
+               free_index: int) -> Tuple[str, float, float, dict, Optional[float]]:
     """The pair's PART half → (label, azimuth_deg, lever_arm_mm, audit). The lever-arm
     rule is the demo's, verbatim: a landmark inside ``MIN_LEVER_ARM_MM`` of the part's
     rim centre names the AXIS, not a clock angle."""
@@ -1180,7 +1195,7 @@ def _part_half(pair: Correspondence, ann: PartAnnotation, centre_xy: np.ndarray,
                                 f"it names the axis, not a clock angle, and cannot "
                                 f"anchor a rotation")
         return (feature.id, feature.azimuth_deg, feature.radius_mm,
-                {"feature_id": feature.id})
+                {"feature_id": feature.id}, None)
     # FREE POINT: the positional label ("point-1", "point-2" in click order) is this
     # pair's identity everywhere downstream. Free points are measured about the SAME
     # rim centre a feature azimuth is named about (domain/part_features.
@@ -1197,20 +1212,53 @@ def _part_half(pair: Correspondence, ann: PartAnnotation, centre_xy: np.ndarray,
         raise AdjustInvalid(f"{label!r} sits {radius:.2f}mm from the part's rim "
                             f"centre — inside {MIN_LEVER_ARM_MM}mm it names the axis, "
                             f"not a clock angle, and cannot anchor a rotation")
-    return (label, float(np.degrees(np.arctan2(off[1], off[0]))), radius,
-            {"label": label, "part_point": [round(float(c), 3) for c in part_point]})
+    part_audit = {"label": label,
+                  "part_point": [round(float(c), 3) for c in part_point]}
+    if pair.part_point_end is None:
+        return (label, float(np.degrees(np.arctan2(off[1], off[0]))), radius,
+                part_audit, None)
+    # THE LIBRARY SPAN. Validated with the SCAN side's own span rule so one operator
+    # act cannot be judged two ways, and its MIDPOINT is what the lever-arm guard
+    # reads — the same discriminator the scan half uses, for the same reason: a
+    # library span across the screw access is a diameter through the part axis.
+    end = np.asarray(pair.part_point_end, float)
+    validate_span(part_point, end, label, _PART_SPAN_MAX_MM)
+    mid = (part_point[:2] + end[:2]) / 2.0
+    mid_off = mid - centre_xy
+    mid_radius = float(np.linalg.norm(mid_off))
+    if mid_radius < MIN_LEVER_ARM_MM:
+        raise AdjustInvalid(
+            f"the library span for {label!r} has its midpoint {mid_radius:.2f}mm from "
+            f"the part's rim centre — a span across the part's own axis names the "
+            f"axis, not a clock angle. Span a coded feature out on the part's face")
+    delta = end[:2] - part_point[:2]
+    direction = _fold_half_turn(float(np.degrees(np.arctan2(delta[1], delta[0]))))
+    part_audit["part_point_end"] = [round(float(c), 3) for c in end]
+    part_audit["part_direction_deg"] = round(direction, 1)
+    # the azimuth and arm are the MIDPOINT's, exactly as the scan half averages its
+    # own two clicks — an averaged click is the whole value of spanning
+    return (label, float(np.degrees(np.arctan2(mid_off[1], mid_off[0]))), mid_radius,
+            part_audit, direction)
 
 
 def observations_for(pair: Correspondence, label: str, part_azimuth: float,
                      lever_mm: float, clicks: SiteClicks, max_span_mm: float,
-                     audit: dict) -> List[Observation]:
+                     audit: dict,
+                     part_direction: Optional[float] = None) -> List[Observation]:
     """One pair's angular observations, and the audit record that replays them.
 
     A single point is the demo's math plus the scan-side lever guard:
     ``delta = click - part_azimuth``. A SPAN adds its midpoint (identical math, at the
     averaged click) and — when the span reads as RADIAL — its direction, disambiguated
     by that midpoint. Every observation leaves here already carrying the weight it will
-    be combined under and the lever arm its residual will be read at."""
+    be combined under and the lever arm its residual will be read at.
+
+    ``part_direction`` is the LIBRARY SPAN's own bearing (client 2026-08-01, tool 1),
+    present only when the operator spanned the same feature on the part. With it the
+    span's direction is read BEARING TO BEARING and the radiality gate does not apply:
+    that gate exists solely to detect the RADIAL MODEL failing, and where the part's
+    bearing was measured there is no model to fail. A chord matched by a chord is a
+    valid direction reading; a chord matched against an assumed radius is not."""
     if not pair.is_span:
         click_xy = clicks.to_canon_xy(pair.scan_point)
         require_clock_lever(
@@ -1243,8 +1291,17 @@ def observations_for(pair: Correspondence, label: str, part_azimuth: float,
         "direction_deg": round(readings.direction_deg, 1),
         "radial_offset_deg": round(readings.radial_offset_deg, 1),
     }
-    radial = abs(readings.radial_offset_deg) <= SPAN_RADIAL_TOLERANCE_DEG
+    # WHAT THE SPAN'S DIRECTION IS COMPARED AGAINST decides whether it counts at all.
+    # Measured (a library span): always — the two bearings are the same kind of
+    # quantity. Assumed (the radial model): only while the assumption holds.
+    measured = part_direction is not None
+    reference = float(part_direction) if measured else part_azimuth
+    radial = measured or abs(readings.radial_offset_deg) <= SPAN_RADIAL_TOLERANCE_DEG
     audit["span"]["direction_used"] = radial
+    # NAMED, NOT INFERRED: the same clicks now read differently under the two models,
+    # so the record says which one produced this number (the chordal-drop note's own
+    # precedent, applied to why a direction COUNTED).
+    audit["span"]["direction_reference"] = "library-span" if measured else "radial-model"
     note: Optional[str] = None
     if not radial:
         # NOT SILENT (the doctrine): the operator is told which half of their span
@@ -1265,7 +1322,7 @@ def observations_for(pair: Correspondence, label: str, part_azimuth: float,
         observations.append(Observation(
             label=label, kind="direction", part_azimuth_deg=part_azimuth,
             observed_deg=readings.direction_deg,
-            delta_deg=direction_delta(readings.direction_deg, part_azimuth,
+            delta_deg=direction_delta(readings.direction_deg, reference,
                                       midpoint_delta),
             # the residual reads at the PART's arm like every other observation of this
             # pair (they all miss the same marked feature); the span's IN-PLANE
@@ -1461,6 +1518,24 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
         raise AdjustInvalid(f"feature(s) {dupes} are named twice — one part feature "
                             f"cannot sit at two places on the scan")
 
+    # THE LIBRARY SPAN'S TWO IMPOSSIBLE SHAPES, refused here in the cheapest band
+    # (this whole prelude runs before a mesh is parsed) because both are decidable
+    # from the ask alone.
+    for pair in pairs:
+        if not pair.is_part_span:
+            continue
+        if pair.feature_id is not None:
+            raise AdjustInvalid(
+                f"{pair.feature_id!r} is a marked feature of the part, and a marked "
+                f"feature has no second point — it carries an azimuth and a radius, "
+                f"not a direction or an extent. Span the library with two free part "
+                f"points, or name the feature and click one spot on the scan")
+        if not pair.is_span:
+            raise AdjustInvalid(
+                "a library span was given both ends on the part but only one click "
+                "on the scan — a bearing and a point have nothing to subtract. Place "
+                "both ends on the scan too, or drop the second part point")
+
     ctx = load_site(case, run_dir, tooth)
     sig = template_signature(ctx.template)
     ann = PartAnnotation(model=ctx.model, variant=str(ctx.variant),
@@ -1478,7 +1553,7 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
     for pair in pairs:
         if pair.part_point is not None:
             free_count += 1
-        label, part_azimuth, lever, audit = _part_half(
+        label, part_azimuth, lever, audit, part_direction = _part_half(
             pair, ann, centre_xy, ctx.model, ctx.variant, free_count)
         for point in ([pair.scan_point] if not pair.is_span
                       else [pair.scan_point, pair.scan_point_end]):
@@ -1493,7 +1568,8 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
                                     f"on the cap itself (within "
                                     f"{_MARK_MAX_DISTANCE_MM:.0f}mm)")
         observations.extend(observations_for(pair, label, part_azimuth, lever,
-                                             clicks, max_span_mm, audit))
+                                             clicks, max_span_mm, audit,
+                                             part_direction=part_direction))
         audit_pairs.append(audit)
 
     # Rotating the part CCW by delta carries a feature at canonical azimuth f to

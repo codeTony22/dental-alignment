@@ -1168,6 +1168,10 @@ export async function fetchArtifactBlob(
 export interface CorrespondencePairBody {
   feature_id?: string;
   part_point?: number[];
+  /** THE LIBRARY SPAN (client 2026-08-01, tool 1). Legal only beside `part_point`: a
+   *  named feature carries an azimuth and a radius, never a direction, so it has no
+   *  second point to give — the BFF refuses that shape at the corpus. */
+  part_point_end?: number[];
   scan_point: number[];
   scan_point_end?: number[];
 }

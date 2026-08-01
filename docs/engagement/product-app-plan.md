@@ -550,3 +550,48 @@ renders identically to a 0.02mm one, which is a narrower version of the same com
 this item is written against); `data-role="span-caution"` now also carries single-mark
 refusals and should be renamed `mark-guard`; `ClockReference.rim_centre` should be a
 `readonly [number, number, number]` tuple rather than `number[]`.
+
+**J. THE LIBRARY SPAN — tool 1 of the client's two (2026-08-01; landed).**
+
+"Fit by points needs to have TWO points in the library." The client asked for both
+readings of that to exist as SEPARATE tools; this is the first.
+
+WHAT IT BUYS, stated precisely because the surface's wording invites the wrong answer:
+it adds NO degree of freedom. The unknown is one scalar rotation and always was, and two
+library points cannot constrain more than one library point plus a direction can. What it
+adds is that the part's span bearing stops being ASSUMED and becomes MEASURED. Today
+`observations_for` compares a scan span's bearing against the part half's AZIMUTH under
+the radial model — "both ends of a trench lie along the radius through its azimuth" — and
+`SPAN_RADIAL_TOLERANCE_DEG` plus the whole chordal-drop branch exist for one reason: to
+catch that assumption failing. Span the same feature on the library and the two bearings
+are the same kind of quantity, so a CHORD MATCHED BY A CHORD is a valid direction reading
+instead of a discarded one. Pinned on the same scan chord, 60° off its own radius: without
+a library span it yields one observation and a dropped direction; with one it yields two,
+and the direction asks for 0° rather than the 90° the radial model would have inferred.
+
+- `Correspondence.part_point_end` / `is_part_span`; `_part_half` measures the bearing and
+  guards the library span's MIDPOINT against `MIN_LEVER_ARM_MM` — the scan half's own
+  discriminator, for the same reason: a library span across the part's axis is a diameter
+  through it, and names the axis rather than a clock angle. The part span is validated by
+  `validate_span` against `_PART_SPAN_MAX_MM`, so one operator act is not judged two ways.
+- The audit carries `direction_reference: "library-span" | "radial-model"`. The same
+  clicks now produce different numbers under the two models, so the record says which one
+  it read under — the chordal-drop note's precedent, applied to why a direction COUNTED.
+- Only expressible beside a free `part_point`. A `PartFeature` carries azimuth, radius and
+  z — no direction, no extent — so a named feature has no second point to give, and
+  auto-mark cannot propose a library span without new part-annotation geometry. Refused in
+  BOTH the wire corpus and the application prelude, deliberately: the wire is not the only
+  caller, and the prelude runs before a mesh is parsed.
+- A library span FORCES the scan span (`newPairDraft` normalizes it). A bearing and a
+  single click have nothing to subtract; the worker refuses the shape, so the surface
+  cannot let the operator build it. An act that can only 422 should not be constructible.
+- `paneArming` arms pane 1 for BOTH library slots. It matched `slot === "part"` only, so
+  a started library span left pane 1 dead, waiting on a click no pane would accept —
+  found by writing the test first, not by using the app.
+
+STILL OPEN: tool 2 (visual matching). Now that tool 1 exists its distinct job is narrower
+than it looked, and the two readings need the client's own words before either is built:
+two library marks where the fit consumes only the FIRST changes no number, so this
+codebase's doctrine requires the surface to say so out loud; two library marks matched as
+INDEPENDENT pairs already changes numbers honestly (two observations clears the
+cross-check floor) and is a different build. Do not invent the product here.

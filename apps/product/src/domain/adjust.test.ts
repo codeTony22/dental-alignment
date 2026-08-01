@@ -685,6 +685,61 @@ describe("spanLeverCaution — warn before the span earns a 422", () => {
   });
 });
 
+describe("the library span — two points on the part, not one", () => {
+  const libSpan = () => newPairDraft("l1", true, true);
+
+  it("asks for the library's OTHER end before it looks at the scan", () => {
+    let d = libSpan();
+    expect(pairSlot(d)).toBe("part");
+    d = withPick(d, "part", [2, 0, 1]);
+    expect(pairSlot(d)).toBe("part-end");
+    d = withPick(d, "part", [2, 1, 1]);
+    expect(pairSlot(d)).toBe("scan");
+  });
+
+  it("names each library click in the prompt", () => {
+    let d = withPick(libSpan(), "part", [2, 0, 1]);
+    expect(pairPrompt(d)).toContain("OTHER END");
+    expect(pairPrompt(d)).toContain("LIBRARY");
+  });
+
+  it("carries both part ends onto the wire", () => {
+    let d = libSpan();
+    d = withPick(d, "part", [2, 0, 1]);
+    d = withPick(d, "part", [2, 1, 1]);
+    d = withPick(d, "scan", [1, 0, 0]);
+    d = withPick(d, "scan", [2, 0, 0]);
+    expect(isComplete(d)).toBe(true);
+    const body = pairBody(d);
+    expect(body.part_point_end).toEqual([2, 1, 1]);
+    expect(body.scan_point_end).toEqual([2, 0, 0]);
+  });
+
+  it("FORCES the scan span, because a bearing and a point cannot be subtracted", () => {
+    // the worker refuses a library span whose scan half is a single click; a surface
+    // that let the operator build one would be offering an act that can only 422
+    const d = newPairDraft("l2", false, true);
+    expect(d.span).toBe(true);
+  });
+
+  it("keeps the LIBRARY pane armed for the span's second click", () => {
+    // without this the operator can start a library span and then find pane 1 dead —
+    // the draft waits for a click no pane will accept
+    const waiting = withPick(libSpan(), "part", [2, 0, 1]);
+    const arming = paneArming(waiting, false);
+    expect(arming.armed.library).toBe(true);
+    expect(arming.armed.scan).toBe(false);
+    expect(arming.hints.library).toContain("OTHER END");
+  });
+
+  it("leaves an ordinary pair exactly as it was", () => {
+    const plain = newPairDraft("p1", false);
+    expect(plain.partSpan).toBe(false);
+    expect(pairBody(withPick(withPick(plain, "part", [2, 0, 1]), "scan", [1, 0, 0])))
+      .not.toHaveProperty("part_point_end");
+  });
+});
+
 describe("markLeverGuard — the server's own quantity, so the client may refuse", () => {
   const pose = { origin: [0, 0, 0], axis: [0, 0, 1] };
   // THE WHOLE POINT: the MEASURED rim centre is not the pose origin. That gap is why

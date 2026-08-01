@@ -137,7 +137,7 @@ export interface AdjustStageViewProps {
   readonly onArmTrench: () => void;
   /** Fit by points. */
   readonly drafts: readonly PairDraft[];
-  readonly onStartPair: (span: boolean) => void;
+  readonly onStartPair: (span: boolean, partSpan?: boolean) => void;
   readonly onRemovePair: (id: string) => void;
   /** Clear ONE mark, leaving the rest of the pair (client 2026-07-29). */
   readonly onRemovePoint: (id: string, slot: PairSlot) => void;
@@ -753,6 +753,21 @@ export function AdjustStageView({
                       onClick={() => onStartPair(true)}
                     >
                       Add a SPAN pair (both ends)
+                    </button>
+                    <button
+                      type="button"
+                      data-role="start-library-span-pair"
+                      className="button button--secondary button--small"
+                      disabled={busy || openDraft !== null}
+                      title={
+                        "Span the SAME feature on both halves — two clicks on the " +
+                        "library part, two on the scan. The part's bearing stops being " +
+                        "assumed radial and becomes measured, which makes a chord " +
+                        "across a feature a reading the server can use instead of drop."
+                      }
+                      onClick={() => onStartPair(true, true)}
+                    >
+                      Add a LIBRARY SPAN pair (both halves)
                     </button>
                   </div>
                   <PairsList
@@ -1615,10 +1630,10 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       trenchArmed={trenchArmed}
       onArmTrench={() => setTrenchArmed((now) => !now)}
       drafts={drafts}
-      onStartPair={(span) =>
+      onStartPair={(span, partSpan = false) =>
         setDrafts((current) => [
           ...current,
-          newPairDraft(`pair-${current.length + 1}-${Date.now()}`, span),
+          newPairDraft(`pair-${current.length + 1}-${Date.now()}`, span, partSpan),
         ])
       }
       onRemovePair={(id) => setDrafts((current) => current.filter((d) => d.id !== id))}
