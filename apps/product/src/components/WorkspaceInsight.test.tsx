@@ -38,8 +38,10 @@ describe("the toggle names what the popover can actually offer", () => {
      there is no active site — the instance is permanently tooth-less, and a label
      promising site numbers there would promise a section that always reads "no active
      site". The label follows the tooth: with one, both halves; without, the log. */
-  it("says 'Site numbers & case log' when a site is active", () => {
-    expect(view({ tooth: 19 })).toContain("Site numbers &amp; case log");
+  it("names both halves when a site is active", () => {
+    // abbreviated to fit the comp's single-row strip; it still labels CONTENT and
+    // never promises a verdict, which is the rule the wording answers to
+    expect(view({ tooth: 19 })).toContain("Numbers &amp; log");
   });
 
   it("says 'Case log' alone when no site is active — the header's standing state", () => {
@@ -53,7 +55,7 @@ describe("closed — the toggle only, nothing else", () => {
   it("renders the labelled toggle, collapsed", () => {
     const html = view({ open: false });
     expect(html).toContain('data-role="insight-toggle"');
-    expect(html).toContain("Site numbers &amp; case log");
+    expect(html).toContain("Numbers &amp; log");
     expect(html).toMatch(/data-role="insight-toggle"[^>]*aria-expanded="false"/);
   });
 

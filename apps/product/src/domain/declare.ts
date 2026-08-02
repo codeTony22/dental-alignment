@@ -1060,6 +1060,12 @@ function mmWordsOr(value: unknown, absent: string): string {
  */
 export type ViewPresetId = "occlusal" | "side-a" | "side-b";
 
+/* THE LABELS ARE ABBREVIATED (comp, read directly 2026-08-02: its own strip reads
+   "occ · buc · mes"). Ours keep the honest names — "side A/B" rather than the comp's
+   anatomical buccal/mesial, because those need a measured roll and naming them where
+   there is none is the lie this app already refused — so only the visible text
+   shortens. The full sentence stays in `title`, which is the only place the operator
+   learns what the direction means. */
 export const VIEW_PRESETS: readonly {
   readonly id: ViewPresetId;
   readonly label: string;
@@ -1069,12 +1075,12 @@ export const VIEW_PRESETS: readonly {
 }[] = [
   {
     id: "occlusal",
-    label: "occlusal",
+    label: "occ",
     title: "Straight down the seated axis — the top of the cap, each pane's own framing.",
   },
   {
     id: "side-a",
-    label: "side A",
+    label: "A",
     title:
       "Side on, a quarter turn off this site's clock reference — the cap's axis stands " +
       "up on screen. The clock reference is the seated pose's own, shared by all three " +
@@ -1082,7 +1088,7 @@ export const VIEW_PRESETS: readonly {
   },
   {
     id: "side-b",
-    label: "side B",
+    label: "B",
     title:
       "Side on, down this site's clock reference itself — the cap's axis stands up on " +
       "screen. A quarter turn from side A, and like it not an arch direction.",

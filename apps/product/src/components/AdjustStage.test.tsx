@@ -107,12 +107,17 @@ describe("the drawer head is one row, not a stack (client 2026-08-02)", () => {
      re-read row, then the tabs: three bands before any tool. The heading and the
      re-read act now share one head row; the clock notice, when present, keeps its
      own full-width line below (it is a paragraph, not a control). */
-  it("wraps the title and the re-read act in one head container", () => {
+  it("leads with the acts, not with a heading the tabs already say", () => {
+    /* The comp's tool panel opens straight on its tabs — there is no "Tools — tooth N"
+       line above them, because the tabs and the site chip in the toolbar already say
+       both halves of it. Dropping it buys the panes a row (client 2026-08-02: match
+       the designs). */
     const html = view();
+    expect(html).not.toContain("Tools — tooth");
     const head = html.slice(html.indexOf('data-role="drawer-head"'));
-    const inHead = head.slice(0, head.indexOf("</div>") + 6);
-    expect(inHead).toContain("Tools —");
+    const inHead = head.slice(0, head.indexOf('data-role="tool-tabs"'));
     expect(inHead).toContain('data-role="re-preview"');
+    expect(inHead).toContain('data-role="drop-site"');
   });
 });
 

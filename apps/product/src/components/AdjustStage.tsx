@@ -717,10 +717,9 @@ export function AdjustStageView({
                 its own full-width line below, because it is a paragraph of fact,
                 not a control. */}
             <div data-role="drawer-head" className="drawer-head">
-            <h3 className="panel__title">
-              {active !== null ? `Tools — tooth ${active.tooth}` : "Tools"}
-            </h3>
-
+            {/* NO HEADING. The comp's tool panel opens straight on its tabs, and it is
+                right to: the tabs name the tool and the toolbar's site chip names the
+                tooth, so "Tools — tooth 3" was a row restating both. */}
             {/* RE-PREVIEW AND THE UNVERIFIED-CLOCK NOTICE BOTH SIT HERE, ABOVE
                 ToolTabs — neither is any one correction tool's act (a re-read applies
                 nothing; the notice is a standing fact about the site), so both must

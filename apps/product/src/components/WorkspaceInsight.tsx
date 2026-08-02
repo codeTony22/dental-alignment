@@ -326,7 +326,7 @@ export function WorkspaceInsightView({
         {/* The label follows the tooth: a tooth-less instance (the case header's, and a
             workspace between sites) would otherwise promise a section that always
             reads "no active site". */}
-        {tooth !== null ? <>Site numbers &amp; case log</> : <>Case log</>}
+        {tooth !== null ? <>Numbers &amp; log</> : <>Case log</>}
       </button>
       {open && (
         <section

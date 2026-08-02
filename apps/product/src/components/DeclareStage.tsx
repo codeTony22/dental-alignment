@@ -511,7 +511,7 @@ export function WorkspaceToolbar({
              effect the moment three panes are back on screen. */
           title="Rotate all three panels together (same angles and zoom, each around its own content)"
         >
-          {linked ? "⛓ views linked" : "⛓ link views"}
+          {linked ? "⛓ linked" : "⛓ link"}
         </button>
       )}
       <span data-role="alignment-strip" className="workspace-toolbar__metrics">

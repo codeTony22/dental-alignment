@@ -6203,3 +6203,63 @@ button.package-files__link:hover {
 .declare-controls .decode-archive__title {
   font-size: 11px;
 }
+
+/* ===== MATCHING THE COMP'S WORKSPACE CHROME (client 2026-08-02, comp read directly) =
+   Rendered the comp side by side at 1512x950. Its workspace toolbar is ONE row —
+   site chip, view pills, zoom, link on the left; the stat strip right-aligned on the
+   SAME line: "ALIGNMENT ready · VARIANT 4530 · MAX DEV 0.07 mm · ROTATION 0° · PAIRS
+   0/8 · budget & log". Ours wrapped to two because each pill stacked a label over its
+   value and carried a full border. Inline, hairline-free, tabular: the strip fits the
+   line and the panes take the row back.
+
+   What does NOT port, and why our strip is one item longer: the comp's MAX DEV is its
+   client-side deviation() against a client-side tolerance. Ours publishes the run's own
+   DEV RMS and DEV P90 — two server numbers instead of one invented one. */
+.workspace-toolbar__stat {
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.workspace-toolbar__stat-key {
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  color: var(--color-text-muted);
+}
+
+.workspace-toolbar__stat-value {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Separators instead of boxes — the comp's own rhythm for the strip. */
+.workspace-toolbar__stat + .workspace-toolbar__stat {
+  padding-left: 10px;
+  border-left: 1px solid var(--color-border);
+}
+
+.workspace-toolbar__metrics {
+  gap: 8px;
+  /* the strip ends the row, as the comp has it */
+  margin-left: auto;
+}
+
+/* THE QUEUE COLUMN IS A LIST, NOT A CARD (comp). Its heading is a micro-caps label over
+   a one-line note; the bordered panel around it was ours, and on a 168px column a card
+   inside a column reads as a box inside a box. */
+.workbench:has(.workbench__stage--split) .workbench__work .panel {
+  border: none;
+  background: none;
+  padding: 0;
+}
+
+.workbench:has(.workbench__stage--split) .workbench__work .panel__title {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  font-weight: 700;
+  margin-bottom: 4px;
+}

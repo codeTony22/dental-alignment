@@ -1049,3 +1049,39 @@ render the palette's steel blue `#7d93b8`, and `PartPreview` passes `PALETTE.con
 explicitly. The only green in a preview is the CAP view, which is the established
 convention Deliver's own advisory text relies on ("visually confirm the green cap covers
 the scanned cap in view 1").
+
+**W. THE COMP, READ DIRECTLY AT LAST (2026-08-02).** The file finally reached a readable
+path (macOS TCC blocks ~/Downloads for this process even unsandboxed; the client copied
+it out). It is a bundler-packed standalone: base64+gzip assets in a `__bundler/manifest`
+script with the real markup in `__bundler/template`. Unpacked, served on :8777 and
+rendered side by side with ours at 1512x950 — so this section is measured against the
+comp running, not against notes.
+
+**Confirmed, and now first-hand rather than second:** the comp's `deviation()`,
+`verdict()`, `tol()` and its budget bars' `f: value/tol` are all client-side arithmetic
+(`comp-body.html`, the `Component` class). Its MAX DEV pill is `this.deviation(site)`.
+Its `pushLog` is a browser array. None of it ports; all of it is already refused.
+
+**Ported:**
+- **The stat strip is inline** — micro-caps key, value, hairline separators, no per-pill
+  box. That is the comp's own rhythm and it is what let its toolbar be ONE row.
+- **The tool panel opens on its tabs.** The comp has no "Tools — tooth N" heading: the
+  tabs name the tool and the toolbar's chip names the tooth.
+- **The queue column is a list, not a card** — micro-caps label over a one-line note,
+  no panel border. A card inside a 168px column reads as a box inside a box.
+- **Abbreviated control labels** (`occ / A / B`, `⛓ link`, `Numbers & log`) — the comp's
+  own instinct (`occ · buc · mes`). Ours keep "side A/B" rather than the comp's
+  anatomical buccal/mesial: those need a measured roll, and naming a direction the app
+  cannot compute is the lie §10 already refused. The meanings stay in `title`.
+
+**Deliberately NOT matched, with the reason:**
+- **Our toolbar still wraps to a second line at 1512.** Measured: the row needs 1356px of
+  1308. The remaining excess is content the comp does not carry — it shows ONE invented
+  MAX DEV where we show the run's own DEV RMS **and** DEV P90, each with a `(run)` /
+  `(preview)` qualifier naming where the number came from. The comp needs no such
+  qualifier because its number has no source. Dropping either would buy the row by
+  spending provenance, so the row wraps.
+- The comp's re-preview button reads "re-preview — this will pass" — a promise of an
+  outcome, already recorded as forbidden. Ours reads "Re-read this site's numbers".
+- The comp's variant chips + system dropdown on one row under the panes is exactly what
+  §10-V restored, independently — the client's reversal and the comp agree.
