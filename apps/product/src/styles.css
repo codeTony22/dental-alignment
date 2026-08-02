@@ -3319,6 +3319,20 @@ button.package-files__link:hover {
 .workbench__stage .verify-panels__grid {
   grid-auto-rows: minmax(220px, 1fr);
 }
+
+/* THE UNION PANE IS WIDER AT THREE-ACROSS (client comp: `1fr 1fr 1.24fr`).
+   It already takes the full row when the panes wrap two-up, for the reason written
+   below — alone on its row at half width it read as an afterthought rather than the
+   verdict. The same argument holds at three-across, where it was simply one of three
+   equals: it is the pane carrying the deviation colouring, its ramp and its RMS/p90,
+   so it needs the most room to be read, not the same as the two inputs to it.
+
+   Stated here rather than on the base rule at .verify-panels__grid, which is inside
+   the region copied verbatim from the frozen demo — this is a product-only judgement
+   and does not belong in that copy. */
+.workbench__stage .verify-panels__grid:not(.verify-panels__grid--maximized) {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.24fr);
+}
 .workbench__stage .verify-panel {
   min-height: 0;
 }
