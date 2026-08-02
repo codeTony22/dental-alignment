@@ -1194,3 +1194,40 @@ describe("the three main artifacts, previewed under the report button (client 20
     );
   });
 });
+
+/**
+ * THE COMP'S PAGE CLOTHES (page pass 2026-08-02, §10-AA): Delivery is a centered
+ * PAGE — title row leading with the signing-off lead, the progression and the
+ * evidence as its two card columns. The re-dress moves NO pinned region's internal
+ * order: disclosure still precedes release, lines still precede the total, the
+ * blocker list still renders once per confirm site.
+ */
+describe("the comp's page clothes", () => {
+  it("wears the centered page with the title row leading", () => {
+    const html = view();
+    expect(html).toMatch(/data-role="deliver-stage"[^>]*class="stage-page/);
+    const headAt = html.indexOf('class="deliver-page__head"');
+    const bodyAt = html.indexOf('class="deliver-page__body"');
+    expect(headAt).toBeGreaterThanOrEqual(0);
+    expect(bodyAt).toBeGreaterThan(headAt);
+    const head = html.slice(headAt, bodyAt);
+    expect(head).toContain(">Delivery<");
+    expect(head).toContain("signing off");
+  });
+
+  it("keeps the door back in the title row once something is signed", () => {
+    const html = view({ detail: deliverableDetail(CONFIRMED) });
+    const head = html.slice(
+      html.indexOf('class="deliver-page__head"'),
+      html.indexOf('class="deliver-page__body"'),
+    );
+    expect(head).toContain('data-role="delivery-reset"');
+  });
+
+  it("the lead names the effective part only when one is effective", () => {
+    // the fixture's effective construction is honestly absent — the lead must not
+    // invent a part name for it (the comp's lead assumes one always exists)
+    const html = view();
+    expect(html).not.toContain("null for");
+  });
+});

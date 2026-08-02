@@ -1217,3 +1217,14 @@ is one `:has()` rule flipping the workbench's columns for this stage alone; the 
 rows travelled markup-whole (every role, verbatim sentence, source chip and the
 no-invented-confidence rule untouched, their panel chrome flattened by CSS inside the
 scan panel).
+
+**AA.4 — Delivery as the comp's page.** Centered `.stage-page` with the comp's title
+row: "Delivery" + the lead naming the served part and site count — the part clause
+DROPS when nothing is effective (the comp's lead assumes one always exists), and the
+comp's "then pay to release" causality is not repeated: the lead states the three acts
+as separate, which is what they are (O.1). The door back rides the title row. The
+progression and the evidence become two card columns with their DOM order untouched —
+every within-region ordering pin (disclosure before release, lines before total, terms
+above confirm, one blocker list per confirm site, open-report before previews) stands
+unmoved. The steps panel's own "Delivery" h3 retired into the page title; the reset
+button kept its role and words.

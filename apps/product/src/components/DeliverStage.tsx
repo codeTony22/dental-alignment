@@ -859,50 +859,72 @@ export function DeliverStageView({
     </button>
   );
 
+  // The comp's lead (its L1673-1674) names the part and the site count; here both
+  // clauses are served facts, and the part clause DROPS when nothing is effective —
+  // the comp's lead assumes a part always exists, this one refuses to invent it.
+  const leadPart = constructionStepWords(
+    detail.choices,
+    constructionOptions(detail),
+  );
+  const leadCount = detail.sites.length;
   return (
-    // Two regions for the workbench grid: the DELIVERY progression takes the work
-    // column (it is the thing being driven); the evidence takes the stage.
-    <div data-role="deliver-stage" className="stage-contents">
-      <div className="workbench__work">
-        {/* the 409 re-confirm flow: the BFF's words + the one honest next move —
-            amber: the evidence moved, nothing failed */}
-        {staleWords !== null && (
-          <div data-role="reconfirm" role="alert" className="switch-confirm">
-            <p className="switch-confirm__words">{staleWords}</p>
-            <div className="switch-confirm__actions">
-              <button
-                type="button"
-                className="button button--secondary button--small"
-                onClick={onReloadEvidence}
-              >
-                Reload the evidence to re-confirm
-              </button>
-            </div>
+    /* ONE CENTERED PAGE (comp page pass 2026-08-02, §10-AA): the comp's Delivery is
+       a title row over stacked cards. The progression and the evidence keep their
+       DOM order (work first — every within-region ordering pin stands); the page
+       spans both workbench columns via .stage-page. */
+    <div data-role="deliver-stage" className="stage-page stage-page--deliver">
+      <div className="stage-page__inner">
+        <header className="deliver-page__head">
+          <div className="deliver-page__head-text">
+            <h2 className="stage-page__title">Delivery</h2>
+            <p className="stage-page__lead">
+              {leadPart.pathId !== null ? `${leadPart.label} for ` : ""}
+              {leadCount} site{leadCount === 1 ? "" : "s"}. These are the alignment
+              metrics you are signing off — review them over the evidence;
+              confirming, paying and releasing are each their own act, in that
+              order.
+            </p>
           </div>
-        )}
+          {(detail.session.confirmation !== null ||
+            detail.session.payment_authorized ||
+            detail.session.released) && (
+            /* THE DOOR BACK (client 2026-07-30: "once paid i cant go back").
+               Withdraws the confirmation, the payment and the release TOGETHER —
+               an explicit act against real server state, not a demo mode where the
+               money record evaporates. The run and every site rung survive; the
+               second walk re-derives and re-seals through the same gates. */
+            <button
+              type="button"
+              data-role="delivery-reset"
+              className="button button--ghost button--small delivery-reset"
+              disabled={phase !== "idle"}
+              onClick={onStartOver}
+            >
+              Start over (demo) — withdraw confirmation, payment &amp; release
+            </button>
+          )}
+        </header>
 
-        <section className="panel">
-          <h3 className="panel__title">
-            Delivery
-            {(detail.session.confirmation !== null ||
-              detail.session.payment_authorized ||
-              detail.session.released) && (
-              /* THE DOOR BACK (client 2026-07-30: "once paid i cant go back").
-                 Withdraws the confirmation, the payment and the release TOGETHER —
-                 an explicit act against real server state, not a demo mode where the
-                 money record evaporates. The run and every site rung survive; the
-                 second walk re-derives and re-seals through the same gates. */
-              <button
-                type="button"
-                data-role="delivery-reset"
-                className="button button--ghost button--small delivery-reset"
-                disabled={phase !== "idle"}
-                onClick={onStartOver}
-              >
-                Start over (demo) — withdraw confirmation, payment &amp; release
-              </button>
+        <div className="deliver-page__body">
+          <div className="deliver-page__work">
+            {/* the 409 re-confirm flow: the BFF's words + the one honest next move —
+                amber: the evidence moved, nothing failed */}
+            {staleWords !== null && (
+              <div data-role="reconfirm" role="alert" className="switch-confirm">
+                <p className="switch-confirm__words">{staleWords}</p>
+                <div className="switch-confirm__actions">
+                  <button
+                    type="button"
+                    className="button button--secondary button--small"
+                    onClick={onReloadEvidence}
+                  >
+                    Reload the evidence to re-confirm
+                  </button>
+                </div>
+              </div>
             )}
-          </h3>
+
+            <section className="panel">
           {/* THE VISIBLE PROGRESSION (client 2026-07-27 #6): three steps, each
               stating what it is — done with its time, current with its act, waiting
               with what it needs. No step is ever inert without saying why. */}
@@ -1283,11 +1305,11 @@ export function DeliverStageView({
             {actionError}
           </div>
         )}
-      </div>
+          </div>
 
-      {checkoutDialog}
-      <div className="workbench__stage">
-        <section className="panel deliver-evidence" aria-label="Assurance evidence">
+          {checkoutDialog}
+          <div className="deliver-page__evidence">
+            <section className="panel deliver-evidence" aria-label="Assurance evidence">
           <h3 className="panel__title">
             Assurance — worst first
             <span className="panel__title-case"> · {detail.case.id}</span>
@@ -1433,6 +1455,8 @@ export function DeliverStageView({
             </>
           )}
         </section>
+          </div>
+        </div>
       </div>
 
       {/* THE REPORT MODAL (client 2026-07-27 #5) — the demo's dialog chrome: a fixed
