@@ -924,3 +924,44 @@ one pins that no brand bar renders there, so the two halves cannot both quietly 
 The reclaimed ~56px went straight to the panes: at 1512x950 all three are visible on Adjust
 where the union pane previously needed a scroll (§10-P.2), which is a real dent in that
 still-open item without touching the drawer/advance split.
+
+**S. THE ALIGNMENT PAGE'S SECOND SCROLL, AND THE CARD PICKERS (client 2026-08-02).**
+Their words: "view needs also to see the 3 panels, there is a lot of real estate for the
+buttons … The second scroll section is uncomfortable, hides the 3 vertical panels view
+side by side. the implant variant selection needs to be drop down. The confirmation
+button is in a weird spot. There is multiple scrolling sections here which is really
+weird, we need to be more cohesive and organized about the information we show."
+
+What changed, and the reasoning each change carries in-code:
+
+1. **The two-across pane tier is dead.** `paneColumns` and the ≤1600px media block wrapped
+   the panes two-up on the guess that three-across is slivers at 1440 — but two-up ALWAYS
+   puts the union pane on a second row, and a second row is a scroll at every height this
+   app runs at, so the tier hid the verdict pane to protect the width of its inputs.
+   Three across down to 1180px, where the shell itself stacks. One row means the grid
+   never scrolls and the chrome ladder stops engaging at ordinary window sizes — the
+   1280x800 fixtures that pinned "compact" now honestly pin "full", and the ladder's
+   fixtures hand it real height scarcity instead.
+2. **Both pickers are selects on one slim row.** The system cards and the six variant
+   cards were the second scroll. Every claim the cards made moved INTO the options — dims,
+   the declared one selected (controlled by the server's fact), detection's proposal
+   attributed and vanishing on declaration, the superseded shelf a labelled optgroup —
+   and the switch-consent ceremony is untouched: the system select ASKS, springs back
+   until consented.
+3. **The advance is one band.** `.panel__actions--advance` stacks as a column for the
+   work-column footers it was born in; inside `.workspace-advance` that made
+   `flex: 1 1 260px` mean 260px of HEIGHT — a one-line attestation summary in 84px of
+   grey, and the bar overflowing into its own scrollbar (230 > 195, the "weird" scroll).
+   Across the stage's foot it reads left-to-right: the set faced, its consequence, the
+   two doors — which are now natural-width `button--small`, ending the bar instead of
+   dominating it.
+4. **The confirmation stays under the panes it attests** — its weirdness was the scroll
+   fragmentation around it, not its position; with one coherent stack it reads as the
+   panes' own footer.
+5. **Intake's choices card**: overrides only (the `.decode-*` bases are the demo's copy,
+   below-marker overrides beat diverging it) — consistent 34px controls, an inlined-SVG
+   chevron, the app's green focus ring instead of the UA blue, the jaw pair as one
+   segmented control, the ceiling line styled as the readout it is.
+
+Verified by opening it at 1512x950 and 1280x800: three panes side by side on BOTH
+workspace stages, `stageScrollers: []`, document scroll 0.

@@ -207,15 +207,18 @@ describe("SitePanesView — the subtitles say which cap and which system", () =>
  * pane covering the very cap being judged.
  */
 describe("paneColumns — mirrors the media queries in styles.css", () => {
-  it("gives three across only above the 1600px rule", () => {
-    expect(paneColumns(1601)).toBe(3);
+  /* THE TWO-ACROSS TIER IS DEAD (client 2026-08-02: "the second scroll section …
+     hides the 3 vertical panels view side by side"). Two-up ALWAYS wraps the union
+     pane to a second row, and a second row is a scroll at every height this app
+     actually runs at — so the tier built to keep panes readable was the very thing
+     hiding the verdict pane. Three across down to where the shell itself stacks;
+     three honestly-narrow panes in one visible row beat two wide ones over a third
+     nobody can see. */
+  it("gives three across everywhere the split workbench exists", () => {
     expect(paneColumns(1920)).toBe(3);
-  });
-
-  it("gives two across at the product's own target width", () => {
-    expect(paneColumns(1600)).toBe(2);
-    expect(paneColumns(1280)).toBe(2);
-    expect(paneColumns(1181)).toBe(2);
+    expect(paneColumns(1512)).toBe(3);
+    expect(paneColumns(1280)).toBe(3);
+    expect(paneColumns(1181)).toBe(3);
   });
 
   it("gives one across where the shell itself stacks", () => {
@@ -232,20 +235,25 @@ describe("planPaneLayout", () => {
     expect(plan.chrome).toBe("full");
   });
 
-  it("computes the 1280x800 stage the browser actually renders (±the min-height overflow)", () => {
+  it("computes the 1280x800 stage as ONE row now the two-across tier is dead", () => {
+    /* This test pinned rows:2 / stageH:222 / chrome:compact — the very layout the
+       client rejected (2026-08-02: the second row "hides the 3 vertical panels view
+       side by side"). The SAME window now yields one row of three, and the stage is
+       the whole grid: 563 - chrome = 510px, which is also why the chrome no longer
+       needs to step aside at this size. */
     const plan = planPaneLayout({ availH: 563, viewportW: 1280 }, false);
-    expect(plan.rows).toBe(2);
-    // measured 221px on screen, which is the 220px floor overflowing its row by ~6px
-    expect(plan.stageH).toBe(275 - PANE_STAGE_CHROME_PX);
-    expect(plan.stageH).toBeLessThan(221);
+    expect(plan.columns).toBe(3);
+    expect(plan.rows).toBe(1);
+    expect(plan.stageH).toBe(563 - PANE_STAGE_CHROME_PX);
+    expect(plan.chrome).toBe("full");
   });
 
-  it("steps the chrome aside at 1280x800 — 61% of that stage is HUD and colorbar", () => {
-    expect(planPaneLayout({ availH: 563, viewportW: 1280 }, false).chrome).toBe("compact");
-  });
-
-  it("takes the HUD off the glass at 1280x720, where the stage is clipped by 38px", () => {
-    expect(planPaneLayout({ availH: 497, viewportW: 1280 }, false).chrome).toBe("tiny");
+  it("still steps the chrome aside on a stage genuinely too short for it", () => {
+    /* The compact/tiny ladder survives the tier's death — it now engages on real
+       HEIGHT scarcity (a short window, a maximized drawer) instead of on the
+       artefact of halving the grid into two rows. Thresholds unchanged. */
+    expect(planPaneLayout({ availH: 300, viewportW: 1280 }, false).chrome).toBe("compact");
+    expect(planPaneLayout({ availH: 240, viewportW: 1280 }, false).chrome).toBe("tiny");
   });
 
   it("NEVER hides panes on its own — three stay up however short the stage (client 2026-08-01)", () => {
@@ -257,7 +265,7 @@ describe("planPaneLayout", () => {
        pane. A short stage gets three small panes, honestly small. */
     const plan = planPaneLayout({ availH: 397, viewportW: 1280 }, false);
     expect(plan.solo).toBe(false);
-    expect(plan.columns).toBe(2);
+    expect(plan.columns).toBe(3);
   });
 
   it("never forces solo on a pane the operator maximized — that IS the whole height", () => {
@@ -267,7 +275,7 @@ describe("planPaneLayout", () => {
   });
 
   it("keeps three panes at 1280x720 — a clipped-but-usable stage beats hiding two panes", () => {
-    expect(planPaneLayout({ availH: 497, viewportW: 1280 }, false).solo).toBe(false);
+    expect(planPaneLayout({ availH: 240, viewportW: 1280 }, false).solo).toBe(false);
   });
 
   it("puts a wide window's three panes on one row and leaves the chrome alone", () => {
@@ -320,33 +328,37 @@ describe("SitePanesView — three panes, always (client 2026-08-01)", () => {
 });
 
 describe("SitePanesView — the chrome steps aside on a stage too small to carry it", () => {
+  /* These fixtures used 1280x800/720 window heights, which produced short stages only
+     via the two-across tier's row-halving. That tier is dead (client 2026-08-02), so the
+     same windows now yield FULL chrome — the ladder engages on real height scarcity, and
+     the fixtures hand it real scarcity directly: 300-61=239 compact, 240-61=179 tiny. */
   it("keeps the layer HUD on the glass while the stage can carry it", () => {
     expect(view({ layers: LAYERS })).toContain("verify-panel__hud--layers");
     expect(
-      view({ layers: LAYERS, layoutPlan: planPaneLayout({ availH: 563, viewportW: 1280 }, false) }),
+      view({ layers: LAYERS, layoutPlan: planPaneLayout({ availH: 300, viewportW: 1280 }, false) }),
     ).toContain("verify-panel__hud--layers");
   });
 
   it("takes the HUD off the glass on a tiny stage and offers a way back to it", () => {
     const markup = view({
       layers: LAYERS,
-      layoutPlan: planPaneLayout({ availH: 497, viewportW: 1280 }, false),
+      layoutPlan: planPaneLayout({ availH: 240, viewportW: 1280 }, false),
     });
     expect(markup).not.toContain("verify-panel__hud--layers");
     expect(markup).toContain('data-role="pane-hud-toggle"');
   });
 
   it("marks the stage so the colorbar and footer can shrink with it", () => {
-    expect(view({ layoutPlan: planPaneLayout({ availH: 563, viewportW: 1280 }, false) })).toContain(
+    expect(view({ layoutPlan: planPaneLayout({ availH: 300, viewportW: 1280 }, false) })).toContain(
       "verify-panel__stage--compact",
     );
-    expect(view({ layoutPlan: planPaneLayout({ availH: 497, viewportW: 1280 }, false) })).toContain(
+    expect(view({ layoutPlan: planPaneLayout({ availH: 240, viewportW: 1280 }, false) })).toContain(
       "verify-panel__stage--tiny",
     );
   });
 
   it("offers no HUD toggle on a pane that has no layers to toggle", () => {
-    const markup = view({ layoutPlan: planPaneLayout({ availH: 497, viewportW: 1280 }, false) });
+    const markup = view({ layoutPlan: planPaneLayout({ availH: 240, viewportW: 1280 }, false) });
     expect(markup).not.toContain('data-role="pane-hud-toggle"');
   });
 
@@ -359,7 +371,7 @@ describe("SitePanesView — the chrome steps aside on a stage too small to carry
      The chooser may go; the ramp's IDENTITY may not. */
   it("names the scale on a tiny stage, where the chooser cannot be shown", () => {
     const markup = view({
-      layoutPlan: planPaneLayout({ availH: 497, viewportW: 1280 }, false),
+      layoutPlan: planPaneLayout({ availH: 240, viewportW: 1280 }, false),
     });
     expect(markup).toContain('data-role="colorbar-scale-name"');
     expect(markup).toContain("signed ±0.50 mm");
@@ -368,7 +380,7 @@ describe("SitePanesView — the chrome steps aside on a stage too small to carry
   it("names the ABSOLUTE ramp when that is the one on the mesh — red means two things", () => {
     const markup = view({
       scaleId: "contacts",
-      layoutPlan: planPaneLayout({ availH: 497, viewportW: 1280 }, false),
+      layoutPlan: planPaneLayout({ availH: 240, viewportW: 1280 }, false),
     });
     expect(markup).toContain('data-role="colorbar-scale-name"');
     expect(markup).toContain("contacts");
@@ -376,7 +388,7 @@ describe("SitePanesView — the chrome steps aside on a stage too small to carry
 
   it("says nothing extra where the chooser itself is on screen", () => {
     const markup = view({
-      layoutPlan: planPaneLayout({ availH: 563, viewportW: 1280 }, false),
+      layoutPlan: planPaneLayout({ availH: 300, viewportW: 1280 }, false),
       onSelectScale: () => undefined,
     });
     expect(markup).not.toContain('data-role="colorbar-scale-name"');

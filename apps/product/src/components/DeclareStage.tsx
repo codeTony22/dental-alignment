@@ -29,6 +29,7 @@ import {
   putSystem,
   type AdjustDecisionView,
   type CaseSessionDetail,
+  type SiteView,
 } from "../api/client";
 import {
   blockedReason,
@@ -53,7 +54,6 @@ import {
   recordedAtWords,
   variantShelves,
   type PreviewFigures,
-  type VariantCard,
   type ViewPresetId,
   type WorkspaceStat,
 } from "../domain/declare";
@@ -74,45 +74,53 @@ export type RunPhase = "idle" | "firing";
  * only a landed decision navigates — a recorded choice must not race the route. */
 export type ForkSaving = "idle" | "skip" | "adjust";
 
-interface SystemBarProps {
+interface SystemSelectProps {
   readonly detail: CaseSessionDetail;
   readonly onAskSwitch: (model: string) => void;
 }
 
-/** The demo's system cards (.decode-system): name, part count, the server-attributed
- * suggested badge; the effective card wears the selected tone. */
-function SystemBar({ detail, onAskSwitch }: SystemBarProps) {
+/**
+ * THE SYSTEM PICKER IS A SELECT NOW (client 2026-08-02: "there is a lot of real
+ * estate for the buttons … we need to be more cohesive and organized about the
+ * information we show"). The cards' claims all survive the shrink: the EFFECTIVE
+ * model is the selected option, the shelf size rides in each option's text, and the
+ * server's suggested attribution marks its option — options carry data-model and the
+ * suggested one data-role="suggested-tag", so the tests pin the same facts they
+ * pinned on the cards.
+ *
+ * The consent ceremony is untouched: onChange asks, it never PUTs. The select is
+ * CONTROLLED by the effective model, so until the operator consents in the
+ * SwitchConfirm below it visibly springs back — the control never claims a switch
+ * the server has not made.
+ */
+function SystemSelect({ detail, onAskSwitch }: SystemSelectProps) {
+  const effective = detail.system.effective_model ?? "";
   return (
-    <div data-role="system-bar" role="group" aria-label="Implant system">
-      <ul className="decode-system-list">
+    <label className="declare-controls__field">
+      <span className="declare-controls__label">Implant system</span>
+      <select
+        data-role="declare-system"
+        className="decode-select"
+        value={effective}
+        onChange={(event) => {
+          if (event.target.value !== "") onAskSwitch(event.target.value);
+        }}
+      >
+        {effective === "" && <option value="">choose a system…</option>}
         {systemCards(detail).map((card) => (
-          <li key={card.model}>
-            <button
-              type="button"
-              data-role="system-card"
-              aria-pressed={card.effective}
-              data-model={card.model}
-              className={`decode-system${card.effective ? " decode-system--selected" : ""}`}
-              onClick={() => onAskSwitch(card.model)}
-            >
-              <span className="decode-system__name">{card.model}</span>{" "}
-              <span data-role="system-variant-count" className="decode-system__count">
-                {card.variantCount} parts
-              </span>
-              {card.suggested && (
-                <span
-                  data-role="suggested-tag"
-                  className="library-badge library-badge--suggested"
-                >
-                  {" "}
-                  suggested
-                </span>
-              )}
-            </button>
-          </li>
+          <option
+            key={card.model}
+            value={card.model}
+            data-model={card.model}
+            data-role={card.suggested ? "suggested-tag" : undefined}
+          >
+            {card.model} — {card.variantCount} part
+            {card.variantCount === 1 ? "" : "s"}
+            {card.suggested ? " · suggested" : ""}
+          </option>
         ))}
-      </ul>
-    </div>
+      </select>
+    </label>
   );
 }
 
@@ -225,42 +233,70 @@ function SiteQueue({ detail, activeTooth, runRows, onSelectSite }: SiteQueueProp
   );
 }
 
-interface VariantCardButtonProps {
-  readonly card: VariantCard;
-  readonly declared: boolean;
-  /** True on the superseded shelf — the card wears the archived tone. */
-  readonly archived?: boolean;
+interface VariantSelectProps {
+  readonly active: SiteView | null;
+  readonly shelves: ReturnType<typeof variantShelves>;
   readonly onDeclare: (variantId: string) => void;
 }
 
-function VariantCardButton({ card, declared, archived, onDeclare }: VariantCardButtonProps) {
-  return (
-    <button
-      type="button"
-      data-role="variant-card"
+/**
+ * THE VARIANT DROPDOWN — the client's own words (2026-08-02): "the implant variant
+ * selection needs to be drop down". Six cards became one control, and every claim
+ * the cards made moved INTO it rather than being dropped:
+ *
+ *   - each option carries the catalog's Ø × height line, because a bare code is a
+ *     guess and the dims are what the operator is actually choosing between;
+ *   - the DECLARED variant is the selected option — the server's fact, controlled;
+ *   - detection's proposal wears data-role="variant-suggested" and says so in its
+ *     text, and vanishes the moment the operator declares (their act supersedes it);
+ *   - the superseded shelf is a LABELLED optgroup, kept apart from the current
+ *     shelf, never mixed into it — still declarable, still marked archived.
+ *
+ * The empty option never fires onDeclare: there is no undeclare act on this page,
+ * and a change handler that invented one would be a client-side status write.
+ */
+function VariantSelect({ active, shelves, onDeclare }: VariantSelectProps) {
+  const optionFor = (card: (typeof shelves.current)[number]) => (
+    <option
+      key={card.id}
+      value={card.id}
       data-variant={card.id}
-      aria-pressed={declared}
-      className={`decode-variant${declared ? " decode-variant--selected" : ""}${
-        archived ? " decode-variant--archived" : ""
-      }`}
-      onClick={() => onDeclare(card.id)}
+      data-role={card.suggested ? "variant-suggested" : undefined}
     >
-      <span className="decode-variant__name">{card.label}</span>{" "}
-      <span className="decode-variant__dims">{card.dims}</span>
-      {/* WHAT DETECTION PROPOSED for this site (gap `variant-suggested-badge`; design
-          flow.dc.html:374-377). It wears the same badge the SYSTEM card's server
-          attribution wears, because it is the same kind of claim — a server value the
-          operator has not yet answered — and it disappears the moment they do. */}
-      {card.suggested && (
-        <span
-          data-role="variant-suggested"
-          className="library-badge library-badge--suggested"
-        >
-          {" "}
-          sugg.
-        </span>
-      )}
-    </button>
+      {card.label} — {card.dims}
+      {card.suggested ? " · suggested" : ""}
+    </option>
+  );
+  return (
+    <label className="declare-controls__field declare-controls__field--variant">
+      <span className="declare-controls__label">
+        {active !== null ? `Variant for tooth ${active.tooth}` : "Variant"}
+      </span>
+      <select
+        data-role="declare-variant"
+        className="decode-select"
+        value={active?.declared_variant ?? ""}
+        disabled={active === null}
+        onChange={(event) => {
+          if (event.target.value !== "") onDeclare(event.target.value);
+        }}
+      >
+        <option value="">
+          {active !== null ? "declare a cap variant…" : "pick a site first"}
+        </option>
+        {shelves.current.map(optionFor)}
+        {shelves.superseded.length > 0 && (
+          <optgroup
+            data-role="superseded-shelf"
+            label={`Superseded shelf — ${shelves.superseded.length} archived part${
+              shelves.superseded.length === 1 ? "" : "s"
+            }`}
+          >
+            {shelves.superseded.map(optionFor)}
+          </optgroup>
+        )}
+      </select>
+    </label>
   );
 }
 
@@ -677,58 +713,25 @@ export function DeclareStageView({
           </button>
         </WorkspaceToolbar>
         {panesSlot}
-        <div className="workspace-drawer">
-          <section className="panel">
-            <h3 className="panel__title">Implant system</h3>
-            <SystemBar detail={detail} onAskSwitch={onAskSwitch} />
-            {pendingSwitch !== null && (
-              <SwitchConfirm
-                detail={detail}
-                pendingSwitch={pendingSwitch}
-                onConfirm={onConfirmSwitch}
-                onCancel={onCancelSwitch}
-              />
-            )}
-          </section>
-          <section data-role="variant-cards" aria-label="Variant cards" className="panel">
-            <h3 className="panel__title">
-              {active !== null
-                ? `Variants for tooth ${active.tooth}`
-                : "Variants"}
-            </h3>
-            <div className="decode-variant-list">
-              {shelves.current.map((card) => (
-                <VariantCardButton
-                  key={card.id}
-                  card={card}
-                  declared={active?.declared_variant === card.id}
-                  onDeclare={onDeclare}
-                />
-              ))}
-            </div>
-            {shelves.superseded.length > 0 && (
-              <details data-role="superseded-fold" className="decode-archive">
-                <summary className="decode-archive__title">
-                  Superseded shelf — {shelves.superseded.length} archived part
-                  {shelves.superseded.length === 1 ? "" : "s"}
-                </summary>
-                <p className="decode-archive__note">
-                  Kept apart from the current shelf, never mixed into it.
-                </p>
-                <div className="decode-variant-list">
-                  {shelves.superseded.map((card) => (
-                    <VariantCardButton
-                      key={card.id}
-                      card={card}
-                      declared={active?.declared_variant === card.id}
-                      archived
-                      onDeclare={onDeclare}
-                    />
-                  ))}
-                </div>
-              </details>
-            )}
-          </section>
+        {/* ONE CONTROLS ROW, NOT TWO CARD DECKS (client 2026-08-02: "There is
+            multiple scrolling sections here which is really weird, we need to be more
+            cohesive and organized"). The drawer held two full panels — system cards
+            and a variant card grid — which is what pushed the page into its second
+            scroll. Both pickers are selects on one slim row now; the panes above get
+            the pixels back, and the drawer never has enough content left to scroll. */}
+        <div className="workspace-drawer workspace-drawer--declare">
+          <div data-role="declare-controls" className="declare-controls">
+            <SystemSelect detail={detail} onAskSwitch={onAskSwitch} />
+            <VariantSelect active={active} shelves={shelves} onDeclare={onDeclare} />
+          </div>
+          {pendingSwitch !== null && (
+            <SwitchConfirm
+              detail={detail}
+              pendingSwitch={pendingSwitch}
+              onConfirm={onConfirmSwitch}
+              onCancel={onCancelSwitch}
+            />
+          )}
         </div>
         <div className="workspace-advance">
           <div
@@ -761,7 +764,7 @@ export function DeclareStageView({
                   <button
                     type="button"
                     data-role="fork-skip"
-                    className={`button ${
+                    className={`button button--small ${
                       facts.siteFlagged > 0 ? "button--secondary" : "button--primary"
                     }`}
                     disabled={forkSaving !== "idle"}
@@ -772,7 +775,7 @@ export function DeclareStageView({
                   <button
                     type="button"
                     data-role="fork-adjust"
-                    className={`button ${
+                    className={`button button--small ${
                       facts.siteFlagged > 0 ? "button--primary" : "button--secondary"
                     }`}
                     disabled={forkSaving !== "idle"}
@@ -800,7 +803,7 @@ export function DeclareStageView({
                 <span
                   data-role="fork-skip"
                   aria-disabled="true"
-                  className="button button--secondary button--blocked"
+                  className="button button--small button--secondary button--blocked"
                 >
                   {/* the reason for the page this fork LEADS TO. It quoted Deliver's,
                       which since the library landed can read "pick a construction part
@@ -811,7 +814,7 @@ export function DeclareStageView({
                 <span
                   data-role="fork-adjust"
                   aria-disabled="true"
-                  className="button button--secondary button--blocked"
+                  className="button button--small button--secondary button--blocked"
                 >
                   Adjust the fits — {blockedReason("deliver", facts)}
                 </span>

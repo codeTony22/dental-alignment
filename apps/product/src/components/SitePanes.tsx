@@ -431,8 +431,13 @@ export const UNMEASURED_PANE_LAYOUT: PaneLayoutPlan = {
  * style would be circular — the solo fallback itself rewrites the grid's columns.
  */
 export function paneColumns(viewportW: number): 1 | 2 | 3 {
+  /* THE TWO-ACROSS TIER IS DEAD (client 2026-08-02: "the second scroll section …
+     hides the 3 vertical panels view side by side"). It existed on the guess that
+     three-across is slivers at 1440 — but two-up ALWAYS wraps the union pane to a
+     second row, and a second row is a scroll at every height this app runs at, so
+     the tier hid the verdict pane to protect the width of its inputs. Three across
+     everywhere the split workbench exists; below 1180 the shell itself stacks. */
   if (viewportW <= 1180) return 1;
-  if (viewportW <= 1600) return 2;
   return 3;
 }
 
@@ -454,7 +459,9 @@ export function planPaneLayout(metrics: PaneStageMetrics, maximized: boolean): P
   const { availH, viewportW } = metrics;
   if (!(availH > 0)) return UNMEASURED_PANE_LAYOUT;
   const columns = paneColumns(viewportW);
-  const rows: 1 | 2 | 3 = columns === 1 ? 3 : columns === 2 ? 2 : 1;
+  // 1 column stacks all three panes; 3 columns is ONE row — which is what makes the
+  // grid scroll-free: multiRowH degenerates to availH and every pane is on screen.
+  const rows: 1 | 2 | 3 = columns === 1 ? 3 : 1;
   const multiRowH = Math.floor((availH - PANE_GRID_GAP_PX * (rows - 1)) / rows);
   const multiStageH = multiRowH - PANE_STAGE_CHROME_PX;
   const stageH = maximized ? availH - PANE_STAGE_CHROME_PX : multiStageH;

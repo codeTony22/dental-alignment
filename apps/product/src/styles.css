@@ -2501,17 +2501,20 @@ a.workflow-rail__step {
   font-weight: 600;
 }
 
-/* The two acts side by side and equal-width: the fork is a CHOICE, so neither door
-   may look like the incidental one. Tone (primary/secondary) carries the
-   recommendation; geometry stays symmetric. */
+/* The two acts side by side: the fork is a CHOICE, so tone (primary/secondary)
+   carries the recommendation. They used to stretch equal-width across the whole bar
+   (flex: 1 1 200px) — geometry-as-symmetry — until the client called it what it was
+   (2026-08-02: "there is a lot of real estate for the buttons?"). Natural width,
+   right-aligned: the acts end the bar's reading order instead of dominating it. */
 .declare-fork {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .declare-fork > .button {
-  flex: 1 1 200px;
+  flex: 0 1 auto;
 }
 
 /* ---- Declare's work column ---- */
@@ -3368,25 +3371,14 @@ button.package-files__link:hover {
   min-height: 0;
 }
 
-/* The grid's real class is .verify-panels__grid — an earlier attempt here used
-   .verify-grid, which matches nothing, and the panes stayed 260px while the rule
-   looked correct. Measured before and after: 280x800 -> 260x414 from the height cap
-   alone, which fixed the aspect but not the width.
-
-   Three panes cannot be anything but slivers in what is left of a 1440px screen. The
-   honest fix is to stop insisting on three-across below the width where three-across
-   works: the panes wrap two-up, each roughly twice as wide, and the third sits under
-   them where it is still one glance away. Above 1600px the row stays as it was. */
-@media (max-width: 1600px) {
-  .workbench__stage .verify-panels__grid:not(.verify-panels__grid--maximized) {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  /* The union pane is the money pane — alone on the wrapped row it took half the
-     width for no reason. Full-width it reads like the verdict it is. */
-  .workbench__stage .verify-panels__grid > .verify-panel:nth-child(3) {
-    grid-column: 1 / -1;
-  }
-}
+/* THE TWO-ACROSS TIER IS DEAD (client 2026-08-02: "The second scroll section is
+   uncomfortable, hides the 3 vertical panels view side by side"). The @media block
+   that lived here wrapped the panes two-up below 1600px on the guess that three-across
+   is slivers at 1440 — but two-up ALWAYS puts the union pane on a second row, and a
+   second row is a scroll at every height this app actually runs at, so the tier built
+   to keep panes readable was the very thing hiding the verdict pane. The unconditional
+   1fr 1fr 1.24fr above now holds down to 1180px, where the shell itself stacks;
+   paneColumns in SitePanes.tsx mirrors this and its comment tells the same story. */
 
 /* ---- ADJUST: a pair's marks, enumerated (client 2026-07-29) ---------------------- */
 .adjust-pairs__slots {
@@ -5716,4 +5708,146 @@ button.package-files__link:hover {
    pills, which do not shrink. */
 .verify-panel__stage--tiny .verify-panel__foot {
   display: none;
+}
+
+
+/* ===== ONE COHESIVE DECLARE, AND A CHOICES CARD THAT READS (client 2026-08-02) =====
+   "There is multiple scrolling sections here which is really weird, we need to be
+   more cohesive and organized about the information we show." The system cards and
+   the variant card grid became two selects on one slim row (DeclareStage's
+   SystemSelect/VariantSelect carry the reasoning); these rules are the row's shape.
+   Below the PRODUCT ADDITIONS marker on purpose: the .decode-* rules they compose
+   with are inside the region copied from the frozen demo, and overriding beats
+   diverging the copy. */
+
+.workspace-drawer--declare {
+  /* one row of selects never needs the drawer's scroll allowance */
+  overflow-y: visible;
+}
+
+.declare-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 16px;
+}
+
+.declare-controls__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 220px;
+}
+
+.declare-controls__field--variant {
+  flex: 0 1 auto;
+  min-width: 280px;
+}
+
+.declare-controls__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+/* In the drawer the selects size to their row, not to a column's full width. */
+.declare-controls .decode-select {
+  width: 100%;
+}
+
+/* ---- The case-level choices card ("This needs to look better", first picture) ----
+   The bones were right — label, chip, control, ceilings — and the finish was not:
+   the UA's own select chrome and blue focus ring against the app's green language,
+   controls at three different heights, and the ceiling line rendered at body weight
+   as if it were a sentence rather than a readout. Overrides, not edits: the base
+   .decode-* rules are the demo's copy. */
+
+.decode-select,
+.decode-offset__input {
+  appearance: none;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--color-text);
+}
+
+/* The select keeps a chevron after appearance:none — inlined so no request leaves. */
+.decode-select {
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235f6f66' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+/* The focus ring speaks the app's green, not the UA's blue — same ring everywhere
+   in the card so the eye tracks one convention. */
+.decode-select:focus-visible,
+.decode-offset__input:focus-visible,
+.decode-jaw__option:focus-visible {
+  outline: 2px solid var(--color-accent-green);
+  outline-offset: 1px;
+}
+
+/* The jaw pair reads as one segmented control: two equal cells, one gap. */
+.decode-jaw {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.decode-jaw__option {
+  height: 34px;
+  padding: 0 8px;
+}
+
+/* The relief input is a NUMBER — it does not need a paragraph's width, and beside
+   a 34px field the unit reads as its label rather than as stray text. */
+.decode-offset__input {
+  width: 88px;
+}
+
+/* The ceiling readout is a readout: quieter than the controls, amber only when the
+   chosen relief actually exceeds a variant's measured ceiling. */
+.relief-ceilings__item {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* ---- The advance is ONE band, not a column in a band (client 2026-08-02) ----------
+   .panel__actions--advance stacks as a column for the work-column footers it was born
+   in; inside .workspace-advance that column made flex: 1 1 260px mean 260px of HEIGHT,
+   so a one-line attestation summary sat in 84px of grey and the whole bar overflowed
+   into its own scrollbar (measured: 230 > 195). Across the stage's foot it reads
+   left-to-right instead: the set faced, its consequence, then the two doors. */
+.workspace-advance .panel__actions--advance {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px 14px;
+  width: 100%;
+  flex: 1 1 auto;
+}
+
+.workspace-advance .panel__actions--advance .attestation-summary {
+  flex: 1 1 320px;
+  max-height: 60px;
+  padding: 6px 10px;
+}
+
+.workspace-advance .panel__actions--advance > .panel__hint {
+  flex: 1 1 240px;
+  margin: 0;
+}
+
+/* The recorded-decision line is a receipt, not a participant — full width, under. */
+.workspace-advance .panel__actions--advance > [data-role="fork-recorded"] {
+  flex: 1 1 100%;
 }
