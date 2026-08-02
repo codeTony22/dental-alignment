@@ -437,3 +437,50 @@ describe("re-marking the active site's centre (client 2026-08-01, the tooth-29 g
     expect(html).toContain("is not a site on case");
   });
 });
+
+/**
+ * THE COMP'S PAGE CLOTHES (page pass 2026-08-02, §10-AA): the comp's intake puts the
+ * SCAN first — a panel whose head names the scan and the centred count, the viewer as
+ * its stage, the per-site rows directly under it — and the control cards in a narrow
+ * right column with the advance at their foot. The mirror is layout only: every role,
+ * chip, verbatim sentence and no-invented-confidence rule above is untouched.
+ */
+describe("the comp's page clothes", () => {
+  it("leads with the scan panel and keeps the site rows under the viewer", () => {
+    const html = view();
+    const stageAt = html.indexOf("workbench__stage");
+    const workAt = html.indexOf("workbench__work");
+    expect(stageAt).toBeGreaterThanOrEqual(0);
+    expect(workAt).toBeGreaterThanOrEqual(0);
+    // the stage column renders FIRST (the comp's scan-left arrangement) …
+    expect(stageAt).toBeLessThan(workAt);
+    // … and carries the scan panel: viewer first, then the site rows
+    const stageSlice = html.slice(stageAt, workAt);
+    expect(stageSlice).toContain('class="scan-panel');
+    expect(stageSlice).toContain('data-role="main-stage"');
+    expect(stageSlice).toContain('data-role="intake-sites"');
+    expect(stageSlice.indexOf('data-role="main-stage"')).toBeLessThan(
+      stageSlice.indexOf('data-role="intake-sites"'),
+    );
+  });
+
+  it("the scan panel's head states the scan file and the centred count, both served", () => {
+    const html = view();
+    expect(html).toContain("Scan scan.stl");
+    // both fixture sites carry a centre — the count is derived from the payload,
+    // the same derivation the flow model's siteCentred makes
+    expect(html).toMatch(/data-role="centred-count"[^>]*>2 \/ 2 centred</);
+  });
+
+  it("keeps the control cards in the work column with the advance at their foot", () => {
+    const html = view();
+    const workSlice = html.slice(html.indexOf("workbench__work"));
+    expect(workSlice).toContain('data-role="mark-missed"');
+    expect(workSlice).toContain('data-role="intake-choices"');
+    expect(workSlice).toContain('data-role="continue-declare"');
+    // choices before the advance — the comp's column order
+    expect(workSlice.indexOf('data-role="intake-choices"')).toBeLessThan(
+      workSlice.indexOf('data-role="continue-declare"'),
+    );
+  });
+});

@@ -1206,3 +1206,14 @@ The page's acts move to the preview column's foot, forward leading, the blocked 
 staying visible at 0.45 opacity. Still refused, per M/O.5: the comp's four invented
 parts, prices and lead times; its dataless preview disc. The four preview branches and
 their provenance captions are untouched.
+
+**AA.3 — the case intake mirrored to the comp.** The comp's intake leads with the scan:
+a panel whose head names the scan file and the centred count (both served — the count
+is the flow model's own `siteCentred` over `siteTotal`), the real 3D viewer as its
+stage (the comp's procedural 2D horseshoe stays refused — this product has the actual
+mesh), and the site rows directly under it. The control cards keep the right column:
+capture banner, missed-cap card, case-level choices, the advance at the foot. Layout
+is one `:has()` rule flipping the workbench's columns for this stage alone; the site
+rows travelled markup-whole (every role, verbatim sentence, source chip and the
+no-invented-confidence rule untouched, their panel chrome flattened by CSS inside the
+scan panel).

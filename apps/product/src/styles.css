@@ -6667,3 +6667,65 @@ button.package-files__link:hover {
   flex-wrap: wrap;
   gap: 7px;
 }
+
+/* ---- round 3: the case intake mirrored to the comp (comp L93-172). The comp's
+   intake leads with the scan — panel head naming the scan and the centred count,
+   the viewer as its stage, the per-site rows directly under it — and keeps the
+   control cards in a narrow right column. The stage child renders first; this
+   rule flips the workbench's columns for exactly that stage. ---- */
+.workbench:has([data-role="intake-stage"]) {
+  grid-template-columns: minmax(0, 1fr) minmax(292px, 340px);
+}
+
+.workbench__stage--intake {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.scan-panel {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #dfe4e1;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.scan-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 10px;
+  padding: 11px 15px;
+  border-bottom: 1px solid #e6eae7;
+}
+
+.scan-panel__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.scan-panel__stage {
+  height: 46vh;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+}
+
+.scan-panel__stage .main-stage {
+  flex: 1 1 auto;
+}
+
+/* The site rows ride under the viewer inside the panel: the panel chrome the rows
+   used to bring themselves is dropped here so they read as the panel's list. */
+.scan-panel > .panel {
+  border: none;
+  border-top: 1px solid #e6eae7;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}

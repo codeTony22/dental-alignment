@@ -705,10 +705,60 @@ export function IntakeStageView({
 }: IntakeStageViewProps) {
   const facts = factsFromCaseSession(detail);
   const declareOpen = isReachable("declare", facts);
+  const centred = facts.siteCentred ?? 0;
   return (
-    // Two regions for the workbench grid (display: contents on the root): the WORK
-    // column carries the panels, the STAGE keeps the 3D big — the demo's proportions.
+    /* Two regions for the workbench grid (display: contents on the root) — MIRRORED
+       for this stage (comp page pass 2026-08-02, §10-AA): the comp's intake leads
+       with the SCAN, its per-site rows directly under the viewer, and keeps the
+       control cards in a narrow right column. The stage child renders first; the
+       `.workbench:has(...)` rule in styles.css flips the grid's columns to match. */
     <div data-role="intake-stage" className="stage-contents">
+      <div className="workbench__stage workbench__stage--intake">
+        <section className="scan-panel">
+          <header className="scan-panel__head">
+            <h3 className="scan-panel__title">
+              Scan {detail.case.scan_filename} · {detail.case.jaw}
+            </h3>
+            {/* the comp's "N / M marked" chip, from served facts: sites whose centre
+                the payload carries, over the payload's site count */}
+            <span data-role="centred-count" className="chip chip--gate">
+              {centred} / {facts.siteTotal} centred
+            </span>
+          </header>
+          <div className="scan-panel__stage">
+            <MainStage
+              caseId={detail.case.id}
+              scanFilename={detail.case.scan_filename}
+              sites={detail.sites}
+              markers={detectionMarkers(detail)}
+              activeTooth={activeTooth}
+              // ONE point-pick door, THREE callers (client 2026-07-31, extended
+              // 2026-08-01): the stage arms the viewer's one-shot pick while the
+              // missed-cap mark, the site picker OR a confirmed re-mark is armed, and
+              // the container routes the resolved point to whichever asked.
+              markArmed={markArmed || pickArmed || remarkArmed}
+              onMark={onStagePoint}
+              onMarkMissed={onStageMiss}
+            />
+          </div>
+          <SiteList
+            detail={detail}
+            activeTooth={activeTooth}
+            onSelectSite={onSelectSite}
+            pickArmed={pickArmed}
+            pickMiss={pickMiss}
+            onArmPick={onArmPick}
+            onCancelPick={onCancelPick}
+            remarkConfirming={remarkConfirming}
+            remarkArmed={remarkArmed}
+            remarkSaving={remarkSaving}
+            remarkError={remarkError}
+            onAskRemark={onAskRemark}
+            onConfirmRemark={onConfirmRemark}
+            onCancelRemark={onCancelRemark}
+          />
+        </section>
+      </div>
       <div className="workbench__work">
         <CaptureBanner detail={detail} />
         {detectPhase.kind === "detecting" && (
@@ -732,22 +782,6 @@ export function IntakeStageView({
             </p>
           </div>
         )}
-        <SiteList
-          detail={detail}
-          activeTooth={activeTooth}
-          onSelectSite={onSelectSite}
-          pickArmed={pickArmed}
-          pickMiss={pickMiss}
-          onArmPick={onArmPick}
-          onCancelPick={onCancelPick}
-          remarkConfirming={remarkConfirming}
-          remarkArmed={remarkArmed}
-          remarkSaving={remarkSaving}
-          remarkError={remarkError}
-          onAskRemark={onAskRemark}
-          onConfirmRemark={onConfirmRemark}
-          onCancelRemark={onCancelRemark}
-        />
         <MarkMissedCap
           armed={markArmed}
           pending={markPending}
@@ -784,22 +818,6 @@ export function IntakeStageView({
             </span>
           )}
         </div>
-      </div>
-      <div className="workbench__stage">
-        <MainStage
-          caseId={detail.case.id}
-          scanFilename={detail.case.scan_filename}
-          sites={detail.sites}
-          markers={detectionMarkers(detail)}
-          activeTooth={activeTooth}
-          // ONE point-pick door, THREE callers (client 2026-07-31, extended
-          // 2026-08-01): the stage arms the viewer's one-shot pick while the
-          // missed-cap mark, the site picker OR a confirmed re-mark is armed, and
-          // the container routes the resolved point to whichever asked.
-          markArmed={markArmed || pickArmed || remarkArmed}
-          onMark={onStagePoint}
-          onMarkMissed={onStageMiss}
-        />
       </div>
     </div>
   );
