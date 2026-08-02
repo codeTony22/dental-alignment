@@ -819,3 +819,33 @@ last, or the surface must say out loud that picking a different part re-collects
 HELD, deliberately: the Deliver construction-picker removal (§10-M's three-homes finding).
 It lives in the same release ladder any confirmation move would restructure, so doing it
 now would mean rebuilding that ladder twice.
+
+**O. DECISIONS TAKEN 2026-08-02, so the next reader stops re-deriving them.**
+
+1. **Confirmation SPLITS.** Adjustment gets the alignment reports and an explicit
+   "I accept this alignment" review — a workflow attestation. The terms and the
+   authorization stay gating payment on Delivery, per §10-A, the client's own 2026-07-30
+   words, and their comp's own control placement (§10-N). This satisfies the five-page
+   spec's intent for page 3 without contradicting three artifacts to follow one rail
+   sub-line.
+2. **Zoom is GLOBAL**, not per-pane — one control moving all three cameras, as the comp
+   has it. The client's words: "global is probably better on adjustment views".
+3. **"Two meshes" means TWO SHELLS IN ONE FILE.** Recorded with the measurement that
+   contradicts it, because both facts matter: on this fleet 6 of 9 scans are a SINGLE
+   connected component, and on the other three the second shell is the sealed screw
+   recess — watertight, negative volume, max radius 1.52mm — not the cap. So the reading
+   is settled and the data still says a component split cannot separate cap from gum.
+   §10-L's recommendation stands unchanged: use the second shell as a REPORTED
+   cross-check (it is definitively not tissue), never as a pose input.
+4. **Deliver's construction picker is CUT.** Three surfaces wrote one choice; Deliver's is
+   the one where a change retires the confirmation just sealed. Intake's stays (it is what
+   makes `choices.complete` true) and the library page is the flow's own home for it.
+5. **Per-part price and lead time are NOT shown.** They do not exist in the catalog and
+   pricing is server-derived; showing them is a catalog + BFF change, not a UI one.
+6. **Drag-and-drop upload is NOT built.** No write path into `data_root`, no multipart
+   endpoint, no mesh validation. The stated arrival procedure stands; upload is its own
+   project.
+7. **`emit_from_poses` is DEFERRED.** The flow works, and the hazards in §10-M are sharp —
+   chiefly that a naive re-emit erases `implant.json`'s append-only operator provenance.
+8. **jsdom arrives WITH focus management**, not before. Until then the dialog listener is
+   hand-verified and says so.
