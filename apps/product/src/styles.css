@@ -4459,11 +4459,16 @@ button.package-files__link:hover {
   flex-wrap: wrap;
 }
 
-/* Equal-width, like Declare's fork: back and forward are both real doors, so neither
-   may look like the incidental one. Tone carries the recommendation; geometry stays
-   symmetric. */
+/* Natural width, right-aligned — the same move Declare's fork made (client
+   2026-08-02). `flex: 1 1 200px` stretched both doors across the whole bar, which is
+   geometry-as-symmetry: tone already carries the recommendation, and stretched buttons
+   were taking the height the tools panel wanted. */
+.adjust-fork {
+  margin-left: auto;
+}
+
 .adjust-fork > .button {
-  flex: 1 1 200px;
+  flex: 0 1 auto;
 }
 
 /* ---- ADJUST: the re-confirmation, now standing on its own ------------------------

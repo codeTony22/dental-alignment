@@ -599,6 +599,33 @@ describe("the way onward from Adjust's own rail", () => {
     expect(html).toContain('data-role="adjust-forward" aria-disabled="true"');
     expect(html).not.toContain("Done adjusting — go to Deliver");
   });
+
+  /* SMALLER DOORS (client 2026-08-02: "Smaller buttons here to give more space to the
+     tools panel"). The bar's height was mostly the blocked control: the whole reason
+     sentence lived INSIDE it, so a two-line sentence made a two-line button. */
+  it("the fork's controls are the small pair, like Declare's", () => {
+    const html = view();
+    expect(html).toMatch(/data-role="adjust-back"[^>]*class="[^"]*button--small/);
+    expect(html).toMatch(/data-role="adjust-forward"[^>]*class="[^"]*button--small/);
+  });
+
+  it("the blocked reason is PROSE beside the door, not the door's own label", () => {
+    const why =
+      "Sites are still awaiting review — 1 of 3 still have no verdict; every site " +
+      "must be ready, or flagged, before Deliver.";
+    const html = view({ deliverBlockedReason: why });
+    // the control reads as a control...
+    expect(html).toMatch(/data-role="adjust-forward"[^>]*>Go to Deliver</);
+    // ...and the reason is still NAMED, visibly, in the same bar (blockedReason doctrine)
+    expect(html).toContain('data-role="adjust-forward-reason"');
+    expect(html).toContain("still have no verdict");
+    // the inert control also explains itself on its own, for a pointer or a reader
+    expect(html).toMatch(new RegExp(`title="[^"]*still have no verdict`));
+  });
+
+  it("an unblocked Deliver has no reason line at all", () => {
+    expect(view()).not.toContain('data-role="adjust-forward-reason"');
+  });
 });
 
 describe("the best-fit dial's affordances", () => {

@@ -1232,11 +1232,24 @@ export function AdjustStageView({
             <p data-role="adjust-skip-consequence" className="panel__hint">
               {skipConsequenceWords(flaggedCount)}
             </p>
+            {/* THE REASON IS PROSE, NOT A LABEL (client 2026-08-02: "Smaller buttons
+                here to give more space to the tools panel"). The bar's height was
+                mostly this one control: the whole blockedReason sentence lived INSIDE
+                the span, so a two-line sentence made a two-line button. The reason is
+                still NAMED and still visible — the doctrine is that a shut door says
+                why, not that the door must be the sentence — and the inert control
+                also carries it in `title`, so it explains itself to a pointer or a
+                screen reader without depending on the line beside it. */}
+            {deliverBlockedReason !== null && (
+              <p data-role="adjust-forward-reason" className="panel__hint">
+                {deliverBlockedReason}
+              </p>
+            )}
             <div className="adjust-fork">
               <button
                 type="button"
                 data-role="adjust-back"
-                className="button button--secondary"
+                className="button button--secondary button--small"
                 onClick={onBack}
               >
                 Back to Alignment
@@ -1245,7 +1258,7 @@ export function AdjustStageView({
                 <button
                   type="button"
                   data-role="adjust-forward"
-                  className="button button--primary"
+                  className="button button--primary button--small"
                   onClick={onForward}
                 >
                   Done adjusting — go to Deliver
@@ -1254,9 +1267,10 @@ export function AdjustStageView({
                 <span
                   data-role="adjust-forward"
                   aria-disabled="true"
-                  className="button button--secondary button--blocked"
+                  title={deliverBlockedReason}
+                  className="button button--secondary button--small button--blocked"
                 >
-                  Go to Deliver — {deliverBlockedReason}
+                  Go to Deliver
                 </span>
               )}
             </div>
