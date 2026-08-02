@@ -166,14 +166,17 @@ class TestTheInvoiceIsAProjection:
         assert "withheld_sites" not in keys
         assert "turnaround" in keys   # always stated: it is what the rate keys on
 
-    def test_the_rates_are_marked_placeholder_not_shipped_as_fact(
+    def test_the_rates_are_the_clients_confirmed_card(
             self, settings, product_root):
-        # the client has supplied no price list; inventing one and calling it a
-        # price would be the TERMS_TEXT_PLACEHOLDER mistake with a currency symbol
+        # CONFIRMED (client in-chat, 2026-08-02, §10-AB.3): "$32/site standard, $48
+        # rush, exceptions at half" — the placeholder figures ratified as the price
+        # list. The wire says "final"; the note records WHO confirmed and WHEN, and
+        # the not-a-quotation hedge is gone with the placeholder status.
         body = invoice_of(landed_client(settings, product_root, [row(4)]))
-        assert body["status"] == RATE_CARD_STATUS == "placeholder"
-        assert body["rate_card_version"] == RATE_CARD_VERSION
-        assert "PLACEHOLDER" in body["note"]
+        assert body["status"] == RATE_CARD_STATUS == "final"
+        assert body["rate_card_version"] == RATE_CARD_VERSION == "client-2026-08-02-v1"
+        assert "PLACEHOLDER" not in body["note"]
+        assert "2026-08-02" in body["note"]
 
 
 class TestTurnaroundPricesTheCase:

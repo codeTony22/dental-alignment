@@ -1228,3 +1228,26 @@ every within-region ordering pin (disclosure before release, lines before total,
 above confirm, one blocker list per confirm site, open-report before previews) stands
 unmoved. The steps panel's own "Delivery" h3 retired into the page title; the reset
 button kept its role and words.
+
+**AB. THE CLIENT'S DECISION BATCH (2026-08-02, in-chat, on AA's open list).** Rulings,
+verbatim intent:
+1. **Landing page stays the Worklist; per-case Intake stays separate** — the AA.1 split
+   is ratified; the comp's one-page Intake is not adopted.
+2. **The header restart button stays out** — "leave this as is."
+3. **The rate card is CONFIRMED**: "$32/site standard, $48 rush, exceptions at half" —
+   the client's own words adopting the placeholder figures as the price list. The
+   invoice's placeholder status retires (AB.1 below); the not-a-quotation hedge goes
+   with it. The rates stay server-side, one home.
+4. **The three comp-vs-ruling conflicts are ratified in the product's favor** — terms
+   keep gating payment at Delivery (their 2026-07-30 ruling), DEV RMS + DEV P90 keep
+   their (run)/(preview) provenance, the label stays "Numbers & log."
+5. **A tolerance number SHALL be displayed, as a served fact** ("Do this") — the band
+   the verdicts actually use becomes part of the assurance payload and renders on
+   Delivery only when served (AB.2 below). The no-client-side-tolerance rule is
+   unchanged; what changes is that the server now states its band.
+6. **Browser upload is greenlit** (retires O.6's refusal-to-pretend; AB.3 below) and
+   **the turnaround chooser lands at Intake** now that the rate card is real (AB.4).
+7. The standing engineering queue (O.7 emit_from_poses, B/C per-site relief, E, H's
+   renames) proceeds. §10-L's recess measurement and §10-J's tool-2 words still wait
+   on the client's physical measurement and wording respectively — restated, not
+   resolved, by this batch.

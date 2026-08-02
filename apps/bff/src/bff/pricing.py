@@ -10,15 +10,15 @@ the authorization route prices the case at the moment it authorizes and RECORDS 
 charged on ``PaymentRecord``, so a receipt is re-derivable afterwards even when the
 lab's turnaround choice moves on.
 
-THE NUMBERS BELOW ARE PLACEHOLDERS. The client has supplied no price list, and inventing
-one and shipping it as fact would be the mistake ``TERMS_TEXT_PLACEHOLDER`` exists to
-avoid, with money attached. The design prototype's own figures ($32 standard / $48 rush
-per site, exceptions at half) are carried across as the placeholder so the surface has
-believable shapes to render, and every invoice says ``status: "placeholder"`` in the
-open. Swapping in the client's real rates is a change to ``_UNIT_CENTS`` plus a bump of
+THE NUMBERS BELOW ARE THE CLIENT'S CONFIRMED CARD (in-chat, 2026-08-02, §10-AB.3).
+They began as the design prototype's placeholder figures; the client ratified them
+verbatim — "$32/site standard, $48 rush, exceptions at half" — so ``status`` flipped
+from ``"placeholder"`` to ``"final"`` and the not-a-quotation hedge retired with it.
+Any FUTURE change to the card is still a change to ``_UNIT_CENTS`` plus a bump of
 ``RATE_CARD_VERSION`` — the version rides onto every payment record, so an amount
-charged under the old card stays readable as having been charged under THAT card, never
-silently reinterpreted (the ``TERMS_VERSION`` precedent, for the same reason).
+charged under an old card stays readable as having been charged under THAT card, never
+silently reinterpreted (the ``TERMS_VERSION`` precedent, for the same reason; amounts
+charged under ``placeholder-v1`` keep saying so).
 
 MONEY IS INTEGER CENTS, never a float: a rate table in dollars-as-float would put
 0.1 + 0.2 under a signature. The half-rate exception is integer division, and
@@ -40,17 +40,19 @@ from pydantic import BaseModel, Field
 CURRENCY = "USD"
 
 # bump this beside ANY change to the card below — a payment record carries the version
-# it was charged under, and an old amount must never be read as the new card's
-RATE_CARD_VERSION = "placeholder-v1"
+# it was charged under, and an old amount must never be read as the new card's.
+# Amounts charged under "placeholder-v1" stay readable as exactly that.
+RATE_CARD_VERSION = "client-2026-08-02-v1"
 
-# the word the wire uses for "these rates are not the client's yet" (TermsDocumentView's
-# own vocabulary, so a surface can render both the same way)
-RATE_CARD_STATUS = "placeholder"
+# CONFIRMED (client in-chat, 2026-08-02, §10-AB.3): the client ratified the standing
+# figures as the price list — "leave it like this: $32/site standard, $48 rush,
+# exceptions at half." The wire word flips to "final"; the product's placeholder
+# badges key off this word and drop with no product change.
+RATE_CARD_STATUS = "final"
 
 RATE_CARD_NOTE = (
-    "PLACEHOLDER RATES — pending the client's price list. The figures are the design "
-    "prototype's ($32 per site standard, $48 rush, exceptions at half rate) and are "
-    "not a quotation."
+    "Rates confirmed by the client on 2026-08-02: $32 per site standard, $48 rush, "
+    "exceptions at half rate."
 )
 
 # per released site, keyed by turnaround — the ONE thing the turnaround choice changes
