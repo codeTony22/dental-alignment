@@ -582,6 +582,18 @@ describe("the workspace toolbar over the panes", () => {
     );
   });
 
+  /* THE PROVENANCE POPOVER (gap `deviation-budget-in-workspace`) rides beside the
+     arch opener in the SAME children slot — pinned here so severing either mount
+     (this stage forgetting to render `<WorkspaceInsight>`, or the component itself
+     losing its toggle) fails a test instead of going unnoticed until a demo. */
+  it("carries the site-numbers-and-case-log toggle beside the arch opener", () => {
+    const html = view();
+    const toolbar = html.slice(html.indexOf('data-role="workspace-toolbar"'));
+    expect(toolbar.slice(0, toolbar.indexOf("</div>") + 6)).toContain(
+      'data-role="insight-toggle"',
+    );
+  });
+
   it("the zoom step renders only where the stage can actually apply it", () => {
     // Same rule as the presets: a control with no handler is a control that lies.
     expect(view()).not.toContain('data-role="zoom"');

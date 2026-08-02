@@ -286,6 +286,14 @@ class TestCatalogReads:
         ids = {row["path_id"] for row in construction_parts(REAL)}
         assert {"dess/neodent-gm-scanbody.stl", "atlantis/zimmer-4.5-scanbody.stl"} <= ids
 
+    def test_construction_parts_rows_carry_a_mesh_url(self):
+        # the product-only seam (server.py:394 serves the shared adapter's rows
+        # VERBATIM and has no such route to honour): the wrapper here, not the
+        # adapter, is where a part gains a URL the BFF actually serves
+        rows = {row["path_id"]: row for row in construction_parts(REAL)}
+        row = rows["dess/neodent-gm-scanbody.stl"]
+        assert row["mesh_url"] == "/api/constructions/dess/neodent-gm-scanbody.stl/mesh"
+
     def test_relief_ceiling_refuses_an_unknown_construction(self):
         with pytest.raises(UnknownSelection):
             relief_ceiling(REAL, "nowhere/nothing.stl", "neodent-gm", "5020")

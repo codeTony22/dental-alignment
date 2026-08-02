@@ -60,6 +60,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     # case_sessions for the same path-shadowing reason as the two above
     app.include_router(activity.router)
     app.include_router(library.router)
+    app.include_router(library.constructions_router)
 
     @app.exception_handler(RequestValidationError)
     async def validation_refusal(request: Request, exc: RequestValidationError):

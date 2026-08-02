@@ -110,6 +110,7 @@ import { SitePanesView, useSitePaneScene, type PaneId } from "./SitePanes";
    on why it is exported from Declare rather than sitting in its own module. */
 import { clampZoomLevel } from "viewer";
 import { WorkspaceToolbar } from "./DeclareStage";
+import { WorkspaceInsight } from "./WorkspaceInsight";
 
 /** What the surface is waiting on — named, so it never freezes silently. */
 export type ToolPhase = "idle" | "working";
@@ -227,6 +228,12 @@ export interface AdjustStageViewProps {
    *  the whole workspace, held by the container. */
   readonly zoomLevel?: number;
   readonly onZoom?: (direction: 1 | -1) => void;
+  /** THE PROVENANCE POPOVER (gap `deviation-budget-in-workspace`), already assembled
+   *  by the container — same pattern as `panes` above, and for the same reason: the
+   *  real control needs this stage's caseId, which the View was never given. Optional
+   *  with a null default: static callers predate it, exactly like every other
+   *  toolbar addition on this surface. */
+  readonly insightSlot?: React.ReactNode;
 }
 
 function ToolTabs({
@@ -503,6 +510,7 @@ export function AdjustStageView({
   viewPresetsAvailable,
   zoomLevel,
   onZoom,
+  insightSlot = null,
 }: AdjustStageViewProps) {
   const active = entries.find((e) => e.tooth === activeTooth) ?? null;
   const busy = phase === "working";
@@ -644,7 +652,9 @@ export function AdjustStageView({
           viewPresetsAvailable={viewPresetsAvailable}
           zoomLevel={zoomLevel}
           onZoom={onZoom}
-        />
+        >
+          {insightSlot}
+        </WorkspaceToolbar>
         {panes}
         <div className="workspace-drawer">
           <section data-role="adjust-toolbox" aria-label="Correction tools"
@@ -1705,6 +1715,12 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       stats={alignmentStats(rows, activeTooth, activeSite?.declared_variant ?? null)}
       onBack={() => navigate(`/case/${caseId}/declare`)}
       onForward={() => navigate(`/case/${caseId}/deliver`)}
+      /* THE PROVENANCE POPOVER: assembled here, not in the View, because it needs
+         this stage's caseId — same reasoning as `panes` above. `detail` is the
+         refresh key: it is only replaced wholesale when an act actually lands. */
+      insightSlot={
+        <WorkspaceInsight caseId={caseId} tooth={activeTooth} refreshKey={detail} />
+      }
     />
   );
 }

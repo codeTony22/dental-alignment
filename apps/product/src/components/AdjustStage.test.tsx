@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AdjustStageView } from "./AdjustStage";
+import { WorkspaceInsight } from "./WorkspaceInsight";
 import { autoMarkDrafts, newPairDraft, withPick, type AdjustQueueEntry } from "../domain/adjust";
 import type { AdjustOutcomeView, LandmarkView } from "../api/client";
 
@@ -793,6 +794,23 @@ describe("the workspace toolbar over the panes", () => {
     const wired = view({ onSelectView: () => undefined, viewPreset: "occlusal" });
     expect(wired).toMatch(
       /data-role="view-preset"[^>]*data-preset="occlusal"[^>]*aria-pressed="true"/,
+    );
+  });
+
+  /* THE PROVENANCE POPOVER (gap `deviation-budget-in-workspace`). Adjust had NO
+     toolbar children slot at all before this — `insightSlot` is assembled by the
+     container (it needs this stage's caseId, which the View is never given, same
+     reasoning as `panes`). Pinned at the VIEW layer, same as every other toolbar
+     control in this file: severing the container's wiring is a code-reading concern,
+     but the View forgetting to place the slot INSIDE the toolbar is what this guards. */
+  it("carries the site-numbers-and-case-log toggle inside the toolbar, wherever the container hands it one", () => {
+    expect(view()).not.toContain('data-role="insight-toggle"');
+    const html = view({
+      insightSlot: <WorkspaceInsight caseId="case-a" tooth={13} />,
+    });
+    const toolbar = html.slice(html.indexOf('data-role="workspace-toolbar"'));
+    expect(toolbar.slice(0, toolbar.indexOf("</div>") + 6)).toContain(
+      'data-role="insight-toggle"',
     );
   });
 });

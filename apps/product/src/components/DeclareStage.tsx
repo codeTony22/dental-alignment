@@ -61,6 +61,7 @@ import { canZoom, clampZoomLevel } from "viewer";
 import { captureChipLabel } from "../domain/intake";
 import { DeclarePanes } from "./DeclarePanes";
 import { MainStage } from "./MainStage";
+import { WorkspaceInsight } from "./WorkspaceInsight";
 
 /** What is in flight, named — the surface states it instead of freezing silently. */
 export type DeclareSaving = "idle" | "system" | "declaration";
@@ -711,6 +712,16 @@ export function DeclareStageView({
           >
             ⊞ Arch context — the whole scan
           </button>
+          {/* THE PROVENANCE POPOVER (gap `deviation-budget-in-workspace`), beside the
+              arch opener — the toolbar's OTHER standing control, not a second row of
+              chrome. `detail` is passed as the refresh key: CaseShell only replaces it
+              wholesale when an act actually lands (onDetail), so an already-open
+              popover re-asks exactly when there is something new to show. */}
+          <WorkspaceInsight
+            caseId={detail.case.id}
+            tooth={active?.tooth ?? null}
+            refreshKey={detail}
+          />
         </WorkspaceToolbar>
         {panesSlot}
         {/* ONE CONTROLS ROW, NOT TWO CARD DECKS (client 2026-08-02: "There is

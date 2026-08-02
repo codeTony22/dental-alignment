@@ -29,6 +29,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import quote
 
 import trimesh
 
@@ -52,9 +53,20 @@ def library_groups(data_root: Path) -> List[dict]:
 
 
 def construction_parts(data_root: Path) -> List[dict]:
-    """Every vendor construction part on disk, as ``{vendor, filename, path_id, label}``
-    rows; the operator picks by ``path_id`` and the run uses exactly that file."""
-    return construction_catalog.construction_entries(Path(data_root))
+    """Every vendor construction part on disk, as ``{vendor, filename, path_id, label,
+    mesh_url}`` rows; the operator picks by ``path_id`` and the run uses exactly that
+    file.
+
+    ``mesh_url`` is added HERE, not in the shared adapter: ``construction_entries`` is
+    served verbatim by the frozen demo's ``GET /api/constructions`` (server.py:394),
+    which has no mesh route to honour the URL. The product's BFF does
+    (``GET /api/constructions/{vendor}/{filename}/mesh``), so this product-only wrapper
+    is where the row gains it — the same split ``library_catalog``'s cap rows already
+    draw between the catalog build and its served ``mesh_url``."""
+    return [{**row,
+            "mesh_url": "/api/constructions/{}/{}/mesh".format(
+                quote(row["vendor"], safe=""), quote(row["filename"], safe=""))}
+           for row in construction_catalog.construction_entries(Path(data_root))]
 
 
 def require_construction(data_root: Path, construction_path: str) -> Path:
