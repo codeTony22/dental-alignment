@@ -1195,3 +1195,14 @@ confidence %, no browser upload, no client-side tolerance words, no outcome prom
   comp's batch codes, clinic names and per-card fake MB have no source and are not
   invented. The page keeps the honest title "Worklist"; the comp's lead ports minus its
   false clause ("or drop a new scan" — there is no browser upload, AA holds O.6).
+
+**AA.2 — the construction library as the comp's page.** One centered `.stage-page`
+spanning both workbench columns (grid-column 1/-1 — the lone-wrapper-in-the-356px-column
+failure the old two-children markup dodged is retired at the grid instead); title + lead
+in the comp's type; parts as the comp's CARDS in an auto-fit grid, vendor groups kept
+(they are real attribution the comp lacks); a non-effective card wears the neutral
+"select" invite, the effective one keeps its server-attributed suggested/selected chip.
+The page's acts move to the preview column's foot, forward leading, the blocked forward
+staying visible at 0.45 opacity. Still refused, per M/O.5: the comp's four invented
+parts, prices and lead times; its dataless preview disc. The four preview branches and
+their provenance captions are untouched.

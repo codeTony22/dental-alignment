@@ -6563,3 +6563,107 @@ button.package-files__link:hover {
   font-size: 11px;
   margin-bottom: 11px;
 }
+
+/* ---- round 2: the construction library as the comp's page (comp L516-554).
+   `.stage-page` is the shared page-mode container: one wrapper spanning BOTH
+   workbench columns (the lone-wrapper-in-the-356px-column failure is retired at
+   the grid), scrolling itself, content centered at the comp's 1120px. ---- */
+.stage-page {
+  grid-column: 1 / -1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.stage-page__inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 4px 2px 34px;
+}
+
+.stage-page__title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.stage-page__lead {
+  margin: 3px 0 16px;
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}
+
+.library-page__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 13px;
+  align-items: flex-start;
+}
+
+.library-page__parts {
+  flex: 1 1 380px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.library-parts__grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 9px;
+}
+
+/* The comp's part CARD (L524-534): column layout, radius 12, name + chip head.
+   Overrides the earlier row-shaped .library-part above — same class, the card is
+   the same control wearing the comp's clothes. */
+.library-part {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 5px;
+  padding: 13px 14px;
+  border-radius: 12px;
+  height: 100%;
+}
+
+.library-part__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 8px;
+}
+
+.library-part__head .library-part__label {
+  flex: 1 1 auto;
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+.library-preview {
+  flex: 1 1 300px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The pending gap reads as the preview card's empty state, not floating text. */
+.library-preview > .panel__hint {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 14px 15px;
+  margin: 0;
+}
+
+.library-preview__acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}

@@ -174,6 +174,34 @@ describe("the construction library page", () => {
   });
 });
 
+/**
+ * THE COMP'S PAGE CLOTHES (page pass 2026-08-02, §10-AA): the library is a centered
+ * PAGE — part cards left, the preview column right with the acts at its foot — not a
+ * control column beside a stage. What stays pinned above (no invented parts, no
+ * prices, provenance captions, gating) is untouched by the re-dress.
+ */
+describe("the comp's page clothes", () => {
+  it("spans the workbench as one centered page", () => {
+    expect(view()).toMatch(/data-role="library-stage"[^>]*class="stage-page/);
+  });
+
+  it("offers a non-effective part as a card wearing the comp's select chip", () => {
+    const html = view();
+    // the effective row keeps its suggested/selected chip; the OTHER row invites
+    expect(html).toContain(">select<");
+  });
+
+  it("keeps the acts at the preview column's foot, forward leading", () => {
+    const html = view();
+    const preview = html.slice(html.indexOf('data-role="library-preview"'));
+    expect(preview).toContain('data-role="library-forward"');
+    expect(preview).toContain('data-role="library-back"');
+    expect(preview.indexOf('data-role="library-forward"')).toBeLessThan(
+      preview.indexOf('data-role="library-back"'),
+    );
+  });
+});
+
 // --- the unrun-part preview (§10-M2's "natural next slice", 2026-08-02): arming a
 // candidate replaces the pane's content with the CATALOG's own mesh for that part,
 // because there is no run behind an unarmed candidate for a union to exist from.

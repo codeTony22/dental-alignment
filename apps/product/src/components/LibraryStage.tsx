@@ -95,163 +95,182 @@ export function LibraryStageView({
     info.pathId !== null ? options.find((o) => o.path_id === info.pathId) ?? null : null;
 
   return (
-    /* TWO CHILDREN, because `.stage-contents` is `display: contents` — a stage's own
-       children become the workbench grid's columns. The picker is a CONTROL, so it
-       belongs in the narrow work column beside every other stage's controls; the
-       union preview is the SUBJECT, so it takes the stage. Rendering one wrapper put
-       the whole page in the 356px control column (caught by running it, not by a
-       test — every assertion here is on markup, and markup cannot see a column). */
-    <>
-      <div data-role="library-stage" className="workbench__work">
+    /* ONE CENTERED PAGE, spanning the workbench (comp page pass 2026-08-02, §10-AA):
+       the comp's library is a title, a lead, part CARDS on the left and the preview
+       column on the right — not a control column beside a stage. `.stage-page` spans
+       both workbench columns (grid-column: 1 / -1), which is what makes a single
+       wrapper safe: the previous two-children layout existed because a lone wrapper
+       landed in the 356px control column, and the span rule retires that failure at
+       the grid rather than by markup shape. */
+    <div data-role="library-stage" className="stage-page">
+      <div className="stage-page__inner">
         {error !== null && <ErrorBanner detail={error} />}
 
-        <section data-role="library-parts" className="panel">
-          <h2 className="panel__title">Construction library</h2>
-          <p data-role="library-note" className="panel__hint">
-            {libraryNote(chosen)}
-          </p>
-          {groups.length === 0 ? (
-            <p className="panel__hint">
-              This data tree carries no construction parts, so there is nothing to pick.
-            </p>
-          ) : (
-            groups.map((group) => (
-              <div key={group.vendor} className="library-parts__group">
-                <p className="library-parts__vendor">{group.vendor}</p>
-                <ul className="library-parts__options">
-                  {group.options.map((option) => {
-                    const active = option.path_id === (candidate ?? info.pathId);
-                    return (
-                      <li key={option.path_id}>
-                        <button
-                          type="button"
-                          data-role="library-part"
-                          data-part={option.path_id}
-                          data-active={active ? "true" : "false"}
-                          className={
-                            active
-                              ? "library-part library-part--on"
-                              : "library-part"
-                          }
-                          disabled={saving}
-                          onClick={() => onPick(option.path_id)}
-                        >
-                          <span className="library-part__label">{option.label}</span>
-                          {option.path_id === info.pathId && (
-                            <span className="chip chip--ready">
-                              {info.suggested ? "suggested" : "selected"}
-                            </span>
-                          )}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ))
-          )}
-        </section>
+        <h2 className="stage-page__title">Construction library</h2>
+        <p data-role="library-note" className="stage-page__lead">
+          {libraryNote(chosen)}
+        </p>
 
-        {candidate !== null && (
-          <section data-role="library-confirm" className="panel">
-            <p className="panel__hint">
-              {constructionChangeWords(
-                options.find((o) => o.path_id === candidate)?.label ?? candidate,
-                detail.session.confirmed,
+        <div className="library-page__body">
+          <div className="library-page__parts">
+            <section data-role="library-parts" className="library-parts">
+              {groups.length === 0 ? (
+                <p className="panel__hint">
+                  This data tree carries no construction parts, so there is nothing to
+                  pick.
+                </p>
+              ) : (
+                groups.map((group) => (
+                  <div key={group.vendor} className="library-parts__group">
+                    <p className="library-parts__vendor">{group.vendor}</p>
+                    <ul className="library-parts__grid">
+                      {group.options.map((option) => {
+                        const active = option.path_id === (candidate ?? info.pathId);
+                        const effective = option.path_id === info.pathId;
+                        return (
+                          <li key={option.path_id}>
+                            <button
+                              type="button"
+                              data-role="library-part"
+                              data-part={option.path_id}
+                              data-active={active ? "true" : "false"}
+                              className={
+                                active
+                                  ? "library-part library-part--on"
+                                  : "library-part"
+                              }
+                              disabled={saving}
+                              onClick={() => onPick(option.path_id)}
+                            >
+                              <span className="library-part__head">
+                                <span className="library-part__label">
+                                  {option.label}
+                                </span>
+                                {/* the comp's card chip: the effective row states its
+                                    ATTRIBUTION (suggested/selected — the server's
+                                    word), any other row wears the neutral invite */}
+                                {effective ? (
+                                  <span className="chip chip--ready">
+                                    {info.suggested ? "suggested" : "selected"}
+                                  </span>
+                                ) : (
+                                  <span className="chip chip--gate">select</span>
+                                )}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))
               )}
-            </p>
-            <div className="panel__actions">
-              <button
-                type="button"
-                data-role="library-commit"
-                className="button button--primary button--small"
-                disabled={saving}
-                onClick={onCommit}
-              >
-                {constructionChangeRetiresSomething(detail.session)
-                  ? "Change the part and retire the run"
-                  : "Set this part"}
-              </button>
-              <button
-                type="button"
-                data-role="library-cancel"
-                className="button button--ghost button--small"
-                disabled={saving}
-                onClick={onCancel}
-              >
-                Keep the current part
-              </button>
-            </div>
-          </section>
-        )}
+            </section>
 
-        <section className="panel">
-          <div className="panel__actions">
-            <a
-              data-role="library-back"
-              className="button button--ghost button--small"
-              href={`/case/${caseId}/adjust`}
-            >
-              Back to Adjustment
-            </a>
-            {chosen ? (
-              <a
-                data-role="library-forward"
-                className="button button--primary button--small"
-                href={`/case/${caseId}/deliver`}
-              >
-                {libraryForwardLabel(true)}
-              </a>
-            ) : (
-              <span
-                data-role="library-forward"
-                className="button button--primary button--small"
-                aria-disabled="true"
-              >
-                {libraryForwardLabel(false)}
-              </span>
+            {candidate !== null && (
+              <section data-role="library-confirm" className="panel">
+                <p className="panel__hint">
+                  {constructionChangeWords(
+                    options.find((o) => o.path_id === candidate)?.label ?? candidate,
+                    detail.session.confirmed,
+                  )}
+                </p>
+                <div className="panel__actions">
+                  <button
+                    type="button"
+                    data-role="library-commit"
+                    className="button button--primary button--small"
+                    disabled={saving}
+                    onClick={onCommit}
+                  >
+                    {constructionChangeRetiresSomething(detail.session)
+                      ? "Change the part and retire the run"
+                      : "Set this part"}
+                  </button>
+                  <button
+                    type="button"
+                    data-role="library-cancel"
+                    className="button button--ghost button--small"
+                    disabled={saving}
+                    onClick={onCancel}
+                  >
+                    Keep the current part
+                  </button>
+                </div>
+              </section>
             )}
           </div>
-        </section>
-      </div>
 
-      <section data-role="library-preview" className="workbench__stage">
-        {/* NO PLACEHOLDER DISC. The design comp's preview reads no data at all and
-            wears the scan cap's palette, so porting it would depict the cap and imply
-            a union that is not there. Where the RUN built a real unified mesh this
-            renders that; where it did not, the gap is stated. */}
-        {armedOption !== null ? (
-          // DECISION (client direction, 2026-08-02): an ARMED candidate REPLACES the
-          // pane's content rather than stacking a second pane beside the run's own
-          // mesh — ONE pane, the comp's own shape, and the workbench grid's column
-          // budget is already tight (plan §10-P.2). Disarming (Cancel, or committing
-          // so the candidate clears) returns the pane to whatever it showed before:
-          // the run's own union above, or the stated gap.
-          <PartPreview label={armedOption.label} meshUrl={armedOption.mesh_url ?? null} />
-        ) : previewTab === null && effectiveOption?.mesh_url ? (
-          /* THE EFFECTIVE-BUT-UNRUN PART (follow-up to the armed slice, client "do
-             what is recommended" 2026-08-02). No run receipt is readable, but the
-             case already holds an effective construction and the catalog serves its
-             mesh — showing the bare pending gap here was withholding an answer the
-             server had. Same pane, same §10-M2 doctrine as the armed branch: the
-             part alone, in its own frame, implying no union nobody computed. A row
-             without a mesh_url still falls through to the stated gap below — a
-             guessed URL is worse than an honest absence. */
-          <PartPreview label={info.label} meshUrl={effectiveOption.mesh_url} />
-        ) : previewTab === null ? (
-          <p data-role="library-preview-pending" className="panel__hint">
-            {libraryPreviewPending()}
-          </p>
-        ) : (
-          <>
-            <DeliverPreview caseId={caseId} tabs={[previewTab]} />
-            <p data-role="library-preview-caption" className="panel__hint">
-              {libraryPreviewCaption(info.label)}
-            </p>
-          </>
-        )}
-      </section>
-    </>
+          <section data-role="library-preview" className="library-preview">
+            {/* NO PLACEHOLDER DISC. The design comp's preview reads no data at all and
+                wears the scan cap's palette, so porting it would depict the cap and
+                imply a union that is not there. Where the RUN built a real unified
+                mesh this renders that; where it did not, the gap is stated. */}
+            {armedOption !== null ? (
+              // DECISION (client direction, 2026-08-02): an ARMED candidate REPLACES
+              // the pane's content rather than stacking a second pane beside the
+              // run's own mesh — ONE pane, the comp's own shape. Disarming (Cancel,
+              // or committing so the candidate clears) returns the pane to whatever
+              // it showed before: the run's own union above, or the stated gap.
+              <PartPreview
+                label={armedOption.label}
+                meshUrl={armedOption.mesh_url ?? null}
+              />
+            ) : previewTab === null && effectiveOption?.mesh_url ? (
+              /* THE EFFECTIVE-BUT-UNRUN PART (client "do what is recommended",
+                 2026-08-02). No run receipt is readable, but the case already holds
+                 an effective construction and the catalog serves its mesh — same
+                 pane, same §10-M2 doctrine as the armed branch: the part alone,
+                 implying no union nobody computed. A row without a mesh_url still
+                 falls through to the stated gap — a guessed URL is worse than an
+                 honest absence. */
+              <PartPreview label={info.label} meshUrl={effectiveOption.mesh_url} />
+            ) : previewTab === null ? (
+              <p data-role="library-preview-pending" className="panel__hint">
+                {libraryPreviewPending()}
+              </p>
+            ) : (
+              <>
+                <DeliverPreview caseId={caseId} tabs={[previewTab]} />
+                <p data-role="library-preview-caption" className="panel__hint">
+                  {libraryPreviewCaption(info.label)}
+                </p>
+              </>
+            )}
+
+            {/* The comp keeps the page's acts at the preview card's foot (template
+                L537-550), forward leading; the disabled forward stays visible in the
+                0.45-opacity convention rather than vanishing. */}
+            <div className="library-preview__acts">
+              {chosen ? (
+                <a
+                  data-role="library-forward"
+                  className="button button--primary button--small"
+                  href={`/case/${caseId}/deliver`}
+                >
+                  {libraryForwardLabel(true)}
+                </a>
+              ) : (
+                <span
+                  data-role="library-forward"
+                  className="button button--primary button--small"
+                  aria-disabled="true"
+                >
+                  {libraryForwardLabel(false)}
+                </span>
+              )}
+              <a
+                data-role="library-back"
+                className="button button--ghost button--small"
+                href={`/case/${caseId}/adjust`}
+              >
+                Back to Adjustment
+              </a>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
   );
 }
 
