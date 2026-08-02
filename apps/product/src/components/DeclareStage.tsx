@@ -169,7 +169,7 @@ function SiteQueue({ detail, activeTooth, runRows, onSelectSite }: SiteQueueProp
   const active = activeSiteFrom(detail.sites, activeTooth);
   return (
     <aside data-role="declare-queue" aria-label="Site queue" className="panel">
-      <h3 className="panel__title">Site queue</h3>
+      <h3 className="panel__title">Sites in this case</h3>
       {/* THE PROGRESS LINE (gap `declare-queue-header`): Adjust's queue has headed
           with its counts since slice 6 and Declare's did not, so the stage with a
           per-site obligation was the one that never said how many were left. Hidden
@@ -748,83 +748,12 @@ export function DeclareStageView({
                Each RECORDS the decision (it rides into the evidence bundle) and then
                navigates. Reachability is untouched: skipping never closes Adjust. */}
         </div>
-      </div>
-      <div className="workbench__stage workbench__stage--split">
-        {/* THE ARCH IS A DIALOG NOW, not a standing strip (client 2026-07-30: "small
-            panels, the view is cut off ... maybe the arch context view can just be a
-            modal"). The always-open strip cost the panes a third of the stage and
-            pushed the union pane below the fold — orientation was taxing the very
-            surface it existed to orient. As a dialog the arch costs one click when
-            wanted and zero pixels when not, and the WebGL viewer only MOUNTS while
-            open, which is one fewer live context the three panes compete with. */}
-        {/* THE STRIP CARRIES THE SITE NOW, not just the arch opener (gaps
-            `workspace-toolbar-site-chip` + `alignment-metrics-strip`). The chip is
-            the SERVER's rung and the numbers are the run's own rows — the same rows
-            the queue's sentences read — so this surface adds a location, never a
-            claim. The presets DO reach the three pane cameras (useSitePaneScene's
-            frame construction), and whether the off-axis two can is a fact about the
-            preview: `viewPresetsAvailable` is the container's answer, reported up out
-            of DeclarePanes, because a preset that cannot reach a camera is a control
-            that lies. */}
-        <WorkspaceToolbar
-          tooth={active?.tooth ?? null}
-          systemModel={detail.system.effective_model}
-          status={active?.status ?? null}
-          stats={alignmentStats(
-            runRows,
-            active?.tooth ?? null,
-            active?.declared_variant ?? null,
-            previewFigures,
-          )}
-          viewPreset={viewPreset}
-          onSelectView={onSelectView}
-          viewPresetsAvailable={viewPresetsAvailable}
-          zoomLevel={zoomLevel}
-          onZoom={onZoom}
-          linked={linked}
-          onToggleLinked={onToggleLinked}
-        >
-          <button
-            type="button"
-            data-role="arch-open"
-            className="button button--secondary button--small"
-            onClick={() => setArchOpen(true)}
-          >
-            ⊞ Arch context — the whole scan
-          </button>
-          {/* THE PROVENANCE POPOVER (gap `deviation-budget-in-workspace`), beside the
-              arch opener — the toolbar's OTHER standing control, not a second row of
-              chrome. `detail` is passed as the refresh key: CaseShell only replaces it
-              wholesale when an act actually lands (onDetail), so an already-open
-              popover re-asks exactly when there is something new to show. */}
-          <WorkspaceInsight
-            caseId={detail.case.id}
-            tooth={active?.tooth ?? null}
-            refreshKey={detail}
-          />
-        </WorkspaceToolbar>
-        {panesSlot}
-        {/* ONE CONTROLS ROW, NOT TWO CARD DECKS (client 2026-08-02: "There is
-            multiple scrolling sections here which is really weird, we need to be more
-            cohesive and organized"). The drawer held two full panels — system cards
-            and a variant card grid — which is what pushed the page into its second
-            scroll. Both pickers are selects on one slim row now; the panes above get
-            the pixels back, and the drawer never has enough content left to scroll. */}
-        <div className="workspace-drawer workspace-drawer--declare">
-          <div data-role="declare-controls" className="declare-controls">
-            <SystemSelect detail={detail} onAskSwitch={onAskSwitch} />
-            <VariantChips active={active} shelves={shelves} onDeclare={onDeclare} />
-          </div>
-          {pendingSwitch !== null && (
-            <SwitchConfirm
-              detail={detail}
-              pendingSwitch={pendingSwitch}
-              onConfirm={onConfirmSwitch}
-              onCancel={onCancelSwitch}
-            />
-          )}
-        </div>
-        <div className="workspace-advance">
+
+        {/* THE FORK, IN THE COLUMN'S OWN FOOT (comp, read directly 2026-08-02: its
+            sticky footer pins the stage nav at the bottom of the queue column —
+            "review every site first · 0/1" over "run first" — and the full width
+            under the panes stays with the declaration controls). The set-faced
+            summary and the consequence sentence ride with the doors they inform. */}
           <div
             data-role="declare-advance"
             className="workbench__work-footer panel__actions panel__actions--advance"
@@ -912,6 +841,81 @@ export function DeclareStageView({
               </>
             )}
           </div>
+      </div>
+      <div className="workbench__stage workbench__stage--split">
+        {/* THE ARCH IS A DIALOG NOW, not a standing strip (client 2026-07-30: "small
+            panels, the view is cut off ... maybe the arch context view can just be a
+            modal"). The always-open strip cost the panes a third of the stage and
+            pushed the union pane below the fold — orientation was taxing the very
+            surface it existed to orient. As a dialog the arch costs one click when
+            wanted and zero pixels when not, and the WebGL viewer only MOUNTS while
+            open, which is one fewer live context the three panes compete with. */}
+        {/* THE STRIP CARRIES THE SITE NOW, not just the arch opener (gaps
+            `workspace-toolbar-site-chip` + `alignment-metrics-strip`). The chip is
+            the SERVER's rung and the numbers are the run's own rows — the same rows
+            the queue's sentences read — so this surface adds a location, never a
+            claim. The presets DO reach the three pane cameras (useSitePaneScene's
+            frame construction), and whether the off-axis two can is a fact about the
+            preview: `viewPresetsAvailable` is the container's answer, reported up out
+            of DeclarePanes, because a preset that cannot reach a camera is a control
+            that lies. */}
+        <WorkspaceToolbar
+          tooth={active?.tooth ?? null}
+          systemModel={detail.system.effective_model}
+          status={active?.status ?? null}
+          stats={alignmentStats(
+            runRows,
+            active?.tooth ?? null,
+            active?.declared_variant ?? null,
+            previewFigures,
+          )}
+          viewPreset={viewPreset}
+          onSelectView={onSelectView}
+          viewPresetsAvailable={viewPresetsAvailable}
+          zoomLevel={zoomLevel}
+          onZoom={onZoom}
+          linked={linked}
+          onToggleLinked={onToggleLinked}
+        >
+          <button
+            type="button"
+            data-role="arch-open"
+            className="button button--secondary button--small"
+            onClick={() => setArchOpen(true)}
+          >
+            ⊞ Arch context — the whole scan
+          </button>
+          {/* THE PROVENANCE POPOVER (gap `deviation-budget-in-workspace`), beside the
+              arch opener — the toolbar's OTHER standing control, not a second row of
+              chrome. `detail` is passed as the refresh key: CaseShell only replaces it
+              wholesale when an act actually lands (onDetail), so an already-open
+              popover re-asks exactly when there is something new to show. */}
+          <WorkspaceInsight
+            caseId={detail.case.id}
+            tooth={active?.tooth ?? null}
+            refreshKey={detail}
+          />
+        </WorkspaceToolbar>
+        {panesSlot}
+        {/* ONE CONTROLS ROW, NOT TWO CARD DECKS (client 2026-08-02: "There is
+            multiple scrolling sections here which is really weird, we need to be more
+            cohesive and organized"). The drawer held two full panels — system cards
+            and a variant card grid — which is what pushed the page into its second
+            scroll. Both pickers are selects on one slim row now; the panes above get
+            the pixels back, and the drawer never has enough content left to scroll. */}
+        <div className="workspace-drawer workspace-drawer--declare">
+          <div data-role="declare-controls" className="declare-controls">
+            <SystemSelect detail={detail} onAskSwitch={onAskSwitch} />
+            <VariantChips active={active} shelves={shelves} onDeclare={onDeclare} />
+          </div>
+          {pendingSwitch !== null && (
+            <SwitchConfirm
+              detail={detail}
+              pendingSwitch={pendingSwitch}
+              onConfirm={onConfirmSwitch}
+              onCancel={onCancelSwitch}
+            />
+          )}
         </div>
       </div>
       {archOpen && (

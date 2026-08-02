@@ -594,7 +594,7 @@ export function AdjustStageView({
       <div className="workbench__work workbench__work--footered">
         <div className="workbench__work-scroll">
         <aside data-role="adjust-queue" aria-label="Site queue" className="panel">
-          <h3 className="panel__title">Sites</h3>
+          <h3 className="panel__title">Adjustment queue — flagged first</h3>
           <p data-role="queue-summary" className="panel__hint">
             {queueSummary(entries)}
           </p>
@@ -678,13 +678,64 @@ export function AdjustStageView({
 
         </div>
 
-        {/* THE WAY ONWARD FROM ADJUST'S OWN RAIL (design review 2026-07-31; the
-            design's sticky footer, template 465-469). Until now the stage's only exit
-            was the top rail, which says nothing about what leaving the rest of the
-            queue costs. NAVIGATION ONLY: neither control records anything and neither
-            asserts a status — the consequence sentence and the blocked reason are
-            Declare's fork's own words, so the two doors out of the rework loop cannot
-            describe the same case differently. */}
+        {/* THE WAY ONWARD, IN THE COLUMN'S OWN FOOT (comp, read directly 2026-08-02:
+            its sticky footer — template 465-469 — pins the stage nav at the bottom of
+            the QUEUE column, forward above back, and leaves the full width under the
+            panes to the tools; slice B had moved this across to a stage-wide bar).
+            NAVIGATION ONLY: neither control records anything and neither asserts a
+            status — the consequence sentence and the blocked reason are Declare's
+            fork's own words, so the two doors out of the rework loop cannot describe
+            the same case differently. */}
+          <div
+            data-role="adjust-advance"
+            className="workbench__work-footer panel__actions panel__actions--advance"
+          >
+            <p data-role="adjust-skip-consequence" className="panel__hint">
+              {skipConsequenceWords(flaggedCount)}
+            </p>
+            {/* THE REASON IS PROSE, NOT A LABEL (client 2026-08-02: "Smaller buttons
+                here to give more space to the tools panel"). The bar's height was
+                mostly this one control: the whole blockedReason sentence lived INSIDE
+                the span, so a two-line sentence made a two-line button. The reason is
+                still NAMED and still visible — the doctrine is that a shut door says
+                why, not that the door must be the sentence — and the inert control
+                also carries it in `title`, so it explains itself to a pointer or a
+                screen reader without depending on the line beside it. */}
+            {deliverBlockedReason !== null && (
+              <p data-role="adjust-forward-reason" className="panel__hint">
+                {deliverBlockedReason}
+              </p>
+            )}
+            <div className="adjust-fork">
+              {deliverBlockedReason === null ? (
+                <button
+                  type="button"
+                  data-role="adjust-forward"
+                  className="button button--primary button--small"
+                  onClick={onForward}
+                >
+                  Done adjusting — go to Deliver
+                </button>
+              ) : (
+                <span
+                  data-role="adjust-forward"
+                  aria-disabled="true"
+                  title={deliverBlockedReason}
+                  className="button button--secondary button--small button--blocked"
+                >
+                  Go to Deliver
+                </span>
+              )}
+              <button
+                type="button"
+                data-role="adjust-back"
+                className="button button--secondary button--small"
+                onClick={onBack}
+              >
+                Back to Alignment
+              </button>
+            </div>
+          </div>
       </div>
       {/* THE STAGE GETS DECLARE'S TOOLBAR (design template 206-266). Adjust's own
           identity problem was worse than Declare's: the tooth appeared only in the
@@ -711,116 +762,13 @@ export function AdjustStageView({
         <div className="workspace-drawer">
           <section data-role="adjust-toolbox" aria-label="Correction tools"
                    className="panel">
-            {/* ONE HEAD ROW (client 2026-08-02: "Also on the tooling part" — the
-                drawer opened with a heading band, a re-read band, then the tabs).
-                The title and the re-read act share the row; the clock notice keeps
-                its own full-width line below, because it is a paragraph of fact,
-                not a control. */}
-            <div data-role="drawer-head" className="drawer-head">
-            {/* NO HEADING. The comp's tool panel opens straight on its tabs, and it is
-                right to: the tabs name the tool and the toolbar's site chip names the
-                tooth, so "Tools — tooth 3" was a row restating both. */}
-            {/* RE-PREVIEW AND THE UNVERIFIED-CLOCK NOTICE BOTH SIT HERE, ABOVE
-                ToolTabs — neither is any one correction tool's act (a re-read applies
-                nothing; the notice is a standing fact about the site), so both must
-                stay on screen whichever of the five tabs is open. Reconfirm and Drop,
-                the surface's OTHER site-level acts, sit below the tool body instead —
-                they are what the operator reaches for AFTER a tool has run, where
-                these two are what the operator reaches for INSTEAD of one, or before
-                picking one at all. */}
-            {active !== null && (
-              /* RE-PREVIEW (gap `re-preview-a-site-without-applying-a-tool`,
-                 2026-07-31). The server route is body-less by design — everything it
-                 reads is already in the run directory — and an applied tool already
-                 refreshes the panes; this is the read WITHOUT one. */
-              <div className="adjust-reread">
-                <button
-                  type="button"
-                  data-role="re-preview"
-                  className="button button--ghost button--small"
-                  /* `seatedPhase === "loading"` guards a narrow race: the initial
-                     GET .../seated for a freshly-selected site is still in flight, and
-                     its response replaces `payload` unconditionally when it lands
-                     (the container's own fetch effect). A re-read that resolves FIRST
-                     would then be clobbered by the stale seated read landing after
-                     it. Once that fetch has settled either way (ready or error) the
-                     effect never refires for this site, so the race is gone and a
-                     failed local read is exactly one case this control exists to
-                     recover — it stays live there on purpose. */
-                  disabled={busy || rePreviewPhase === "working" || seatedPhase === "loading"}
-                  onClick={onRePreview}
-                >
-                  {rePreviewPhase === "working"
-                    ? "Re-reading this site's numbers…"
-                    : rePreviewButtonLabel()}
-                </button>
-                {rePreviewError !== null ? (
-                  <div data-role="re-preview-error" role="alert" className="run-refusal">
-                    <strong className="run-refusal__title">
-                      The re-read did not reach an outcome.
-                    </strong>
-                    <p className="run-refusal__detail">{rePreviewError}</p>
-                  </div>
-                ) : (
-                  rePreviewResult !== null && (
-                    <div
-                      data-role="re-preview-result"
-                      role="status"
-                      className="adjust-outcome"
-                    >
-                      <p className="adjust-outcome__detail">
-                        {rePreviewWords(rePreviewResult)}
-                      </p>
-                      {rePreviewRows(rePreviewResult).length > 0 && (
-                        <ul data-role="re-preview-rows" className="adjust-outcome__pairs">
-                          {rePreviewRows(rePreviewResult).map((row) => (
-                            <li
-                              key={row.key}
-                              data-role="re-preview-row"
-                              data-metric={row.key}
-                              className="adjust-outcome__pair"
-                            >
-                              {row.label}: {row.previous ?? "—"} → {row.rederived ?? "—"}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {staleMetricsPhrase(rePreviewResult.stale_metrics) !== null && (
-                        <p data-role="re-preview-stale" className="adjust-outcome__note">
-                          Still carries {staleMetricsPhrase(rePreviewResult.stale_metrics)}{" "}
-                          from before this read — a re-read cannot derive it; only a
-                          full run can.
-                        </p>
-                      )}
-                    </div>
-                  )
-                )}
-              </div>
-            )}
-            {/* DROP JOINS THE HEAD (client 2026-08-02: "too much scrolling up and
-                down"). It sat past the tool body, so reaching the one act that holds a
-                cap back from the release always cost a scroll — and it is the same
-                KIND of act as the re-read beside it: about the site, not about
-                whichever tool is open. Its note repeated the button's own label almost
-                word for word ("holds it back from the release and the bill"), so the
-                sentence rides in `title` where it explains the control it belongs to
-                rather than restating it underneath. */}
-            {active !== null && (
-              <button
-                type="button"
-                data-role="drop-site"
-                data-dropped={active.dropped}
-                className={`button button--small ${
-                  active.dropped ? "button--secondary" : "button--ghost"
-                }`}
-                disabled={dropSaving}
-                title={dropNote(active.dropped)}
-                onClick={() => onDrop(active.tooth, !active.dropped)}
-              >
-                {dropSaving ? "Recording the decision…" : dropLabel(active.dropped)}
-              </button>
-            )}
-            </div>
+            {/* THE PANEL OPENS ON ITS TABS (comp, read directly 2026-08-02): no
+                heading — the tabs name the tool, the toolbar's chip names the tooth.
+                The SITE-level acts (re-read, drop) sit in ONE row at the panel's
+                FOOT, which is the comp's own arrangement; with the drawer no longer
+                scrolling (§10-V.3 fixed the flex order) the foot is as reachable as
+                the head was. The clock notice stays above the tabs — a standing
+                fact about the site, not an act on it. */}
 
             {clockNotice !== null && (
               /* THE UNVERIFIED CLOCK'S ACTIONABLE SURFACE (§10-H's "STILL OPEN" line,
@@ -1206,6 +1154,92 @@ export function AdjustStageView({
             )}
 
             {active !== null && (
+              <div data-role="drawer-acts" className="drawer-acts">
+                {/* RE-PREVIEW (gap `re-preview-a-site-without-applying-a-tool`,
+                    2026-07-31). The server route is body-less by design — everything
+                    it reads is already in the run directory — and an applied tool
+                    already refreshes the panes; this is the read WITHOUT one. In
+                    child position a bare comment RENDERS — it leaked onto the page
+                    once (caught by screenshot), hence the braces. */}
+              <div className="adjust-reread">
+                <button
+                  type="button"
+                  data-role="re-preview"
+                  className="button button--ghost button--small"
+                  /* `seatedPhase === "loading"` guards a narrow race: the initial
+                     GET .../seated for a freshly-selected site is still in flight, and
+                     its response replaces `payload` unconditionally when it lands
+                     (the container's own fetch effect). A re-read that resolves FIRST
+                     would then be clobbered by the stale seated read landing after
+                     it. Once that fetch has settled either way (ready or error) the
+                     effect never refires for this site, so the race is gone and a
+                     failed local read is exactly one case this control exists to
+                     recover — it stays live there on purpose. */
+                  disabled={busy || rePreviewPhase === "working" || seatedPhase === "loading"}
+                  onClick={onRePreview}
+                >
+                  {rePreviewPhase === "working"
+                    ? "Re-reading this site's numbers…"
+                    : rePreviewButtonLabel()}
+                </button>
+                {rePreviewError !== null ? (
+                  <div data-role="re-preview-error" role="alert" className="run-refusal">
+                    <strong className="run-refusal__title">
+                      The re-read did not reach an outcome.
+                    </strong>
+                    <p className="run-refusal__detail">{rePreviewError}</p>
+                  </div>
+                ) : (
+                  rePreviewResult !== null && (
+                    <div
+                      data-role="re-preview-result"
+                      role="status"
+                      className="adjust-outcome"
+                    >
+                      <p className="adjust-outcome__detail">
+                        {rePreviewWords(rePreviewResult)}
+                      </p>
+                      {rePreviewRows(rePreviewResult).length > 0 && (
+                        <ul data-role="re-preview-rows" className="adjust-outcome__pairs">
+                          {rePreviewRows(rePreviewResult).map((row) => (
+                            <li
+                              key={row.key}
+                              data-role="re-preview-row"
+                              data-metric={row.key}
+                              className="adjust-outcome__pair"
+                            >
+                              {row.label}: {row.previous ?? "—"} → {row.rederived ?? "—"}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {staleMetricsPhrase(rePreviewResult.stale_metrics) !== null && (
+                        <p data-role="re-preview-stale" className="adjust-outcome__note">
+                          Still carries {staleMetricsPhrase(rePreviewResult.stale_metrics)}{" "}
+                          from before this read — a re-read cannot derive it; only a
+                          full run can.
+                        </p>
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+              <button
+                type="button"
+                data-role="drop-site"
+                data-dropped={active.dropped}
+                className={`button button--small ${
+                  active.dropped ? "button--secondary" : "button--ghost"
+                }`}
+                disabled={dropSaving}
+                title={dropNote(active.dropped)}
+                onClick={() => onDrop(active.tooth, !active.dropped)}
+              >
+                {dropSaving ? "Recording the decision…" : dropLabel(active.dropped)}
+              </button>
+              </div>
+            )}
+            {active !== null && (
               /* DROP THIS CAP — DON'T RELEASE OR BILL IT (design dropSite 1345-1354,
                  its sticky footer's third control, template 471).
 
@@ -1241,58 +1275,6 @@ export function AdjustStageView({
               </div>
             )}
           </section>
-        </div>
-        <div className="workspace-advance">
-          <div
-            data-role="adjust-advance"
-            className="workbench__work-footer panel__actions panel__actions--advance"
-          >
-            <p data-role="adjust-skip-consequence" className="panel__hint">
-              {skipConsequenceWords(flaggedCount)}
-            </p>
-            {/* THE REASON IS PROSE, NOT A LABEL (client 2026-08-02: "Smaller buttons
-                here to give more space to the tools panel"). The bar's height was
-                mostly this one control: the whole blockedReason sentence lived INSIDE
-                the span, so a two-line sentence made a two-line button. The reason is
-                still NAMED and still visible — the doctrine is that a shut door says
-                why, not that the door must be the sentence — and the inert control
-                also carries it in `title`, so it explains itself to a pointer or a
-                screen reader without depending on the line beside it. */}
-            {deliverBlockedReason !== null && (
-              <p data-role="adjust-forward-reason" className="panel__hint">
-                {deliverBlockedReason}
-              </p>
-            )}
-            <div className="adjust-fork">
-              <button
-                type="button"
-                data-role="adjust-back"
-                className="button button--secondary button--small"
-                onClick={onBack}
-              >
-                Back to Alignment
-              </button>
-              {deliverBlockedReason === null ? (
-                <button
-                  type="button"
-                  data-role="adjust-forward"
-                  className="button button--primary button--small"
-                  onClick={onForward}
-                >
-                  Done adjusting — go to Deliver
-                </button>
-              ) : (
-                <span
-                  data-role="adjust-forward"
-                  aria-disabled="true"
-                  title={deliverBlockedReason}
-                  className="button button--secondary button--small button--blocked"
-                >
-                  Go to Deliver
-                </span>
-              )}
-            </div>
-          </div>
         </div>
       </div>
 

@@ -3145,9 +3145,13 @@ button.package-files__link:hover {
 }
 
 .adjust-tools__tab {
-  flex: 1 1 auto;
-  min-width: 96px;
-  padding: 6px 10px;
+  /* THE COMP'S PILLS (read directly 2026-08-02): natural width, rounded, left-run —
+     ours stretched five equal slabs across the whole drawer, which is most of why the
+     panel read nothing like the design. */
+  flex: 0 0 auto;
+  min-width: 0;
+  border-radius: 999px;
+  padding: 5px 12px;
   font-size: 12px;
   font-weight: 600;
   border: 1px solid var(--color-border);
@@ -3158,9 +3162,11 @@ button.package-files__link:hover {
 }
 
 .adjust-tools__tab--active {
-  background: var(--color-accent-green);
+  /* the comp's active tab is a green-tinted OUTLINE pill (the READY chip's own
+     triple), not a filled slab */
+  background: #eafaf0;
   border-color: var(--color-accent-green-dark);
-  color: #ffffff;
+  color: var(--color-accent-green-dark);
 }
 
 .adjust-tool {
@@ -6262,4 +6268,63 @@ button.package-files__link:hover {
   color: var(--color-text-muted);
   font-weight: 700;
   margin-bottom: 4px;
+}
+
+
+/* ===== THE COMP'S WORKSPACE SILHOUETTE, LANDED (2026-08-02) ========================
+   Stage nav in the queue column's foot; site acts in one row at the tool panel's
+   foot. The .workbench__work-footer base rules are the ORIGINAL design's own — the
+   fork lived there before slice B — so this mostly re-dresses the two forks for a
+   168px column: stacked, full-width, forward above back. */
+
+.workbench__work-footer .adjust-fork,
+.workbench__work-footer .declare-fork {
+  flex-direction: column;
+  align-items: stretch;
+  margin-left: 0;
+  gap: 6px;
+}
+
+.workbench__work-footer .adjust-fork > .button,
+.workbench__work-footer .declare-fork > .button {
+  /* long honest labels wrap in the column, as the comp's own do
+     ("accept the terms to continue" wraps two lines there too) */
+  white-space: normal;
+  text-align: center;
+}
+
+/* the set-faced summary rides above the doors it informs, capped so a full arch
+   cannot push them off screen — the original footer's own rule, restated here */
+.workbench__work-footer .attestation-summary {
+  max-height: 96px;
+  overflow-y: auto;
+  padding: 6px 8px;
+}
+
+/* THE ACTS ROW at the tool panel's foot (comp: re-preview · accept · drop on one
+   line under the tool body). A hairline seam over it, the same seam the advance bar
+   used to draw — the row is the panel's foot, not more tool body. */
+.drawer-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  border-top: 1px solid var(--color-border);
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.drawer-acts .adjust-reread {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+/* a re-read's outcome rows and refusal are sentences — full width, under the row */
+.drawer-acts [data-role="re-preview-result"],
+.drawer-acts [data-role="re-preview-error"] {
+  flex: 1 1 100%;
 }

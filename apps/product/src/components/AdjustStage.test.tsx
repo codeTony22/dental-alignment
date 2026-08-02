@@ -77,19 +77,22 @@ function view(overrides: Partial<Parameters<typeof AdjustStageView>[0]> = {}) {
   );
 }
 
-describe("the drawer head gathers the SITE-level acts (client 2026-08-02)", () => {
-  /* "I am not a fan of the scrolling on the tooling, it is too much scrolling up and
-     down." Drop sat at the very bottom of the drawer, past the tool body, so reaching
-     it always meant a scroll — and it is the same kind of act as the re-read beside
-     the title: about the SITE, not about whichever tool happens to be open. Both live
-     in the head row now; the drop's note, which repeated its own button label almost
-     word for word, rides in `title`. */
-  it("carries the drop act in the head, not below the tool body", () => {
+describe("the tool panel wears the comp's own shape (read directly 2026-08-02)", () => {
+  /* The comp opens straight on its tabs and closes on one row of site acts. The
+     scrolling complaint that once pushed Drop into a head row is answered upstream
+     now — §10-V.3 made the drawer take its content before the panes grow — so the
+     foot is as reachable as the head was, and the arrangement can be the comp's. */
+  it("gathers the site acts in ONE row at the panel's foot, after the tool body", () => {
     const html = view();
-    const head = html.slice(html.indexOf('data-role="drawer-head"'));
-    const inHead = head.slice(0, head.indexOf('data-role="tool-tabs"'));
-    expect(inHead).toContain('data-role="drop-site"');
-    expect(inHead).toContain('data-role="re-preview"');
+    expect(html).not.toContain('data-role="drawer-head"');
+    const acts = html.slice(html.indexOf('data-role="drawer-acts"'));
+    const inActs = acts.slice(0, acts.indexOf('data-role="drop"'));
+    expect(inActs).toContain('data-role="re-preview"');
+    expect(inActs).toContain('data-role="drop-site"');
+    // after the tabs, not above them
+    expect(html.indexOf('data-role="tool-tabs"')).toBeLessThan(
+      html.indexOf('data-role="drawer-acts"'),
+    );
   });
 
   it("keeps the drop's consequence attached to the control that causes it", () => {
@@ -107,17 +110,15 @@ describe("the drawer head is one row, not a stack (client 2026-08-02)", () => {
      re-read row, then the tabs: three bands before any tool. The heading and the
      re-read act now share one head row; the clock notice, when present, keeps its
      own full-width line below (it is a paragraph, not a control). */
-  it("leads with the acts, not with a heading the tabs already say", () => {
-    /* The comp's tool panel opens straight on its tabs — there is no "Tools — tooth N"
-       line above them, because the tabs and the site chip in the toolbar already say
-       both halves of it. Dropping it buys the panes a row (client 2026-08-02: match
-       the designs). */
+  it("opens on its tabs — no heading the tabs already say", () => {
     const html = view();
     expect(html).not.toContain("Tools — tooth");
-    const head = html.slice(html.indexOf('data-role="drawer-head"'));
-    const inHead = head.slice(0, head.indexOf('data-role="tool-tabs"'));
-    expect(inHead).toContain('data-role="re-preview"');
-    expect(inHead).toContain('data-role="drop-site"');
+    // the tabs are the panel's first control: nothing but the (conditional) clock
+    // notice may precede them
+    const panel = html.slice(html.indexOf('data-role="adjust-toolbox"'));
+    expect(panel.indexOf('data-role="tool-tabs"')).toBeLessThan(
+      panel.indexOf('data-role="re-preview"'),
+    );
   });
 });
 
@@ -604,6 +605,11 @@ describe("the way onward from Adjust's own rail", () => {
   it("carries a footer with both directions — never only the top rail", () => {
     const html = view();
     expect(html).toContain('data-role="adjust-advance"');
+    /* IN THE QUEUE COLUMN now (comp): the footer sits before the stage's toolbar in
+       DOM order, because it is the column's foot, not a stage-wide bar. */
+    expect(html.indexOf('data-role="adjust-advance"')).toBeLessThan(
+      html.indexOf('data-role="workspace-toolbar"'),
+    );
     expect(html).toContain('data-role="adjust-back"');
     expect(html).toContain('data-role="adjust-forward"');
     expect(html).toContain("Back to Alignment");

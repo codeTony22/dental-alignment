@@ -1085,3 +1085,35 @@ Its `pushLog` is a browser array. None of it ports; all of it is already refused
   outcome, already recorded as forbidden. Ours reads "Re-read this site's numbers".
 - The comp's variant chips + system dropdown on one row under the panes is exactly what
   §10-V restored, independently — the client's reversal and the comp agree.
+
+**X. THE COMP'S SILHOUETTE, BOTH WORKSPACES (2026-08-02, "why are we not matching the
+designs").** The honest answer to the client's question: the port went structure-first —
+behaviour, trust rules, data flow — and left the tool panel's clothing and the nav
+placement unmatched. Closed now, measured against the comp RUNNING (§10-W):
+
+1. **Stage nav returned to the queue column's foot** on both workspaces — the comp's own
+   sticky footer (template 465-469), which slice B had moved to a stage-wide bar. Forward
+   above back, stacked, full-width in the column; the consequence sentence and the
+   set-faced summary ride with the doors they inform (summary capped at 96px scroll so a
+   full arch cannot push the doors off screen). The width under the panes now belongs
+   entirely to the tools — which is the comp's whole silhouette.
+2. **The tool panel opens on its tabs** — compact rounded pills, natural width, active =
+   the READY chip's green-tinted outline (the comp's active tab is an outline, not our
+   old filled slab). Site acts (re-read · drop) sit in ONE row at the panel's FOOT, the
+   comp's arrangement — safe to do now because §10-V.3 made the drawer take its content
+   before the panes grow, so the foot is as reachable as the head was.
+3. **Queue titles are the comp's**: "Adjustment queue — flagged first" / "Sites in this
+   case", rendered by the existing micro-caps rule.
+4. One self-inflicted defect caught by screenshot: the acts-row extraction left a JSX
+   comment in CHILD position, where a bare /* */ RENDERS — it printed itself onto the
+   page. Braced. (The third such screenshot-only catch this week; the node suite is
+   structurally blind to all of them.)
+
+**"Alignment is not working properly" — could not reproduce.** On cap7030 itself: side A
+re-frames all three panes together (feet all read "down the side A viewpoint", part
+edge-on, union edge-on), occ returns, pressed states track, zoom and link live. What the
+client's screenshot DOES show is the fleet's worst fit wearing all its honest labels —
+DEV RMS 0.427/p90 0.728 (highest of the eight), ROTATION +21.7° · unverified, PAIRS 1/8 ·
+unchecked, capture marginal — on the case whose clock no instrument can verify (§10-T).
+If "not working" meant one of those numbers, the numbers are the finding, not a defect.
+Awaiting specifics if it was neither.
