@@ -5612,3 +5612,46 @@ button.package-files__link:hover {
   max-height: min(196px, 24vh);
   overflow-y: auto;
 }
+
+/* ===== THE DOCUMENT STAGES TAKE THE COMP'S CARD HEADER (2026-08-02) ===============
+   Intake, the construction library and Delivery are documents rather than workspaces —
+   the comp gives their cards a header BAND with a hairline under it, where ours had a
+   title with a margin and nothing separating it from the body. On a page of stacked
+   cards the rule is what makes each one read as a card.
+
+   Scoped by the absence of a split stage, which is exactly those three: the two
+   workspace stages keep their tighter titles, where a hairline per panel would be five
+   more lines competing with the geometry. */
+.workbench:not(:has(.workbench__stage--split)) .panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.workbench:not(:has(.workbench__stage--split)) .panel > .panel__title {
+  margin: 0;
+  padding: 11px 15px;
+  border-bottom: 1px solid #e6eae7;
+  font-size: 13px;
+}
+
+/* Everything after the header keeps the card's own inset. */
+.workbench:not(:has(.workbench__stage--split)) .panel > .panel__title ~ * {
+  margin-left: 15px;
+  margin-right: 15px;
+}
+
+.workbench:not(:has(.workbench__stage--split)) .panel > .panel__title ~ *:last-child {
+  margin-bottom: 13px;
+}
+
+/* ARTIFACT FILENAMES BREAK ON THEIR OWN PUNCTUATION, not mid-token. `overflow-wrap:
+   anywhere` was splitting `276794487-zimmer-4.5-3-healingcap-aligned.stl` across three
+   lines at arbitrary letters, which is unreadable for the one string an operator may
+   need to match against a file on disk. Breaking after a hyphen or a dot keeps the
+   parts intact. */
+.release-files code,
+.release-files__name {
+  overflow-wrap: normal;
+  word-break: normal;
+  line-break: anywhere;
+}
