@@ -36,6 +36,7 @@ import { DeliverStage } from "../components/DeliverStage";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { IntakeStage } from "../components/IntakeStage";
 import { StageRail } from "../components/StageRail";
+import { WorkspaceInsight } from "../components/WorkspaceInsight";
 
 // Every stage now has a body: Intake (slice 4), Declare (5a/5b/5c), Adjust (slice 6 —
 // the client's 2026-07-28 "the adjust functionality is not build at all", answered) and
@@ -126,6 +127,12 @@ export function CaseShellView({
             because it is not part of any stage's work — it discards all of it. The
             immutable run directories survive on disk; this clears the session that
             points at them, so a demo can be walked from the very start. */}
+        {/* THE CASE LOG, from anywhere (client 2026-08-02: "yes do this"). The same
+            popover the workspace toolbars carry, permanently tooth-less here — the
+            header names no site, so this instance labels itself "Case log" and its
+            acceptance half honestly stands down. Mounted in the acts cluster because
+            it is a READ, like the jaw chip beside it, not a stage act. */}
+        <WorkspaceInsight caseId={detail.case.id} tooth={null} refreshKey={detail} />
         {onResetCase !== null && (
           <button
             type="button"

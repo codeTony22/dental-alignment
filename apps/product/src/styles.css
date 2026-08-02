@@ -6010,3 +6010,40 @@ button.package-files__link:hover {
 .library-part-preview {
   border-top: 3px solid #7d93b8;
 }
+
+/* ---- The two rulings taken 2026-08-02 ("yes route it to adjust" / "yes do this") ----
+
+   The unverified mark on the sealed report is a LINK now, and it must read as one —
+   the em it replaced wore the review tone with no affordance, and a link that looks
+   like a label is a control nobody finds. */
+.rotation-verdict__route {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* The case log's toggle sits in the dark band, where a ghost button's grey-on-dark
+   is unreadable. Same pill language as the band's other two controls ("All cases",
+   Reset) — it moved INTO the header, so it wears the header's clothes. */
+.case-header .workspace-insight [data-role="insight-toggle"] {
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background: transparent;
+  padding: 4px 10px;
+}
+
+.case-header .workspace-insight [data-role="insight-toggle"]:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+/* The panel drops from a dark band over a light page — pin it under the toggle and
+   above the workbench, and let the existing white card carry the contrast. */
+.case-header .workspace-insight__panel {
+  right: 0;
+  z-index: 30;
+  /* The band sets color:#fff for its own chrome, and the panel is a white card that
+     INHERITS it — every log row rendered white-on-white (caught by screenshot, not by
+     any markup test: colour is exactly what renderToStaticMarkup cannot see). */
+  color: var(--color-text);
+}

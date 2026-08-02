@@ -884,6 +884,56 @@ describe("the parity chrome (ledger row 9): the demo's results-table language", 
   });
 });
 
+describe("the unverified rotation routes back to the tools (client 2026-08-02)", () => {
+  /* The em was deliberately inert — the acknowledgment gate already forces the operator
+     to face the flag here — and the client ruled the other way: "yes route it to
+     adjust". It becomes a LINK to the Adjustment stage, wearing the same server word;
+     what it still must not do is promise the flag clears, so the only added words name
+     the destination, never an outcome. */
+  it("renders the unverified mark as a link to the Adjustment stage", () => {
+    const html = view({
+      reportOpen: true,
+      assurance: {
+        kind: "ok",
+        data: assuranceView({
+          sites: [assuranceSite({ rotation: { deg: 21.7, evidence: "none", unverified: true } })],
+        }),
+      },
+    });
+    expect(html).toMatch(
+      /<a[^>]*data-role="rotation-unverified"[^>]*href="\/case\/case-a\/adjust"|<a[^>]*href="\/case\/case-a\/adjust"[^>]*data-role="rotation-unverified"/,
+    );
+    expect(html).toContain("unverified");
+  });
+
+  it("the link promises a destination, never an outcome", () => {
+    const html = view({
+      reportOpen: true,
+      assurance: {
+        kind: "ok",
+        data: assuranceView({
+          sites: [assuranceSite({ rotation: { deg: 21.7, evidence: "none", unverified: true } })],
+        }),
+      },
+    });
+    expect(html).not.toContain("will verify");
+    expect(html).not.toContain("marks it verified");
+  });
+
+  it("a verified rotation carries no link at all", () => {
+    const html = view({
+      reportOpen: true,
+      assurance: {
+        kind: "ok",
+        data: assuranceView({
+          sites: [assuranceSite({ rotation: { deg: 21.7, evidence: "codes", unverified: false } })],
+        }),
+      },
+    });
+    expect(html).not.toContain('data-role="rotation-unverified"');
+  });
+});
+
 describe("the assurance header states its own counts and its exceptions policy", () => {
   it("counts the served rows in the worklist's phrasing, beside the case", () => {
     const html = view();

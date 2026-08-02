@@ -323,7 +323,10 @@ export function WorkspaceInsightView({
         className={`button button--ghost button--small${open ? " button--active" : ""}`}
         onClick={onToggle}
       >
-        Site numbers &amp; case log
+        {/* The label follows the tooth: a tooth-less instance (the case header's, and a
+            workspace between sites) would otherwise promise a section that always
+            reads "no active site". */}
+        {tooth !== null ? <>Site numbers &amp; case log</> : <>Case log</>}
       </button>
       {open && (
         <section

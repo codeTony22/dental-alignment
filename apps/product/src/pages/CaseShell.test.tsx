@@ -25,6 +25,21 @@ describe("the case shell view", () => {
     expect(html).toContain("lower");
   });
 
+  it("carries the case log IN the band — the universal entry point", () => {
+    /* Client 2026-08-02, on the popover being workspace-only: "yes do this" to a
+       case-header entry. This instance is permanently tooth-less — the header names
+       no site — so it labels itself for the half it can always deliver, the log. */
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/intake">
+        <CaseShellView detail={detail} stage="intake" />
+      </StaticRouter>,
+    );
+    const band = html.slice(html.indexOf('class="case-header"'));
+    const inBand = band.slice(0, band.indexOf("</header>"));
+    expect(inBand).toContain('data-role="insight-toggle"');
+    expect(inBand).toContain(">Case log<");
+  });
+
   it("carries the way home IN the band, beside the stages", () => {
     /* THE ONE NAV BAR (client 2026-08-02: "There are two nav bars, take off the ArTech
        Software Labs, and All cases should be navigable in the same nav bar"). The brand

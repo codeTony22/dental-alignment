@@ -31,6 +31,7 @@
  * its own flow: reload the evidence and ask again — never a silent retry.
  */
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useDialogEscape } from "./useDialogEscape";
 import { useDialogFocus } from "./useDialogFocus";
 import { CheckoutDialog } from "../pages/CheckoutPage";
@@ -509,13 +510,21 @@ function AssuranceRow({
               </span>
               <span className="assurance-sub"> {rotation.evidence ?? "no evidence"}</span>
               {rotation.unverified && (
-                <em
+                /* A LINK NOW, not an inert em (client 2026-08-02: "yes route it to
+                   adjust"). The acknowledgment gate still forces the operator to face
+                   the flag on THIS page; what was missing was the way to the one act
+                   that answers it — Adjustment's tools, where the unverified-clock
+                   notice routes on to auto-mark. The words name the destination and
+                   nothing else: this surface may not promise the flag clears. */
+                <Link
                   data-role="rotation-unverified"
-                  className="rotation-verdict__residual rotation-verdict__residual--review"
+                  to={`/case/${caseId}/adjust`}
+                  title="The automatic reader found no usable clock evidence — Adjustment's tools can land a cross-checked human fit."
+                  className="rotation-verdict__residual rotation-verdict__residual--review rotation-verdict__route"
                 >
                   {" "}
-                  unverified
-                </em>
+                  unverified — rework on Adjustment
+                </Link>
               )}
             </span>
             <span data-role="cell-deviation">
