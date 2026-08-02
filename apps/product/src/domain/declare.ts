@@ -965,13 +965,23 @@ export function alignmentStats(
      fact, and the run made it. */
   const noRun = rows.length === 0;
   const absent = noRun ? NO_RUN : NO_FIGURE;
-  const shift = blockOf(row, "clocking")?.["notch_shift_deg"];
+  const clocking = blockOf(row, "clocking");
+  const shift = clocking?.["notch_shift_deg"];
+  /* THE SAME HONESTY THE PAIRS PILL ALREADY CARRIES (§10-H's "STILL OPEN" line,
+     closed 2026-08-02). `rotation_unverified` is the SERVER's own boolean — set when
+     the automatic reader's evidence (correlation, prominence or occupancy) failed its
+     gate, or a confirm re-read itself failed — and no tool ever clears it: an applied
+     tool's re-read returns only the three instrument numbers, never this flag, so a
+     bare "+21.7°" here was indistinguishable from a reading the run actually trusted.
+     `unverifiedClockNotice` (domain/adjust.ts) reads the identical block for Adjust's
+     workspace notice; this is the same fact, on the number it qualifies. */
+  const rotationUnverified = clocking?.["rotation_unverified"] === true;
   // The MEASURED notch residual at the shipped pose (adjust._fold_outcome writes it),
   // not the operator's cumulative nudge — they answer different questions, and this
   // strip asks "is it clocked right?".
   const rotation =
     typeof shift === "number"
-      ? `${shift > 0 ? "+" : ""}${shift.toFixed(1)}°`
+      ? `${shift > 0 ? "+" : ""}${shift.toFixed(1)}°${rotationUnverified ? " · unverified" : ""}`
       : absent;
   const correspondence = blockOf(row, "correspondence");
   const pairs = correspondence?.["pairs"];

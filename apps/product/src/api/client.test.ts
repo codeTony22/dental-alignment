@@ -18,6 +18,7 @@ import {
   postPayment,
   postPreview,
   postRelease,
+  postRePreview,
   postReview,
   postAdjustDecision,
   postRun,
@@ -136,6 +137,17 @@ describe("the action requests (slice 4) — detect and choices", () => {
     const calls = capturingFetch();
     await postPreview("case-a", 19);
     expect(calls[0]!.url).toBe("/api/case-sessions/case-a/sites/19/preview");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(calls[0]!.init?.body).toBeUndefined();
+  });
+
+  it("re-preview POSTs with no body to the tooth's own path — everything it reads is the run directory's", async () => {
+    // gap `re-preview-a-site-without-applying-a-tool` (2026-07-31): the route is
+    // structurally body-less (it defines no request model), and `postRePreview`
+    // shipped ahead of any UI caller with no pin of its own — this closes that.
+    const calls = capturingFetch();
+    await postRePreview("case-a", 19);
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/sites/19/re-preview");
     expect(calls[0]!.init?.method).toBe("POST");
     expect(calls[0]!.init?.body).toBeUndefined();
   });

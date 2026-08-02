@@ -1037,6 +1037,29 @@ describe("alignmentStats — the strip's facts, every one the SERVER's", () => {
     expect(statOf(stats, "rotation")).toBe("+2.5°");
   });
 
+  /* THE ROTATION STAT GETS THE PAIRS PILL'S OWN HONESTY (§10-H's "STILL OPEN" line,
+     closed 2026-08-02): a run that could not verify this cap's rotation still printed
+     a bare "+21.7°", a number the run itself refused to trust, indistinguishable from
+     a verified reading. The suffix is the SAME server boolean the toolbar's notice
+     and Deliver's inert "unverified" em both key on — never re-derived. */
+  it("carries the server's unverified word beside the figure", () => {
+    const stats = alignmentStats(
+      [{ tooth: 19, clocking: { notch_shift_deg: 21.7, rotation_unverified: true } }],
+      19,
+      null,
+    );
+    expect(statOf(stats, "rotation")).toBe("+21.7° · unverified");
+  });
+
+  it("a verified rotation stays a bare figure", () => {
+    const stats = alignmentStats(
+      [{ tooth: 19, clocking: { notch_shift_deg: 3.2, rotation_unverified: false } }],
+      19,
+      null,
+    );
+    expect(statOf(stats, "rotation")).toBe("+3.2°");
+  });
+
   it("PAIRS is '—' while the row carries no correspondence — never an invented 0 / 8", () => {
     const stats = alignmentStats(rows, 30, "5020");
     expect(statOf(stats, "pairs")).toBe("—");

@@ -9,8 +9,15 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AdjustStageView } from "./AdjustStage";
 import { WorkspaceInsight } from "./WorkspaceInsight";
-import { autoMarkDrafts, newPairDraft, withPick, type AdjustQueueEntry } from "../domain/adjust";
+import {
+  autoMarkDrafts,
+  newPairDraft,
+  withPick,
+  type AdjustQueueEntry,
+  type UnverifiedClockNotice,
+} from "../domain/adjust";
 import type { AdjustOutcomeView, LandmarkView } from "../api/client";
+import { rePreviewView } from "../testing/fixtures";
 
 const ACTION =
   "The cap's ROTATION could not be verified — visually check the coded features " +
@@ -888,5 +895,138 @@ describe("dropping a cap", () => {
   it("offers nothing to drop when no site is selected", () => {
     const html = view({ activeTooth: null, activeStatus: null });
     expect(html).not.toContain('data-role="drop-site"');
+  });
+});
+
+/**
+ * RE-READING A SITE WITHOUT APPLYING A TOOL (gap
+ * `re-preview-a-site-without-applying-a-tool`, 2026-07-31). An applied tool already
+ * updates the panes (`AdjustResultView.pane_payload`, replaced verbatim); this
+ * control's whole job is the read WITHOUT a tool — after a rework elsewhere, or a
+ * stale row. Placed above `ToolTabs` (see AdjustStage.tsx's own comment on the
+ * choice): it is not any one correction tool's act, so it must stay visible
+ * whichever tab is open, the same reasoning the clock-unverified notice below shares.
+ */
+describe("re-reading a site's numbers, without applying a tool", () => {
+  it("renders for an active site, and promises a re-read rather than an outcome", () => {
+    const html = view();
+    expect(html).toContain('data-role="re-preview"');
+    // renderToStaticMarkup escapes the label's own apostrophe (site&#x27;s) — matched
+    // either side of it rather than the raw string, like every other apostrophed
+    // label in this suite
+    expect(html).toContain("Re-read this site");
+    expect(html).toContain("numbers");
+    // the design prototype's own label for this control is "this will pass" — a
+    // client-side verdict this app is forbidden from making
+    expect(html).not.toContain("this will pass");
+  });
+
+  it("renders nothing when no site is selected", () => {
+    expect(view({ activeTooth: null })).not.toContain('data-role="re-preview"');
+  });
+
+  it("is disabled while a tool is being judged, so the two writes cannot race", () => {
+    const html = view({ phase: "working" });
+    expect(html).toMatch(/data-role="re-preview"[^>]*disabled=""/);
+  });
+
+  it("is disabled while the site's initial seated read is still in flight — a narrower race", () => {
+    // the container's own GET .../seated for a freshly-selected site replaces
+    // `payload` unconditionally when it lands; a re-read that resolved FIRST would
+    // otherwise be clobbered by that stale response landing after it
+    const html = view({ seatedPhase: "loading" });
+    expect(html).toMatch(/data-role="re-preview"[^>]*disabled=""/);
+  });
+
+  it("stays live once the seated read has failed — recovering from that IS the point", () => {
+    const html = view({ seatedPhase: "error" });
+    expect(html).not.toMatch(/data-role="re-preview"[^>]*disabled=""/);
+  });
+
+  it("names its own in-flight state, and disables itself for it", () => {
+    const html = view({ rePreviewPhase: "working" });
+    expect(html).toMatch(/data-role="re-preview"[^>]*disabled=""/);
+    expect(html).toContain("Re-reading");
+  });
+
+  it("renders what the re-read found, verbatim, only once a result exists", () => {
+    expect(view()).not.toContain('data-role="re-preview-result"');
+    const html = view({ rePreviewResult: rePreviewView({ changed: true }) });
+    expect(html).toContain('data-role="re-preview-result"');
+    expect(html).toContain("cleared");
+  });
+
+  it("lists what moved, the row's earlier figure beside the pose on disk now — server numbers", () => {
+    const html = view({
+      rePreviewResult: rePreviewView({
+        changed: true,
+        previous: { deviation_rms_mm: 0.61 },
+        rederived: { deviation_rms_mm: 0.43 },
+      }),
+    });
+    expect(html).toContain('data-role="re-preview-rows"');
+    expect(html).toContain("0.61");
+    expect(html).toContain("0.43");
+  });
+
+  it("names the metrics a re-read could not refresh, using the shared vocabulary", () => {
+    const html = view({
+      rePreviewResult: rePreviewView({ stale_metrics: ["rim_agreement_mm", "guidance"] }),
+    });
+    expect(html).toContain("the rim agreement and the gate verdict");
+  });
+
+  it("a refusal or transport error renders verbatim, with no auto-retry", () => {
+    const html = view({ rePreviewError: "the run directory for this case has moved" });
+    expect(html).toContain('data-role="re-preview-error"');
+    expect(html).toContain("the run directory for this case has moved");
+    // the result block and the error block are mutually exclusive — a stale result
+    // from an earlier click must not sit beside a fresh refusal
+    expect(html).not.toContain('data-role="re-preview-result"');
+  });
+});
+
+/**
+ * THE UNVERIFIED CLOCK'S ACTIONABLE SURFACE (§10-H's "STILL OPEN" line, closed
+ * 2026-08-02). The container computes `unverifiedClockNotice` from the run rows and
+ * hands it down whole — this pins only that the VIEW renders it faithfully, never
+ * that it holds the trigger logic (that is `domain/adjust.test.ts`'s job).
+ */
+describe("the unverified clock's actionable surface", () => {
+  // No apostrophes or quotes in this fixture on purpose — renderToStaticMarkup
+  // escapes them to HTML entities, and every other assertion in this suite that
+  // pins a rendered sentence verbatim avoids them for the same reason.
+  const NOTICE: UnverifiedClockNotice = {
+    facts: "The automatic reader could not verify this caps rotation on this scan.",
+    act: "Auto-mark proposes rotation-defining landmarks toward a cross-checked fit.",
+    armTool: "auto-mark",
+  };
+
+  it("renders the notice with its facts, its act, and a control that routes to auto-mark", () => {
+    const html = view({ clockNotice: NOTICE });
+    expect(html).toContain('data-role="clock-unverified"');
+    expect(html).toContain(NOTICE.facts);
+    expect(html).toContain(NOTICE.act);
+    expect(html).toContain('data-role="verify-rotation"');
+  });
+
+  it("renders no notice when the container found nothing to say (a verified site)", () => {
+    expect(view({ clockNotice: null })).not.toContain('data-role="clock-unverified"');
+  });
+
+  it("renders no notice by default — a static caller predating this prop", () => {
+    expect(view()).not.toContain('data-role="clock-unverified"');
+  });
+
+  it("never claims the control will verify the rotation", () => {
+    const html = view({ clockNotice: NOTICE });
+    expect(html).not.toContain("will verify the rotation");
+    expect(html).not.toContain("marks the rotation verified");
+  });
+
+  it("stays visible whichever tool tab is open", () => {
+    for (const tool of ["fit-by-points", "best-fit", "rotation", "mark-trench", "auto-mark"] as const) {
+      expect(view({ tool, clockNotice: NOTICE })).toContain('data-role="clock-unverified"');
+    }
   });
 });

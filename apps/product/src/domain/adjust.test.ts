@@ -48,15 +48,19 @@ import {
   pairSlots,
   pairWords,
   queueSummary,
+  rePreviewButtonLabel,
+  rePreviewRows,
+  rePreviewWords,
   spanLeverCaution,
   markLeverGuard,
   reworkWords,
   staleMetricsPhrase,
+  unverifiedClockNotice,
   withPick,
   withoutPick,
   type AdjustQueueEntry,
 } from "./adjust";
-import { siteView } from "../testing/fixtures";
+import { rePreviewView, siteView } from "../testing/fixtures";
 
 const ACTION =
   "The cap's ROTATION could not be verified — visually check the coded features " +
@@ -1187,5 +1191,134 @@ describe("paneArming — which pane wants the next click, and what it will do", 
     expect(arming.hints.scan).toContain("cutout");
     // the part half is untouched by the trench — the router only diverts scan clicks
     expect(arming.hints.library).toContain("library part");
+  });
+});
+
+/**
+ * RE-PREVIEW (gap `re-preview-a-site-without-applying-a-tool`, 2026-07-31). The
+ * server route is already landed and body-less; what these pin is the WORDS this
+ * app puts on top of `RePreviewView` — a promise of a re-READ, never an outcome,
+ * and a rendering of `changed` that never re-derives its own comparison.
+ */
+describe("rePreviewButtonLabel — a re-read, promised, never an outcome", () => {
+  it("names the act and states no verdict", () => {
+    const label = rePreviewButtonLabel();
+    expect(label).toBe("Re-read this site's numbers");
+    // the design prototype's own label for this control is "this will pass" — a
+    // client-side verdict this app is forbidden from making (client.ts:1262-1265)
+    for (const verdict of ["pass", "fail", "ready", " ok", "will pass"]) {
+      expect(label.toLowerCase()).not.toContain(verdict);
+    }
+  });
+});
+
+describe("rePreviewWords — the SERVER's changed flag, never a local comparison", () => {
+  it("changed=false renders the unchanged sentence even where previous/rederived differ", () => {
+    // mutating `previous` alone must never flip the words: only `view.changed` may
+    const words = rePreviewWords(
+      rePreviewView({ changed: false, previous: { deviation_rms_mm: 9.9 } }),
+    );
+    expect(words).toContain("nothing has moved");
+  });
+
+  it("changed=true says the numbers moved and that the earlier confirmation fell", () => {
+    const words = rePreviewWords(rePreviewView({ changed: true }));
+    expect(words).toContain("cleared");
+  });
+});
+
+describe("rePreviewRows — previous beside rederived, the server's own keys and values", () => {
+  it("names a known metric in the reader's language, values verbatim", () => {
+    const rows = rePreviewRows(
+      rePreviewView({
+        previous: { deviation_rms_mm: 0.61, deviation_p90_mm: 0.9 },
+        rederived: { deviation_rms_mm: 0.43, deviation_p90_mm: 0.71 },
+      }),
+    );
+    const rms = rows.find((r) => r.key === "deviation_rms_mm")!;
+    expect(rms.label).toBe("the deviation RMS");
+    expect(rms.previous).toBe(0.61);
+    expect(rms.rederived).toBe(0.43);
+  });
+
+  it("passes a metric name this app has no phrasing for through, rather than dropping it", () => {
+    const rows = rePreviewRows(
+      rePreviewView({ previous: { some_new_metric: 1 }, rederived: { some_new_metric: 2 } }),
+    );
+    const row = rows.find((r) => r.key === "some_new_metric")!;
+    expect(row.label).toBe("some_new_metric");
+    expect(row.previous).toBe(1);
+    expect(row.rederived).toBe(2);
+  });
+});
+
+/**
+ * THE UNVERIFIED CLOCK'S ACTIONABLE SURFACE (§10-H's "STILL OPEN" line, closed
+ * 2026-08-02). `rotation_unverified` is a machine fact no tool clears — every
+ * applied tool's re-read returns only the three instrument numbers
+ * (`application/adjust._clocking_fields`) and the BFF merges them over the old
+ * block — so the notice this function describes must never promise the flag will
+ * clear. The one human backstop the domain documents is a cross-checked
+ * fit-by-points, and auto-mark is the tool built to produce it.
+ */
+describe("unverifiedClockNotice — disclosure + routing to auto-mark, never a promise to clear", () => {
+  const UNVERIFIED_ROW = {
+    tooth: 29,
+    clocking: {
+      notch_shift_deg: 21.7,
+      notch_corr: 0.475,
+      notch_prominence: 0.038,
+      evidence: "none",
+      rotation_unverified: true,
+    },
+  };
+
+  it("returns null with no row for the tooth, or a row with no clocking block at all", () => {
+    expect(unverifiedClockNotice([], 29)).toBeNull();
+    expect(unverifiedClockNotice([{ tooth: 30 }], 29)).toBeNull();
+    expect(unverifiedClockNotice([{ tooth: 29 }], 29)).toBeNull();
+    expect(unverifiedClockNotice([{ tooth: 29, clocking: {} }], 29)).toBeNull();
+    expect(unverifiedClockNotice([UNVERIFIED_ROW], null)).toBeNull();
+  });
+
+  it("returns null when the run verified the rotation", () => {
+    const verified = {
+      tooth: 6,
+      clocking: { notch_shift_deg: 1.1, evidence: "codes", rotation_unverified: false },
+    };
+    expect(unverifiedClockNotice([verified], 6)).toBeNull();
+  });
+
+  it("states the server's own evidence word and arms auto-mark", () => {
+    const notice = unverifiedClockNotice([UNVERIFIED_ROW], 29);
+    expect(notice).not.toBeNull();
+    expect(notice!.facts).toContain("none");
+    expect(notice!.armTool).toBe("auto-mark");
+    expect(notice!.act).toContain("cross-checked");
+  });
+
+  it("never promises the flag will clear", () => {
+    const notice = unverifiedClockNotice([UNVERIFIED_ROW], 29)!;
+    expect(notice.act).not.toContain("will verify");
+    expect(notice.act).not.toContain("marks it verified");
+    expect(notice.act).not.toContain("will be verified");
+    expect(notice.act).not.toContain("marks the rotation verified");
+    // the disclaimer is explicit, not merely absent
+    expect(notice.act).toContain("does not mark this flag verified");
+  });
+
+  it("reads the clocking block, never the stale guidance sentence", () => {
+    // cap7030's own row shape: the guidance sentence is STALE on this run
+    // (rework.stale_metrics includes "guidance") — the notice must not quote it
+    const row = {
+      tooth: 29,
+      clocking: { notch_shift_deg: 21.7, evidence: "none", rotation_unverified: true },
+      guidance: {
+        actions: ["The cap's ROTATION could not be verified — a stale sentence"],
+      },
+      rework: { stale_metrics: ["guidance"] },
+    };
+    const notice = unverifiedClockNotice([row], 29)!;
+    expect(notice.facts).not.toContain("a stale sentence");
   });
 });

@@ -41,6 +41,7 @@ import {
   postBestFit,
   postFitByPoints,
   postMarkTrench,
+  postRePreview,
   postReview,
   postRotation,
   putWithholdIntent,
@@ -49,6 +50,7 @@ import {
   type ApiResult,
   type CaseSessionDetail,
   type LandmarkView,
+  type RePreviewView,
   type SitePreviewPayload,
   type SiteView,
 } from "../api/client";
@@ -87,13 +89,19 @@ import {
   queueSummary,
   reasonCountWords,
   reconfirmControl,
+  rePreviewButtonLabel,
+  rePreviewRows,
+  rePreviewWords,
   reworkWords,
+  staleMetricsPhrase,
+  unverifiedClockNotice,
   markLeverGuard,
   type ClockReferenceLike,
   withPick,
   type AdjustQueueEntry,
   type AdjustToolId,
   type AlreadyOptimal,
+  type UnverifiedClockNotice,
   withoutPick,
   type PairDraft,
   type PairSlot,
@@ -235,6 +243,34 @@ export interface AdjustStageViewProps {
    *  with a null default: static callers predate it, exactly like every other
    *  toolbar addition on this surface. */
   readonly insightSlot?: React.ReactNode;
+  /**
+   * RE-PREVIEW (gap `re-preview-a-site-without-applying-a-tool`, 2026-07-31): a
+   * re-READ of the site's numbers off the pose already on disk, with NO tool applied.
+   * An applied tool already refreshes the panes; this is the read without one — after
+   * a rework elsewhere, or a row the operator suspects is stale. `onRePreview` fires
+   * the body-less POST; `rePreviewResult` is what came back, rendered verbatim, never
+   * a verdict this app derived. Optional with inert defaults: static callers predate
+   * the trio.
+   */
+  readonly rePreviewResult?: RePreviewView | null;
+  readonly onRePreview?: () => void;
+  /** The re-read's OWN in-flight state — independent of `phase`, the same way
+   *  reconfirm and drop each carry their own rather than sharing the tools' shared
+   *  busy flag (they are not tools; see the file-level comment beside the render). */
+  readonly rePreviewPhase?: ToolPhase;
+  /** A refusal or transport error, VERBATIM — no auto-retry; the control itself is
+   *  the retry, exactly like every other act on this surface. */
+  readonly rePreviewError?: string | null;
+  /**
+   * THE UNVERIFIED CLOCK'S ACTIONABLE SURFACE (§10-H's "STILL OPEN" line, closed
+   * 2026-08-02): null unless the active site's run row carries
+   * `clocking.rotation_unverified === true`. The container computes this from the
+   * SAME rows the ALIGNMENT strip and the queue's flag reasons already read
+   * (`domain/adjust.unverifiedClockNotice`) — the View renders it, and decides
+   * nothing about when it applies. Optional with a null default: static callers
+   * predate it.
+   */
+  readonly clockNotice?: UnverifiedClockNotice | null;
 }
 
 function ToolTabs({
@@ -512,6 +548,11 @@ export function AdjustStageView({
   zoomLevel,
   onZoom,
   insightSlot = null,
+  rePreviewResult = null,
+  onRePreview = () => undefined,
+  rePreviewPhase = "idle",
+  rePreviewError = null,
+  clockNotice = null,
 }: AdjustStageViewProps) {
   const active = entries.find((e) => e.tooth === activeTooth) ?? null;
   const busy = phase === "working";
@@ -666,6 +707,110 @@ export function AdjustStageView({
             <h3 className="panel__title">
               {active !== null ? `Tools — tooth ${active.tooth}` : "Tools"}
             </h3>
+
+            {/* RE-PREVIEW AND THE UNVERIFIED-CLOCK NOTICE BOTH SIT HERE, ABOVE
+                ToolTabs — neither is any one correction tool's act (a re-read applies
+                nothing; the notice is a standing fact about the site), so both must
+                stay on screen whichever of the five tabs is open. Reconfirm and Drop,
+                the surface's OTHER site-level acts, sit below the tool body instead —
+                they are what the operator reaches for AFTER a tool has run, where
+                these two are what the operator reaches for INSTEAD of one, or before
+                picking one at all. */}
+            {active !== null && (
+              /* RE-PREVIEW (gap `re-preview-a-site-without-applying-a-tool`,
+                 2026-07-31). The server route is body-less by design — everything it
+                 reads is already in the run directory — and an applied tool already
+                 refreshes the panes; this is the read WITHOUT one. */
+              <div className="adjust-reread">
+                <button
+                  type="button"
+                  data-role="re-preview"
+                  className="button button--ghost button--small"
+                  /* `seatedPhase === "loading"` guards a narrow race: the initial
+                     GET .../seated for a freshly-selected site is still in flight, and
+                     its response replaces `payload` unconditionally when it lands
+                     (the container's own fetch effect). A re-read that resolves FIRST
+                     would then be clobbered by the stale seated read landing after
+                     it. Once that fetch has settled either way (ready or error) the
+                     effect never refires for this site, so the race is gone and a
+                     failed local read is exactly one case this control exists to
+                     recover — it stays live there on purpose. */
+                  disabled={busy || rePreviewPhase === "working" || seatedPhase === "loading"}
+                  onClick={onRePreview}
+                >
+                  {rePreviewPhase === "working"
+                    ? "Re-reading this site's numbers…"
+                    : rePreviewButtonLabel()}
+                </button>
+                {rePreviewError !== null ? (
+                  <div data-role="re-preview-error" role="alert" className="run-refusal">
+                    <strong className="run-refusal__title">
+                      The re-read did not reach an outcome.
+                    </strong>
+                    <p className="run-refusal__detail">{rePreviewError}</p>
+                  </div>
+                ) : (
+                  rePreviewResult !== null && (
+                    <div
+                      data-role="re-preview-result"
+                      role="status"
+                      className="adjust-outcome"
+                    >
+                      <p className="adjust-outcome__detail">
+                        {rePreviewWords(rePreviewResult)}
+                      </p>
+                      {rePreviewRows(rePreviewResult).length > 0 && (
+                        <ul data-role="re-preview-rows" className="adjust-outcome__pairs">
+                          {rePreviewRows(rePreviewResult).map((row) => (
+                            <li
+                              key={row.key}
+                              data-role="re-preview-row"
+                              data-metric={row.key}
+                              className="adjust-outcome__pair"
+                            >
+                              {row.label}: {row.previous ?? "—"} → {row.rederived ?? "—"}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {staleMetricsPhrase(rePreviewResult.stale_metrics) !== null && (
+                        <p data-role="re-preview-stale" className="adjust-outcome__note">
+                          Still carries {staleMetricsPhrase(rePreviewResult.stale_metrics)}{" "}
+                          from before this read — a re-read cannot derive it; only a
+                          full run can.
+                        </p>
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+
+            {clockNotice !== null && (
+              /* THE UNVERIFIED CLOCK'S ACTIONABLE SURFACE (§10-H's "STILL OPEN" line,
+                 closed 2026-08-02). Amber, the tone this product already uses for "a
+                 consequence to weigh" — nothing here failed a gate the operator can
+                 fix by clicking, and nothing here is accepted. The button ROUTES to
+                 auto-mark; it never claims completing that tool will mark this flag
+                 verified (see `unverifiedClockNotice`'s own doctrine). */
+              <div data-role="clock-unverified" role="status" className="adjust-clock-notice">
+                <p data-role="clock-unverified-facts" className="adjust-clock-notice__line">
+                  {clockNotice.facts}
+                </p>
+                <p data-role="clock-unverified-act" className="adjust-clock-notice__line">
+                  {clockNotice.act}
+                </p>
+                <button
+                  type="button"
+                  data-role="verify-rotation"
+                  className="button button--secondary button--small"
+                  onClick={() => onSelectTool(clockNotice.armTool)}
+                >
+                  Switch to auto-mark
+                </button>
+              </div>
+            )}
+
             <ToolTabs tool={tool} onSelectTool={onSelectTool} />
             <p data-role="tool-oneliner" className="panel__hint">{toolInfo.oneLiner}</p>
 
@@ -1228,6 +1373,17 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   const drafts = tool === "auto-mark" ? autoDrafts : fitDrafts;
   const setDrafts = tool === "auto-mark" ? setAutoDrafts : setFitDrafts;
 
+  /* RE-PREVIEW (gap `re-preview-a-site-without-applying-a-tool`, 2026-07-31): its OWN
+   * in-flight/result/error state, independent of `phase` — the same reason reconfirm
+   * and drop each carry their own rather than sharing the tools' shared busy flag. It
+   * is not a tool: it applies nothing, so it does not belong in `settle`'s path. */
+  const [rePreviewPhase, setRePreviewPhase] = useState<ToolPhase>("idle");
+  const [rePreviewResult, setRePreviewResult] = useState<RePreviewView | null>(null);
+  const [rePreviewError, setRePreviewError] = useState<string | null>(null);
+  /** Monotone id, exactly like `autoMarkRequestRef` — a response is stale only when a
+   *  NEWER request exists (a site switch), never merely because the phase moved. */
+  const rePreviewRequestRef = useRef(0);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -1256,6 +1412,13 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   // The footer's facts: the SAME projection the rail judges, so Adjust's own door to
   // Deliver can never open on a case the rail calls blocked (or vice versa).
   const facts = useMemo(() => factsFromCaseSession(detail), [detail]);
+  /* §10-H's "STILL OPEN" line, closed 2026-08-02: from the SAME rows the ALIGNMENT
+   * strip and the queue's flag reasons already read — no second fetch, no client-side
+   * derivation of the flag itself, only whether to show the notice about it. */
+  const clockNotice = useMemo(
+    () => unverifiedClockNotice(rows, activeTooth),
+    [rows, activeTooth],
+  );
   // The queue opens on the first FLAGGED site — the stage's whole reason for existing.
   useEffect(() => {
     if (activeTooth === null && entries.length > 0) {
@@ -1344,6 +1507,14 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
     setRefusal(null);
     setPass(null);
     setLastOutcome(null);
+    // A newer site supersedes the re-read's words — they described the PREVIOUS
+    // site's row, and rendering them under a different tooth would misattribute the
+    // fact. The ref invalidates any response still in flight for the site just left,
+    // the same monotone-id discipline autoMarkRequestRef uses one effect over.
+    rePreviewRequestRef.current += 1;
+    setRePreviewPhase("idle");
+    setRePreviewResult(null);
+    setRePreviewError(null);
   }, []);
 
   /** Every tool lands here: optimism OFF — the response is the new truth, a refusal is
@@ -1373,6 +1544,11 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       if (outcomeMovedTheRow(result)) setRowsNonce((n) => n + 1);
       if (result.data.pane_payload !== null) setPayload(result.data.pane_payload);
       onDetail(result.data.case);
+      // A newer act — a TOOL, actually applied — supersedes whatever the re-read last
+      // said: its words described the site before this act, and the row it read has
+      // just moved again.
+      setRePreviewResult(null);
+      setRePreviewError(null);
       setFitDrafts([]);
       // auto-mark's landmarks are static (the declared template's own geometry, not
       // the pose) — re-seeding straight from what is already known starts a fresh
@@ -1596,6 +1772,35 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
     });
   }, [activeTooth, detail.case.id, onDetail]);
 
+  /* RE-PREVIEW (gap `re-preview-a-site-without-applying-a-tool`, 2026-07-31). A
+     re-READ of the site's numbers off the pose already on disk — body-less, because
+     everything the route reads is already in the run directory. It is NOT a tool
+     (`run`/`settle` above): it applies nothing, so it gets its own optimism-OFF
+     handler rather than sharing the tools' `phase`. On success it replaces the pane
+     payload verbatim (the same replacement an applied tool makes), adopts the whole
+     case detail (the server may have cleared this site's confirmation), and bumps
+     `rowsNonce` ONLY where the server says something moved — never a local guess. */
+  const handleRePreview = useCallback(() => {
+    if (activeTooth === null) return;
+    const request = ++rePreviewRequestRef.current;
+    setRePreviewPhase("working");
+    setRePreviewError(null);
+    void postRePreview(caseId, activeTooth).then((result) => {
+      // stale only when a NEWER request exists (the operator switched sites while
+      // this one was in flight) — never merely because the phase moved
+      if (!mountedRef.current || rePreviewRequestRef.current !== request) return;
+      setRePreviewPhase("idle");
+      if (result.kind === "error") {
+        setRePreviewError(result.detail);
+        return;
+      }
+      setRePreviewResult(result.data);
+      setPayload(result.data.pane_payload);
+      onDetail(result.data.case);
+      if (result.data.changed) setRowsNonce((n) => n + 1);
+    });
+  }, [caseId, activeTooth, onDetail]);
+
   /* THE DROP (gap `drop-a-cap-from-adjust`). One handler, both directions — the
      reversal is the same request with `false`, so it can never fall behind the act.
      Optimism stays OFF: the row moves because the SERVER returned a detail saying
@@ -1713,6 +1918,13 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       onDrop={handleDrop}
       dropSaving={dropSaving}
       dropError={dropError}
+      onRePreview={handleRePreview}
+      rePreviewPhase={rePreviewPhase}
+      rePreviewResult={rePreviewResult}
+      rePreviewError={rePreviewError}
+      /* §10-H's "STILL OPEN" line, closed: from the SAME rows the strip and the
+         queue already read — no second fetch, no derivation of the flag itself. */
+      clockNotice={clockNotice}
       /* The footer's facts come from the ONE flow model, not from a second count
          taken here: `blockedReason` is what the rail itself shows for Deliver, and
          `siteFlagged` is the BFF's rollup. Navigation only — no POST, no status. */

@@ -16,6 +16,7 @@ import type {
   ApiResult,
   CorrespondencePairBody,
   LandmarkView,
+  RePreviewView,
   SitePreviewPayload,
   SiteStatus,
   SiteView,
@@ -1233,4 +1234,143 @@ export function markLeverGuard(
         `rather than a clock angle, so it cannot anchor a rotation. Click the coded ` +
         `trench out on the cap's face instead.`,
   };
+}
+
+// --- re-preview: a re-READ, without applying a tool (gap
+// `re-preview-a-site-without-applying-a-tool`, 2026-07-31) ---------------------------
+//
+// The server half is fully landed: POST .../sites/{tooth}/re-preview is body-less
+// (everything it reads is already in the run directory) and returns `RePreviewView` —
+// the panes' instrument re-read at the pose ON DISK, folded into the run's own row,
+// with `changed` as the SERVER's verdict on whether anything moved. An applied tool
+// already updates the panes (`AdjustResultView.pane_payload`, replaced verbatim); the
+// gap this closes is reading the SAME evidence again with no tool having run — after a
+// rework elsewhere, after a stale row, or simply to check.
+
+/** THE RE-READ'S OWN LABEL. The act reads what is already on disk; it applies
+ * nothing and decides nothing, so its label may promise only that. The design
+ * prototype's own button for this reads "this will pass" — a client-side verdict
+ * over a gate this app never runs, and `postRePreview`'s own doctrine forbids it
+ * (client.ts:1262-1265; the BFF route's docstring says the same). This names the
+ * ACT; the view renders whatever comes back. */
+export function rePreviewButtonLabel(): string {
+  return "Re-read this site's numbers";
+}
+
+/**
+ * WHAT A RE-READ FOUND, in the SERVER's own words. `view.changed` is the fact this
+ * renders — never a local comparison of `rederived` against `previous`: the server
+ * already judged whether anything moved (and cleared the site's confirmation on the
+ * strength of it), and re-deriving that verdict here risks the two disagreeing.
+ */
+export function rePreviewWords(view: RePreviewView): string {
+  return view.changed
+    ? "The numbers moved since this row was last read — the fit on disk is not the " +
+        "one this site's earlier confirmation described, and that confirmation was " +
+        "cleared."
+    : "Read again: nothing has moved. The numbers below match what the run already " +
+        "recorded.";
+}
+
+/** One metric the re-read compared: the row's earlier figure beside what the panes'
+ * instrument reads at the pose currently on disk. Both sides are the SERVER's; this
+ * computes no delta and draws no verdict from either value (see `rePreviewWords`). */
+export interface RePreviewRow {
+  readonly key: string;
+  readonly label: string;
+  readonly previous: number | null;
+  readonly rederived: number | null;
+}
+
+/** `previous` beside `rederived`, one row per key the server actually sent — never a
+ * hard-coded list, so a metric this app has no phrasing for still renders rather than
+ * silently dropping (the same discipline `staleMetricsPhrase` uses; shares its
+ * dictionary, since a re-read's metrics are drawn from the same run row). */
+export function rePreviewRows(view: RePreviewView): readonly RePreviewRow[] {
+  const keys = Array.from(
+    new Set([...Object.keys(view.previous ?? {}), ...Object.keys(view.rederived ?? {})]),
+  ).sort();
+  return keys.map((key) => ({
+    key,
+    label: STALE_METRIC_NAMES[key] ?? key,
+    previous: view.previous?.[key] ?? null,
+    rederived: view.rederived?.[key] ?? null,
+  }));
+}
+
+// --- the unverified clock's actionable surface (§10-H's "STILL OPEN" line, closed
+// 2026-08-02) --------------------------------------------------------------------------
+//
+// §10-H left open what the product should offer an operator whose site is
+// `clocking.rotation_unverified`: the automatic reader found nothing usable on THIS
+// scan (correlation passes, prominence or occupancy fails the evidence gate — or the
+// confirm re-read itself failed), and a fleet check found this is a CLASS, not a
+// quirk, across three distinct causes. NO tool clears the flag: every applied tool's
+// re-read returns only the three instrument numbers
+// (`application/adjust._clocking_fields`) and the BFF merges them OVER the old block,
+// so `rotation_unverified` survives any rework that adds no human observation — by
+// construction, and correctly so. The domain's own documented answer is a HUMAN
+// backstop: a fit-by-points that lands TWO OR MORE observations gets
+// `correspondence.cross_checked: true` server-side, the one sealed fact that a
+// rotation stood on marks that agree with each other. Auto-mark is the tool built to
+// produce exactly that record (best lever arm first, submitted through
+// fit-by-points); mark-trench and the rotation dial submit through routes that fold
+// NO `correspondence` block at all, so they cannot produce it and this notice must
+// never route to them.
+
+/** The notice's own words: the server's facts, the act that is actually available,
+ * and which tool it routes to. NEVER a promise that the flag will clear — it
+ * structurally cannot, and a notice that said so would be disproved by the very act
+ * it recommended. */
+export interface UnverifiedClockNotice {
+  readonly facts: string;
+  readonly act: string;
+  readonly armTool: AdjustToolId;
+}
+
+/**
+ * Null unless the active site's run row carries `clocking.rotation_unverified ===
+ * true` — the SERVER's own boolean, read the same way `alignmentStats` reads the
+ * same block for the ROTATION stat's suffix. Reads the `clocking` block alone: a
+ * site's `guidance` sentence can be STALE after a rework (`rework.stale_metrics`
+ * naming it) while `clocking` is refreshed on every act, so quoting guidance here
+ * would resurrect the exact staleness defect the row fold was rewritten for.
+ */
+export function unverifiedClockNotice(
+  rows: ReadonlyArray<Record<string, unknown>>,
+  tooth: number | null,
+): UnverifiedClockNotice | null {
+  const row = tooth === null ? undefined : rows.find((r) => r["tooth"] === tooth);
+  const clocking = blockOfLike(row, "clocking");
+  if (clocking === undefined || clocking["rotation_unverified"] !== true) return null;
+  const evidence = typeof clocking["evidence"] === "string" ? clocking["evidence"] : "none";
+  return {
+    facts:
+      `The automatic reader could not verify this cap's rotation from the scan — ` +
+      `its own evidence reads "${evidence}". No tool re-reads a clearer signal off ` +
+      `the same scan: this will read the same way after any rework that adds no ` +
+      `human observation.`,
+    act:
+      "Auto-mark proposes this part's own rotation-defining landmarks, best lever " +
+      "arm first, for you to match on the scan. Two or more matched marks that " +
+      "agree with each other land a cross-checked fit — the sealed record that a " +
+      "human rotation stood on marks that agree, which is the documented answer " +
+      "where the automatic reader has none. It does not mark this flag verified.",
+    armTool: "auto-mark",
+  };
+}
+
+/** `blockOf` from domain/declare.ts, mirrored rather than imported: declare.ts is the
+ * strip's own module and importing it here for one helper would tie two modules
+ * together over a three-line function. Same defensive read every wire narrowing in
+ * this file uses (`gateActions`, `alreadyOptimalFrom`): a block that is missing or
+ * not an object renders as absent, never a thrown render. */
+function blockOfLike(
+  row: Record<string, unknown> | undefined,
+  key: string,
+): Record<string, unknown> | undefined {
+  const block = row?.[key];
+  return typeof block === "object" && block !== null
+    ? (block as Record<string, unknown>)
+    : undefined;
 }

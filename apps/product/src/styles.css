@@ -4502,6 +4502,48 @@ button.package-files__link:hover {
   border-radius: var(--radius-md);
 }
 
+/* ---- ADJUST: re-reading a site's numbers without applying a tool (gap
+   `re-preview-a-site-without-applying-a-tool`, 2026-07-31) --------------------------
+   Sits ABOVE ToolTabs (see AdjustStage's own comment on the choice): a re-read is not
+   any one correction tool's act, so it stays visible whichever of the five is open. A
+   plain column, like `.adjust-reconfirm` beside it in the same drawer — the button on
+   its own line, the result or the refusal (never both) stacked beneath it. */
+.adjust-reread {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* ---- ADJUST: the unverified clock's actionable surface (§10-H's "STILL OPEN" line,
+   closed 2026-08-02) -----------------------------------------------------------------
+   The same amber tone `.adjust-exception` uses for "a consequence to weigh" — nothing
+   here failed a gate the operator can fix by clicking, and nothing here is accepted.
+   UNLIKE `.adjust-exception` this one carries a live control, so it may look
+   clickable: the button ROUTES to auto-mark, it never marks anything verified. */
+.adjust-clock-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-amber);
+  background: var(--color-amber-bg);
+  border: 1px solid var(--color-amber-border);
+  border-radius: var(--radius-md);
+}
+
+.adjust-clock-notice__line {
+  margin: 0;
+  text-wrap: pretty;
+}
+
 /* ===== checkout ===== */
 /* ================================================================
    CHECKOUT: the metrics, the sealed sentence, and the order lines

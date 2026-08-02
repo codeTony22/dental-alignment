@@ -968,3 +968,24 @@ What changed, and the reasoning each change carries in-code:
 
 Verified by opening it at 1512x950 and 1280x800: three panes side by side on BOTH
 workspace stages, `stageScrollers: []`, document scroll 0.
+
+**T. THE QUEUED FIVE, LANDED (2026-08-02, three agent waves, each gated and committed).**
+The popover (§10-O's own gap list), dialog focus + jsdom (closes O.8), the unrun-part
+preview (the §10-M2 slice), re-preview on Adjust, and the unverified-clock affordance —
+which CLOSES §10-H's open question ("what the product should offer an operator there"):
+
+- The ROTATION pill now reads "+21.7° · unverified" when the run itself refused to trust
+  the instrument — the same honesty the PAIRS pill already had. A naked degree figure
+  from evidence:"none" was the pill lying by omission.
+- The notice on Adjust relays the server's fact, states plainly that NO tool re-reads a
+  clearer signal off the same scan, and routes to auto-mark — promising exactly what a
+  human act can land (a CROSS-CHECKED fit: two or more marks that agree) and explicitly
+  NOT a flip of the flag. The forbidden promise is pinned absent by test. This is a
+  CLASS, not a quirk: 3 of 8 fleet cases carry rotation_unverified on their newest run.
+- Re-preview is a re-READ: the body-less POST existed with zero consumers; the control
+  promises nothing but a fresh read, and renders the server's changed/unchanged words.
+
+Follow-ups flagged, not built: the Library pane previews the ARMED candidate only — a
+case whose effective construction has no run yet still shows the pending gap (separable
+slice); Deliver's inert "unverified" em could route back to Adjust's tools (client call,
+§10-N territory); the session log is reachable only from the two workspace toolbars.
