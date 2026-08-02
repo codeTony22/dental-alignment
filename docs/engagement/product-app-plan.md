@@ -276,7 +276,12 @@ against their labels with no gap and no wrap allowance. Cosmetic, product-only; 
 needs to be a flex line with a gap and wrapping.
 
 **E. N caps in one scan — the shape holds, but the shared construction part is a DISCLOSURE
-GAP (found 2026-07-28 answering the client's multi-cap question).**
+GAP (found 2026-07-28 answering the client's multi-cap question). LANDED SINCE (verified
+2026-08-02, §10-AB sweep): the fix shape below shipped end-to-end — `production.note`
+rides `AssuranceSite.production_note` (resources/deliver.py), a noted-but-ready row NEEDS
+ACKNOWLEDGMENT exactly like a flagged one (domain/deliver.ts, `needs_acknowledgment` in
+session.py — the "should probably flag" call, taken), and the note renders on the row,
+the checkout metric strip and the report expand, pinned by tests in both apps.**
 
 The plumbing is genuinely N-wide: no site-count cap exists anywhere, `sites` is a dict keyed by
 tooth, the run loops per site (auto_flow.py:1714), the queue and the assurance table are
@@ -556,6 +561,13 @@ renders identically to a 0.02mm one, which is a narrower version of the same com
 this item is written against); `data-role="span-caution"` now also carries single-mark
 refusals and should be renamed `mark-guard`; `ClockReference.rim_centre` should be a
 `readonly [number, number, number]` tuple rather than `number[]`.
+
+LANDED SINCE (verified against the tree 2026-08-02, §10-AB sweep): all three. The
+advisory band arrived as §10-Q; `span-caution` is gone from the tree (`mark-guard` at
+AdjustStage.tsx, with the alert/status role split); `ClockReference.rim_centre` is the
+readonly tuple in api/client.ts — `domain/adjust.ts`'s `ClockReferenceLike` deliberately
+stays wire-tolerant (`readonly number[]`) because its fail-open guard is the tested
+behaviour for a short vector.
 
 **J. THE LIBRARY SPAN — tool 1 of the client's two (2026-08-01; landed).**
 
