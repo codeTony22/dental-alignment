@@ -27,6 +27,34 @@
   --color-mark-rim-points: #17b6a8;
   --color-mark-rim-points-dark: #0c6259;
   --color-scan-bg: #141a17;
+  /* THE GROUND, from the client's comp (artech-flow.html body background). Distinct
+     from --color-bg, which this stylesheet uses as the SURFACE colour in nine of its
+     ten call sites (cards, sticky headers, a scrim gradient) — repurposing it would
+     have turned every card the same colour as the page it sits on. The split is
+     ground vs surface, and only the body takes the ground. */
+  --color-ground: #f2f5f3;
+  /* Card edges in the comp are green-grey (#dfe4e1, 19 occurrences) rather than the
+     blue-grey --color-border the demo shipped. Panels take this; form controls and
+     the demo-era surfaces keep --color-border, so nothing that was tuned against it
+     shifts underneath. */
+  --color-surface-line: #dfe4e1;
+  --color-scrollbar: #cfd6d1;
+  /* THE COMP'S FOUR CHIP TRIPLES (artech-flow.html READY/FLAG/EXC/NEUTRAL), as tokens
+     rather than as values repeated per family. Five families of chip had each grown
+     their own greens, ambers and reds — semantically identical, visually not — and a
+     sixth would have grown a seventh. Every family below points at these. */
+  --chip-ready-bg: #eafaf0;
+  --chip-ready-fg: #0a6d2e;
+  --chip-ready-line: #bfe6cd;
+  --chip-flag-bg: #fdece7;
+  --chip-flag-fg: #b8442a;
+  --chip-flag-line: #f0c0b0;
+  --chip-exception-bg: #fdf3dd;
+  --chip-exception-fg: #8a6a12;
+  --chip-exception-line: #e4c876;
+  --chip-neutral-bg: #f0f2f0;
+  --chip-neutral-fg: #5c655f;
+  --chip-neutral-line: #dfe4e1;
   --radius-lg: 12px;
   --radius-md: 8px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -45,8 +73,33 @@ body,
 }
 
 body {
-  background: var(--color-bg);
+  background: var(--color-ground);
   color: var(--color-text);
+}
+
+/* The comp's own scrollbars: thin, green-grey, on a transparent track — on a page of
+   white cards over a tinted ground, a default grey scrollbar reads as chrome that
+   belongs to the browser rather than the app. */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar);
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+a {
+  color: var(--color-accent-green-dark);
+}
+
+a:hover {
+  color: var(--color-accent-green);
 }
 
 .sr-only {
@@ -212,7 +265,7 @@ body {
 
 /* Panels */
 .panel {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-surface-line);
   border-radius: var(--radius-lg);
   padding: 20px 22px;
   background: #ffffff;
@@ -333,40 +386,65 @@ body {
 }
 
 
+/* THE COMP'S CHIP, metric for metric (artech-flow.html's `chip()` helper): 2px 8px,
+   10px/700, a 999px pill and — the part the demo's chip lacked — a BORDER, which is
+   what stops a pale chip dissolving into a white card. The four semantic triples below
+   are the comp's READY / FLAG / EXC / NEUTRAL verbatim. */
 .chip {
-  display: inline-block;
-  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
   border-radius: 999px;
-  background: #e6f4ea;
-  color: var(--color-accent-green-dark);
-  font-size: 12px;
-  font-weight: 600;
+  background: #f0f2f0;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-surface-line);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.chip--ready,
+.chip--band-pass,
+.chip--gate-ready,
+.chip--confidence-high,
+.chip--capture-pass {
+  background: var(--chip-ready-bg);
+  color: var(--chip-ready-fg);
+  border-color: var(--chip-ready-line);
+}
+
+.chip--flag,
+.chip--band-fail,
+.chip--gate-action,
+.chip--confidence-low,
+.chip--capture-rescan {
+  background: var(--chip-flag-bg);
+  color: var(--chip-flag-fg);
+  border-color: var(--chip-flag-line);
+}
+
+.chip--exception,
+.chip--band-review,
+.chip--gate-attention,
+.chip--confidence-medium,
+.chip--capture-marginal {
+  background: var(--chip-exception-bg);
+  color: var(--chip-exception-fg);
+  border-color: var(--chip-exception-line);
+}
+
+.chip--gate,
+.chip--agreement-auto,
+.chip--seat-icp {
+  background: var(--chip-neutral-bg);
+  color: var(--chip-neutral-fg);
+  border-color: var(--chip-neutral-line);
 }
 
 .chip--gate {
-  background: #eceef1;
-  color: #4a4f57;
   letter-spacing: 0.04em;
 }
 
-/* Guidance-gate level chips (Gate column + GuidancePanel headers) */
-.chip--gate-ready {
-  background: #e6f9ee;
-  color: var(--color-accent-green-dark);
-  border: 1px solid #b7ecce;
-}
-
-.chip--gate-attention {
-  background: var(--color-amber-bg);
-  color: var(--color-amber);
-  border: 1px solid var(--color-amber-border);
-}
-
-.chip--gate-action {
-  background: #fdecea;
-  color: var(--color-danger);
-  border: 1px solid #f2b8b0;
-}
 
 /* Gate cell stacks the readiness chip over the pose-confidence chip */
 .results-table__gate-cell {
@@ -379,21 +457,6 @@ body {
 /* Pose-stability confidence chips: green (high) / amber (medium) / red (low) */
 .chip--confidence {
   font-size: 11px;
-}
-.chip--confidence-high {
-  background: #e6f4ea;
-  color: var(--color-accent-green-dark);
-  border: 1px solid #9ed7b0;
-}
-.chip--confidence-medium {
-  background: var(--color-amber-bg);
-  color: var(--color-amber);
-  border: 1px solid var(--color-amber-border);
-}
-.chip--confidence-low {
-  background: #fdecea;
-  color: var(--color-danger);
-  border: 1px solid #f2b8b0;
 }
 
 /* Seat mini-chip */
@@ -409,15 +472,11 @@ body {
 }
 
 .chip--seat-icp {
-  background: #eceef1;
-  color: #4a4f57;
-  border: 1px solid var(--color-border);
+  border-style: solid;
 }
 
 /* Agreement column: "auto" (no declaration) muted chip */
 .chip--agreement-auto {
-  background: #eceef1;
-  color: var(--color-text-muted);
   letter-spacing: 0.02em;
 }
 
@@ -459,20 +518,8 @@ body {
 /* Capture-gate chips (intake advisory, steps 2-3): pass green / marginal amber / RESCAN red —
    the same traffic-light language as the gate & confidence chips. RESCAN is deliberately loud
    (uppercase in the label, red) — the one state where continuing wastes the operator's marks. */
-.chip--capture-pass {
-  background: #e6f9ee;
-  color: var(--color-accent-green-dark);
-  border: 1px solid #b7ecce;
-}
-.chip--capture-marginal {
-  background: var(--color-amber-bg);
-  color: var(--color-amber);
-  border: 1px solid var(--color-amber-border);
-}
 .chip--capture-rescan {
-  background: #fdecea;
-  color: var(--color-danger);
-  border: 1px solid #f2b8b0;
+  font-weight: 800;
 }
 
 /* Capture-gate RESCAN banner: red (a refused capture, not merely stale results) — shown in

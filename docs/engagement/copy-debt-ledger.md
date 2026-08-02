@@ -402,3 +402,38 @@ Carried-forward minors (grill of slices 0b/1, 2026-07-26):
   Literal) — due slice 5c. DONE (slice 5c, 2026-07-27): test_worker_port.TestStateTie
   asserts the Literal's args equal the enum's values, both directions.
 - This ledger existing satisfies the second minor.
+
+## Row 9 divergence — the design-system tokens (2026-08-01, client: "create the look and feel of the designs into the product's react app")
+
+The copied token block and the chip vocabulary now DEPART from the frozen sheet, recorded
+here per the divergence rule above. The frozen direction is untouched: `apps/web` is not
+edited and its own stylesheet still carries the demo's values.
+
+WHY IT DIVERGES. The product's base was the demo's stylesheet, and the demo predates the
+client's design comp ("ArTech End-to-End Flow"). Where the two disagree the comp is now the
+authority for the PRODUCT only, so a demo-era value and a comp value can no longer be
+assumed identical when reading a copied region.
+
+WHAT DEPARTED, exhaustively:
+
+1. `--color-ground: #f2f5f3` is NEW and takes the body background, where the demo had
+   `--color-bg: #ffffff`. `--color-bg` is unchanged and keeps its nine surface call sites
+   (cards, sticky headers, a scrim gradient) — repurposing it would have made every card
+   the colour of the page beneath it. The split is ground vs surface; only the body moved.
+2. `--color-surface-line: #dfe4e1` is NEW and takes `.panel`'s border. The demo's
+   `--color-border: #e3e3e8` (blue-grey) is unchanged and still dresses form controls and
+   the demo-era surfaces, so nothing tuned against it shifts underneath.
+3. `--color-scrollbar: #cfd6d1` is NEW, with the comp's 9px thumb on a transparent track.
+4. `a` / `a:hover` take the comp's `#0a6d2e` / `#12994a`. The demo styled no bare anchor.
+5. THE CHIP VOCABULARY IS NOW TOKEN-DRIVEN. The comp's four triples — READY / FLAG /
+   EXCEPTION / NEUTRAL — are `--chip-*-bg/fg/line`, and every family points at them:
+   gate, confidence, seat, capture, band, agreement-auto. Five families had each grown
+   their own greens, ambers and reds — semantically identical, visually not — and the
+   next family would have grown a sixth. The base `.chip` also gains the comp's metrics
+   (2px 8px, 10px/700, and a BORDER, which is what stops a pale chip dissolving into a
+   white card). `.chip--capture-rescan` keeps a local `font-weight: 800`: its loudness is
+   deliberate and is the one capture state where continuing wastes the operator's marks.
+
+CONSEQUENCE FOR THE NEXT READER: a chip's palette is decided in exactly one place now. Do
+not re-add per-family colour rules — that is the drift this pass removed, and it will read
+as "just this one chip" every time.
