@@ -2133,6 +2133,25 @@ a:hover {
   color: #ffffff;
 }
 
+/* THE WAY OUT, first in the band (client 2026-08-02). Same pill as the brand bar's,
+   because it IS that control — it moved here when the two dark bands became one, and a
+   control that changes shape as it moves reads as a different control. */
+.case-header__worklist {
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.case-header__worklist:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
 .case-header__title {
   margin: 0;
   flex: 0 0 auto;

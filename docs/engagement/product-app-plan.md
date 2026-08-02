@@ -898,3 +898,29 @@ nothing" complaint the gate was written against. `agreement_words` now words the
 two refusals were 1.546 and 2.349mm, and nothing was observed between. It DISCLOSES rather
 than gates — the operator with a reason to accept a 0.7mm fit still can, the same division
 of labour the one-observation clause uses.
+
+**R. ONE NAV BAR ON A CASE ROUTE (client 2026-08-02).** "There are two nav bars, take off
+the ArTech Software Labs, and All cases should be also navigable in the same nav bar."
+
+This retires slice A's stated concession. That slice chose to *visually merge, structurally
+keep* — `Shell` went on rendering the brand bar and `CaseShellView` stacked its `#0e1613`
+band directly beneath it, on the reasoning that the pair would read as the comp's single
+header and cost no data-flow change. It did not read that way. Two dark bands, each with
+its own link out of the page, are two navigations however tightly they are stacked.
+
+`Shell` now renders its header only where it is the ONLY bar — the worklist and `/terms` —
+and the case band carries "← All cases" itself, first, before the stages. The way out comes
+first on purpose: abandoning the case is a different kind of move from walking along it, and
+the one control that leaves should not sit at the end of the row of controls that continue.
+
+`rendersOwnNav(pathname)` matches on the path rather than taking a prop, because `Outlet`
+gives a parent no way to ask its child what chrome it brought, and a context is a data-flow
+change for a question the URL already answers — the same trade slice A declined, declined
+again for the same reason and now with nothing left to pay for.
+
+Cost and gain: the header assertions in `Shell.test.tsx` MOVED rather than being deleted —
+half of them (the link exists on a case route) now live in `CaseShell.test.tsx`, and a new
+one pins that no brand bar renders there, so the two halves cannot both quietly disappear.
+The reclaimed ~56px went straight to the panes: at 1512x950 all three are visible on Adjust
+where the union pane previously needed a scroll (§10-P.2), which is a real dent in that
+still-open item without touching the drawer/advance split.

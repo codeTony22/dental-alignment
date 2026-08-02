@@ -25,6 +25,37 @@ describe("the case shell view", () => {
     expect(html).toContain("lower");
   });
 
+  it("carries the way home IN the band, beside the stages", () => {
+    /* THE ONE NAV BAR (client 2026-08-02: "There are two nav bars, take off the ArTech
+       Software Labs, and All cases should be navigable in the same nav bar"). The brand
+       header is suppressed on case routes — Shell.test.tsx pins that half — so this link
+       is now the ONLY way out of a case, and cannot be allowed to quietly go missing. */
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/intake">
+        <CaseShellView detail={detail} stage="intake" />
+      </StaticRouter>,
+    );
+    expect(html).toMatch(
+      /<a[^>]*href="\/"[^>]*data-role="all-cases"|data-role="all-cases"[^>]*href="\/"/,
+    );
+    // in the SAME band as the rail, not a second strip above or below it
+    const band = html.slice(html.indexOf('class="case-header"'));
+    const inBand = band.slice(0, band.indexOf("</header>"));
+    expect(inBand).toContain('data-role="all-cases"');
+    expect(inBand).toContain('data-role="stage-rail"');
+  });
+
+  it("puts the way out BEFORE the stages — out of the case, then along it", () => {
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/adjust">
+        <CaseShellView detail={detail} stage="adjust" />
+      </StaticRouter>,
+    );
+    expect(html.indexOf('data-role="all-cases"')).toBeLessThan(
+      html.indexOf('data-role="stage-rail"'),
+    );
+  });
+
   it("renders the rail and Adjust's built stage — no placeholder line remains", () => {
     // THE LAST PLACEHOLDER IS GONE (client 2026-07-28: "The adjust functionality is
     // not build at all"). Every stage now mounts a real surface, so this test's

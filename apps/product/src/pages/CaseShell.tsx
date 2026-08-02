@@ -96,12 +96,23 @@ export function CaseShellView({
   const blocked = states.find((s) => s.id === stage)?.blockedReason ?? null;
   return (
     <section data-role="case-shell" className="case-shell">
-      {/* THE CASE BAND (client comp, 2026-08-02): the comp's one dark header carries
-          brand, the stage rail, the case note and restart. `Shell` renders the brand
-          half and sits above the route that fetches this case, so the rail lives here
-          in an identical `#0e1613` band immediately beneath it — no seam, one header to
-          the eye, and no data-flow change. */}
+      {/* THE CASE BAND (client comp, 2026-08-02): the comp's one dark header carries the
+          way out, the case, the stage rail, the case note and restart.
+
+          Slice A stacked this band under `Shell`'s brand bar and called the pair one
+          header. The client read it as what it was — "There are two nav bars, take off
+          the ArTech Software Labs, and All cases should be navigable in the same nav
+          bar" (2026-08-02) — so `Shell` now suppresses its bar here and this band is the
+          case's only navigation. It therefore has to carry the way home as well.
+
+          The way out comes FIRST, before the stages: leaving the case is a different
+          kind of move from walking along it, and the one control that abandons the
+          current work should not sit at the end of the row of controls that continue
+          it. */}
       <header className="case-header">
+        <Link to="/" className="case-header__worklist" data-role="all-cases">
+          ← All cases
+        </Link>
         <h2 className="case-header__title">
           Case {detail.case.id} — {detail.case.doctor}
         </h2>
