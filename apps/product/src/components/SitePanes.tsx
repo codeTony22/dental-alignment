@@ -264,23 +264,13 @@ function ColorbarHud({
   return (
     <div className="verify-panel__hud verify-panel__hud--scale">
       <div className="verify-colorbar">
-        {chrome !== "tiny" && onSelectScale !== undefined && (
-          <ScaleSelector scaleId={scaleId} onSelectScale={onSelectScale} />
-        )}
-        {chrome === "tiny" && (
-          /* THE RAMP KEEPS ITS IDENTITY AT EVERY SIZE (design review 2026-07-31).
-             The tiny rule hid the chooser, the ticks AND the fold, so the union pane
-             showed a deviation-coloured cap over a bare gradient: no numbers, no sign
-             convention, and no way to tell the SIGNED ramp from RealGUIDE's absolute
-             rainbow — on which red means either proud or sunk. Worse, on a
-             three-column stage maximizing yields the identical height (both are
-             availH − 61), so there was no route back to any of it. The chooser is a
-             control and may step aside; WHICH SCALE IS ON THE MESH is a caption, and
-             a coloured surface without it is not a measurement. */
-          <span data-role="colorbar-scale-name" className="verify-colorbar__scalename">
-            {contacts ? `contacts 0.00–${CONTACTS_MAX_MM.toFixed(2)} mm` : `signed ±${clampMm.toFixed(2)} mm`}
-          </span>
-        )}
+        {/* THE COMP'S RESTING STRIP (read directly 2026-08-02): the thin ramp and ONE
+            summary line — "▸ signed ±0.25 mm · legend & stats" — nothing else. Ours
+            stacked the two scale pills and a tick row above the fold and the union
+            pane paid four rows of chrome for it. The ramp keeps its identity at every
+            size because the scale's NAME now lives in the always-visible summary line
+            (the 2026-07-31 review's rule, satisfied harder than before); the chooser
+            pills and the tick numbers are controls and small print, and they fold. */}
         <div
           className="verify-colorbar__bar"
           style={{ background: contacts ? contactsGradientCss() : deviationGradientCss() }}
@@ -291,17 +281,23 @@ function ColorbarHud({
               : `Deviation scale from -${clampMm} to +${clampMm} millimetres`
           }
         />
-        <div className="verify-colorbar__ticks">
-          {ticks.map((label) => (
-            <span key={label}>{label}</span>
-          ))}
-        </div>
-        {/* THE WORDS, FOLDED — the demo's rule kept with its markup: the convention,
-            the unmeasured swatch, the clamp note and the published stats are small
-            print a QC read needs OCCASIONALLY; a <details> keeps every word in the
-            document (and the accessibility tree) while the pane keeps its 3D height. */}
         <details className="verify-colorbar__detail">
-          <summary className="verify-colorbar__summary">legend &amp; stats</summary>
+          <summary className="verify-colorbar__summary">
+            <span data-role="colorbar-scale-name" className="verify-colorbar__scalename">
+              {contacts
+                ? `contacts 0.00–${CONTACTS_MAX_MM.toFixed(2)} mm`
+                : `signed ±${clampMm.toFixed(2)} mm`}
+            </span>{" "}
+            · legend &amp; stats
+          </summary>
+          {chrome !== "tiny" && onSelectScale !== undefined && (
+            <ScaleSelector scaleId={scaleId} onSelectScale={onSelectScale} />
+          )}
+          <div className="verify-colorbar__ticks">
+            {ticks.map((label) => (
+              <span key={label}>{label}</span>
+            ))}
+          </div>
           <p className="verify-colorbar__legend">
             <span className="verify-colorbar__convention">
               {contacts

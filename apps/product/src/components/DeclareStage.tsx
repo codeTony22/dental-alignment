@@ -386,6 +386,10 @@ export interface WorkspaceToolbarProps {
   /** A stage's own control that belongs on this strip (Declare's arch opener) — so
    *  the stage keeps ONE row of chrome above the panes rather than two. */
   readonly children?: ReactNode;
+  /** The strip's LAST item, after the metrics — the comp ends its toolbar with
+   *  "▸ budget & log", and ours ends with the insight popover for the same reason:
+   *  the readouts finish the row, and the control that expands them sits with them. */
+  readonly endSlot?: ReactNode;
 }
 
 /** The two zoom acts. `in` steps the level UP, which the viewer reads as a SMALLER
@@ -433,6 +437,7 @@ export function WorkspaceToolbar({
   linked = false,
   onToggleLinked,
   children,
+  endSlot,
 }: WorkspaceToolbarProps) {
   const identity = siteIdentity(tooth, systemModel);
   return (
@@ -535,6 +540,7 @@ export function WorkspaceToolbar({
           </span>
         ))}
       </span>
+      {endSlot}
     </div>
   );
 }
@@ -876,6 +882,17 @@ export function DeclareStageView({
           onZoom={onZoom}
           linked={linked}
           onToggleLinked={onToggleLinked}
+          /* THE PROVENANCE POPOVER ends the strip (comp: its toolbar closes on
+             "▸ budget & log"). `detail` is the refresh key: CaseShell replaces it
+             wholesale only when an act lands, so an open popover re-asks exactly
+             when there is something new. */
+          endSlot={
+            <WorkspaceInsight
+              caseId={detail.case.id}
+              tooth={active?.tooth ?? null}
+              refreshKey={detail}
+            />
+          }
         >
           <button
             type="button"
@@ -885,16 +902,6 @@ export function DeclareStageView({
           >
             ⊞ Arch context — the whole scan
           </button>
-          {/* THE PROVENANCE POPOVER (gap `deviation-budget-in-workspace`), beside the
-              arch opener — the toolbar's OTHER standing control, not a second row of
-              chrome. `detail` is passed as the refresh key: CaseShell only replaces it
-              wholesale when an act actually lands (onDetail), so an already-open
-              popover re-asks exactly when there is something new to show. */}
-          <WorkspaceInsight
-            caseId={detail.case.id}
-            tooth={active?.tooth ?? null}
-            refreshKey={detail}
-          />
         </WorkspaceToolbar>
         {panesSlot}
         {/* ONE CONTROLS ROW, NOT TWO CARD DECKS (client 2026-08-02: "There is

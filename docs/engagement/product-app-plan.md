@@ -1117,3 +1117,31 @@ DEV RMS 0.427/p90 0.728 (highest of the eight), ROTATION +21.7° · unverified, 
 unchecked, capture marginal — on the case whose clock no instrument can verify (§10-T).
 If "not working" meant one of those numbers, the numbers are the finding, not a defect.
 Awaiting specifics if it was neither.
+
+**Y. ADJUSTMENT, REGION FOR REGION (2026-08-02, "revamp the whole page").** Three more
+comp facts landed, each read off the running comp:
+1. **The toolbar ends on the popover control** — the comp closes its strip with
+   "▸ budget & log"; ours closes with "Numbers & log" via a new `endSlot` on the shared
+   toolbar (children stay left, for Declare's arch opener). With the strip thinned, the
+   toolbar is ONE row at 1512 — the wrap §10-W accepted is gone without spending the
+   DEV RMS/P90 provenance that caused it.
+2. **The resting colorbar is two lines** — the thin ramp and one summary line naming the
+   scale ("▸ signed ±0.50 mm · legend & stats"). The chooser pills and tick numbers fold
+   into the legend. The 2026-07-31 ramp-identity rule is satisfied HARDER than before:
+   the scale's name is now on the always-visible summary at every chrome size, so the
+   old tiny-only scalename test retargeted to pin exactly that.
+3. **The re-read is the acts row's primary** — the comp fills its re-preview green; the
+   TONE ports, the words do not (its label promises an outcome; ours promises a read).
+
+CALLS THE CLIENT ASKED FOR, left open on purpose:
+- **"Accept as flagged exception" on Adjustment** (comp) vs our acknowledgment gate on
+  Deliver's assurance rows (server-derived disposition, §10-N). Duplicating the act on
+  Adjust is a flow + BFF change, not a restyle.
+- **The terms checkbox in Adjust's queue foot** (comp: "accept the terms to continue")
+  vs their own 2026-07-30 ruling that terms gate PAYMENT on Delivery (§10-O.1). The comp
+  contradicts the ruling; ours follows the ruling until they say otherwise.
+- **MAX DEV as one pill** (comp) vs our DEV RMS + DEV P90 with (run)/(preview) source
+  qualifiers — collapsing spends provenance.
+- **The label "budget & log"** — the comp's words imply the client-side budget fractions
+  this product refuses; ours says "Numbers & log". Rename is possible if the exact words
+  matter more than the implication.

@@ -395,12 +395,18 @@ describe("SitePanesView — the chrome steps aside on a stage too small to carry
     expect(markup).toContain("contacts");
   });
 
-  it("says nothing extra where the chooser itself is on screen", () => {
+  it("names the scale on the summary line at EVERY size — the comp's resting strip", () => {
+    /* Retargeted 2026-08-02 (comp read directly): the resting colorbar is the thin
+       ramp plus one summary line carrying the scale's name; the chooser pills and the
+       tick numbers fold. The name therefore shows even where the chooser exists —
+       the old assertion that it stayed tiny-only pinned the very chrome the client
+       asked us to shed. */
     const markup = view({
       layoutPlan: planPaneLayout({ availH: 300, viewportW: 1280 }, false),
       onSelectScale: () => undefined,
     });
-    expect(markup).not.toContain('data-role="colorbar-scale-name"');
+    expect(markup).toContain('data-role="colorbar-scale-name"');
+    expect(markup).toContain("legend &amp; stats");
   });
 });
 

@@ -6328,3 +6328,30 @@ button.package-files__link:hover {
 .drawer-acts [data-role="re-preview-error"] {
   flex: 1 1 100%;
 }
+
+/* ---- The resting colorbar is the comp's two lines (read directly 2026-08-02) ----
+   Thin ramp, then ONE summary line naming the scale; the chooser pills and the tick
+   numbers fold into the legend. */
+.verify-colorbar__bar {
+  height: 7px;
+  border-radius: 4px;
+}
+
+.verify-colorbar__summary {
+  font-size: 10.5px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.verify-colorbar__scalename {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.verify-colorbar__detail .verify-colorbar__scales {
+  margin: 6px 0 4px;
+}
+
+.verify-colorbar__detail .verify-colorbar__ticks {
+  margin-bottom: 4px;
+}

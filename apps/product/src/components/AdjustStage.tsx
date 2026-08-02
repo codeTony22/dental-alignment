@@ -755,9 +755,8 @@ export function AdjustStageView({
           onZoom={onZoom}
           linked={linked}
           onToggleLinked={onToggleLinked}
-        >
-          {insightSlot}
-        </WorkspaceToolbar>
+          endSlot={insightSlot}
+        />
         {panes}
         <div className="workspace-drawer">
           <section data-role="adjust-toolbox" aria-label="Correction tools"
@@ -1165,7 +1164,10 @@ export function AdjustStageView({
                 <button
                   type="button"
                   data-role="re-preview"
-                  className="button button--ghost button--small"
+                  /* the acts row's PRIMARY, comp-toned — the comp fills its re-preview
+                     green (its label promises an outcome; ours promises only a read,
+                     so the tone ports and the words do not) */
+                  className="button button--primary button--small"
                   /* `seatedPhase === "loading"` guards a narrow race: the initial
                      GET .../seated for a freshly-selected site is still in flight, and
                      its response replaces `payload` unconditionally when it lands
