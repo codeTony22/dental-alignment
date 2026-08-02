@@ -30,6 +30,7 @@
  * Deliver having never opened it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDialogEscape } from "./useDialogEscape";
 import { useNavigate } from "react-router-dom";
 import { FREE_POINT_COLOR, type VerifyMarker } from "viewer";
 import {
@@ -514,6 +515,9 @@ export function AdjustStageView({
   const reconfirm = reconfirmControl(activeStatus, seatedPhase, seatedPayloadPresent);
   const reconfirmOffered = reconfirm.offered;
   const exceptionWords = flaggedExceptionWords(activeStatus);
+  // Escape closes the gate-reasons dialog.
+  useDialogEscape(reasonsFor !== null, onCloseReasons);
+
   const reasonsShown =
     reasonsFor === null
       ? []

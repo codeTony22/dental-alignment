@@ -19,6 +19,7 @@
  * every site is reviewed (domain/flow.ts).
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useDialogEscape } from "./useDialogEscape";
 import { useNavigate } from "react-router-dom";
 import {
   fetchRun,
@@ -460,6 +461,8 @@ export function DeclareStageView({
      nothing downstream reads it, so it earns no prop. Static tests render it CLOSED,
      which is also the honest default: the panes are the subject of this stage. */
   const [archOpen, setArchOpen] = useState(false);
+  // Escape closes the arch-context dialog.
+  useDialogEscape(archOpen, () => setArchOpen(false));
   // Per-SITE shelves: the detector's proposal is a fact about the active site, so the
   // same catalog marks a different card as the operator moves down the queue.
   const shelves = variantShelves(detail, active);

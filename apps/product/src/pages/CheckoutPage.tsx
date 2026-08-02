@@ -18,6 +18,7 @@
  *     BFF's own state says whether payment happened.
  */
 import { useEffect, useRef, useState } from "react";
+import { useDialogEscape } from "../components/useDialogEscape";
 import {
   postCheckoutReturn,
   postPayment,
@@ -812,6 +813,9 @@ export function CheckoutDialog({
   };
 
   const handlePay = () => pay(card);
+
+  // Escape leaves the checkout, unless a payment is already with the server.
+  useDialogEscape(true, onClose, phase !== "idle");
 
   return (
     <div

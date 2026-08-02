@@ -31,6 +31,7 @@
  * its own flow: reload the evidence and ask again — never a silent retry.
  */
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useDialogEscape } from "./useDialogEscape";
 import { CheckoutDialog } from "../pages/CheckoutPage";
 import { DeliverPreview } from "./DeliverPreview";
 import {
@@ -826,6 +827,8 @@ export function DeliverStageView({
   // or absent (every static test written before it existed) — the tabs are then
   // simply not there yet, never a placeholder.
   const packageFiles = runFacts?.kind === "ok" ? runFacts.data.package_files : [];
+  // Escape closes the full-report modal.
+  useDialogEscape(reportOpen, onCloseReport);
   const previewTeeth = assurance.kind === "ok" ? assurance.data.sites.map((s) => s.tooth) : [];
   const meshPreviewTabs = previewTabs(packageFiles, previewTeeth);
 
