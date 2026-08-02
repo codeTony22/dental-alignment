@@ -23,6 +23,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { mmPerPixelAtFocus, viewReadoutChanged, type PaneViewReadout } from "./paneReadout";
+import { clampZoomScale } from "./zoom";
 
 /** The pane background — the same light-blue backdrop the main viewer uses, so the dialog's
  *  panes and the workflow's stage read as one application. */
@@ -616,6 +617,35 @@ export class VerifyScene {
       // is mirroring — that is how linked views drift apart while claiming to be linked.
       this.settleControls();
     });
+  }
+
+  /**
+   * Step this pane's camera in or out by `factor`, about the framing it already has.
+   *
+   * A MULTIPLIER, not a destination: the toolbar's −/+ and the operator's scroll wheel
+   * both move the same camera, and a zoom that assigned an absolute distance would drag
+   * the view back to the button's opinion every time the button moved. Multiplying leaves
+   * whatever the wheel did in place and steps from there.
+   *
+   * The step is clamped in SCALE space (multiples of the framing distance) rather than in
+   * millimetres, because that is the space the near/far planes were derived in — see
+   * MIN_ZOOM_SCALE. Guarded like `applyOrbit`: a button press is an assignment of a camera
+   * position, and the controls' leftover momentum has no business being added to it.
+   */
+  zoomBy(factor: number): void {
+    if (!Number.isFinite(factor) || factor <= 0) return;
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const radius = offset.length();
+    if (!(radius > 0) || !(this.baseDistance > 0)) return;
+    const next = clampZoomScale((radius * factor) / this.baseDistance) * this.baseDistance;
+    this.assigningCamera(() => {
+      this.camera.position
+        .copy(this.controls.target)
+        .add(offset.multiplyScalar(next / radius));
+      this.settleControls();
+    });
+    // the pane's scale bar is a function of the distance we just changed
+    this.emitView();
   }
 
   /** Called whenever the USER moves this pane's camera (never for an applied orbit). */

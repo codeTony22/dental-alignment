@@ -364,7 +364,9 @@ export interface PreviewSeat {
  * makes that split explicit.
  */
 export interface ClockReference {
-  rim_centre: number[];
+  /** A POINT, not a list — the tuple is what makes a short vector a typecheck failure
+   *  rather than a NaN that reaches the guard and reads "NaNmm" at the operator. */
+  rim_centre: readonly [number, number, number];
   min_lever_mm: number;
 }
 

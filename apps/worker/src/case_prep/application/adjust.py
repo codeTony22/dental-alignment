@@ -1398,6 +1398,20 @@ def residual_rows(observations: Sequence[Observation],
 # says WHICH of the two it is, in every place it speaks.
 CROSS_CHECK_MIN_OBSERVATIONS = 2
 
+# --- THE ADVISORY BAND UNDER THE BOUND (review of the gate, 2026-08-01) ------------------
+#
+# The evidence gate below is a REFUSAL at 1.00mm, and a refusal alone leaves the whole
+# band beneath it flat: a 0.99mm fit printed the identical sentence to a 0.02mm one, which
+# is a narrower version of the very complaint the gate answers — a fit with a BAD number
+# saying nothing about it. The gate stopped the catastrophe and left the near-miss silent.
+#
+# 0.50mm is chosen from the measured fleet rather than picked: healthy fits scatter
+# 0.02–0.331mm, the two refusals were 1.546 and 2.349mm, and nothing was observed between.
+# A floor under 0.331 would caution every good fit into noise; one at the bound would never
+# fire. This DISCLOSES, it does not gate: the operator who has a reason to accept a 0.7mm
+# fit still can, which is the same division of labour the one-observation clause uses.
+ADVISORY_DISAGREEMENT_MM = 0.5
+
 
 def cross_checked(n_observations: int) -> bool:
     """Whether this fit's residual RMS is a MEASUREMENT or a tautology.
@@ -1418,6 +1432,10 @@ def agreement_words(n_observations: int, rms_mm: float) -> str:
     if not cross_checked(n_observations):
         return ("a single observation fixes the rotation exactly — there is no second "
                 "mark for it to disagree with, so this fit has no agreement number")
+    if rms_mm >= ADVISORY_DISAGREEMENT_MM:
+        return (f"marks agree POORLY — {rms_mm:.3f}mm RMS, inside the "
+                f"{MAX_PAIR_DISAGREEMENT_MM:.2f}mm bound but well above the fleet's "
+                f"click scatter; re-place the marks if this fit matters")
     return f"marks agree to {rms_mm:.3f}mm RMS"
 
 

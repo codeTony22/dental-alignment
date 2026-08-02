@@ -849,3 +849,52 @@ now would mean rebuilding that ladder twice.
    chiefly that a naive re-emit erases `implant.json`'s append-only operator provenance.
 8. **jsdom arrives WITH focus management**, not before. Until then the dialog listener is
    hand-verified and says so.
+
+**P. THE ZOOM, AND TWO DEFECTS THAT ONLY THE BROWSER FOUND (2026-08-02).**
+
+§10-O.2's global zoom shipped as a signed integer counter held by each stage's container
+(`packages/viewer/src/viewer/zoom.ts`, `WorkspaceToolbar`'s −/+ pair). A counter and not an
+absolute distance because the scroll wheel drives the same camera: an absolute zoom would
+drag the view back to the button's opinion on every unrelated re-render, and the two
+controls would fight. Each pane applies the delta it has not applied yet, so a pane that
+MOUNTS into an already-zoomed workspace joins at the current level instead of replaying the
+history onto a camera that was just framed.
+
+Both of the following were caught by opening the page. Every markup test was green while
+each was live, which is the standing lesson of §10's verification rule, now with two more
+instances behind it.
+
+1. **THE COUNTER OUTRAN THE CAMERA.** Clamping only the distance scale left the counter
+   free: forty presses of + parked the camera at the floor — correctly — and left the
+   level at 42, so the operator then pressed − about thirty-five times before anything on
+   screen moved. A button that accepts every press and answers none is worse than a dead
+   one. `clampZoomLevel` saturates the counter at the band's own edge, so a spent control
+   reports itself spent and one press back moves the camera at once. The bounds are
+   DERIVED from `MIN/MAX_ZOOM_SCALE` and the step, not chosen twice.
+
+2. **THE PANE GRID RENDERED UNDERNEATH THE TOOL DRAWER.** `grid-auto-rows: minmax(220px,
+   1fr)` is a MINIMUM, so at two rows the grid demands 452px however little it is given. At
+   1280x720 the stage has 606px and the drawer takes 168: the grid box measured 183px, the
+   second row spilled to 457–677, and the drawer occupied 416–584. 127px of the union pane
+   — the verdict pane — rendered under the tool tabs, clipped by nothing and reachable by
+   nothing. Fixed by scrolling the grid inside its own box, which is the shell's own
+   doctrine (the page never scrolls; regions scroll inside themselves). Letting the rows
+   collapse instead was rejected: at 183px for two rows a pane is 85px and shows no
+   geometry at all.
+
+   **STILL OPEN, and deliberately not tuned here.** At 1512x950 the grid gets 343px of the
+   452px it wants, so the union pane needs a scroll to reach. The stage's own budget is
+   toolbar 57 + panes 381 + drawer 238 + advance 128: the two chrome bands take 44% of it.
+   Retuning that split is a slice-B question the client has not been asked, and it is not
+   the same defect — every pane is present and reachable, which is what "see everything at
+   once" (2026-08-01) was about. Their objection was to panes DISAPPEARING behind a
+   switcher, and nothing disappears.
+
+**Q. THE ADVISORY BAND UNDER THE EVIDENCE GATE (2026-08-02).** §10-H's own review noted
+that a refusal alone leaves the band beneath it flat — a 0.99mm fit printed the identical
+sentence to a 0.02mm one, a narrower version of the very "a fit with a BAD number said
+nothing" complaint the gate was written against. `agreement_words` now words the near-miss.
+0.50mm is read off the measured fleet, not picked: healthy fits scatter 0.02–0.331mm, the
+two refusals were 1.546 and 2.349mm, and nothing was observed between. It DISCLOSES rather
+than gates — the operator with a reason to accept a 0.7mm fit still can, the same division
+of labour the one-observation clause uses.

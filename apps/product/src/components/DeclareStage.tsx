@@ -57,6 +57,7 @@ import {
   type ViewPresetId,
   type WorkspaceStat,
 } from "../domain/declare";
+import { canZoom, clampZoomLevel } from "viewer";
 import { captureChipLabel } from "../domain/intake";
 import { DeclarePanes } from "./DeclarePanes";
 import { MainStage } from "./MainStage";
@@ -284,10 +285,32 @@ export interface WorkspaceToolbarProps {
    *  A preset that cannot reach a camera is a control that lies; the safe default is
    *  the one that cannot. */
   readonly viewPresetsAvailable?: boolean;
+  /** THE WORKSPACE'S SHARED ZOOM COUNTER and its step. Rendered only when `onZoom` is
+   *  supplied, by the same rule the presets follow.
+   *
+   *  ONE control for all three panes, not one per pane (client 2026-08-02, "global is
+   *  probably better on adjustment views"). The comp zooms the pane under the cursor;
+   *  ours cannot, because the three panes are read SIDE BY SIDE and a zoom that reached
+   *  only one of them would make that comparison lie about scale. */
+  readonly zoomLevel?: number;
+  readonly onZoom?: (direction: 1 | -1) => void;
   /** A stage's own control that belongs on this strip (Declare's arch opener) — so
    *  the stage keeps ONE row of chrome above the panes rather than two. */
   readonly children?: ReactNode;
 }
+
+/** The two zoom acts. `in` steps the level UP, which the viewer reads as a SMALLER
+ *  camera distance — the sign lives in viewer/zoom.ts and is pinned there. */
+const ZOOM_ACTS = [
+  { id: "out", direction: -1, glyph: "−", label: "Zoom out", title: "Zoom all panes out" },
+  { id: "in", direction: 1, glyph: "+", label: "Zoom in", title: "Zoom all panes in" },
+] as const satisfies readonly {
+  readonly id: string;
+  readonly direction: 1 | -1;
+  readonly glyph: string;
+  readonly label: string;
+  readonly title: string;
+}[];
 
 /**
  * THE WORKSPACE TOOLBAR — the identity anchor the pane-dominant layout cost us.
@@ -316,6 +339,8 @@ export function WorkspaceToolbar({
   viewPreset = "occlusal",
   onSelectView,
   viewPresetsAvailable = false,
+  zoomLevel = 0,
+  onZoom,
   children,
 }: WorkspaceToolbarProps) {
   const identity = siteIdentity(tooth, systemModel);
@@ -358,6 +383,27 @@ export function WorkspaceToolbar({
               onClick={() => onSelectView(preset.id)}
             >
               {preset.label}
+            </button>
+          ))}
+        </span>
+      )}
+      {onZoom !== undefined && (
+        <span className="workspace-toolbar__zoom" role="group" aria-label="Zoom all panes">
+          {ZOOM_ACTS.map((act) => (
+            <button
+              key={act.direction}
+              type="button"
+              data-role="zoom"
+              data-direction={act.id}
+              /* The band belongs to packages/viewer — this asks whether a step remains,
+                 it does not decide where the camera may go. */
+              disabled={!canZoom(zoomLevel, act.direction)}
+              title={act.title}
+              aria-label={act.label}
+              className="button button--ghost button--small"
+              onClick={() => onZoom(act.direction)}
+            >
+              <span aria-hidden="true">{act.glyph}</span>
             </button>
           ))}
         </span>
@@ -421,6 +467,12 @@ export interface DeclareStageViewProps {
   readonly viewPreset?: ViewPresetId;
   readonly onSelectView?: (preset: ViewPresetId) => void;
   readonly viewPresetsAvailable?: boolean;
+  /** THE SHARED ZOOM (client 2026-08-02). Passed to the toolbar, which renders the pair
+   * only when a handler exists, and to the panes, which apply the steps they have not
+   * applied yet. Held by the CONTAINER rather than here so all three panes and the two
+   * buttons read one number — see WorkspaceToolbarProps for why it is not per-pane. */
+  readonly zoomLevel?: number;
+  readonly onZoom?: (direction: 1 | -1) => void;
   /** What the PREVIEW published for the active site, while no run has measured it
    *  (design review 2026-07-31) — see domain/declare.alignmentStats. */
   readonly previewFigures?: PreviewFigures | null;
@@ -452,6 +504,8 @@ export function DeclareStageView({
   viewPreset,
   onSelectView,
   viewPresetsAvailable,
+  zoomLevel,
+  onZoom,
   previewFigures = null,
   panesSlot,
 }: DeclareStageViewProps) {
@@ -610,6 +664,8 @@ export function DeclareStageView({
           viewPreset={viewPreset}
           onSelectView={onSelectView}
           viewPresetsAvailable={viewPresetsAvailable}
+          zoomLevel={zoomLevel}
+          onZoom={onZoom}
         >
           <button
             type="button"
@@ -833,6 +889,17 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
      operator cannot RETURN to after orbiting away is not a viewpoint (design review
      2026-07-31). */
   const [viewPresetNonce, setViewPresetNonce] = useState(0);
+  /* THE SHARED ZOOM COUNTER (client 2026-08-02). Held HERE, above both the toolbar and
+     the panes, because it is one number for the workspace — see WorkspaceToolbarProps.
+     Unbounded on purpose: the band lives in viewer/zoom.ts, where the near/far planes it
+     protects are, and `canZoom` stops the button before the counter runs away. */
+  const [zoomLevel, setZoomLevel] = useState(0);
+  const handleZoom = useCallback((direction: 1 | -1) => {
+    /* CLAMPED AT THE COUNTER, not only at the camera: an unbounded counter accepts
+       presses the camera cannot answer, and the operator then presses the other way
+       thirty times before anything moves. See clampZoomLevel. */
+    setZoomLevel((now) => clampZoomLevel(now + direction));
+  }, []);
   const handleSelectView = useCallback((preset: ViewPresetId) => {
     setViewPreset(preset);
     setViewPresetNonce((n) => n + 1);
@@ -1017,6 +1084,8 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
       onConfirmSwitch={handleConfirmSwitch}
       onCancelSwitch={() => setPendingSwitch(null)}
       onDeclare={handleDeclare}
+      zoomLevel={zoomLevel}
+      onZoom={handleZoom}
       panesSlot={
         <DeclarePanes
           detail={detail}
@@ -1024,6 +1093,7 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
           onDetail={onDetail}
           viewPreset={viewPreset}
           viewPresetNonce={viewPresetNonce}
+          zoomLevel={zoomLevel}
           onPreviewFigures={setPreviewFigures}
         />
       }

@@ -108,6 +108,7 @@ import { blockedReason, factsFromCaseSession } from "../domain/flow";
 import { SitePanesView, useSitePaneScene, type PaneId } from "./SitePanes";
 /* ONE toolbar for both stages, not two that drift — see WorkspaceToolbar's own note
    on why it is exported from Declare rather than sitting in its own module. */
+import { clampZoomLevel } from "viewer";
 import { WorkspaceToolbar } from "./DeclareStage";
 
 /** What the surface is waiting on — named, so it never freezes silently. */
@@ -222,6 +223,10 @@ export interface AdjustStageViewProps {
   readonly viewPreset?: ViewPresetId;
   readonly onSelectView?: (preset: ViewPresetId) => void;
   readonly viewPresetsAvailable?: boolean;
+  /** The shared zoom counter and its step — see WorkspaceToolbarProps. One number for
+   *  the whole workspace, held by the container. */
+  readonly zoomLevel?: number;
+  readonly onZoom?: (direction: 1 | -1) => void;
 }
 
 function ToolTabs({
@@ -382,7 +387,7 @@ function PairsList({
               // caution is this app's approximation and stays a status line
               return (
                 <p
-                  data-role="span-caution"
+                  data-role="mark-guard"
                   data-guard={guard.kind}
                   role={guard.kind === "refusal" ? "alert" : "status"}
                   className="adjust-pairs__caution"
@@ -496,6 +501,8 @@ export function AdjustStageView({
   viewPreset,
   onSelectView,
   viewPresetsAvailable,
+  zoomLevel,
+  onZoom,
 }: AdjustStageViewProps) {
   const active = entries.find((e) => e.tooth === activeTooth) ?? null;
   const busy = phase === "working";
@@ -635,6 +642,8 @@ export function AdjustStageView({
           viewPreset={viewPreset}
           onSelectView={onSelectView}
           viewPresetsAvailable={viewPresetsAvailable}
+          zoomLevel={zoomLevel}
+          onZoom={onZoom}
         />
         {panes}
         <div className="workspace-drawer">
@@ -1489,6 +1498,16 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
      makes a named viewpoint one the operator can RETURN to after orbiting away from it
      (design review 2026-07-31). */
   const [viewPresetNonce, setViewPresetNonce] = useState(0);
+  /* THE SHARED ZOOM COUNTER (client 2026-08-02: "global is probably better on
+     adjustment views"). One number for the whole workspace, for the same reason the
+     preset above is one: the panes are read side by side. */
+  const [zoomLevel, setZoomLevel] = useState(0);
+  const handleZoom = useCallback((direction: 1 | -1) => {
+    /* CLAMPED AT THE COUNTER, not only at the camera: an unbounded counter accepts
+       presses the camera cannot answer, and the operator then presses the other way
+       thirty times before anything moves. See clampZoomLevel. */
+    setZoomLevel((now) => clampZoomLevel(now + direction));
+  }, []);
   const handleSelectView = useCallback((preset: ViewPresetId) => {
     setViewPreset(preset);
     setViewPresetNonce((n) => n + 1);
@@ -1509,6 +1528,7 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
     armed: arming.armed,
     viewPreset,
     viewPresetNonce,
+    zoomLevel,
   });
   // The off-axis presets need a MEASURED roll. Before a preview lands, panes 2/3 frame
   // down the jaw's occlusal proxy with no clock reference, so buccal/mesial would be a
@@ -1620,6 +1640,8 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       viewPreset={viewPreset}
       onSelectView={handleSelectView}
       viewPresetsAvailable={viewPresetsAvailable}
+      zoomLevel={zoomLevel}
+      onZoom={handleZoom}
       entries={entries}
       activeTooth={activeTooth}
       onSelectSite={handleSelectSite}

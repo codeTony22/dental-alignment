@@ -1101,6 +1101,10 @@ export interface SitePaneSceneOptions {
    * other.
    */
   readonly viewPresetNonce?: number;
+  /** THE WORKSPACE'S SHARED ZOOM COUNTER, handed to all three panes unchanged. One
+   *  number, not three: the panes are read side by side and a zoom that reached only
+   *  one of them would make that comparison lie about scale (client 2026-08-02). */
+  readonly zoomLevel?: number;
 }
 
 export function useSitePaneScene(
@@ -1368,6 +1372,7 @@ export function useSitePaneScene(
      into its frame key — so a re-selected preset re-frames (which is what makes a named
      viewpoint returnable to) without cancelling a per-pane ⌖. */
   const presetNonce = options.viewPresetNonce ?? 0;
+  const zoomLevel = options.zoomLevel ?? 0;
   const linkGroup = linkGroupRef.current;
   return {
     partBusy,
@@ -1405,6 +1410,7 @@ export function useSitePaneScene(
         ]}
         frame={partFrame}
         linkGroup={linkGroup}
+        zoomLevel={zoomLevel}
         markers={options.markers?.library}
         onPick={options.onPick?.library ?? null}
         armed={options.armed?.library ?? false}
@@ -1429,6 +1435,7 @@ export function useSitePaneScene(
         ]}
         frame={siteFrame}
         linkGroup={linkGroup}
+        zoomLevel={zoomLevel}
         markers={options.markers?.scan}
         onPick={options.onPick?.scan ?? null}
         armed={options.armed?.scan ?? false}
@@ -1460,6 +1467,7 @@ export function useSitePaneScene(
         ]}
         frame={siteFrame}
         linkGroup={linkGroup}
+        zoomLevel={zoomLevel}
         markers={options.markers?.union}
         onPick={options.onPick?.union ?? null}
         armed={options.armed?.union ?? false}

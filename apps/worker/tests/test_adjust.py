@@ -32,7 +32,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from case_prep.application.adjust import (CROSS_CHECK_MIN_OBSERVATIONS, MIN_SPAN_MM,
+from case_prep.application.adjust import (ADVISORY_DISAGREEMENT_MM,
+                                          CROSS_CHECK_MIN_OBSERVATIONS,
+                                          MAX_PAIR_DISAGREEMENT_MM, MIN_SPAN_MM,
                                           SPAN_RADIAL_TOLERANCE_DEG,
                                           STALE_AFTER_REWORK, AdjustInvalid,
                                           AdjustRefused, AlreadyOptimal, Correspondence,
@@ -549,6 +551,38 @@ class TestCrossCheck:
         arithmetic happens to produce."""
         assert "mm" not in agreement_words(1, 0.0)
         assert "mm" not in agreement_words(1, 0.451)
+
+    def test_a_healthy_rms_says_only_what_it_measured(self):
+        """The whole fleet of good fits sits well under the advisory floor (measured
+        2026-08-01: 0.02–0.331mm). None of them should acquire a caution."""
+        for rms in (0.021, 0.204, 0.331, 0.499):
+            assert agreement_words(3, rms) == f"marks agree to {rms:.3f}mm RMS"
+
+    def test_the_band_between_advisory_and_refusal_says_the_agreement_is_poor(self):
+        """§10-H's own complaint answered: a 0.99mm fit rendered IDENTICALLY to a
+        0.02mm one, which is a narrower version of the very 'a fit with a bad number
+        said nothing' defect the gate was written against. Passing the gate is not the
+        same as agreeing well, and the sentence now distinguishes them."""
+        for rms in (ADVISORY_DISAGREEMENT_MM, 0.7, 0.999):
+            words = agreement_words(3, rms)
+            assert f"{rms:.3f}mm RMS" in words       # still says what it measured
+            assert "POORLY" in words                 # ...and that it is not a good number
+
+    def test_the_advisory_floor_sits_between_the_fleet_and_the_bound(self):
+        """A band that starts below the healthy ceiling would caution every good fit;
+        one that starts at the bound would never fire. Both make it noise."""
+        assert 0.331 < ADVISORY_DISAGREEMENT_MM < MAX_PAIR_DISAGREEMENT_MM
+
+    def test_a_refused_rms_is_never_worded_because_it_never_reaches_the_words(self):
+        """Above the bound ``require_pair_agreement`` raises, so the advisory band's
+        top is the refusal, not a third phrasing. Pinned so the two stay adjacent with
+        no gap and no overlap between them."""
+        rows = [{"feature_id": "A", "residual_mm": 1.4},
+                {"feature_id": "B", "residual_mm": 1.4}]
+        with pytest.raises(AdjustInvalid):
+            require_pair_agreement(rows, MAX_PAIR_DISAGREEMENT_MM + 1e-9)
+        # and the last value that is NOT refused is worded, not raised
+        assert require_pair_agreement(rows, MAX_PAIR_DISAGREEMENT_MM) is None
 
 
 # --- TOOL 1 OF THE CLIENT'S TWO (2026-08-01): THE LIBRARY SPAN ---------------------------

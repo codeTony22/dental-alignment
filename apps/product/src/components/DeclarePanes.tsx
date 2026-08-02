@@ -246,6 +246,9 @@ export interface DeclarePanesProps {
   /** Bumped by the stage on every preset click, re-selection included — see
    *  SitePaneSceneOptions.viewPresetNonce. */
   readonly viewPresetNonce?: number;
+  /** The workspace's shared zoom counter, forwarded to all three panes unchanged —
+   *  see SitePaneSceneOptions.zoomLevel. */
+  readonly zoomLevel?: number;
   /**
    * WHAT THE PREVIEW PUBLISHED, REPORTED UP (design review 2026-07-31).
    *
@@ -271,6 +274,7 @@ export function DeclarePanes({
   postPreview: postPreviewFn = postPreview,
   viewPreset,
   viewPresetNonce,
+  zoomLevel,
   onPreviewFigures,
 }: DeclarePanesProps) {
   const caseId = detail.case.id;
@@ -331,7 +335,11 @@ export function DeclarePanes({
         ? "ready"
         : slot.state;
 
-  const scene = useSitePaneScene(detail, site, payload, { viewPreset, viewPresetNonce });
+  const scene = useSitePaneScene(detail, site, payload, {
+    viewPreset,
+    viewPresetNonce,
+    zoomLevel,
+  });
 
   /* Reported on the PRIMITIVES, not on the payload object: the payload is replaced
      wholesale on every settle, and an effect keyed on it would re-report identical

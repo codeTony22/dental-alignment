@@ -32,18 +32,18 @@ npm test --prefix apps/web           # the FROZEN demo; must stay green and unto
 Worker lanes: `make test-fast` (not-slow, ~19 s) · `make test-slow` (real meshes, ~12 min) ·
 `make test` (both). Nothing ships on `test-fast` alone.
 
-**Counts, all measured 2026-08-02 at `d84a0f9`** — a floor to compare against, not a target.
+**Counts, all measured 2026-08-02 at `a55249a`+** — a floor to compare against, not a target.
 They move whenever a test is added; what the number is FOR is telling "my change broke
 collection" apart from "the suite grew", so read the summary line rather than trusting this
 table. If yours is higher and green, the table is stale — not your branch.
 
 | gate | passing |
 |---|---|
-| worker `make test` | **1028** |
-| worker `make test-fast` / `make test-slow` | 797 / 231 (they partition it exactly) |
+| worker `make test` | **1032** |
+| worker `make test-fast` / `make test-slow` | 801 / 231 (they partition it exactly) |
 | bff | **560** |
-| apps/product | **977** |
-| packages/viewer | **108** |
+| apps/product | **986** |
+| packages/viewer | **125** |
 | apps/web (frozen) | **789** |
 
 Also `cd apps/worker && make rehearse` — the demo-readiness gate: every case down the UI's

@@ -6,6 +6,7 @@ import {
   type VerifyLayerGeometry,
   type VerifyMarker,
 } from "./verifyScene";
+import { zoomFactorBetween } from "./zoom";
 import type { PaneViewReadout } from "./paneReadout";
 import type { Vec3 } from "../domain/types";
 
@@ -48,6 +49,15 @@ interface VerifyViewerProps {
    *  re-frame, which the key below folds in. */
   readonly frameNonce?: number;
   readonly linkGroup?: OrbitLinkGroup | null;
+  /**
+   * THE WORKSPACE'S SHARED ZOOM COUNTER. One number for every pane on the stage — the
+   * toolbar's −/+ move it, and each pane applies the steps it has not applied yet.
+   *
+   * A counter and not a distance: the scroll wheel moves the same camera, and an absolute
+   * zoom would drag the view back to the button's opinion on every unrelated re-render.
+   * See viewer/zoom.ts for the sign and the band.
+   */
+  readonly zoomLevel?: number;
   /** Numbered points drawn over the geometry (the fit-by-points flow). Omitted = none. */
   readonly markers?: readonly VerifyMarker[];
   /** Arms click-to-place on this pane's geometry (the fit-by-points flow's scan half).
@@ -94,6 +104,7 @@ export function VerifyViewer({
   frame,
   frameNonce = 0,
   linkGroup,
+  zoomLevel = 0,
   markers = NO_MARKERS,
   onPick = null,
   armed = false,
@@ -223,6 +234,20 @@ export function VerifyViewer({
     // `layers` is read only to know whether anything is on screen yet; the geometry effect above
     // owns uploads, so re-running this on a layer change is intentional and cheap.
   }, [frameKey, frame, layers]);
+
+  /* Apply only the steps this pane has yet to apply. The ref starts where the prop starts,
+     so a pane that MOUNTS into an already-zoomed workspace does not replay the whole
+     history onto a camera that was just framed — it joins at the current level, and the
+     next press moves it with its siblings. */
+  const zoomedRef = useRef(zoomLevel);
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const from = zoomedRef.current;
+    if (from === zoomLevel) return;
+    zoomedRef.current = zoomLevel;
+    scene.zoomBy(zoomFactorBetween(from, zoomLevel));
+  }, [zoomLevel]);
 
   return (
     <div

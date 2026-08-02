@@ -50,6 +50,10 @@ export {
 } from "./viewer/paneReadout";
 export type { PaneScaleBar, PaneViewReadout } from "./viewer/paneReadout";
 export { VerifyViewer } from "./viewer/VerifyViewer";
+/* The zoom counter's arithmetic. The product needs `canZoom` to disable a spent button and
+   ZOOM_STEP only to describe the step in a title; the clamp and the factor are the scene's
+   business and are not re-exported. */
+export { ZOOM_STEP, canZoom, clampZoomLevel } from "./viewer/zoom";
 export type { VerifyViewerLayer } from "./viewer/VerifyViewer";
 
 // Pure geometry/colour rules (all unit-tested in this package's node suite).

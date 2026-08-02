@@ -3318,6 +3318,18 @@ button.package-files__link:hover {
    by construction every pane ends above the confirm bar. */
 .workbench__stage .verify-panels__grid {
   grid-auto-rows: minmax(220px, 1fr);
+  /* THE ROW FLOOR MUST NOT PUSH A PANE UNDER THE DRAWER (found by opening it, 2026-08-02).
+     220px is a MINIMUM, so at two rows the grid demands 452px however little it is given.
+     At 1280x720 the stage has 606px and the tool drawer takes 168 of them: the grid box
+     measured 183px, the second row spilled to 457-677, and the drawer occupied 416-584 —
+     127px of the union pane rendered UNDERNEATH the tool tabs, with nothing clipping and
+     nothing scrolling. Every markup test was green throughout; only the browser shows it.
+
+     Scrolling here rather than letting the rows collapse: at 183px for two rows a pane is
+     85px, which shows no geometry at all, and "see everything at once" (client 2026-07-27)
+     is not served by three panes too small to read. This is the shell's own doctrine — the
+     page never scrolls, regions scroll inside themselves — applied to the grid. */
+  overflow-y: auto;
 }
 
 /* THE UNION PANE IS WIDER AT THREE-ACROSS (client comp: `1fr 1fr 1.24fr`).
@@ -4716,6 +4728,23 @@ button.package-files__link:hover {
   flex: 0 0 auto;
 }
 
+/* THE SHARED ZOOM, next to the presets because it is the same kind of control: both
+   move all three cameras at once. Square buttons — the glyph is a symbol, not a word,
+   and a −/+ that stretches to a label's width stops reading as a pair. */
+.workspace-toolbar__zoom {
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.workspace-toolbar__zoom .button {
+  min-width: 28px;
+  padding-inline: 0;
+  font-variant-numeric: tabular-nums;
+  /* the minus sign is U+2212, which sits higher than a hyphen in most faces */
+  line-height: 1;
+}
+
 /* THE READOUT sits at the far end: the identity and the stage's own controls read
    left-to-right once, the numbers are what the eye returns to between clicks. */
 .workspace-toolbar__metrics {
@@ -5654,4 +5683,18 @@ button.package-files__link:hover {
   overflow-wrap: normal;
   word-break: normal;
   line-break: anywhere;
+}
+
+
+/* THE FOOT STEPS ASIDE WHEN THE STAGE IS TINY (the comp's own `showFoot: !tiny`). Below
+   TINY_STAGE_PX the axis sentence and the scale bar are two more lines laid over a pane
+   already too short to read geometry in.
+
+   Done here rather than in `footFor`, which lives in `useSitePaneScene` and has no view
+   of the layout plan — the stage already carries the chrome as a class, so the rule can
+   simply read it. Unlike the HUD there is no toggle to bring it back, and that is right:
+   the foot is a READOUT, not a control, and its numbers are also on the toolbar's stat
+   pills, which do not shrink. */
+.verify-panel__stage--tiny .verify-panel__foot {
+  display: none;
 }

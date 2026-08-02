@@ -561,6 +561,32 @@ describe("the workspace toolbar over the panes", () => {
     );
   });
 
+  it("the zoom step renders only where the stage can actually apply it", () => {
+    // Same rule as the presets: a control with no handler is a control that lies.
+    expect(view()).not.toContain('data-role="zoom"');
+    const wired = view({ onZoom: () => undefined });
+    expect(wired).toMatch(/data-role="zoom"[^>]*data-direction="out"/);
+    expect(wired).toMatch(/data-role="zoom"[^>]*data-direction="in"/);
+  });
+
+  it("the zoom is ONE control for the whole workspace, not one per pane", () => {
+    /* Client ruling 2026-08-02: "global is probably better on adjustment views". The
+       three panes are read side by side, so a zoom that reached only one of them would
+       make that comparison lie about scale — and this is the assertion that catches a
+       later refactor moving the buttons into the pane chrome. */
+    const wired = view({ onZoom: () => undefined });
+    expect(wired.match(/data-role="zoom"/g)).toHaveLength(2);
+    const toolbar = wired.slice(wired.indexOf('data-role="workspace-toolbar"'));
+    expect(toolbar.indexOf('data-role="zoom"')).toBeGreaterThan(-1);
+  });
+
+  it("a spent zoom direction DISABLES rather than clicking into nothing", () => {
+    // the band is packages/viewer's; the toolbar only asks whether a step remains
+    const floored = view({ onZoom: () => undefined, zoomLevel: 99 });
+    expect(floored).toMatch(/data-direction="in"[^>]*disabled/);
+    expect(floored).not.toMatch(/data-direction="out"[^>]*disabled/);
+  });
+
   it("the named view presets render only where the stage can actually apply them", () => {
     // Dead controls are worse than absent ones: with no handler the group is not
     // rendered at all (see DeclareStageView's note on the pane-camera seam).
