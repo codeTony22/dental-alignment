@@ -69,6 +69,53 @@ describe("the construction library page", () => {
     expect(html).toContain("not built yet");
   });
 
+  /* THE EFFECTIVE-BUT-UNRUN PART (follow-up to §10-M2's armed slice, client
+     "do what is recommended" 2026-08-02). A case can hold an effective construction
+     while no run receipt is readable — the armed path landed first and left this
+     showing the bare pending gap even though the catalog mesh to answer it with was
+     already served. Same doctrine, same pane: the part alone, never an implied union. */
+  it("previews the EFFECTIVE part when no run mesh exists and its row carries a mesh_url", () => {
+    const html = view({
+      detail: runnableDetail({ catalog: CATALOG_WITH_MESH }),
+      packageFiles: [],
+    });
+    expect(html).toContain('data-role="library-part-preview"');
+    expect(html).not.toContain('data-role="library-preview-pending"');
+  });
+
+  it("still states the pending gap when the effective row has no mesh_url", () => {
+    // the default CATALOG's rows predate the served mesh_url — a guessed URL is worse
+    // than the stated gap, so the gap stands
+    const html = view({ packageFiles: [] });
+    expect(html).toContain('data-role="library-preview-pending"');
+    expect(html).not.toContain('data-role="library-part-preview"');
+  });
+
+  it("still states the pending gap when nothing is effective at all", () => {
+    const detail = runnableDetail({ catalog: CATALOG_WITH_MESH });
+    const html = view({
+      detail: {
+        ...detail,
+        choices: {
+          ...detail.choices,
+          effective_construction: { value: null, source: "none" },
+        },
+      },
+      packageFiles: [],
+    });
+    expect(html).toContain('data-role="library-preview-pending"');
+  });
+
+  it("the run's own mesh still wins over the effective-part preview", () => {
+    // the union the run actually built is strictly more informative than the part alone
+    const html = view({
+      detail: runnableDetail({ catalog: CATALOG_WITH_MESH }),
+      packageFiles: ["case-arch-with-constructions.stl"],
+    });
+    expect(html).toContain('data-role="library-preview-caption"');
+    expect(html).not.toContain('data-role="library-part-preview"');
+  });
+
   it("holds the forward act inert until a part is effective", () => {
     const none = runnableDetail({ catalog: CATALOG });
     const html = view({

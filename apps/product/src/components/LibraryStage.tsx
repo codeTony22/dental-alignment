@@ -89,6 +89,10 @@ export function LibraryStageView({
   // state the confirm step below reads; this is the same fact, read a second way.
   const armedOption =
     candidate !== null ? options.find((o) => o.path_id === candidate) ?? null : null;
+  // the case's EFFECTIVE part, for the run-less fallback below — same lookup, the
+  // standing choice instead of the one being weighed
+  const effectiveOption =
+    info.pathId !== null ? options.find((o) => o.path_id === info.pathId) ?? null : null;
 
   return (
     /* TWO CHILDREN, because `.stage-contents` is `display: contents` — a stage's own
@@ -224,6 +228,16 @@ export function LibraryStageView({
           // so the candidate clears) returns the pane to whatever it showed before:
           // the run's own union above, or the stated gap.
           <PartPreview label={armedOption.label} meshUrl={armedOption.mesh_url ?? null} />
+        ) : previewTab === null && effectiveOption?.mesh_url ? (
+          /* THE EFFECTIVE-BUT-UNRUN PART (follow-up to the armed slice, client "do
+             what is recommended" 2026-08-02). No run receipt is readable, but the
+             case already holds an effective construction and the catalog serves its
+             mesh — showing the bare pending gap here was withholding an answer the
+             server had. Same pane, same §10-M2 doctrine as the armed branch: the
+             part alone, in its own frame, implying no union nobody computed. A row
+             without a mesh_url still falls through to the stated gap below — a
+             guessed URL is worse than an honest absence. */
+          <PartPreview label={info.label} meshUrl={effectiveOption.mesh_url} />
         ) : previewTab === null ? (
           <p data-role="library-preview-pending" className="panel__hint">
             {libraryPreviewPending()}
