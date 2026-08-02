@@ -1173,3 +1173,25 @@ eligibility is the acknowledgment gate's OWN predicate, lifted to session.py so
 Deliver's `_needs_acknowledgment` and the route share one derivation. Verified live on
 cap6020: accept → pressed + amber queue line → Deliver's checkbox pre-ticked → withdraw
 → clean.
+
+**AA. THE COMP, PAGE BY PAGE (2026-08-02, client: "Implement page by page — the product
+does not look like the designs at all").** The workspaces already wear the comp (W-Z);
+this pass dresses the remaining pages, one commit each, against the comp RUNNING plus its
+template read directly. Standing refusals all hold: no invented prices/parts, no
+confidence %, no browser upload, no client-side tolerance words, no outcome promises.
+
+**AA.1 — header strip + worklist (this commit).**
+- The dark band carries the comp's five-stage strip on non-case routes as a PREVIEW
+  (`StageStrip`): every step a span — there is no case to navigate into — Intake current,
+  the rest dimmed with "Open a case from the worklist first." as the tooltip; the comp's
+  case-note slot reads `no case open`. The comp's `restart` button is NOT ported: it
+  resets the mock's state, and this product has nothing case-global to reset from the
+  worklist (the per-case demo reset lives in the case band).
+- The worklist renders as the comp's card grid, per band — the blocked-first bands keep
+  their captions and DOM order (they are real signal the comp's flat grid lacks). Cards
+  carry the comp's rows from served facts only: name, site-count chip, discovery line
+  (rollup total · suggested model · scan MB), teeth + jaw, the five status chips
+  unchanged, and one segment bar per site drawn from the ready/flagged counts. The
+  comp's batch codes, clinic names and per-card fake MB have no source and are not
+  invented. The page keeps the honest title "Worklist"; the comp's lead ports minus its
+  false clause ("or drop a new scan" — there is no browser upload, AA holds O.6).

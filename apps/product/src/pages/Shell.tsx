@@ -17,6 +17,7 @@
  * takes the way home with it.
  */
 import { Link, Outlet, useLocation } from "react-router-dom";
+import { StageStrip } from "../components/StageStrip";
 
 /** Does this route render its own nav band? Only the case shell does. Matched on the
  *  path rather than passed down, because `Outlet` gives a parent no way to ask its
@@ -45,11 +46,18 @@ export function Shell() {
             </span>
             <span className="app-header__sublabel">SOFTWARE LABS</span>
           </Link>
+          {/* THE COMP'S HEADER (page pass 2026-08-02): the five-stage strip rides in
+              the band on every page. With no case open it is a preview — see
+              StageStrip for why its steps are spans, never links. */}
+          <div className="app-header__stages">
+            <StageStrip />
+          </div>
           <div className="app-header__right">
             <Link to="/" className="app-header__worklist" data-role="all-cases">
               ← All cases
             </Link>
-            <div className="app-header__context">Case-Prep Automation — Case Flow</div>
+            {/* The comp's case-note slot; its no-case state is these exact words. */}
+            <div className="app-header__context">no case open</div>
           </div>
         </header>
       )}

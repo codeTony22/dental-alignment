@@ -45,6 +45,24 @@ describe("Shell — the way home", () => {
     expect(render("/terms")).toContain('data-role="all-cases"');
   });
 
+  it("previews the five stages in the band — the comp's header, honestly inert", () => {
+    /* THE COMP'S HEADER (page pass 2026-08-02) shows the five-stage strip on every
+       page, stages 2-5 dimmed with a why-tooltip when no case is open. Here there is
+       no case on "/", so the strip is a PREVIEW: five titled steps, none of them a
+       link (there is no case to navigate into), the way in being the worklist below. */
+    const html = render("/");
+    expect(html).toContain('data-role="stage-preview"');
+    expect(html).toContain("Construction library");
+    expect((html.match(/workflow-rail__step--blocked/g) ?? []).length).toBe(4);
+    const strip = html.slice(
+      html.indexOf('data-role="stage-preview"'),
+      html.indexOf("</nav>"),
+    );
+    expect(strip).not.toContain("<a ");
+    // the comp's case-note slot, in its no-case state
+    expect(html).toContain("no case open");
+  });
+
   it("renders NO brand bar on a case route — the case band is the only nav there", () => {
     /* THE CLIENT'S ASK (2026-08-02): "There are two nav bars, take off the ArTech
        Software Labs". Two stacked dark bands read as two navigations for one page, and

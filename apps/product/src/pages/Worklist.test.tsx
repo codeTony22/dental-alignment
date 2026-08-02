@@ -42,6 +42,45 @@ describe("a worklist row", () => {
     expect(html).toContain("unconfirmed");
   });
 
+  /**
+   * THE COMP'S CARD CLOTHES (client comp, page pass 2026-08-02). The comp's intake
+   * worklist is a GRID of compact cards — name + site-count chip, a discovery meta
+   * line, the teeth, and one segment bar per site. Every fact on the card is the
+   * BFF's own (counts, model, bytes, teeth); the comp's batch codes and clinic names
+   * have no source here and are NOT invented.
+   */
+  it("renders as a grid of comp cards — count chip, discovery meta, teeth, segments", () => {
+    const html = screenHtml({ kind: "ok", data: [row] });
+    expect(html).toContain('class="worklist__grid"');
+    expect(html).toMatch(/data-role="row-sites"[^>]*>3 sites</);
+    // discovery facts, real ones: rollup total · suggested model · scan size
+    expect(html).toContain("3 cap sites · conical-4x4 · 31.8 MB");
+    expect(html).toContain("teeth 19, 30");
+    // one bar per site, coloured by the served counts: 2 ready, 1 flagged
+    expect((html.match(/worklist-card__bar worklist-card__bar--pass/g) ?? []).length).toBe(2);
+    expect((html.match(/worklist-card__bar worklist-card__bar--flag/g) ?? []).length).toBe(1);
+  });
+
+  it("speaks singular for a one-site case and drops absent discovery facts", () => {
+    const html = screenHtml({
+      kind: "ok",
+      data: [
+        worklistRow({
+          sites: { total: 1, declared: 0, ready: 0, flagged: 0 },
+          suggested_model: null,
+          scan_bytes: null,
+          teeth: [],
+        }),
+      ],
+    });
+    expect(html).toMatch(/data-role="row-sites"[^>]*>1 site</);
+    expect(html).toContain("1 cap site");
+    // no model, no bytes, no teeth — the line carries only what discovery stated
+    expect(html).not.toContain("null");
+    expect(html).not.toContain("NaN");
+    expect(html).not.toContain("teeth <");
+  });
+
   it("links to the session's furthest stage (AM-7 resume)", () => {
     const html = screenHtml({ kind: "ok", data: [row] });
     expect(html).toContain('href="/case/case-flagged/library"');
@@ -92,6 +131,17 @@ describe("the blocked-first order reaches the markup", () => {
     ].map((id) => html.indexOf(`href="/case/${id}/`));
     expect(positions.every((p) => p >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+});
+
+describe("the page head", () => {
+  it("keeps the honest title and wears the comp's lead — no upload implication", () => {
+    const html = screenHtml({ kind: "ok", data: [worklistRow()] });
+    expect(html).toContain("Worklist");
+    // the comp's lead promises "or drop a new scan" — this product has no browser
+    // upload (see the scan-arrival pins below), so the lead carries only the true half
+    expect(html).toContain("declare the truth in Alignment");
+    expect(html).not.toContain("drop a new scan");
   });
 });
 

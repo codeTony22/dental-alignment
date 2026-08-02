@@ -482,3 +482,26 @@ app, not guessed. 118px keeps it one row.
   `apps/web`. None of the three appeared in the DIVERGENCES bullet.
 - The stated file totals are stale: the row says "file total 2,773" and the record says
   "2,448". `apps/product/src/styles.css` is now 5,463 lines.
+
+## Row 9 divergence — the page-by-page comp pass, round 1: header strip + worklist cards (2026-08-02, client: "Implement page by page — the product does not look like the designs at all")
+
+WHY IT DIVERGES: the comp shows the five-stage strip in the dark band on EVERY page and
+renders the intake worklist as a grid of compact cards; the copied demo header knows
+neither. All new CSS lands below the PRODUCT ADDITIONS marker as the dated section
+"THE COMP, PAGE BY PAGE — round 1"; the copied `.app-header` block is UNTOUCHED, but its
+rendered look is overridden from below (padding 14px 28px → 9px 16px, wordmark 22px → 18px,
+sublabel 11px → 9px, context 14px → 11px muted) — recorded here because the band is copied
+chrome wearing new values.
+
+WHAT DEPARTED (product-own markup, no demo counterpart):
+1. `components/StageStrip.tsx` — the comp's no-case stage strip (comp template L30-40,
+   L950-965), reusing the `.workflow-rail` clothes; every step a span (no case to
+   navigate into), Intake current, the rest dimmed with a why-tooltip.
+2. The worklist re-dressed as the comp's card grid (comp L58-73, L1222-1230):
+   `.worklist__grid` auto-fit minmax(250px,1fr); cards carry a `siteCountChip`, a
+   `discoveryLine` (rollup total · suggested model · scan MB — served facts only; the
+   comp's batch codes and clinic names have NO source here and are not invented), the
+   teeth line, the five existing status chips unchanged, and one 6px segment bar per
+   site coloured by the served counts (`--pass` for ready, `--flag` for flagged).
+3. The scan-arrival panel keeps its recorded SOLID border (dashed = the universal
+   drop-here signal, still refused); only its type compacts to the comp's scale.

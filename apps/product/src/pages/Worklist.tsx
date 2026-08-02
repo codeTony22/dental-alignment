@@ -18,11 +18,14 @@ import { ErrorBanner } from "../components/ErrorBanner";
 import {
   classifyWorklist,
   confirmChip,
+  discoveryLine,
   orderWorklist,
   resumeTarget,
   runChip,
   SCAN_ARRIVAL,
   SCAN_UPLOAD_ABSENT,
+  siteCountChip,
+  teethLine,
   worklistBand,
   type WorklistEntry,
 } from "../domain/worklist";
@@ -35,27 +38,40 @@ function runChipClass(runState: string): string {
   return "chip chip--gate"; // queued | running — in-flight, neutral
 }
 
-interface WorklistEntryItemProps {
-  readonly entry: WorklistEntry;
-  /** The band caption, rendered above this row when it opens a new band. */
-  readonly bandLabel: string | null;
-  /** True for the blocked bands (unreadable/flagged) — the caption wears amber. */
-  readonly attention: boolean;
+/**
+ * One segment bar per site, coloured by the served counts (comp: the card's foot
+ * strip). The counts are the BFF's rollup; the bars only draw them — ready first in
+ * the pass green, then flagged in the review amber, the rest neutral. WHICH tooth is
+ * which is not stated here because the rollup does not say.
+ */
+function SegmentStrip({ ready, flagged, total }: {
+  readonly ready: number;
+  readonly flagged: number;
+  readonly total: number;
+}) {
+  if (total <= 0) return null;
+  const tone = (index: number): string =>
+    index < ready
+      ? "worklist-card__bar worklist-card__bar--pass"
+      : index < ready + flagged
+        ? "worklist-card__bar worklist-card__bar--flag"
+        : "worklist-card__bar";
+  return (
+    <span aria-hidden="true" className="worklist-card__segments">
+      {Array.from({ length: total }, (_, index) => (
+        <span key={index} className={tone(index)} />
+      ))}
+    </span>
+  );
 }
 
-function WorklistEntryItem({ entry, bandLabel, attention }: WorklistEntryItemProps) {
-  const caption = bandLabel !== null && (
-    <p className={`worklist-band${attention ? " worklist-band--attention" : ""}`}>
-      {bandLabel}
-    </p>
-  );
+function WorklistEntryItem({ entry }: { readonly entry: WorklistEntry }) {
   if (entry.kind === "unreadable") {
     // The per-row error contract (slice 5a): the BFF's own refusal words render when
     // it stated them; the defensive fallback (a malformed element) keeps the honest
     // could-not-be-read line. Inert either way — a row without facts links nowhere.
     return (
       <li data-role="worklist-unreadable">
-        {caption}
         <div className="worklist-unreadable">
           Case entry {entry.id ?? `#${entry.index + 1}`} could not be read —{" "}
           {entry.error ?? "it needs attention the BFF cannot describe yet."}
@@ -74,36 +90,55 @@ function WorklistEntryItem({ entry, bandLabel, attention }: WorklistEntryItemPro
   ]
     .filter(Boolean)
     .join(" ");
+  const teeth = teethLine(row);
   return (
     <li data-role="worklist-row" className={rowClass}>
-      {caption}
       <Link to={resumeTarget(row)} className="worklist-row__link">
-        <strong className="worklist-row__doctor">{row.doctor}</strong>
-        <span data-role="row-jaw" className="chip chip--gate">
-          {row.jaw}
+        <span className="worklist-card__head">
+          <strong className="worklist-row__doctor">{row.doctor}</strong>
+          <span data-role="row-sites" className="chip chip--gate">
+            {siteCountChip(row.sites)}
+          </span>
         </span>
-        <span data-role="row-rollup" className="worklist-row__chips">
-          <span className="chip chip--band-missing">{row.sites.declared} declared</span>
-          <span className="chip chip--band-pass">{row.sites.ready} ready</span>
-          {row.sites.flagged > 0 && (
-            <span className="chip chip--band-review">{row.sites.flagged} flagged</span>
-          )}
+        {/* The comp card's meta line, from served facts only (domain/worklist). */}
+        <span className="worklist-card__meta">{discoveryLine(row)}</span>
+        <span className="worklist-card__meta">
+          {teeth !== "" && <span className="worklist-card__teeth">{teeth}</span>}
+          <span data-role="row-jaw" className="chip chip--gate">
+            {row.jaw}
+          </span>
         </span>
-        {/* data-state carries AM-3's live job states (queued|running|done|refused)
-            so the chip can style in-flight work without re-deriving anything */}
-        <span
-          data-role="row-run"
-          data-state={row.run_state}
-          className={runChipClass(row.run_state)}
-        >
-          {runChip(row.run_state)}
+        <span className="worklist-card__chips">
+          <span data-role="row-rollup" className="worklist-row__chips">
+            <span className="chip chip--band-missing">{row.sites.declared} declared</span>
+            <span className="chip chip--band-pass">{row.sites.ready} ready</span>
+            {row.sites.flagged > 0 && (
+              <span className="chip chip--band-review">{row.sites.flagged} flagged</span>
+            )}
+          </span>
+          {/* data-state carries AM-3's live job states (queued|running|done|refused)
+              so the chip can style in-flight work without re-deriving anything */}
+          <span
+            data-role="row-run"
+            data-state={row.run_state}
+            className={runChipClass(row.run_state)}
+          >
+            {runChip(row.run_state)}
+          </span>
+          <span
+            data-role="row-confirmed"
+            className={
+              row.confirmed ? "chip chip--band-pass" : "chip chip--band-missing"
+            }
+          >
+            {confirmChip(row.confirmed)}
+          </span>
         </span>
-        <span
-          data-role="row-confirmed"
-          className={row.confirmed ? "chip chip--band-pass" : "chip chip--band-missing"}
-        >
-          {confirmChip(row.confirmed)}
-        </span>
+        <SegmentStrip
+          ready={row.sites.ready}
+          flagged={row.sites.flagged}
+          total={row.sites.total}
+        />
       </Link>
     </li>
   );
@@ -173,29 +208,54 @@ export function WorklistScreen({ state }: WorklistScreenProps) {
     return <ErrorBanner detail={state.detail} />;
   }
   const entries = orderWorklist(classifyWorklist(state.data));
+  // The blocked-first order is domain/worklist's; these groups only SLICE it so each
+  // band can render as the comp's card grid under its caption. Concatenating the
+  // groups reproduces `entries` exactly — no re-sorting here.
+  const groups: { band: number; entries: WorklistEntry[] }[] = [];
+  for (const entry of entries) {
+    const band = bandOf(entry);
+    const last = groups[groups.length - 1];
+    if (last !== undefined && last.band === band) last.entries.push(entry);
+    else groups.push({ band, entries: [entry] });
+  }
   return (
     <section data-role="worklist" className="worklist">
       <h2 className="worklist__title">Worklist</h2>
+      {/* The comp's lead, minus its false clause: "or drop a new scan" has no
+          workflow behind it here (see ScanArrival) and is not promised. */}
+      <p className="worklist__lead">
+        Open a case from the worklist below. Detection proposes a variant per cap
+        site; you declare the truth in Alignment.
+      </p>
       {entries.length === 0 ? (
         <p data-role="worklist-empty" className="panel__copy">
           No cases yet — the case service found nothing to work on. New scans appear
           here as soon as they land in the data root.
         </p>
       ) : (
-        <ol className="worklist__list">
-          {entries.map((entry, index) => {
-            const band = bandOf(entry);
-            const newBand = index === 0 || bandOf(entries[index - 1]!) !== band;
-            return (
-              <WorklistEntryItem
-                key={entry.kind === "row" ? entry.row.id : `unreadable-${entry.index}`}
-                entry={entry}
-                bandLabel={newBand ? (BAND_LABELS[band] ?? null) : null}
-                attention={band <= 0}
-              />
-            );
-          })}
-        </ol>
+        groups.map((group) => (
+          <section key={group.band} className="worklist__band-group">
+            {BAND_LABELS[group.band] !== undefined && (
+              <p
+                className={`worklist-band${
+                  group.band <= 0 ? " worklist-band--attention" : ""
+                }`}
+              >
+                {BAND_LABELS[group.band]}
+              </p>
+            )}
+            <ol className="worklist__grid">
+              {group.entries.map((entry) => (
+                <WorklistEntryItem
+                  key={
+                    entry.kind === "row" ? entry.row.id : `unreadable-${entry.index}`
+                  }
+                  entry={entry}
+                />
+              ))}
+            </ol>
+          </section>
+        ))
       )}
       {/* Below the work, not above it: the 20-scan morning opens this page to pick a
           case, not to read a procedure. It matters most on the empty list, which is

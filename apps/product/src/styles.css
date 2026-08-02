@@ -6382,3 +6382,184 @@ button.package-files__link:hover {
   color: var(--color-amber);
   font-weight: 600;
 }
+
+/* ============================================================================
+   THE COMP, PAGE BY PAGE — round 1: header strip + worklist cards (2026-08-02,
+   client: "Implement page by page — the product does not look like the designs
+   at all"). The workspaces already wear the comp (§10-W/X/Y/Z); this pass
+   dresses the remaining pages. Every value here is read off the comp template
+   (scratchpad comp-template.html, cited per block); facts stay the BFF's.
+   ============================================================================ */
+
+/* ---- the band wears the comp's density (comp L25-29: padding 9px 16px,
+   wordmark 18px, sublabel 9px, case-note 11px muted). Overrides of the copied
+   header block above the PRODUCT ADDITIONS marker — recorded in §10. ---- */
+.app-header {
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 9px 16px;
+  justify-content: flex-start;
+}
+
+.app-header__wordmark {
+  font-size: 18px;
+}
+
+.app-header__sublabel {
+  font-size: 9px;
+}
+
+.app-header__stages {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.app-header__right {
+  margin-left: auto;
+}
+
+.app-header__context {
+  font-size: 11px;
+  font-weight: 500;
+  color: #8a948e;
+  white-space: nowrap;
+}
+
+/* The preview strip's steps are spans, not controls — they still must not read
+   as dead text, so the current one keeps the rail's tinted ring and the blocked
+   ones the rail's 0.55 dim (both inherited from .workflow-rail above). */
+.workflow-rail--preview .workflow-rail__step {
+  cursor: default;
+}
+
+/* ---- the worklist as the comp's card grid (comp L58-73: auto-fit minmax 250px,
+   card = white, radius 12, 13px/800 name, 11-11.5px meta, 6px segment bars). ---- */
+.worklist {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 0 14px;
+}
+
+.worklist__title {
+  font-size: 19px;
+  margin: 0;
+}
+
+.worklist__lead {
+  margin: 3px 0 14px;
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}
+
+.worklist__band-group {
+  margin-bottom: 12px;
+}
+
+.worklist__grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 11px;
+}
+
+.worklist-band {
+  margin: 14px 0 8px;
+}
+
+.worklist__band-group:first-of-type .worklist-band {
+  margin-top: 0;
+}
+
+.worklist-row__link {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+  padding: 13px;
+  border-radius: 12px;
+  border-color: #dfe4e1;
+  background: #ffffff;
+  height: 100%;
+}
+
+.worklist-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 8px;
+}
+
+.worklist-card__head .worklist-row__doctor {
+  flex: 1 1 110px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.worklist-card__head .chip {
+  margin-left: auto;
+}
+
+.worklist-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+}
+
+.worklist-card__teeth {
+  font-size: 11px;
+}
+
+.worklist-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.worklist-card__chips .worklist-row__chips {
+  margin-left: 0;
+}
+
+/* One 6px bar per site (comp L1225-1226) — counts drawn, never verdicts invented:
+   pass green for the ready count, review amber for the flagged count, neutral rest. */
+.worklist-card__segments {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.worklist-card__bar {
+  flex: 1 1 0;
+  height: 6px;
+  border-radius: 99px;
+  background: #e3e7e4;
+}
+
+.worklist-card__bar--pass {
+  background: var(--color-brand-green);
+}
+
+.worklist-card__bar--flag {
+  background: var(--color-amber);
+}
+
+/* The scan-arrival statement keeps its recorded solid border (a dashed border is
+   the universal drop-here signal and stays refused) — only its type compacts to
+   the comp's scale. */
+.scan-arrival {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 12px;
+}
+
+.scan-arrival__title {
+  font-size: 11px;
+  margin-bottom: 11px;
+}

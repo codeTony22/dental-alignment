@@ -70,6 +70,36 @@ export function runChip(runState: string): string {
   return runState === "none" ? "no run" : runState;
 }
 
+/** The card's site-count chip, the comp's words: "4 sites" / "1 site". */
+export function siteCountChip(sites: SiteRollup): string {
+  return `${sites.total} ${sites.total === 1 ? "site" : "sites"}`;
+}
+
+/**
+ * The card's discovery meta line (comp: "4 cap sites · Neodent GM · 42.1 MB").
+ * Every clause is a served fact — the rollup total, discovery's suggested model, the
+ * scan file's size on disk — and an absent fact drops its clause rather than being
+ * invented. The comp's batch codes and clinic names have no source here at all.
+ */
+export function discoveryLine(row: WorklistRow): string {
+  const parts: string[] = [
+    `${row.sites.total} cap site${row.sites.total === 1 ? "" : "s"}`,
+  ];
+  if (row.suggested_model !== null) parts.push(row.suggested_model);
+  if (typeof row.scan_bytes === "number") {
+    parts.push(`${(row.scan_bytes / 1_000_000).toFixed(1)} MB`);
+  }
+  return parts.join(" · ");
+}
+
+/** The card's teeth line ("teeth 19, 30" / "tooth 19"), empty string when discovery
+ *  curated none — the caller renders nothing rather than an empty label. */
+export function teethLine(row: WorklistRow): string {
+  const teeth = row.teeth ?? [];
+  if (teeth.length === 0) return "";
+  return `${teeth.length === 1 ? "tooth" : "teeth"} ${teeth.join(", ")}`;
+}
+
 export function confirmChip(confirmed: boolean): string {
   return confirmed ? "confirmed" : "unconfirmed";
 }
