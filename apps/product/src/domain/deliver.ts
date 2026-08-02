@@ -733,6 +733,42 @@ export function assuranceCountsWords(assurance: AssuranceView): string {
 }
 
 /**
+ * THE SERVED TOLERANCE BANDS (§10-AB.2, client 2026-08-02: "Do this — a displayed
+ * tolerance number … as a server-derived band"). The comp prints "tolerance 0.12 mm"
+ * from a prop; this product's honest equivalent is the CATALOG bands every assurance
+ * row already carries (`references[*].bands` — cited numbers, served per site). The
+ * line reads the first row (the bands are the catalog's constants, identical across
+ * rows), names pass and review edges per metric, and carries the one disclaimer that
+ * keeps it honest: verdicts are the run's own guidance, not a band check made here —
+ * a row can sit inside every band and still be flagged (an unverified rotation), or
+ * outside one and read ready. Null when nothing served carries bands: the line is
+ * absent rather than defaulted, like every other absent fact on this surface.
+ */
+const _BANDED_METRICS = ["rim_agreement_mm", "deviation_rms_mm"] as const;
+
+export function toleranceBandsWords(
+  sites: readonly AssuranceSite[],
+): string | null {
+  const references = sites[0]?.references;
+  if (references === undefined) return null;
+  const parts: string[] = [];
+  for (const key of _BANDED_METRICS) {
+    const ref = references[key];
+    const bands = ref?.bands;
+    if (ref === undefined || bands === null || bands === undefined) continue;
+    parts.push(
+      `${ref.label} pass ≤ ${bands.pass.toFixed(2)} ${ref.unit} · ` +
+        `review ≤ ${bands.review.toFixed(2)} ${ref.unit}`,
+    );
+  }
+  if (parts.length === 0) return null;
+  return (
+    `Tolerance bands (served): ${parts.join(" — ")}. ` +
+    "Verdicts are the run's own guidance, not a band check made here."
+  );
+}
+
+/**
  * THE "EXCEPTIONS" LINE, AS THE PRODUCT'S OWN ACT. The design counts sites
  * "accepted as exceptions" as though acceptance were a status; here it is not — it is
  * the operator's per-row acknowledgment (AM-12), and the rows that need one are

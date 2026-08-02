@@ -88,6 +88,7 @@ import {
   sealedTermsHref,
   staleMetricsWords,
   crossCheckWords,
+  toleranceBandsWords,
   turnaroundWords,
   withholdOffered,
   type ConstructionGroup,
@@ -1333,6 +1334,16 @@ export function DeliverStageView({
                     it, the confirm gate, and the server's own invoice split */}
                 {acknowledgmentPolicyWords(assurance.data, dispositions)}
               </span>
+              {/* the served catalog bands, absent when the rows carry none —
+                  toleranceBandsWords owns the words and their disclaimer (§10-AB.2) */}
+              {toleranceBandsWords(assurance.data.sites) !== null && (
+                <span
+                  data-role="tolerance-bands"
+                  className="deliver-evidence__bands"
+                >
+                  {toleranceBandsWords(assurance.data.sites)}
+                </span>
+              )}
             </p>
           )}
           {assurance.kind === "loading" && (

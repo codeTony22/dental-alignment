@@ -6773,3 +6773,12 @@ button.package-files__link:hover {
   flex-direction: column;
   gap: 13px;
 }
+
+/* The served tolerance-bands line (§10-AB.2) — a stated fact, quiet like the
+   policy line beside it. */
+.deliver-evidence__bands {
+  display: block;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}

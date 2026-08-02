@@ -10,7 +10,7 @@ the authorization route prices the case at the moment it authorizes and RECORDS 
 charged on ``PaymentRecord``, so a receipt is re-derivable afterwards even when the
 lab's turnaround choice moves on.
 
-THE NUMBERS BELOW ARE THE CLIENT'S CONFIRMED CARD (in-chat, 2026-08-02, §10-AB.3).
+THE NUMBERS BELOW ARE THE CLIENT'S CONFIRMED CARD (in-chat, 2026-08-02, §10-AB.1).
 They began as the design prototype's placeholder figures; the client ratified them
 verbatim — "$32/site standard, $48 rush, exceptions at half" — so ``status`` flipped
 from ``"placeholder"`` to ``"final"`` and the not-a-quotation hedge retired with it.
@@ -44,7 +44,7 @@ CURRENCY = "USD"
 # Amounts charged under "placeholder-v1" stay readable as exactly that.
 RATE_CARD_VERSION = "client-2026-08-02-v1"
 
-# CONFIRMED (client in-chat, 2026-08-02, §10-AB.3): the client ratified the standing
+# CONFIRMED (client in-chat, 2026-08-02, §10-AB.1): the client ratified the standing
 # figures as the price list — "leave it like this: $32/site standard, $48 rush,
 # exceptions at half." The wire word flips to "final"; the product's placeholder
 # badges key off this word and drop with no product change.

@@ -7,10 +7,10 @@ symbol. So the amount is a SERVER derivation off the run's own assurance, ``Paym
 still carries nothing but ``authorize``, and the priced amount is recorded ON the
 payment record so a receipt is re-derivable afterwards.
 
-The RATES are placeholders (the client has supplied none), marked as such on the wire
-exactly like ``TERMS_TEXT_PLACEHOLDER`` — these tests pin the DERIVATION and the
-doctrine, and deliberately read the numbers from the module's own rate card rather than
-hard-coding dollars a later client conversation will replace.
+The RATES are the client's confirmed card (in-chat 2026-08-02, §10-AB.1) — "final" on
+the wire. These tests pin the DERIVATION and the doctrine, and deliberately read the
+numbers from the module's own rate card rather than hard-coding dollars a later client
+conversation would replace.
 """
 from __future__ import annotations
 
@@ -168,7 +168,7 @@ class TestTheInvoiceIsAProjection:
 
     def test_the_rates_are_the_clients_confirmed_card(
             self, settings, product_root):
-        # CONFIRMED (client in-chat, 2026-08-02, §10-AB.3): "$32/site standard, $48
+        # CONFIRMED (client in-chat, 2026-08-02, §10-AB.1): "$32/site standard, $48
         # rush, exceptions at half" — the placeholder figures ratified as the price
         # list. The wire says "final"; the note records WHO confirmed and WHEN, and
         # the not-a-quotation hedge is gone with the placeholder status.

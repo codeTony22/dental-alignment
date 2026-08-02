@@ -57,6 +57,7 @@ import {
   constructionStepWords,
   previewTabs,
   libraryPartPreviewCaption,
+  toleranceBandsWords,
   type ConstructionOption,
   prefillAcknowledged,
 } from "./deliver";
@@ -1588,5 +1589,67 @@ describe("libraryPartPreviewCaption — the ARMED candidate's own words", () => 
     const words = libraryPartPreviewCaption("Conical scanbody").toLowerCase();
     expect(words).not.toContain("run's own");
     expect(words).not.toContain("re-run");
+  });
+});
+
+/**
+ * THE SERVED TOLERANCE BANDS (§10-AB.2, client 2026-08-02: "Do this — a displayed
+ * tolerance number … as a server-derived band"). The line reads the CATALOG bands the
+ * assurance rows already carry (`references[*].bands`) — it never invents a number,
+ * and it must not claim the bands decide the verdicts (the run's guidance does).
+ */
+describe("toleranceBandsWords — the served bands, never a client verdict", () => {
+  it("states the rim band off the first row's served reference", () => {
+    const words = toleranceBandsWords([assuranceSite()]);
+    expect(words).toContain("Tolerance bands (served)");
+    expect(words).toContain("Rim seating agreement (p90)");
+    expect(words).toContain("pass ≤ 0.50 mm");
+    expect(words).toContain("review ≤ 1.60 mm");
+    // the verdict disclaimer rides the line: bands inform, guidance decides
+    expect(words).toContain("guidance");
+  });
+
+  it("adds the deviation band when its reference is served too", () => {
+    const site = assuranceSite();
+    const words = toleranceBandsWords([
+      {
+        ...site,
+        references: {
+          ...site.references,
+          deviation_rms_mm: {
+            key: "deviation_rms_mm",
+            label: "Deviation RMS",
+            unit: "mm",
+            value: 0.43,
+            display: "0.43 mm",
+            band: "review",
+            industry_ref: { value: "n/a", source: "catalog" },
+            note: null,
+            bands: { pass: 0.2, review: 0.5 },
+          },
+        },
+      },
+    ]);
+    expect(words).toContain("Deviation RMS");
+    expect(words).toContain("pass ≤ 0.20 mm");
+  });
+
+  it("says nothing when nothing carries bands — never an invented number", () => {
+    expect(toleranceBandsWords([])).toBeNull();
+    const site = assuranceSite();
+    expect(toleranceBandsWords([{ ...site, references: {} }])).toBeNull();
+    // a bands:null metric (rotation-style custom evaluator) contributes nothing
+    const rim = site.references["rim_agreement_mm"]!;
+    expect(
+      toleranceBandsWords([
+        { ...site, references: { rim_agreement_mm: { ...rim, bands: null } } },
+      ]),
+    ).toBeNull();
+  });
+
+  it("never speaks the checkout's forbidden verdict words", () => {
+    const words = toleranceBandsWords([assuranceSite()]) ?? "";
+    expect(words).not.toContain("in tolerance");
+    expect(words).not.toContain("Case tolerance");
   });
 });

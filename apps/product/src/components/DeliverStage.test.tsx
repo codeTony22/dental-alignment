@@ -968,10 +968,32 @@ describe("the assurance header states its own counts and its exceptions policy",
     expect(html).not.toContain('data-role="acknowledge-flag"');
   });
 
-  it("states NO tolerance number — this product has none to state", () => {
-    // the design's header ends "· tolerance 0.40 mm"; every band comparison here is
-    // the BFF's, per metric, against the acceptance catalog (AM-4)
-    expect(view()).not.toContain("tolerance");
+  it("speaks of tolerance ONLY as the served bands — never a verdict of its own", () => {
+    /* AMENDED (§10-AB.2, client 2026-08-02). This pin was born as a blanket absence:
+       the design's header ended "· tolerance 0.40 mm" off a prop, and this product
+       had no tolerance to state. The client then asked for a displayed tolerance AS
+       A SERVED FACT, so the rule sharpened rather than fell: the word may appear
+       exactly once, inside the tolerance-bands line (the catalog bands the rows
+       already carry), and the client-side verdict phrases stay forbidden. */
+    const html = view();
+    // one spoken mention (the line's own head); the only other match is the
+    // data-role hook naming the line, which is chrome, not a claim
+    expect((html.match(/Tolerance/g) ?? []).length).toBe(1);
+    expect((html.match(/tolerance(?!-bands)/g) ?? []).length).toBe(0);
+    const bandsAt = html.indexOf('data-role="tolerance-bands"');
+    expect(bandsAt).toBeGreaterThanOrEqual(0);
+    expect(html.indexOf("Tolerance bands (served)")).toBeGreaterThan(bandsAt);
+    expect(html).not.toContain("in tolerance");
+    expect(html).not.toContain("Case tolerance");
+    // and with nothing served, the word is gone entirely — the old absence rule
+    const bare = assuranceSite();
+    const none = view({
+      assurance: {
+        kind: "ok",
+        data: assuranceView({ sites: [{ ...bare, references: {} }] }),
+      },
+    });
+    expect(none).not.toContain("tolerance");
   });
 });
 
@@ -1229,5 +1251,31 @@ describe("the comp's page clothes", () => {
     // invent a part name for it (the comp's lead assumes one always exists)
     const html = view();
     expect(html).not.toContain("null for");
+  });
+});
+
+/**
+ * THE SERVED TOLERANCE BANDS ON THE ASSURANCE HEADER (§10-AB.2). The words are
+ * toleranceBandsWords' (pinned in domain/deliver.test.ts); what this pins is the
+ * surface: the line renders under the policy line when the rows carry served bands,
+ * and is ABSENT — not zeroed, not defaulted — when they don't.
+ */
+describe("the tolerance-bands line", () => {
+  it("renders the served bands beside the assurance counts", () => {
+    const html = view();
+    expect(html).toContain('data-role="tolerance-bands"');
+    expect(html).toContain("Tolerance bands (served)");
+    expect(html).toContain("pass ≤ 0.50 mm");
+  });
+
+  it("is absent when the rows serve no bands", () => {
+    const bare = assuranceSite();
+    const html = view({
+      assurance: {
+        kind: "ok",
+        data: assuranceView({ sites: [{ ...bare, references: {} }] }),
+      },
+    });
+    expect(html).not.toContain('data-role="tolerance-bands"');
   });
 });
