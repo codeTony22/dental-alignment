@@ -798,6 +798,29 @@ export function AdjustStageView({
                 )}
               </div>
             )}
+            {/* DROP JOINS THE HEAD (client 2026-08-02: "too much scrolling up and
+                down"). It sat past the tool body, so reaching the one act that holds a
+                cap back from the release always cost a scroll — and it is the same
+                KIND of act as the re-read beside it: about the site, not about
+                whichever tool is open. Its note repeated the button's own label almost
+                word for word ("holds it back from the release and the bill"), so the
+                sentence rides in `title` where it explains the control it belongs to
+                rather than restating it underneath. */}
+            {active !== null && (
+              <button
+                type="button"
+                data-role="drop-site"
+                data-dropped={active.dropped}
+                className={`button button--small ${
+                  active.dropped ? "button--secondary" : "button--ghost"
+                }`}
+                disabled={dropSaving}
+                title={dropNote(active.dropped)}
+                onClick={() => onDrop(active.tooth, !active.dropped)}
+              >
+                {dropSaving ? "Recording the decision…" : dropLabel(active.dropped)}
+              </button>
+            )}
             </div>
 
             {clockNotice !== null && (
@@ -1200,21 +1223,17 @@ export function AdjustStageView({
                  is true. Nothing here is a verdict, a price or a gate — the note says
                  in the open that Deliver's confirmation is what signs it. */
               <div data-role="drop" className="adjust-drop">
-                <button
-                  type="button"
-                  data-role="drop-site"
-                  data-dropped={active.dropped}
-                  className={`button ${
-                    active.dropped ? "button--secondary" : "button--ghost"
-                  }`}
-                  disabled={dropSaving}
-                  onClick={() => onDrop(active.tooth, !active.dropped)}
-                >
-                  {dropSaving ? "Recording the decision…" : dropLabel(active.dropped)}
-                </button>
-                <p data-role="drop-note" className="adjust-drop__note">
-                  {dropNote(active.dropped)}
-                </p>
+                {/* THE NOTE SURVIVES WHERE IT SAYS SOMETHING NEW. Not dropped, it
+                    restated its own button ("holds it back from the release and the
+                    bill") and rides in `title` instead. DROPPED, it carries a
+                    consequence the label cannot — the hold is a DRAFT until the
+                    confirmation at Deliver signs it, and bringing the cap back before
+                    then puts it straight in — so it stays on the page. */}
+                {active.dropped && (
+                  <p data-role="drop-note" className="adjust-drop__note">
+                    {dropNote(active.dropped)}
+                  </p>
+                )}
                 {dropError !== null && (
                   <span data-role="drop-error" role="alert" className="panel__error">
                     {dropError}

@@ -54,6 +54,7 @@ import {
   systemCards,
   recordedAtWords,
   variantShelves,
+  type VariantCard,
   type PreviewFigures,
   type ViewPresetId,
   type WorkspaceStat,
@@ -235,70 +236,113 @@ function SiteQueue({ detail, activeTooth, runRows, onSelectSite }: SiteQueueProp
   );
 }
 
-interface VariantSelectProps {
+interface VariantChipProps {
+  readonly card: VariantCard;
+  readonly declared: boolean;
+  /** True on the superseded shelf — the chip wears the archived tone. */
+  readonly archived?: boolean;
+  readonly onDeclare: (variantId: string) => void;
+}
+
+/** One catalog part, as a chip: code, dims, and — where detection proposed it — a
+ *  BADGE on the face of the page. */
+function VariantChip({ card, declared, archived, onDeclare }: VariantChipProps) {
+  return (
+    <button
+      type="button"
+      data-role="variant-card"
+      data-variant={card.id}
+      aria-pressed={declared}
+      className={`decode-variant${declared ? " decode-variant--selected" : ""}${
+        archived ? " decode-variant--archived" : ""
+      }`}
+      onClick={() => onDeclare(card.id)}
+    >
+      <span className="decode-variant__name">{card.label}</span>{" "}
+      <span className="decode-variant__dims">{card.dims}</span>
+      {card.suggested && (
+        <span
+          data-role="variant-suggested"
+          className="library-badge library-badge--suggested"
+        >
+          {" "}
+          sugg.
+        </span>
+      )}
+    </button>
+  );
+}
+
+interface VariantChipsProps {
   readonly active: SiteView | null;
   readonly shelves: ReturnType<typeof variantShelves>;
   readonly onDeclare: (variantId: string) => void;
 }
 
 /**
- * THE VARIANT DROPDOWN — the client's own words (2026-08-02): "the implant variant
- * selection needs to be drop down". Six cards became one control, and every claim
- * the cards made moved INTO it rather than being dropped:
+ * THE VARIANT PICKER, BACK TO CHIPS (client 2026-08-02, reversing their own earlier
+ * ask the same day: "the implant variant should not be a dropdown and we need the
+ * suggested").
  *
- *   - each option carries the catalog's Ø × height line, because a bare code is a
- *     guess and the dims are what the operator is actually choosing between;
- *   - the DECLARED variant is the selected option — the server's fact, controlled;
- *   - detection's proposal wears data-role="variant-suggested" and says so in its
- *     text, and vanishes the moment the operator declares (their act supersedes it);
- *   - the superseded shelf is a LABELLED optgroup, kept apart from the current
- *     shelf, never mixed into it — still declarable, still marked archived.
+ * The reversal has a reason visible in the markup. Inside a collapsed select,
+ * detection's proposal is a word in an option nobody reads until they open it — the
+ * server has published `suggested_variant` per site since 5a precisely so the operator
+ * can SEE what was proposed for the site they are declaring, and a dropdown put it back
+ * out of sight. On a chip it is a badge on the page.
  *
- * The empty option never fires onDeclare: there is no undeclare act on this page,
- * and a change handler that invented one would be a client-side status write.
+ * The real-estate complaint that drove the dropdown was real, and it is answered by
+ * the chips' SIZE rather than by hiding them: one dense wrapping row, not a grid of
+ * cards. The superseded shelf stays behind its own fold — kept apart from the current
+ * shelf, never mixed into it.
  */
-function VariantSelect({ active, shelves, onDeclare }: VariantSelectProps) {
-  const optionFor = (card: (typeof shelves.current)[number]) => (
-    <option
-      key={card.id}
-      value={card.id}
-      data-variant={card.id}
-      data-role={card.suggested ? "variant-suggested" : undefined}
-    >
-      {card.label} — {card.dims}
-      {card.suggested ? " · suggested" : ""}
-    </option>
-  );
+function VariantChips({ active, shelves, onDeclare }: VariantChipsProps) {
   return (
-    <label className="declare-controls__field declare-controls__field--variant">
+    <div
+      data-role="variant-cards"
+      className="declare-controls__field declare-controls__field--variant"
+    >
       <span className="declare-controls__label">
         {active !== null ? `Variant for tooth ${active.tooth}` : "Variant"}
       </span>
-      <select
-        data-role="declare-variant"
-        className="decode-select"
-        value={active?.declared_variant ?? ""}
-        disabled={active === null}
-        onChange={(event) => {
-          if (event.target.value !== "") onDeclare(event.target.value);
-        }}
-      >
-        <option value="">
-          {active !== null ? "declare a cap variant…" : "pick a site first"}
-        </option>
-        {shelves.current.map(optionFor)}
-        {shelves.superseded.length > 0 && (
-          <optgroup
-            data-role="superseded-shelf"
-            label={`Superseded shelf — ${shelves.superseded.length} archived part${
-              shelves.superseded.length === 1 ? "" : "s"
-            }`}
-          >
-            {shelves.superseded.map(optionFor)}
-          </optgroup>
-        )}
-      </select>
-    </label>
+      {active === null ? (
+        <p className="panel__hint">Pick a site to declare its cap.</p>
+      ) : (
+        <>
+          <div className="decode-variant-list">
+            {shelves.current.map((card) => (
+              <VariantChip
+                key={card.id}
+                card={card}
+                declared={active.declared_variant === card.id}
+                onDeclare={onDeclare}
+              />
+            ))}
+          </div>
+          {shelves.superseded.length > 0 && (
+            <details data-role="superseded-fold" className="decode-archive">
+              <summary className="decode-archive__title">
+                Superseded shelf — {shelves.superseded.length} archived part
+                {shelves.superseded.length === 1 ? "" : "s"}
+              </summary>
+              <p className="decode-archive__note">
+                Kept apart from the current shelf, never mixed into it.
+              </p>
+              <div className="decode-variant-list">
+                {shelves.superseded.map((card) => (
+                  <VariantChip
+                    key={card.id}
+                    card={card}
+                    declared={active.declared_variant === card.id}
+                    archived
+                    onDeclare={onDeclare}
+                  />
+                ))}
+              </div>
+            </details>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -769,7 +813,7 @@ export function DeclareStageView({
         <div className="workspace-drawer workspace-drawer--declare">
           <div data-role="declare-controls" className="declare-controls">
             <SystemSelect detail={detail} onAskSwitch={onAskSwitch} />
-            <VariantSelect active={active} shelves={shelves} onDeclare={onDeclare} />
+            <VariantChips active={active} shelves={shelves} onDeclare={onDeclare} />
           </div>
           {pendingSwitch !== null && (
             <SwitchConfirm

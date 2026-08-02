@@ -176,41 +176,38 @@ describe("the visible-reset confirmation — words BEFORE the PUT (AM-8)", () =>
   });
 });
 
-describe("the variant dropdown — the active site declares from the catalog", () => {
-  /* THE CLIENT'S OWN WORDS (2026-08-02): "the implant variant selection needs to be
-     drop down". Six cards became one select; every claim the cards made — dims from
-     the catalog, the declared one marked, detection's proposal attributed, the
-     superseded shelf separate — moved into it rather than being dropped. */
-  it("current options carry the catalog's Ø × height line", () => {
+describe("the variant chips — the active site declares from the catalog", () => {
+  /* THE CLIENT REVERSED THIS (2026-08-02): the variant became a dropdown that morning
+     on their own ask, and the same day: "the implant variant should not be a dropdown
+     and we need the suggested". The reason is visible in the markup — inside a
+     collapsed select, detection's proposal is a word in an option nobody sees until
+     they open it, where on a chip it is a badge on the face of the page. Chips again,
+     but COMPACT: the real-estate complaint that drove the dropdown was real, and it is
+     answered by the chips' size rather than by hiding them. */
+  it("current chips carry the catalog's Ø × height line", () => {
     const html = view();
-    expect(html).toContain('data-role="declare-variant"');
-    expect(html).toMatch(/<option[^>]*data-variant="5020"/);
+    expect(html).toContain('data-role="variant-cards"');
+    expect(html).toMatch(/data-role="variant-card"[^>]*data-variant="5020"/);
     expect(html).toContain("Ø 5.0 × 2.0 mm");
   });
 
-  it("the active site's declared variant is the selected option", () => {
-    // tooth 19 (default active) declared 5020 — its option renders as chosen
+  it("the active site's declared variant is the pressed chip", () => {
     expect(view()).toMatch(
-      /<option[^>]*data-variant="5020"[^>]*selected|<option[^>]*selected[^>]*data-variant="5020"/,
+      /data-role="variant-card"[^>]*data-variant="5020"[^>]*aria-pressed="true"/,
     );
-    // with tooth 30 active (nothing declared), no variant option is selected
     expect(view({ activeTooth: 30 })).not.toMatch(
-      /<option[^>]*data-variant=[^>]*selected|<option[^>]*selected[^>]*data-variant=/,
+      /data-role="variant-card"[^>]*aria-pressed="true"/,
     );
   });
 
-  it("the superseded shelf is a LABELLED optgroup, never mixed into the current shelf", () => {
+  it("the superseded shelf collapses behind a LABELLED fold", () => {
     const html = view();
-    expect(html).toContain('data-role="superseded-shelf"');
+    expect(html).toContain('data-role="superseded-fold"');
     expect(html).toContain("Superseded shelf — 1 archived part");
     expect(html).toContain("4.0 × 1.0 (archived)");
-    // the archived option sits INSIDE the optgroup, after it opens
-    expect(html.indexOf("4.0 × 1.0 (archived)")).toBeGreaterThan(
-      html.indexOf('data-role="superseded-shelf"'),
-    );
   });
 
-  it("no superseded parts, no optgroup at all", () => {
+  it("no superseded parts, no fold at all", () => {
     const html = view({
       detail: {
         ...detail,
@@ -220,32 +217,27 @@ describe("the variant dropdown — the active site declares from the catalog", (
         },
       },
     });
-    expect(html).not.toContain('data-role="superseded-shelf"');
+    expect(html).not.toContain('data-role="superseded-fold"');
   });
 
-  // gap `variant-suggested-badge`: the server has served `suggested_variant` per site
-  // since 5a and no surface read it — the operator could not see which part detection
-  // proposed for the site they are declaring.
-  it("the option detection proposed for the ACTIVE site is attributed", () => {
+  it("the chip detection proposed for the ACTIVE site wears a VISIBLE badge", () => {
+    /* "we need the suggested" — the whole point of the reversal. The badge is an
+       element on the page, not a word inside a collapsed control. */
     const html = view({
       activeTooth: 30,
       detail: {
         ...detail,
-        sites: [
-          detail.sites[0]!,
-          siteView({ tooth: 30, suggested_variant: "5020" }),
-        ],
+        sites: [detail.sites[0]!, siteView({ tooth: 30, suggested_variant: "5020" })],
       },
     });
     expect(html).toMatch(
-      /<option[^>]*data-variant="5020"[^>]*data-role="variant-suggested"|<option[^>]*data-role="variant-suggested"[^>]*data-variant="5020"/,
+      /data-role="variant-card"[^>]*data-variant="5020"[\s\S]*?data-role="variant-suggested"/,
     );
-    expect(html).toContain("suggested");
-    // exactly one option wears it — the proposal is for ONE part, not a shelf tone
+    expect(html).toContain("sugg.");
     expect(html.match(/data-role="variant-suggested"/g)).toHaveLength(1);
   });
 
-  it("the attribution vanishes once that site is declared — the operator's act supersedes it", () => {
+  it("the badge vanishes once that site is declared — the operator's act supersedes it", () => {
     const html = view({
       activeTooth: 30,
       detail: {
@@ -475,7 +467,7 @@ describe("the DeclareStage container, statically (effects do not run)", () => {
     );
     expect(html).toContain('data-role="declare-queue"');
     expect(html).toContain('data-role="declare-system"');
-    expect(html).toContain('data-role="declare-variant"');
+    expect(html).toContain('data-role="variant-cards"');
     // Retargeted 2026-07-30: the arch was a standing strip, open by default, and it
     // cost the panes a third of the stage — the union pane sank below the fold
     // (client: "small panels, the view is cut off ... maybe the arch context view

@@ -77,6 +77,31 @@ function view(overrides: Partial<Parameters<typeof AdjustStageView>[0]> = {}) {
   );
 }
 
+describe("the drawer head gathers the SITE-level acts (client 2026-08-02)", () => {
+  /* "I am not a fan of the scrolling on the tooling, it is too much scrolling up and
+     down." Drop sat at the very bottom of the drawer, past the tool body, so reaching
+     it always meant a scroll — and it is the same kind of act as the re-read beside
+     the title: about the SITE, not about whichever tool happens to be open. Both live
+     in the head row now; the drop's note, which repeated its own button label almost
+     word for word, rides in `title`. */
+  it("carries the drop act in the head, not below the tool body", () => {
+    const html = view();
+    const head = html.slice(html.indexOf('data-role="drawer-head"'));
+    const inHead = head.slice(0, head.indexOf('data-role="tool-tabs"'));
+    expect(inHead).toContain('data-role="drop-site"');
+    expect(inHead).toContain('data-role="re-preview"');
+  });
+
+  it("keeps the drop's consequence attached to the control that causes it", () => {
+    // the words are not lost — a consequential act still explains itself
+    expect(view()).toMatch(/data-role="drop-site"[^>]*title="[^"]*release and the bill/);
+  });
+
+  it("an UNdropped site sheds the note that only restated its own button", () => {
+    expect(view()).not.toContain('data-role="drop-note"');
+  });
+});
+
 describe("the drawer head is one row, not a stack (client 2026-08-02)", () => {
   /* "Also on the tooling part" — the drawer opened with a heading row, then a
      re-read row, then the tabs: three bands before any tool. The heading and the

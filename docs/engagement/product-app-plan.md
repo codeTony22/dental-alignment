@@ -1007,3 +1007,45 @@ The drawer's head merged: title + re-read on one row, tabs directly under; the c
 notice keeps its own full-width line because it is a paragraph of fact, not a control.
 The stat pills quieted (they are a readout, not controls). Measured at 1280x800: toolbar
 132→72px, drawer head −40px, panes 220→294px — the floor unstuck.
+
+**V. THE DROPDOWN REVERSED, AND THE TOOLING STOPPED SCROLLING (client 2026-08-02).**
+"The dropdown buttons need better styling - the implant variant should not be a dropdown
+and we need the suggested. I am not a fan of the scrolling on the tooling, it is too much
+scrolling up and down."
+
+1. **The variant picker goes back to chips**, reversing §10-S.2 the same day it landed —
+   and the reason is visible in the markup. The server has published `suggested_variant`
+   per site since 5a precisely so the operator can SEE what detection proposed for the
+   site they are declaring; inside a collapsed select that became a word in an option
+   nobody reads until they open it. On a chip it is a badge on the face of the page. The
+   real-estate complaint that drove the dropdown was real and is answered by the chips'
+   SIZE — one dense wrapping row, not a grid of cards. The system picker stays a select:
+   nothing is attributed on it that a closed control hides.
+2. **The selects read as controls**: resting border, hover, shadow, and the amber
+   "still owed" weight behind `--needs`, which had the class and no tone.
+3. **The tooling's scroll was a flex-order bug, not a height budget.** The drawer was
+   `flex: 0 1 auto` beside a pane region that GROWS, so the panes swallowed the free
+   height and the drawer was shrunk into a scroll even on a tall window — measured at
+   1512x950: panes 479px, drawer 239px showing 297px of content. The drawer takes its
+   content first now (`flex: 0 0 auto`, capped) and the panes take the remainder,
+   yielding first when the stage is genuinely short — safe, because the grid scrolls
+   inside itself and each pane holds its 220px floor.
+   Drop also moved into the head row beside the re-read: it is the same KIND of act
+   (about the site, not about whichever tool is open) and it sat past the tool body, so
+   reaching it always cost a scroll. Its note survives where it says something NEW —
+   dropped, the hold is a DRAFT until Deliver's confirmation signs it; undropped, it
+   only restated its own button label and rides in `title`.
+
+Measured after, 1280x800 AND 1512x950: the tool panel does not scroll at either, and
+all three panes stay up.
+
+**STILL OPEN — needs the client.** "We need the adjustment and alignment to look more
+like the claude designs": the comp is not reachable from this session. It is not in the
+repo, `~/Downloads` has no HTML, and the claude.ai design-system project lists zero
+files. Every comp fact this plan cites survives only as extracted notes in code comments.
+Also unresolved: which surface is "green on the preview on construction" — both
+construction previews (the library page's run mesh and Deliver's "Construction in arch")
+render the palette's steel blue `#7d93b8`, and `PartPreview` passes `PALETTE.construction`
+explicitly. The only green in a preview is the CAP view, which is the established
+convention Deliver's own advisory text relies on ("visually confirm the green cap covers
+the scanned cap in view 1").

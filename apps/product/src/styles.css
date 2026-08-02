@@ -5775,8 +5775,12 @@ button.package-files__link:hover {
 .declare-controls {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 10px 16px;
+  /* TOP-aligned, not bottom: the variant field is a wrapping chip shelf and grows
+     taller than the system select beside it, so `flex-end` left the select floating
+     against the bottom of a two-row shelf (caught by screenshot). Both fields start
+     at the same line and grow downward. */
+  align-items: flex-start;
+  gap: 10px 18px;
 }
 
 .declare-controls__field {
@@ -6113,4 +6117,89 @@ button.package-files__link:hover {
 .drawer-head [data-role="re-preview-result"],
 .drawer-head [data-role="re-preview-error"] {
   flex: 1 1 100%;
+}
+
+/* ===== THE TOOLING STOPS SCROLLING SO MUCH (client 2026-08-02) =====================
+   "I am not a fan of the scrolling on the tooling, it is too much scrolling up and
+   down." The drawer was capped at min(238px, 27vh) — a number chosen when the stage
+   also carried three rows of chrome above it and the panes had nothing to spare. Two
+   of those rows are gone (§10-U), so the cap can rise: the drawer sizes to its own
+   content now and only scrolls past a much higher ceiling.
+
+   The panes keep their floor explicitly rather than by luck — min-height on the pane
+   region means flexbox shrinks the DRAWER first when the stage is genuinely short,
+   which is the right order: a scrolled tool panel is usable, a 120px pane is not. */
+/* THE DRAWER TAKES ITS CONTENT FIRST, up to a real ceiling. It was `flex: 0 1 auto`
+   beside a pane region that GROWS (`flex: 1 1 auto`), so the panes swallowed the free
+   height and the drawer was shrunk into a scroll even on a tall window — measured at
+   1512x950: panes 479px, drawer 239px showing 297px of tools. Shrink 0 reverses the
+   order of yielding, which is the order the client asked for. */
+.workspace-drawer {
+  flex: 0 0 auto;
+  max-height: min(460px, 46vh);
+}
+
+.workbench__stage--split .verify-panels {
+  /* The panes take what is left and yield FIRST when the stage is genuinely short —
+     safe, because the grid scrolls inside itself (§10-P.2) and each pane holds the
+     220px floor below which it shows no geometry at all. */
+  min-height: 220px;
+}
+
+/* ---- The selects read as controls, not as bare browser widgets ------------------
+   "The dropdown buttons need better styling." They wore the base .decode-select — a
+   1px hairline and the UA's own everything. The chevron, the height and the focus
+   ring already landed with Intake's card; what was missing is the resting state
+   reading as a control at all, and the hover/open states saying it can be clicked. */
+.decode-select {
+  border-color: #c8d2cc;
+  box-shadow: 0 1px 1px rgba(16, 32, 24, 0.04);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+  cursor: pointer;
+}
+
+.decode-select:hover {
+  border-color: var(--color-accent-green);
+  box-shadow: 0 1px 3px rgba(16, 32, 24, 0.09);
+}
+
+/* A select the operator has not answered wears the amber "still owed" tone the rest
+   of the app uses — it already had the class, it just had no weight behind it. */
+.decode-select--needs {
+  border-color: var(--color-amber-border);
+  background-color: var(--color-amber-bg);
+}
+
+/* ---- The variant chips: dense, so a shelf of six is one row, not a grid ---------
+   The chips came back (client reversed the dropdown the same day) and the
+   real-estate complaint that drove the dropdown is answered here, by size. */
+.declare-controls__field--variant {
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+.declare-controls .decode-variant-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.declare-controls .decode-variant {
+  padding: 5px 9px;
+  font-size: 12px;
+  line-height: 1.25;
+  border-radius: var(--radius-md);
+}
+
+.declare-controls .decode-variant__dims {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.declare-controls .decode-archive {
+  margin-top: 6px;
+}
+
+.declare-controls .decode-archive__title {
+  font-size: 11px;
 }
