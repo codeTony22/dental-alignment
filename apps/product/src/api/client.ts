@@ -125,6 +125,12 @@ export interface SiteView {
    * as a verdict about the site. Optional on this type only because fixtures and
    * detail documents written before it exists omit it; the BFF always sends it. */
   withhold_intent?: boolean;
+  /** The operator's standing DRAFT acknowledgment of this site as a flagged
+   *  exception, given on Adjustment (client 2026-08-02, the comp's amber act).
+   *  A draft, NEVER a signature: Deliver's confirmation (`acknowledged_flags`,
+   *  row by row — AM-12) is the only thing that signs. Optional so older
+   *  sessions read as "no draft". */
+  exception_acknowledged?: boolean;
 }
 
 /** A detector proposal: centre + evidence + the NON-BINDING tooth guess + capture. */
@@ -657,6 +663,29 @@ export async function deleteReview(
   });
 }
 
+/** ACCEPT AS FLAGGED EXCEPTION / WITHDRAW THE ACCEPTANCE (client 2026-08-02 —
+ * the comp's amber middle act, moved onto Adjustment). Body-less both ways, like
+ * the review pair: the act's whole content is the request, so no field exists for
+ * a claimed outcome to ride in on. What it records is a DRAFT — Deliver's
+ * confirmation still signs, row by row. */
+export async function postAcknowledgeException(
+  caseId: string,
+  tooth: number,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(siteActionPath(caseId, tooth, "acknowledge"), {
+    method: "POST",
+  });
+}
+
+export async function deleteAcknowledgeException(
+  caseId: string,
+  tooth: number,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(siteActionPath(caseId, tooth, "acknowledge"), {
+    method: "DELETE",
+  });
+}
+
 /**
  * DROP THIS CAP / BRING IT BACK (PUT /{id}/sites/{tooth}/withhold — design
  * flow.dc.html dropSite 1345-1354).
@@ -872,6 +901,12 @@ export interface AssuranceSite {
    * payload written before it existed keeps reading as "not dropped".
    */
   withhold_intent?: boolean;
+  /** The operator's standing DRAFT acknowledgment of this site as a flagged
+   *  exception, given on Adjustment (client 2026-08-02, the comp's amber act).
+   *  A draft, NEVER a signature: Deliver's confirmation (`acknowledged_flags`,
+   *  row by row — AM-12) is the only thing that signs. Optional so older
+   *  sessions read as "no draft". */
+  exception_acknowledged?: boolean;
   /** The numbers in this row that PREDATE an operator rework (the BFF's own list).
    * Adjust re-derives the deviation scalars and the clocking over the new pose; the
    * rim agreement and the guidance cannot be re-derived from the shipped record, so

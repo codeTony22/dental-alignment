@@ -96,6 +96,7 @@ import {
   type Disposition,
   type DispositionMap,
   qcPreviews,
+  prefillAcknowledged,
 } from "../domain/deliver";
 
 export type DeliverPhase = "idle" | "confirming" | "resetting" | "releasing";
@@ -1581,6 +1582,15 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
   });
   const [dispositions, setDispositions] = useState<DispositionMap>({});
   const [acknowledged, setAcknowledged] = useState<readonly number[]>([]);
+  /* THE DRAFTS FROM ADJUSTMENT PRE-FILL THIS FORM (client 2026-08-02, the comp's
+     amber act). A union on every assurance landing — a tick made here survives, a
+     draft only ever adds, and unticking here remains the operator's local edit until
+     the confirmation seals. The effect keys on the assurance object itself: it is
+     replaced only by a real (re)fetch, so this can never loop. */
+  useEffect(() => {
+    if (assurance.kind !== "ok") return;
+    setAcknowledged((now) => prefillAcknowledged(assurance.data.sites, now));
+  }, [assurance]);
   const [expanded, setExpanded] = useState<readonly number[]>([]);
   // THE AGREEMENT (plan §10-A): unticked until the operator explicitly checks
   // it — never pre-filled, the same posture every effective choice already

@@ -129,6 +129,34 @@ class SiteSession(BaseModel):
     # skipping the physics would make the decision irreversible without a re-run,
     # and the whole point of a draft is that it can be taken back.
     withhold_intent: bool = False
+    # THE ACCEPT-AS-FLAGGED-EXCEPTION DRAFT (client ruling 2026-08-02): withhold_
+    # intent's SIBLING — the operator's standing intent to ACKNOWLEDGE this site's
+    # flagged (or shared-part-conflicted) verdict in advance, from Adjust, so
+    # Deliver's row-by-row checkbox opens PRE-TICKED instead of asking the operator
+    # to re-find every row it already discussed with them. ISO timestamp when the
+    # draft was given, None otherwise — the same shape as an act's ``at``, not a
+    # bare bool, so a reader can say WHEN the exception was accepted.
+    #
+    # IT IS NOT A SIGNATURE, and never becomes one — the design decision that makes
+    # it admissible under AM-4's doctrine, the same reason ``withhold_intent`` is
+    # admissible: ``ConfirmIn.acknowledged_flags`` is the row-by-row ACT
+    # (deliver.confirm_case), required and unwaived by anything recorded here, and
+    # this field never rides into the sealed evidence bundle (``AssuranceView.
+    # sealed_facts`` excludes it, exactly as it excludes ``withhold_intent`` — a
+    # draft is not evidence the run produced).
+    #
+    # RESET SEMANTICS DELIBERATELY DIFFER FROM ``withhold_intent``'s (2026-08-02).
+    # A withhold is a standing operator PREFERENCE independent of any run's verdict
+    # — "don't ship this cap, whatever the physics says" — so it survives every
+    # boundary below on purpose (``TestTheIntentSurvivesTheGeometryBoundaries``).
+    # An exception-acknowledgment is instead an attestation ABOUT one specific run's
+    # specific verdict — "I have looked at THIS flagged row and accept it" — so it
+    # cannot honestly survive the run it was given over ceasing to be current: a
+    # rework that changes the verdict must not have the OLD acknowledgment silently
+    # pre-fill the checkbox for a verdict the operator never actually saw. See
+    # ``clear_exception_intents`` for where that boundary is drawn and why it needs
+    # a second call site ``clear_current_run``'s own callers do not.
+    exception_intent: Optional[str] = None
 
     def clear_preview_facts(self) -> None:
         """The reset boundaries' ONE home for forgetting a preview's facts — called
@@ -416,6 +444,12 @@ ACT_SITE_MARKED = "site-marked"
 ACT_SITE_REMARKED = "site-remarked"
 ACT_SITE_DECLARED = "site-declared"
 ACT_SITE_WITHHOLD_INTENT = "site-withhold-intent"
+# the accept-as-flagged-exception draft (client ruling 2026-08-02) — the sibling
+# events to ACT_SITE_WITHHOLD_INTENT's own pair, one word each direction so a
+# reader of the narrative can tell "drafted an acknowledgment" from "withdrew one"
+# without opening the detail sentence
+ACT_SITE_EXCEPTION_ACKNOWLEDGED = "site-exception-acknowledged"
+ACT_SITE_EXCEPTION_WITHDRAWN = "site-exception-withdrawn"
 ACT_SITE_PREVIEWED = "site-previewed"
 ACT_SITE_REVIEWED = "site-reviewed"
 ACT_SITE_REVIEW_WITHDRAWN = "site-review-withdrawn"
@@ -517,9 +551,40 @@ def clear_current_run(session: "CaseSession") -> None:
     masquerades as current. The FORK falls with it: a decision to skip or rework
     adjustments was made over THOSE verdicts, and verdicts that no longer describe
     the case cannot carry a decision forward. One function, so a later fact keyed to
-    the run cannot be forgotten at one boundary and cleared at the other two."""
+    the run cannot be forgotten at one boundary and cleared at the other two.
+
+    THE EXCEPTION-ACKNOWLEDGMENT DRAFTS JOIN HERE TOO (2026-08-02,
+    ``clear_exception_intents``): every one of them was given over THIS run's
+    verdicts, and a run that just stopped being current cannot go on being what an
+    acknowledgment describes."""
     session.run = None
     session.adjust_decision = None
+    clear_exception_intents(session)
+
+
+def clear_exception_intents(session: "CaseSession") -> None:
+    """Every site's drafted flagged-exception acknowledgment, retired together
+    (client ruling 2026-08-02).
+
+    UNLIKE ``withhold_intent``, this draft is tied to a SPECIFIC run's verdict — "I
+    acknowledge THIS flagged row" — never a standing operator preference
+    independent of the physics (a withhold survives every boundary here on purpose:
+    dropping a cap says nothing about what any run finds, so nothing retires it).
+    An acknowledgment given over a verdict that is about to stop being current must
+    not silently pre-fill Deliver's checkbox against whatever a REWORKED site's row
+    says next — that is exactly "a draft acknowledgment of an old run's verdict
+    surviving a rework that changed the verdict", the trust failure this function
+    exists to close.
+
+    TWO CALL SITES, DELIBERATELY, where ``withhold_intent`` needed none:
+    ``clear_current_run`` (the choices/system/declaration/mark reset boundaries,
+    where the run pointer is ABOUT to read None) and ``post_run``'s ``claim``
+    (case_sessions.py) — a FRESH run may be authorized directly over a still-
+    ``done`` one with no reset boundary in between, so a single call site here
+    would leave that path re-flagging a site under an acknowledgment nobody gave
+    against the NEW verdict."""
+    for site in session.sites.values():
+        site.exception_intent = None
 
 
 def clear_confirmation(session: "CaseSession") -> None:
@@ -627,6 +692,27 @@ def withhold_intents_of(session: "CaseSession") -> Dict[str, str]:
     waiting to disagree with the first."""
     return {tooth: "withhold" for tooth, site in session.sites.items()
             if site.withhold_intent}
+
+
+def needs_acknowledgment(site_status: Optional[str],
+                         production_note: Optional[str]) -> bool:
+    """AM-12's acknowledgment gate — the ONE predicate a row must satisfy before it
+    may release without its own row-by-row acknowledgment. LIFTED (2026-08-02) out
+    of ``deliver._needs_acknowledgment`` — which read an ``AssuranceSite`` — down to
+    the two raw facts it actually tested, so a second, session/run-shaped caller
+    (the Adjust-page accept-as-flagged-exception draft, ``post_acknowledge_exception``)
+    can share the SAME definition instead of re-deriving a lookalike that could
+    drift from it. ``deliver._needs_acknowledgment`` is now a one-line adapter onto
+    this.
+
+    TRUE whenever EITHER: the session ladder flagged the site (``SiteStatus.
+    FLAGGED``'s own value — a run's verdict), OR the run's production block
+    disclosed a fact the operator must weigh before releasing — today, exactly the
+    shared-construction-part conflict ``production_note`` carries (plan §10-E,
+    finding 2026-07-28). ``site_status`` is a plain string (or None) rather than
+    ``SiteStatus`` so a caller holding only ``AssuranceSite.status`` (already a
+    string on the wire) need not round-trip it through the enum."""
+    return site_status == SiteStatus.FLAGGED.value or production_note is not None
 
 
 def adjustments_of(session: "CaseSession") -> Optional[str]:

@@ -29,6 +29,7 @@ const FLAGGED: AdjustQueueEntry = {
   flagged: true,
   optional: false,
   dropped: false,
+  exceptionAcknowledged: false,
   declaredVariant: "5020",
   reasons: [ACTION],
 };
@@ -39,6 +40,7 @@ const CLEAN: AdjustQueueEntry = {
   flagged: false,
   optional: true,
   dropped: false,
+  exceptionAcknowledged: false,
   declaredVariant: "5020",
   reasons: [],
 };
@@ -76,6 +78,67 @@ function view(overrides: Partial<Parameters<typeof AdjustStageView>[0]> = {}) {
     />,
   );
 }
+
+describe("accepting a flagged exception, in advance (client 2026-08-02)", () => {
+  const FLAGGED = {
+    tooth: 13,
+    status: "flagged",
+    flagged: true,
+    optional: false,
+    dropped: false,
+    exceptionAcknowledged: false,
+    declaredVariant: "5020",
+    reasons: ["re-run the refinement at a matching diameter"],
+  } as const;
+
+  it("offers the amber act on a flagged active site, in the acts row's middle", () => {
+    const html = view({ entries: [FLAGGED], activeTooth: 13 });
+    const acts = html.slice(html.indexOf('data-role="drawer-acts"'));
+    const inActs = acts.slice(0, acts.indexOf('data-role="drop"'));
+    expect(inActs).toContain('data-role="accept-exception"');
+    // comp order: re-read, accept, drop
+    expect(inActs.indexOf('data-role="re-preview"')).toBeLessThan(
+      inActs.indexOf('data-role="accept-exception"'),
+    );
+    expect(inActs.indexOf('data-role="accept-exception"')).toBeLessThan(
+      inActs.indexOf('data-role="drop-site"'),
+    );
+  });
+
+  it("offers nothing on a clean site, and nothing on a dropped one", () => {
+    const clean = view({ entries: [{ ...FLAGGED, status: "ready", flagged: false, optional: true }], activeTooth: 13 });
+    expect(clean).not.toContain('data-role="accept-exception"');
+    const dropped = view({ entries: [{ ...FLAGGED, dropped: true }], activeTooth: 13 });
+    expect(dropped).not.toContain('data-role="accept-exception"');
+  });
+
+  it("a standing draft renders pressed, offers the withdrawal, and marks the queue row", () => {
+    const html = view({
+      entries: [{ ...FLAGGED, exceptionAcknowledged: true }],
+      activeTooth: 13,
+    });
+    expect(html).toMatch(/data-role="accept-exception"[^>]*aria-pressed="true"/);
+    expect(html).toContain("withdraw");
+    expect(html).toContain('data-role="queue-exception"');
+    expect(html).toContain("Deliver&#x27;s confirmation signs it");
+  });
+
+  it("never claims the draft SIGNS anything — the words say what does", () => {
+    const html = view({ entries: [FLAGGED], activeTooth: 13 });
+    expect(html).not.toContain("will sign");
+    expect(html).toMatch(/data-role="accept-exception"[^>]*title="[^"]*confirmation there is what signs/);
+  });
+
+  it("a refusal renders the BFF's words verbatim", () => {
+    const html = view({
+      entries: [FLAGGED],
+      activeTooth: 13,
+      acknowledgeError: "this site's verdict asks no acknowledgment — nothing to accept",
+    });
+    expect(html).toContain('data-role="acknowledge-error"');
+    expect(html).toContain("asks no acknowledgment");
+  });
+});
 
 describe("the tool panel wears the comp's own shape (read directly 2026-08-02)", () => {
   /* The comp opens straight on its tabs and closes on one row of site acts. The

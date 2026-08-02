@@ -42,9 +42,10 @@ from ..session import (ACT_CASE_RESET, ACT_CONFIRMED, ACT_DELIVERY_RESET,
                        ACT_PAYMENT_AUTHORIZED, ACT_RELEASED, CaseSession,
                        ConfirmationRecord, PaymentRecord, ReleaseRecord, RunSession,
                        SessionConflict, SessionStore, adjustments_of,
-                       record_activity, release_matches_confirmation,
-                       released_teeth_of, split_released_files, summary_teeth_of,
-                       tooth_of_file, withhold_intents_of)
+                       needs_acknowledgment, record_activity,
+                       release_matches_confirmation, released_teeth_of,
+                       split_released_files, summary_teeth_of, tooth_of_file,
+                       withhold_intents_of)
 from .case_sessions import (CaseSessionDetail, _case_or_404, _context, _detail,
                             _effective_choices, _mutate_session)
 
@@ -346,6 +347,15 @@ class AssuranceSite(BaseModel):
     # not merely a draft: it is THE disposition, and Adjust, the invoice, the
     # attestation and this row cannot disagree about it.
     withhold_intent: bool = False
+    # THE ACCEPT-AS-FLAGGED-EXCEPTION DRAFT, ON THE ROW IT PRE-FILLS (client ruling
+    # 2026-08-02): ``SiteSession.exception_intent``'s presence, so Deliver's
+    # row-by-row checkbox can open pre-ticked for a site the operator already
+    # discussed at Adjust. THE SAME COHERENCE ARGUMENT ``withhold_intent`` WAS ADDED
+    # FOR (audit 2026-07-31, the finding two paragraphs up) — a draft that reached
+    # the invoice and the confirmation but not the one screen actually rendering the
+    # checkbox would be exactly that defect again. Never a signature: ``ConfirmIn.
+    # acknowledged_flags`` is unaffected by this field's value, in either direction.
+    exception_acknowledged: bool = False
     # THE NUMBERS IN THIS ROW THAT PREDATE AN OPERATOR REWORK (review 2026-07-28,
     # finding E). Adjust re-derives what it can over the new pose — the deviation
     # scalars and the clocking — and NAMES what it cannot: the rim agreement was
@@ -403,11 +413,19 @@ class AssuranceView(BaseModel):
         a disposition says what the OPERATOR does with a site, never what the run
         found. Folding it in would make dropping a cap look like evidence drift —
         release's own 409 would fire on the operator's own decision and tell them the
-        case "changed since it was confirmed", which it did not."""
+        case "changed since it was confirmed", which it did not.
+
+        ``sites[*].exception_acknowledged`` joins the same exclusion for the same
+        reason (client ruling 2026-08-02): it is a draft an operator may withdraw
+        AFTER confirming — the row-by-row signature already sealed is
+        ``acknowledged_flags``, not this field — and folding it in would have that
+        withdrawal read as evidence drift at release time, over a fact the run
+        never produced."""
         return self.model_dump(
             mode="json",
             exclude={"adjustments": True,
-                     "sites": {"__all__": {"withhold_intent"}}})
+                     "sites": {"__all__": {"withhold_intent",
+                                          "exception_acknowledged"}}})
 
 
 # --- the projection ---------------------------------------------------------------------
@@ -535,6 +553,8 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession,
         ),
         production_note=production.get("note"),
         withhold_intent=(site.withhold_intent if site is not None else False),
+        exception_acknowledged=(site.exception_intent is not None
+                                if site is not None else False),
         stale_metrics=stale_metrics,
         matching_diameter_mm=best_fit.get("matching_diameter_mm"),
         correspondence=(_correspondence_view(correspondence)
@@ -562,8 +582,15 @@ def _needs_acknowledgment(site: AssuranceSite) -> bool:
     one row that most needs it. This predicate is the ONE place that doctrine is
     applied — the sort below and ``confirm_case``'s acknowledgment gate both call
     it, so a row can never look pinned-first without also being blocked, or vice
-    versa."""
-    return site.status == "flagged" or site.production_note is not None
+    versa.
+
+    LIFTED (client ruling 2026-08-02) onto ``session.needs_acknowledgment``: the
+    Adjust-page accept-as-flagged-exception draft (``case_sessions.
+    post_acknowledge_exception``) needs this SAME predicate over session/run facts
+    it holds directly (an ``AssuranceSite`` is a projection this route has no
+    reason to build), and a second definition would be exactly the drift this
+    doctrine exists to close. This is now a one-line adapter onto it."""
+    return needs_acknowledgment(site.status, site.production_note)
 
 
 def _sort_worst_first(sites: List[AssuranceSite]) -> List[AssuranceSite]:

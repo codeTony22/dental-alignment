@@ -1388,6 +1388,21 @@ export function libraryPreviewCaption(label: string): string {
   );
 }
 
+/** Deliver's acknowledgment checkboxes, PRE-FILLED from the drafts given on
+ * Adjustment (client 2026-08-02). A union, never a replacement: a row the operator
+ * already ticked HERE stays ticked, and a draft only ever adds. Withdrawal happens
+ * where the operator is looking — untick here, or withdraw on Adjust before
+ * arriving. The confirmation's own gate is untouched; this fills a form. */
+export function prefillAcknowledged(
+  sites: ReadonlyArray<{ readonly tooth: number; readonly exception_acknowledged?: boolean }>,
+  current: readonly number[],
+): readonly number[] {
+  const drafted = sites
+    .filter((s) => s.exception_acknowledged === true)
+    .map((s) => s.tooth);
+  return [...new Set([...current, ...drafted])].sort((a, b) => a - b);
+}
+
 export function libraryPreviewPending(): string {
   return (
     "The unified construction-and-scan preview is not built yet — the only unified " +

@@ -63,7 +63,9 @@ from ..config import Settings
 from ..ports.worker import JobState, WorkerPort
 from ..session import (ACT_ADJUST_DECISION, ACT_CHOICES_SET, ACT_DETECTED,
                        ACT_RUN_AUTHORIZED, ACT_RUN_LANDED, ACT_RUN_REFUSED,
-                       ACT_RUN_WITHDRAWN, ACT_SITE_DECLARED, ACT_SITE_MARKED,
+                       ACT_RUN_WITHDRAWN, ACT_SITE_DECLARED,
+                       ACT_SITE_EXCEPTION_ACKNOWLEDGED,
+                       ACT_SITE_EXCEPTION_WITHDRAWN, ACT_SITE_MARKED,
                        ACT_SITE_PREVIEWED, ACT_SITE_REMARKED,
                        ACT_SITE_REVIEW_WITHDRAWN,
                        ACT_SITE_REVIEWED, ACT_SITE_WITHHOLD_INTENT,
@@ -72,7 +74,8 @@ from ..session import (ACT_ADJUST_DECISION, ACT_CHOICES_SET, ACT_DETECTED,
                        DetectedProposal, DetectionRecord, RunSession,
                        SeatedSelection, SessionConflict, SessionStore, SiteSession,
                        SiteStatus, clear_confirmation, clear_current_run,
-                       confirmation_covers_bundle_shape, confirmation_covers_fork,
+                       clear_exception_intents, confirmation_covers_bundle_shape,
+                       confirmation_covers_fork, needs_acknowledgment,
                        record_activity, release_matches_confirmation,
                        released_teeth_of, split_released_files, summary_teeth_of)
 
@@ -147,6 +150,13 @@ class SiteView(BaseModel):
     # surface that renders this must say what the operator DID, never what the site
     # IS (see ``SiteSession.withhold_intent``).
     withhold_intent: bool = False
+    # THE ACCEPT-AS-FLAGGED-EXCEPTION DRAFT (client ruling 2026-08-02): whether the
+    # operator has pre-acknowledged this site's flagged verdict from Adjust — a
+    # standing INTENT that PRE-FILLS Deliver's row-by-row checkbox, never a
+    # signature (``ConfirmIn.acknowledged_flags`` stays the only thing that seals;
+    # see ``SiteSession.exception_intent``). ``bool`` on the wire; the timestamp
+    # itself is an internal fact no surface needs to render.
+    exception_acknowledged: bool = False
 
 
 class DetectedProposalView(BaseModel):
@@ -559,6 +569,8 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
             seat_method=(sess.seat_method if sess else None),
             rim_agreement_mm=(sess.rim_agreement_mm if sess else None),
             withhold_intent=(sess.withhold_intent if sess else False),
+            exception_acknowledged=(sess.exception_intent is not None
+                                    if sess else False),
         )
     for key, sess in session.sites.items():
         tooth = int(key)
@@ -574,7 +586,9 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
                                     capture=capture.get(key),
                                     seat_method=sess.seat_method,
                                     rim_agreement_mm=sess.rim_agreement_mm,
-                                    withhold_intent=sess.withhold_intent)
+                                    withhold_intent=sess.withhold_intent,
+                                    exception_acknowledged=(
+                                        sess.exception_intent is not None))
     return [views[t] for t in sorted(views)]
 
 
@@ -1644,6 +1658,118 @@ def put_withhold_intent(case_id: str, tooth: int, body: WithholdIntentIn,
     return _detail(case, session, settings)
 
 
+# --- accepting a flagged exception in advance (client ruling 2026-08-02) ----------------
+#
+# The comp's amber "accept as flagged exception" button moves onto the Adjustment page.
+# THE DESIGN DECISION, already taken: this is a persisted DRAFT — ``withhold_intent``'s
+# sibling, not a second acknowledgment concept — that PRE-FILLS Deliver's row-by-row
+# checkboxes. It is NOT a signature: ``ConfirmIn.acknowledged_flags`` (AM-12) stays
+# required and stays the only thing that seals a released flagged row; this route buys
+# the operator a pre-ticked box, never a shortcut past ticking it.
+
+def _run_summary_row(run: RunSession, tooth: int) -> Optional[dict]:
+    """The CURRENT run's own row for one tooth. Mirrors ``adjust._summary_row`` exactly
+    — re-homed rather than imported, because case_sessions.py sits BELOW adjust.py in
+    this package's layering (adjust.py imports from here AND from deliver.py, which
+    also imports from here); importing adjust.py from here would cycle. Five lines is
+    cheaper than a fourth module knowing about a third."""
+    for row in (run.summary or {}).get("sites") or []:
+        try:
+            if int(row.get("tooth", -1)) == tooth:
+                return row
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+@router.post("/{case_id}/sites/{tooth}/acknowledge", response_model=CaseSessionDetail)
+def post_acknowledge_exception(case_id: str, tooth: int,
+                               request: Request) -> CaseSessionDetail:
+    """ACCEPT AS FLAGGED EXCEPTION — IN ADVANCE (client ruling 2026-08-02). Modeled
+    letter for letter on the review pair above: body-less both ways — the act's whole
+    content is the request itself — validity judged INSIDE the mutation (25604e7's
+    rule: a rival run landing between the load and the save must be judged against
+    what is actually there, never a stale read), ``record_activity`` beside the write.
+
+    THE ELIGIBILITY CHECK IS ``session.needs_acknowledgment`` — the SAME predicate
+    ``deliver.confirm_case``'s row-by-row gate stands on (lifted there to session/run
+    facts precisely so this route and that gate cannot drift apart): a site the
+    confirm gate would never demand an acknowledgment for cannot be pre-acknowledged
+    either, or the draft would be a claim about nothing. Refuses 422, in the rule's
+    own words, unless there is a completed CURRENT run and this tooth's row on it
+    needs acknowledgment — a flagged verdict, or a production block naming a
+    shared-construction-part conflict.
+
+    IDEMPOTENT, the same reading ``put_withhold_intent`` gives the SeatedSelection
+    precedent: a second POST over a standing draft states nothing new and records no
+    second act."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+
+    def apply(session: CaseSession) -> None:
+        _require_known_tooth(case, session, tooth)
+        run = session.run
+        if run is None or run.state != "done" or run.summary is None:
+            raise HTTPException(
+                422, f"there is nothing to acknowledge yet — case {case_id!r} has "
+                     f"no completed current run, and the exception is a draft "
+                     f"about ITS verdict")
+        row = _run_summary_row(run, tooth)
+        if row is None:
+            raise HTTPException(
+                422, f"tooth {tooth} carries no verdict on the current run — the "
+                     f"exception is a draft about a row that does not exist yet")
+        site = session.sites.get(str(tooth), SiteSession())
+        production_note = (row.get("production") or {}).get("note")
+        if not needs_acknowledgment(site.status.value, production_note):
+            raise HTTPException(
+                422, f"tooth {tooth} needs no acknowledgment — the run's guidance "
+                     f"did not flag it, and its production block names no "
+                     f"shared-construction-part conflict; there is nothing for "
+                     f"this draft to accept in advance")
+        if site.exception_intent is not None:
+            return   # not an act: an identical re-assertion states nothing new
+        site.exception_intent = _now_iso()
+        session.sites[str(tooth)] = site
+        record_activity(
+            session, ACT_SITE_EXCEPTION_ACKNOWLEDGED,
+            "acknowledged in advance as a flagged exception — Deliver's "
+            "confirmation is what signs it", tooth=tooth)
+
+    session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
+@router.delete("/{case_id}/sites/{tooth}/acknowledge",
+               response_model=CaseSessionDetail)
+def delete_acknowledge_exception(case_id: str, tooth: int,
+                                 request: Request) -> CaseSessionDetail:
+    """Withdraw the draft — ``post_acknowledge_exception``'s exact reversal, reachable
+    the same way back: an operator who pre-accepted a row and changed their mind must
+    find taking it back no harder than giving it (``put_withhold_intent``'s own
+    "bring it back" rule, applied here). Refuses 422 for a tooth carrying no standing
+    draft — withdrawing nothing is not an act either."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+
+    def apply(session: CaseSession) -> None:
+        _require_known_tooth(case, session, tooth)
+        site = session.sites.get(str(tooth), SiteSession())
+        if site.exception_intent is None:
+            raise HTTPException(
+                422, f"tooth {tooth} carries no standing exception acknowledgment "
+                     f"to withdraw")
+        site.exception_intent = None
+        session.sites[str(tooth)] = site
+        record_activity(
+            session, ACT_SITE_EXCEPTION_WITHDRAWN,
+            "the advance acknowledgment was withdrawn — Deliver's checkbox for "
+            "this row goes back to unticked", tooth=tooth)
+
+    session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
 # --- the run (plan §7 slice 5c; §1.2/AM-1, §3/AM-3, §4 Declare/AM-8) --------------------
 
 def _now_iso() -> str:
@@ -1798,6 +1924,14 @@ def run_case_action(case_id: str, request: Request) -> CaseSessionDetail:
         # verdicts this run is about to replace (client 2026-07-27's fork, keyed to
         # the run — see session.AdjustDecisionRecord)
         session.adjust_decision = None
+        # NOR HAS ITS VERDICT BEEN RE-ACKNOWLEDGED (client ruling 2026-08-02): a
+        # done run may be re-authorized directly, with no reset boundary in
+        # between, so ``clear_current_run`` never fires on this path — this is the
+        # one other call site ``clear_exception_intents`` names in its own
+        # docstring. Every drafted acknowledgment was given over the OLD run's
+        # rows; the new one may flag the same tooth for a different reason, and the
+        # stale draft must not silently pre-fill against a verdict nobody has seen.
+        clear_exception_intents(session)
         record_activity(session, ACT_RUN_AUTHORIZED,
                         f"run {run_id} authorized over "
                         f"{len(submitted['selection']['variants'])} reviewed site"

@@ -6355,3 +6355,30 @@ button.package-files__link:hover {
 .verify-colorbar__detail .verify-colorbar__ticks {
   margin-bottom: 4px;
 }
+
+/* ---- The amber act (client 2026-08-02: the comp's "accept as flagged exception") --
+   The EXC chip's own triple, worn by a button — amber is this product's standing tone
+   for "a consequence to weigh", and this act weighs one: the draft rides to Deliver,
+   where the confirmation signs it. */
+.button--amber {
+  background: #fdf3dd;
+  border-color: #e4c876;
+  color: #8a6a12;
+}
+
+.button--amber:hover:not(:disabled) {
+  border-color: #c9a94e;
+}
+
+.button--amber[aria-pressed="true"] {
+  background: #f7e7bd;
+  border-color: #c9a94e;
+}
+
+/* The queue row's amber word while a draft stands — a fact line, not a chip. */
+.adjust-queue__exception {
+  display: block;
+  font-size: 10.5px;
+  color: var(--color-amber);
+  font-weight: 600;
+}

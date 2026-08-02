@@ -58,6 +58,7 @@ import {
   previewTabs,
   libraryPartPreviewCaption,
   type ConstructionOption,
+  prefillAcknowledged,
 } from "./deliver";
 import {
   assuranceSite,
@@ -69,6 +70,30 @@ import {
 import type { ArtifactsView, AssuranceCorrespondence } from "../api/client";
 
 const TWO_SITES = assuranceView(); // flagged tooth 30 pinned first, ready tooth 19
+
+describe("prefillAcknowledged — Adjust's drafts fill Deliver's form (client 2026-08-02)", () => {
+  const sites = [
+    { tooth: 19, exception_acknowledged: true },
+    { tooth: 30 },
+    { tooth: 13, exception_acknowledged: false },
+  ];
+
+  it("adds the drafted teeth to whatever is already ticked", () => {
+    expect(prefillAcknowledged(sites, [30])).toEqual([19, 30]);
+  });
+
+  it("is a union, never a replacement — an operator's tick here survives", () => {
+    expect(prefillAcknowledged(sites, [13])).toEqual([13, 19]);
+  });
+
+  it("adds nothing when nothing was drafted", () => {
+    expect(prefillAcknowledged([{ tooth: 8 }], [])).toEqual([]);
+  });
+
+  it("does not double a tooth drafted AND already ticked", () => {
+    expect(prefillAcknowledged(sites, [19])).toEqual([19]);
+  });
+});
 
 describe("confirmBlockers — inert until complete, each missing piece named", () => {
   it("names ONLY the flagged rows still unacknowledged — nothing else is outstanding", () => {

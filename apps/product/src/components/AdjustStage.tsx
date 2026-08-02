@@ -45,6 +45,8 @@ import {
   postReview,
   postRotation,
   putWithholdIntent,
+  postAcknowledgeException,
+  deleteAcknowledgeException,
   type AdjustOutcomeView,
   type AdjustResultView,
   type ApiResult,
@@ -56,6 +58,8 @@ import {
 } from "../api/client";
 import {
   ADJUST_TOOLS,
+  acceptExceptionOffer,
+  exceptionDraftWords,
   DEFAULT_DIAMETER_MM,
   MAX_DIAMETER_MM,
   MIN_DIAMETER_MM,
@@ -226,6 +230,11 @@ export interface AdjustStageViewProps {
    *  predate it. */
   readonly onDrop?: (tooth: number, withhold: boolean) => void;
   readonly dropSaving?: boolean;
+  /** The comp's amber middle act (client 2026-08-02): give/withdraw the DRAFT
+   * acknowledgment of a flagged site as a shipping exception. Deliver still signs. */
+  readonly onAcknowledgeException?: (tooth: number, give: boolean) => void;
+  readonly acknowledgeSaving?: boolean;
+  readonly acknowledgeError?: string | null;
   /** A refusal, VERBATIM — same posture as every other refusal on this surface. */
   readonly dropError?: string | null;
   readonly systemModel?: string | null;
@@ -538,6 +547,9 @@ export function AdjustStageView({
   autoMarkError = null,
   onDrop = () => undefined,
   dropSaving = false,
+  onAcknowledgeException = () => undefined,
+  acknowledgeSaving = false,
+  acknowledgeError = null,
   dropError = null,
   flaggedCount = 0,
   deliverBlockedReason = null,
@@ -627,6 +639,11 @@ export function AdjustStageView({
                       {entry.declaredVariant ?? "no variant declared"}
                     </span>
                   </span>
+                  {entry.exceptionAcknowledged && !entry.dropped && (
+                    <span data-role="queue-exception" className="adjust-queue__exception">
+                      {exceptionDraftWords()}
+                    </span>
+                  )}
                   {entry.dropped ? (
                     /* A DROPPED CAP STOPS ASKING (design queue row 1183-1191). The
                        flag line is the queue's ASK — "rework me" — and a cap the
@@ -1226,6 +1243,27 @@ export function AdjustStageView({
                   )
                 )}
               </div>
+              {acceptExceptionOffer(active) !== null && (
+                /* THE AMBER MIDDLE ACT, the comp's own order (client 2026-08-02:
+                   "Replace it to match the designs"). What it records is a DRAFT that
+                   pre-fills the row at Deliver — the confirmation there signs, row by
+                   row (AM-12), and the words on both faces of this control say so. */
+                <button
+                  type="button"
+                  data-role="accept-exception"
+                  aria-pressed={active!.exceptionAcknowledged}
+                  className="button button--amber button--small"
+                  disabled={acknowledgeSaving}
+                  title={acceptExceptionOffer(active)!.title}
+                  onClick={() =>
+                    onAcknowledgeException(active!.tooth, !active!.exceptionAcknowledged)
+                  }
+                >
+                  {acknowledgeSaving
+                    ? "Recording the draft…"
+                    : acceptExceptionOffer(active)!.label}
+                </button>
+              )}
               <button
                 type="button"
                 data-role="drop-site"
@@ -1268,6 +1306,11 @@ export function AdjustStageView({
                   <p data-role="drop-note" className="adjust-drop__note">
                     {dropNote(active.dropped)}
                   </p>
+                )}
+                {acknowledgeError !== null && (
+                  <span data-role="acknowledge-error" role="alert" className="panel__error">
+                    {acknowledgeError}
+                  </span>
                 )}
                 {dropError !== null && (
                   <span data-role="drop-error" role="alert" className="panel__error">
@@ -1842,6 +1885,27 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   const [dropSaving, setDropSaving] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
 
+  const [acknowledgeSaving, setAcknowledgeSaving] = useState(false);
+  const [acknowledgeError, setAcknowledgeError] = useState<string | null>(null);
+  const handleAcknowledgeException = useCallback(
+    (tooth: number, give: boolean) => {
+      setAcknowledgeSaving(true);
+      setAcknowledgeError(null);
+      const act = give ? postAcknowledgeException : deleteAcknowledgeException;
+      void act(caseId, tooth).then((result) => {
+        if (!mountedRef.current) return;
+        setAcknowledgeSaving(false);
+        if (result.kind === "ok") {
+          onDetail(result.data);
+          return;
+        }
+        // the BFF's refusal verbatim — eligibility is ITS rule, never re-derived here
+        setAcknowledgeError(result.detail);
+      });
+    },
+    [caseId, onDetail],
+  );
+
   const handleDrop = useCallback(
     (tooth: number, withhold: boolean) => {
       setDropSaving(true);
@@ -1954,6 +2018,9 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       onDrop={handleDrop}
       dropSaving={dropSaving}
       dropError={dropError}
+      onAcknowledgeException={handleAcknowledgeException}
+      acknowledgeSaving={acknowledgeSaving}
+      acknowledgeError={acknowledgeError}
       onRePreview={handleRePreview}
       rePreviewPhase={rePreviewPhase}
       rePreviewResult={rePreviewResult}

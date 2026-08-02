@@ -1145,3 +1145,31 @@ CALLS THE CLIENT ASKED FOR, left open on purpose:
 - **The label "budget & log"** — the comp's words imply the client-side budget fractions
   this product refuses; ours says "Numbers & log". Rename is possible if the exact words
   matter more than the implication.
+
+**Z. THE AMBER ACT LANDS ON ADJUSTMENT (client 2026-08-02: "Replace it to match the
+designs and do what it is recommended").** Rulings, resolved: accept-as-flagged-exception
+moves onto Adjustment (built); terms keep gating payment at Delivery (their own
+2026-07-30 ruling stands over the comp); DEV RMS + DEV P90 keep their (run)/(preview)
+provenance; the label stays "Numbers & log".
+
+The design decision that makes the move honest: what Adjustment records is a DRAFT —
+`SiteSession.exception_intent`, the sibling of the drop's `withhold_intent` — that
+PRE-FILLS Deliver's acknowledgment checkboxes. AM-12 is untouched: `acknowledged_flags`
+on the confirmation, row by row, remains the only signature, and every face of the new
+control says so ("the confirmation there is what signs it" — the forbidden promise is
+pinned absent by test).
+
+Two divergences from the withhold precedent, both deliberate and BFF-tested:
+- `exception_intent` CLEARS at run boundaries — including the re-authorize-over-done
+  path that never routes through `clear_current_run` — where `withhold_intent`
+  deliberately survives them. A drop is a standing preference about a cap; an
+  acknowledgment is about ONE run's verdict, and must not outlive the verdict.
+- The draft is excluded from `sealed_facts()` like the intent is, so withdrawing it
+  after confirming can never read as evidence drift at release.
+
+Wire: POST/DELETE `/api/case-sessions/{id}/sites/{tooth}/acknowledge` (body-less both
+ways, the review pair's shape); `exception_acknowledged` on SiteView and AssuranceSite;
+eligibility is the acknowledgment gate's OWN predicate, lifted to session.py so
+Deliver's `_needs_acknowledgment` and the route share one derivation. Verified live on
+cap6020: accept → pressed + amber queue line → Deliver's checkbox pre-ticked → withdraw
+→ clean.

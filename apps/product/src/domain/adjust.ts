@@ -129,6 +129,9 @@ export interface AdjustQueueEntry {
    * bottom of the queue and keeps its verdict: dropping changes what SHIPS, never
    * what was measured. */
   readonly dropped: boolean;
+  /** The standing draft acknowledgment (`SiteView.exception_acknowledged`) — the
+   * BFF's field passed through, like `dropped`. */
+  readonly exceptionAcknowledged: boolean;
   readonly declaredVariant: string | null;
   readonly reasons: readonly string[];
 }
@@ -177,8 +180,9 @@ export function adjustQueue(
       status: site.status,
       flagged: site.status === "flagged",
       optional: site.status !== "flagged",
-      // the BFF's own field, passed through — this app derives no disposition
+      // the BFF's own fields, passed through — this app derives no disposition
       dropped: site.withhold_intent === true,
+      exceptionAcknowledged: site.exception_acknowledged === true,
       declaredVariant: site.declared_variant,
       reasons: gateActions(rowFor(rows, site.tooth)),
     }));
@@ -187,6 +191,40 @@ export function adjustQueue(
     if (a.flagged !== b.flagged) return a.flagged ? -1 : 1;
     return a.tooth - b.tooth;
   });
+}
+
+// --- accepting a flagged exception, in advance (client 2026-08-02) ----------------------
+
+/** What the acts row offers for this site, or null when the act does not apply.
+ *
+ * THE COMP'S RULE, kept: only a FLAGGED site can be accepted as an exception — a
+ * clean site has nothing to accept, and a DROPPED one has already been answered the
+ * other way (the comp's own accept clears on drop; ours simply never offers both).
+ * The words promise a DRAFT and name what signs: this control must never read as the
+ * signature, because the signature is Deliver's confirmation, row by row (AM-12). */
+export function acceptExceptionOffer(
+  entry: Pick<AdjustQueueEntry, "flagged" | "dropped" | "exceptionAcknowledged"> | null,
+): { readonly label: string; readonly title: string } | null {
+  if (entry === null || !entry.flagged || entry.dropped) return null;
+  return entry.exceptionAcknowledged
+    ? {
+        label: "Exception accepted — withdraw",
+        title:
+          "Withdraws the draft acknowledgment. Nothing was signed: Deliver's " +
+          "confirmation is what signs an exception, row by row.",
+      }
+    : {
+        label: "Accept as flagged exception",
+        title:
+          "Records a draft acknowledgment that this flagged fit ships as an " +
+          "exception. It pre-fills the row at Deliver; the confirmation there is " +
+          "what signs it.",
+      };
+}
+
+/** The queue row's amber word while a draft stands — the fact, not a status. */
+export function exceptionDraftWords(): string {
+  return "accepted as exception — Deliver's confirmation signs it";
 }
 
 /** The queue's one-line header — what the operator is looking at before they read a

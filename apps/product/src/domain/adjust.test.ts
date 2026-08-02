@@ -59,6 +59,8 @@ import {
   withPick,
   withoutPick,
   type AdjustQueueEntry,
+  acceptExceptionOffer,
+  exceptionDraftWords,
 } from "./adjust";
 import { rePreviewView, siteView } from "../testing/fixtures";
 
@@ -69,6 +71,44 @@ const ACTION =
 function row(tooth: number, level = "ready", actions: string[] = []) {
   return { tooth, guidance: { level, actions } };
 }
+
+describe("acceptExceptionOffer — the comp's amber act, made a DRAFT (client 2026-08-02)", () => {
+  const flagged = { flagged: true, dropped: false, exceptionAcknowledged: false };
+
+  it("offers acceptance on a flagged, undropped site", () => {
+    const offer = acceptExceptionOffer(flagged);
+    expect(offer?.label).toBe("Accept as flagged exception");
+    expect(offer?.title).toContain("pre-fills the row at Deliver");
+  });
+
+  it("offers the WITHDRAWAL once a draft stands — two-way, like the review tick", () => {
+    const offer = acceptExceptionOffer({ ...flagged, exceptionAcknowledged: true });
+    expect(offer?.label).toContain("withdraw");
+    expect(offer?.title).toContain("Nothing was signed");
+  });
+
+  it("offers nothing on a clean site — there is no exception to accept", () => {
+    expect(acceptExceptionOffer({ ...flagged, flagged: false })).toBeNull();
+  });
+
+  it("offers nothing on a dropped cap — it was answered the other way", () => {
+    expect(acceptExceptionOffer({ ...flagged, dropped: true })).toBeNull();
+  });
+
+  it("offers nothing with no active site", () => {
+    expect(acceptExceptionOffer(null)).toBeNull();
+  });
+
+  it("never claims the act SIGNS — the confirmation at Deliver is the signature", () => {
+    for (const entry of [flagged, { ...flagged, exceptionAcknowledged: true }]) {
+      const offer = acceptExceptionOffer(entry);
+      expect(offer?.title).toContain("confirmation");
+      expect(offer?.title).not.toContain("will sign");
+      expect(offer?.label).not.toContain("signed");
+    }
+    expect(exceptionDraftWords()).toContain("Deliver's confirmation signs it");
+  });
+});
 
 describe("the flagged-first queue", () => {
   const sites = [
@@ -203,6 +243,7 @@ describe("the panes' words on this stage", () => {
     flagged: true,
     optional: false,
     dropped: false,
+  exceptionAcknowledged: false,
     declaredVariant: "5020",
     reasons: [ACTION],
   };
