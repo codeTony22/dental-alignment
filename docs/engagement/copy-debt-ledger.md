@@ -437,3 +437,48 @@ WHAT DEPARTED, exhaustively:
 CONSEQUENCE FOR THE NEXT READER: a chip's palette is decided in exactly one place now. Do
 not re-add per-family colour rules — that is the drift this pass removed, and it will read
 as "just this one chip" every time.
+
+## Row 9 divergence — the shell layout (2026-08-02, slice A of the comp port)
+
+Three more departures inside the copied region, recorded per the divergence rule. The
+frozen direction is untouched: `apps/web` keeps its own stylesheet, its own `WorkflowRail`
+and its 208px rail track, and its suite stays green at 789.
+
+1. **`.workbench` grid template.** Was `auto minmax(292px, 356px) minmax(0, 1fr)`; now
+   `minmax(292px, 356px) minmax(0, 1fr)`. The leading `auto` track WAS the rail column, and
+   the rail has moved into the case band. Dropping exactly that track is safe because every
+   stage emits exactly two regions; dropping any other would slide the work column into the
+   stage's place and cap the 3D at 356px — the failure `LibraryStage.tsx`'s own header
+   records happening once.
+2. **`.workflow-rail__list` / `__step` / `__marker` / `__label` / `__detail`.** The rail is
+   HORIZONTAL: `flex-direction: row` + `flex-wrap` + `gap: 3px`, the step loses
+   `width: 100%` and takes the comp's `padding: 6px 10px` / `border-radius: 9px`, the marker
+   is the comp's 20px circle with its three grounds (`#22302a` / brand green current /
+   accent green done), and the type scale is the comp's 11.5px title over a 9.5px `#8a948e`
+   sub-line. Colours are the dark band's, since the rail no longer sits on white.
+3. **`.case-header`.** Was a white row of title + chip + reset; now the comp's dark band
+   (`#0e1613`, `padding: 9px 16px`, `gap: 8px 18px`) carrying the case name, the rail, and a
+   right-pushed acts cluster.
+
+DELETED, product-own, and worth saying why so nobody restores it: the rail FOLD
+(`.workflow-rail--folded`, `.workflow-rail__fold`, ~51 lines) and the `max-width: 1180px`
+media rules that made the rail horizontal only when cramped. The fold existed so folding
+handed its 208px to the panes (client ask, 2026-07-29); a header rail gives the panes that
+width permanently and unconditionally, so the ask is satisfied by the move. Nothing tested
+the fold — no test named its button, its `aria-expanded`, its `data-folded` or its
+localStorage key.
+
+ONE SUB-LINE VALUE DEPARTS FROM THE COMP ITSELF: the comp ellipsises a stage's sub-line at
+148px, which suits its fixed strings. Ours are LIVE counts and run longer, and five of them
+plus the case name wrapped the band onto a second row at 1600px — measured in the running
+app, not guessed. 118px keeps it one row.
+
+### Corrections to row 9's own record, found while doing this
+
+- Row 9 claims "the workbench grid" was kept verbatim. It was already NOT: the product's
+  template read `auto minmax(292px, 356px) minmax(0, 1fr)` against the frozen
+  `208px minmax(320px, 400px) minmax(0, 1fr)`, and `.workbench__work--footered` and
+  `.workbench__work-scroll` are additions inside the copied region with no counterpart in
+  `apps/web`. None of the three appeared in the DIVERGENCES bullet.
+- The stated file totals are stale: the row says "file total 2,773" and the record says
+  "2,448". `apps/product/src/styles.css` is now 5,463 lines.

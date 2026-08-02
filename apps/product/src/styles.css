@@ -199,7 +199,12 @@ a:hover {
      (client 2026-07-29) — a fixed 208px would leave a 208px hole behind a folded rail.
      The work column also gives up ~40px against its old 320-400px: the panes are the
      subject of this stage, and every pixel this column does not need is theirs. */
-  grid-template-columns: auto minmax(292px, 356px) minmax(0, 1fr);
+  /* TWO columns since the rail moved into the header band (client comp, 2026-08-02).
+     The leading `auto` track WAS the rail. Dropping exactly it is safe because every
+     stage emits exactly two regions; dropping any other track would slide the work
+     column into the stage's place and cap the 3D at 356px — the failure LibraryStage's
+     own header records happening once. DIVERGES from the frozen copy: ledger row 9. */
+  grid-template-columns: minmax(292px, 356px) minmax(0, 1fr);
   gap: 16px;
   padding: 16px 20px;
 }
@@ -692,29 +697,33 @@ a:hover {
   margin: 0;
   padding: 0;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  /* HORIZONTAL, and wrapping, per the client's comp: the rail is a row of stages in the
+     dark band, not a column beside the work. DIVERGES from the frozen copy (ledger 9). */
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 3px;
+  min-width: 0;
 }
 
 .workflow-rail__step {
-  width: 100%;
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 9px 10px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: 9px;
   background: transparent;
   font: inherit;
   text-align: left;
   cursor: pointer;
-  color: var(--color-text-muted);
+  min-width: 0;
+  color: #eef2f0;
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .workflow-rail__step:hover:not(:disabled) {
-  background: #ffffff;
-  border-color: var(--color-border);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: #22302a;
 }
 
 .workflow-rail__step:disabled {
@@ -723,33 +732,33 @@ a:hover {
 }
 
 .workflow-rail__step--current {
-  background: #ffffff;
-  border-color: var(--color-accent-green);
-  color: var(--color-text);
+  background: rgba(47, 208, 112, 0.1);
+  border-color: #2c5b41;
+  color: #ffffff;
 }
 
 .workflow-rail__marker {
   flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  border: 1px solid var(--color-border);
-  background: #ffffff;
+  border: none;
+  background: #22302a;
+  color: #8a948e;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 10.5px;
+  font-weight: 800;
 }
 
 .workflow-rail__step--current .workflow-rail__marker {
-  border-color: var(--color-accent-green);
-  color: var(--color-accent-green-dark);
+  background: var(--color-brand-green);
+  color: #07130c;
 }
 
 .workflow-rail__step--complete .workflow-rail__marker {
   background: var(--color-accent-green);
-  border-color: var(--color-accent-green);
   color: #ffffff;
 }
 
@@ -761,15 +770,21 @@ a:hover {
 }
 
 .workflow-rail__label {
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 700;
-  color: var(--color-text);
+  white-space: nowrap;
+  color: inherit;
 }
 
 .workflow-rail__detail {
-  font-size: 11px;
+  font-size: 9.5px;
+  font-weight: 500;
   line-height: 1.35;
-  color: var(--color-text-muted);
+  color: #8a948e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 118px;
 }
 
 /* 3D viewer */
@@ -2103,31 +2118,88 @@ a:hover {
   flex-direction: column;
 }
 
+/* THE CASE BAND (client comp, 2026-08-02). The comp carries brand, rail, case note and
+   restart in ONE dark bar. `Shell` sits above the route that fetches the case and the app
+   holds no context, so the rail cannot render up there without a data-flow change; this
+   band is the same `#0e1613` immediately beneath, with no seam, which reads as one header
+   and costs nothing. If the extra ~28px ever matters, merging them is a slice of its own. */
 .case-header {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
+  align-items: center;
   flex-wrap: wrap;
-  padding: 14px 20px 0;
+  gap: 8px 18px;
+  padding: 9px 16px;
+  background: var(--color-header-bg);
+  color: #ffffff;
 }
 
 .case-header__title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 800;
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  font-weight: 700;
   letter-spacing: 0.01em;
+  color: #eef2f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
 }
 
-.case-header__link {
+/* The rail takes the width it NEEDS and shrinks under pressure — not `1 1 auto`, which
+   made it swallow the whole row and push the acts onto a second line. */
+.case-header .workflow-rail {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: visible;
+}
+
+/* Pushed right, the comp's own `margin-left: auto` cluster. */
+.case-header__acts {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+  min-width: 0;
   margin-left: auto;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-accent-green-dark);
-  text-decoration: none;
 }
 
-.case-header__link:hover {
-  text-decoration: underline;
+/* The jaw chip sits on the dark band, so it wears the band's own quiet treatment
+   rather than the light neutral chip, which read as a hole punched in the bar. */
+.case-header .chip {
+  background: #16211d;
+  border-color: #22302a;
+  color: #8a948e;
+}
+
+/* The reset act wears the comp's own quiet dark button rather than the light ghost, which
+   was invisible on this ground. */
+.case-header__reset {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid #22302a;
+  background: #16211d;
+  color: #8a948e;
+  white-space: nowrap;
+}
+
+.case-header__reset:hover:not(:disabled) {
+  color: #eef2f0;
+  border-color: #2c5b41;
+}
+
+/* THE BLOCKED BANNER (comp line 47) — the one comp surface the product had no equivalent
+   for. A strip between the band and the body when the CURRENT stage is not earned. */
+.stage-blocked-banner {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  background: var(--chip-exception-bg);
+  border-bottom: 1px solid var(--chip-exception-line);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--chip-exception-fg);
 }
 
 /* Each stage's body emits exactly two regions (work column + stage); `display: contents`
@@ -2838,15 +2910,6 @@ button.package-files__link:hover {
     grid-template-columns: 1fr;
   }
 
-  .workflow-rail__list {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-
-  .workflow-rail__step {
-    width: auto;
-  }
-
   .workbench__work {
     overflow: visible;
   }
@@ -3227,58 +3290,9 @@ button.package-files__link:hover {
    gone the fold is instant and the track resolves in one pass: 208 -> 52px, and the pane
    column 804 -> 960px. An animation that lies about the layout is worse than no
    animation. */
-.workflow-rail {
-  position: relative;
-  width: 208px;
-}
-
-.workflow-rail--folded {
-  width: 52px;
-}
-
-.workflow-rail__fold {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  z-index: 3;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  line-height: 1;
-  color: var(--color-text-muted);
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.workflow-rail__fold:hover {
-  color: var(--color-text);
-  border-color: var(--color-text-muted);
-}
-
-.workflow-rail__fold:focus-visible {
-  outline: 2px solid var(--color-accent, #2f7fe6);
-  outline-offset: 2px;
-}
-
 /* Folded: the words go, the markers stay. `display: none` rather than a width of 0 —
    a zero-width label still lends its longest word to the flex basis and the rail would
    refuse to narrow. */
-.workflow-rail--folded .workflow-rail__text {
-  display: none;
-}
-
-.workflow-rail--folded .workflow-rail__step {
-  justify-content: center;
-  padding-left: 0;
-  padding-right: 0;
-}
-
 /* ---- ADJUST: the re-confirmation act, beside the note that asks for it ---------- */
 .adjust-outcome__reconfirm {
   display: flex;

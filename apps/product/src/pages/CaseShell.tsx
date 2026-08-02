@@ -93,12 +93,20 @@ export function CaseShellView({
   resetting = false,
 }: CaseShellViewProps) {
   const states = stageStates(factsFromCaseSession(detail));
+  const blocked = states.find((s) => s.id === stage)?.blockedReason ?? null;
   return (
     <section data-role="case-shell" className="case-shell">
+      {/* THE CASE BAND (client comp, 2026-08-02): the comp's one dark header carries
+          brand, the stage rail, the case note and restart. `Shell` renders the brand
+          half and sits above the route that fetches this case, so the rail lives here
+          in an identical `#0e1613` band immediately beneath it — no seam, one header to
+          the eye, and no data-flow change. */}
       <header className="case-header">
         <h2 className="case-header__title">
           Case {detail.case.id} — {detail.case.doctor}
         </h2>
+        <StageRail states={states} current={stage} caseId={detail.case.id} />
+        <div className="case-header__acts">
         <span data-role="case-jaw" className="chip chip--gate">
           {detail.case.jaw}
         </span>
@@ -118,14 +126,23 @@ export function CaseShellView({
             {resetting ? "Resetting…" : "Reset case (demo)"}
           </button>
         )}
+        </div>
         {/* AM-7's loop: the worklist is home, and "next case" returns there. */}
         {/* The way back lives in the app header now ("← All cases", on every route). This
             corner link said "Next case" first and went to the worklist — a label that
             described an action it did not perform, which is why the client could not find
             the way home (2026-07-27). One honest affordance beats two, one of them lying. */}
       </header>
+      {/* THE BLOCKED BANNER (comp line 47) — the one comp surface with no product
+          equivalent. The route guard normally redirects an unearned stage, so this
+          speaks for the case the guard cannot: a stage that was reachable when it was
+          entered and stopped being so underneath the operator. */}
+      {blocked !== null && (
+        <p data-role="stage-blocked" className="stage-blocked-banner">
+          {blocked}
+        </p>
+      )}
       <div className="workbench">
-        <StageRail states={states} current={stage} caseId={detail.case.id} />
         <section data-role="stage-body" className="stage-contents">
           {stage === "intake" ? (
             <IntakeStage detail={detail} onDetail={onDetail ?? IGNORE_DETAIL} />
