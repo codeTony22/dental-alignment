@@ -1,5 +1,22 @@
 # Software Design Document — Implant CAD Portal & Automation
 
+> ## 📜 HISTORICAL RECORD — not the operational truth
+>
+> This document predates the operator product app (`apps/product` + `apps/bff`) and the
+> client's five-stage flow. It is kept **unedited** as a record of what was designed and
+> why; do not treat any command, path, count or flow description in it as current.
+>
+> For what is true today:
+> - **[`../CLAUDE.md`](../CLAUDE.md)** — the repo map: the five gates, the freeze line, the
+>   stage model, and the traps.
+> - **[`ARCHITECTURE.md`](ARCHITECTURE.md)** — how the system fits together as built.
+> - **[`engagement/product-app-plan.md`](engagement/product-app-plan.md)** — the product
+>   plan, and §10 for the record of client direction as it arrived.
+> - **[`engagement/product-runbook.md`](engagement/product-runbook.md)** — how to run and
+>   demo the product app.
+> **Specifically superseded:** the scope and phasing here were the engagement's
+> opening position. The built system's shape is in `ARCHITECTURE.md`.
+
 **Prepared by:** [Engineer]  **For:** [Client]
 **Engagement:** Build a doctor-facing portal and/or an automation pipeline for a client who owns RealGUIDE, produces implant CAD design files, and already serves dental-shop customers.
 

@@ -1,5 +1,18 @@
 # Running the Live Client Demo
 
+> **Scope: this is the FROZEN client demo** — `apps/web` (:5173) with
+> `case_prep.server` (:8000), frozen at `8125cbf` and never edited. It is kept working
+> for presentations.
+>
+> It is **not** the product app. The operator product is `apps/product` (:5174) +
+> `apps/bff` (:8001), it has five stages, and its own script is
+> [`product-runbook.md`](engagement/product-runbook.md). Nothing below applies to it —
+> different ports, different vocabulary, different stages.
+>
+> One number differs on purpose and will look like a bug if you compare screens: the
+> verify panes' display band is **9 mm** here and **11 mm** in the product. Both are
+> correct; reconciling them would break the freeze.
+
 The interactive demo: pick a real doctor's scan, watch the end-to-end automation run, and
 show the manufactured final product — all live pipeline output.
 
@@ -101,7 +114,8 @@ Open **http://localhost:5173**.
      *signed deviation map* (±0.5 mm colormap + RMS/p90 — the industry lab-tech
      acceptance convention). *"You don't take our word for the alignment — the
      package contains the picture a QC tech signs off on."*
-5. Close on the footer (it reads *780+ automated tests*; the real count is 788):
+5. Close on the footer (it reads *780+ automated tests*; the frozen demo's own suite
+   is 789 today, and the system total is larger — re-measure before quoting a number):
    *788 automated tests, everything advisory-gated, live output.*
 
 ## If something misbehaves

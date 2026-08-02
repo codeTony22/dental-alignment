@@ -1,11 +1,24 @@
 # Product app — how to run and demo
 
-**State (2026-07-27, HEAD `ea0b9a1`):** the minimum demoable cut is complete — a case walks
-Intake → Declare → run → Deliver end to end, finishing with a confirmation sealed over an
-evidence bundle and a gated, paid (stub), per-site release. Remaining slices: 6 Adjust
-(skippable by design — never blocks this demo), 7 two-point spans, 9 predictability gate v2.
+**State (2026-08-02, HEAD `d84a0f9`):** the client's FIVE-STAGE flow is complete — a case
+walks Intake → Alignment → run → Adjustment → Construction library → Delivery, finishing with
+a confirmation sealed over an evidence bundle and a gated, paid (stub), per-site release.
+Adjustment carries five correction tools. Remaining: slice 9 (predictability gate v2), plus
+the items plan §10-M/N record as open.
+
+THE STAGE KEYS ARE NOT THE TITLES, and the URL shows the key. Narrate from the right column:
+
+| URL / key | what the rail says |
+|---|---|
+| `intake` | Intake |
+| `declare` | **Alignment** |
+| `adjust` | **Adjustment** |
+| `library` | **Construction library** |
+| `deliver` | **Delivery** |
+
 The ORIGINAL demo is frozen and untouched (its own runbook: demo-runbook.md; freeze proven by
-`git diff 8125cbf -- apps/web apps/worker/src/case_prep/server.py` = empty).
+`git diff --stat 8125cbf -- apps/web apps/worker/src/case_prep/server.py apps/worker/tools`
+= empty).
 
 ## 1. Run it
 
@@ -13,8 +26,14 @@ Two servers. The worker venv is the one Python environment; the BFF is installed
 
 ```bash
 # terminal 1 — the BFF (presentation API + physics via the application layer), :8001
-cd apps/bff && ../worker/.venv/bin/uvicorn bff.main:app --port 8001 --app-dir src
+cd apps/bff && ../worker/.venv/bin/uvicorn bff.main:app --port 8001 --app-dir src \
+  --reload --reload-dir src --reload-dir ../worker/src/case_prep/application
 ```
+
+`--reload` is not optional comfort. A BFF older than the tree answers **422 "Extra inputs
+are not permitted"** to a field the code already has, and that is indistinguishable from a
+real refusal — it cost a session on 2026-08-01. Starting the `bff` entry from
+`.claude/launch.json` gets these flags for free.
 
 ```bash
 # terminal 2 — the product app, :5174
@@ -62,12 +81,21 @@ is a finished one") or delete its session.json to reuse it.
    processed." Tick the review — the tick is refused until the panes have something real.
 4. **The run fires itself** the moment every site is reviewed — footer: "Aligning N sites —
    30–60 s". It lands in an immutable run directory; verdicts land on the site chips.
-5. **Deliver** — the assurance table, worst-first, flags pinned; expand a row for the two QC
+5. **Construction library** — pick the part Delivery cuts. The rows are the real catalog
+   (grouped by vendor, the effective one chipped "suggested" or "selected"), and the pane
+   beside them renders the RUN'S OWN unified mesh — the arch with every site's construction
+   posed into it. Say: "this is the construction against the patient's scan, and the caption
+   tells you it is the part the run used — choosing a different one cannot change the picture
+   until the case re-runs." That honesty is the point; do not promise a live preview of an
+   unrun part, which is not built (plan §10-M).
+   Reachable only over a DONE run with every site resolved, and **Delivery will not open
+   until a part is chosen here** — if Delivery looks blocked, this is why.
+6. **Delivery** — the assurance table, worst-first, flags pinned; expand a row for the two QC
    images; per-site disposition (release / withhold); every flagged-released row needs its own
    acknowledgment tick. Type the operator name → **Confirm** (the evidence bundle is sealed —
    the hash is shown) → **Authorize payment (stub)** (labelled as a stub, recorded as one) →
    **Release** → the artifact list with downloads.
-6. The kill shot, if asked "is this secure?": change ANYTHING after confirming (a declaration,
+7. The kill shot, if asked "is this secure?": change ANYTHING after confirming (a declaration,
    a review) and hit Release — **409: "the case changed since it was confirmed — re-confirm
    over the current evidence."** Artifacts refuse without a valid confirmation AND payment at
    the ENDPOINT, not the screen. Every gating record names its operator.
@@ -90,15 +118,24 @@ cd apps/product && pnpm typecheck && pnpm test
 cd apps/worker && make test-fast && make rehearse
 ```
 
-Expected (2026-07-27): bff 253+ · product 245+ · viewer 73 · worker fast 692+ · rehearse
-"REHEARSAL CLEAN" (the frozen demo's gate — still binding). Full worker battery (`make test`,
-~25 min) before anything client-facing that touched the pipeline.
+Counts move every time a test is added, so read them as a floor rather than a target — the
+number's job is telling "my change broke collection" apart from "the suite grew". The five
+gates and their commands are listed in CLAUDE.md; run them and read each summary line.
+`rehearse` must print "REHEARSAL CLEAN" (the frozen demo's gate — still binding). The full
+worker battery (~13 min) before anything client-facing that touched the pipeline.
 
 ## 4. What to say about what's missing (honesty beats surprise)
 
-- **Adjust** is a placeholder stage — skippable BY DESIGN (the client's own ruling); flagged
-  sites today are handled at Deliver via withhold. The correction tools (fit by points with
-  two-point spans, best fit, rotation dial) are slices 6–7, next up.
+- **Adjustment** is built and skippable BY DESIGN (the client's own ruling); flagged sites
+  can also be handled at Delivery via withhold. Five tools: fit by points (a pair may span
+  two points on the scan, two on the LIBRARY part, or both), best fit, rotation dial, mark
+  trench, auto-mark. A fit whose marks disagree with each other is now REFUSED rather than
+  applied, and a mark on the screw access is refused locally before the round trip.
+- **Previewing a construction part the case has NOT run** is not built — the library page
+  shows the run's own unified mesh and says so on the caption.
+- **Where confirmation lives is an open client decision.** It is on Delivery today; their
+  five-page prose puts it on Adjustment; their own design comp puts the control inside the
+  payment dialog. Plan §10-N has the evidence. Do not improvise an answer on a call.
 - **Payment** is a stub and says so on the button and in the record (`provider: "stub"`).
 - **Import/upload** is not built; cases come from the data root (the select flow).
 - **Visual polish** is thinner than the frozen demo's — structure and the audit chain were

@@ -1,5 +1,5 @@
 /**
- * The rail's promises (slice 2): four stages with number/title/one-liner, reachable
+ * The rail's promises (slice 2): five stages with number/title/one-liner, reachable
  * stages are links, blocked stages are inert AND explain why in a sentence, the
  * current stage is marked, completed stages tick. renderToStaticMarkup + StaticRouter
  * — the repo's node-environment component convention.

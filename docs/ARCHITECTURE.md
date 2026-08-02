@@ -154,16 +154,31 @@ and **withdraw** the queued receipt rather than leaving a case wedged in `runnin
 
 ## 6. The operator's flow
 
-Four stages, in `apps/product/src/domain/flow.ts`, each with its own domain module and stage
-component:
+FIVE stages since the client's 2026-08-01 direction, in `apps/product/src/domain/flow.ts`.
+The stage KEYS are unchanged, so routes, session fields and every `stage ===` comparison
+still read the original names; the TITLES are the client's, and one stage is new:
 
-1. **Intake** — case-level choices (construction part, jaw, relief), detection fires,
-   capture verdicts surface *before* work is invested.
-2. **Declare** — per site: implant system and variant, then a preview seats the cap and the
-   three panes show it. The operator confirms each site.
-3. **Adjust** — optional. Fit-by-points, two-point spans, best fit, rotation. Skippable, but
-   skipping still requires seeing and confirming the assurance.
-4. **Deliver** — the assurance table, terms, payment, released artifacts.
+1. **Intake** (`intake`) — case-level choices (construction part, jaw, relief), detection
+   fires, capture verdicts surface *before* work is invested.
+2. **Alignment** (`declare`) — per site: implant system and variant, then a preview seats
+   the cap and the three panes show it. The operator confirms each site.
+3. **Adjustment** (`adjust`) — optional. Fit-by-points (a pair may span two points on the
+   scan, on the library part, or both), best fit, rotation, mark trench, auto-mark.
+   Skippable, but skipping still requires seeing and confirming the assurance.
+4. **Construction library** (`library`) — NEW. Pick the part Delivery cuts, and preview it
+   against the scan. Reachable once the run is DONE and every site is resolved.
+5. **Delivery** (`deliver`) — the assurance table, terms, payment, released artifacts.
+   Additionally requires a chosen construction part.
+
+Every stage but `library` has its own domain module; the library page deliberately owns no
+model of its own, reading the catalog through `domain/intake.constructionOptions` and the
+effective value through `domain/deliver.constructionStepWords` — the same two sources
+Intake's dropdown and Deliver's picker read, so one choice cannot wear three descriptions.
+
+WHERE CONFIRMATION LIVES IS AN OPEN CLIENT DECISION, not an accident: it is on Delivery
+today, the client's five-page prose puts it on Adjustment, and their own design comp puts
+its control inside the payment dialog. `docs/engagement/product-app-plan.md` §10-N records
+the evidence and the recommendation. Do not move it without that ruling.
 
 Choices are **effective**: `session.choices.X ?? case.suggested_X ?? standing default`, each
 carrying `source: chosen | suggested | default` so the UI can say where a value came from.

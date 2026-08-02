@@ -1,5 +1,23 @@
 # Software Design Document — Implant CAD Portal & Automation
 
+> ## 📜 HISTORICAL RECORD — not the operational truth
+>
+> This document predates the operator product app (`apps/product` + `apps/bff`) and the
+> client's five-stage flow. It is kept **unedited** as a record of what was designed and
+> why; do not treat any command, path, count or flow description in it as current.
+>
+> For what is true today:
+> - **[`../CLAUDE.md`](../CLAUDE.md)** — the repo map: the five gates, the freeze line, the
+>   stage model, and the traps.
+> - **[`ARCHITECTURE.md`](ARCHITECTURE.md)** — how the system fits together as built.
+> - **[`engagement/product-app-plan.md`](engagement/product-app-plan.md)** — the product
+>   plan, and §10 for the record of client direction as it arrived.
+> - **[`engagement/product-runbook.md`](engagement/product-runbook.md)** — how to run and
+>   demo the product app.
+> **Specifically superseded:** "Approved design — decisions committed" refers to the
+> ORIGINAL portal/automation split. The product app's own decisions, grill and
+> amendments live in `engagement/product-app-plan.md`.
+
 **Status:** Approved design — decisions committed. Items requiring client input are isolated in §10 (Open Questions).
 **Audience:** the engineering team building this, and the stakeholder funding it.
 

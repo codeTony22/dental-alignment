@@ -3,7 +3,7 @@
    ledger row 9). Everything down to the PRODUCT ADDITIONS marker is copied VERBATIM from
    apps/web/src/styles.css (frozen at 8125cbf), with the demo-only surface groups deleted —
    the ledger row names each deletion. Below the marker is the product's own chrome for the
-   four-stage flow: layout glue, the worklist's row language, and the adaptations the row
+   operator flow: layout glue, the worklist's row language, and the adaptations the row
    records (the light-blue stage, links-as-steps, the stacked media rules).
    ========================================================================================== */
 
@@ -679,8 +679,9 @@ a:hover {
   text-decoration: underline;
 }
 
-/* ---- the workflow rail: the client's four stages (one-flow collapse, 2026-07-26), as
-   navigation ---- */
+/* ---- the workflow rail: the client's stages (one-flow collapse, 2026-07-26; a fifth,
+   the construction library, arrived 2026-08-01) as navigation. The rail maps over
+   STAGE_ORDER and hard-codes no count, which is why the fifth needed no rule here ---- */
 .workflow-rail {
   min-width: 0;
   overflow-y: auto;
@@ -2074,7 +2075,7 @@ a:hover {
 
 /* ==========================================================================================
    PRODUCT ADDITIONS — everything below this marker is the product's own chrome, written in
-   the demo's voice for the four-stage flow. Nothing below is copied JSX/CSS; the copied
+   the demo's voice for the operator flow. Nothing below is copied JSX/CSS; the copied
    system above is what these rules compose.
    ========================================================================================== */
 

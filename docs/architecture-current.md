@@ -1,5 +1,24 @@
 # ArTech Case-Prep — Current Architecture (as built)
 
+> ## 📜 HISTORICAL RECORD — not the operational truth
+>
+> This document predates the operator product app (`apps/product` + `apps/bff`) and the
+> client's five-stage flow. It is kept **unedited** as a record of what was designed and
+> why; do not treat any command, path, count or flow description in it as current.
+>
+> For what is true today:
+> - **[`../CLAUDE.md`](../CLAUDE.md)** — the repo map: the five gates, the freeze line, the
+>   stage model, and the traps.
+> - **[`ARCHITECTURE.md`](ARCHITECTURE.md)** — how the system fits together as built.
+> - **[`engagement/product-app-plan.md`](engagement/product-app-plan.md)** — the product
+>   plan, and §10 for the record of client direction as it arrived.
+> - **[`engagement/product-runbook.md`](engagement/product-runbook.md)** — how to run and
+>   demo the product app.
+> **Specifically superseded by [`ARCHITECTURE.md`](ARCHITECTURE.md)**, which covers the
+> same ground for the system as it now stands. This file's own header claims to be a
+> living document reflecting 788 tests as of 2026-07-19 — it is neither living nor
+> current: the worker alone is past 1,000, and the product app did not exist.
+
 *Living document. Reflects what exists and is tested (788 tests) as of 2026-07-19 — not the
 original plan. The plan review lives in
 `engagement/phase2-plan-review-2026-07.md`; per-decision history in the project memory.*

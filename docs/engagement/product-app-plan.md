@@ -1,4 +1,10 @@
-# Product app plan — the four-stage flow on a BFF, beside the frozen demo
+# Product app plan — the operator flow on a BFF, beside the frozen demo
+
+> **The title said "four-stage" until 2026-08-02.** The flow is FIVE stages since the
+> client's 2026-08-01 direction — Intake · Alignment · Adjustment · Construction
+> library · Delivery — with the stage KEYS unchanged. §10-M is the record. Sections 4
+> and 7 below describe the four-stage build as it happened and are left as written;
+> where they disagree with §10, §10 wins.
 
 **Date:** 2026-07-26 · **Status:** v2 — GRILLED (4 adversarial lenses, 1 FATAL + 11 must-amend
 folded in; grill record in §9) · ready to execute on client go
@@ -89,7 +95,7 @@ shapes, not copied). `sceneController.ts` (1,839 lines) has NO test today — a 
 test is part of the viewer slice, or "copied with their tests" is false where it matters most.
 The ~1,200-line Python lift (above) is entered in the same debt ledger.
 
-## 4. The four stages
+## 4. The four stages (as built; the fifth arrived 2026-08-01 — see §10-M)
 
 **Worklist first (AM-7).** `/` is the case worklist: one row per case with the site-queue
 rollup (n declared / n ready / n flagged / run state / confirmed), sorted blocked-first;

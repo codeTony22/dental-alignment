@@ -6,7 +6,32 @@ geometry **automation** pipeline (Phase 2) that reduces manual per-case time.
 Design docs live in [`docs/`](docs/). The engagement is phased and gated — each phase
 is independently billable (see [`docs/technical-design-build-guide.md`](docs/technical-design-build-guide.md) Part 5).
 
+## Which app am I looking at?
+
+There are **two front ends, and only one of them is still edited.**
+
+| | what it is | ports | status |
+|---|---|---|---|
+| **`apps/product` + `apps/bff`** | the operator's case-prep product — five stages, session-backed, gated release | 5174 / 8001 | **ACTIVE — all new work lands here** |
+| `apps/web` + `case_prep.server` | the client demo that won the work | 5173 / 8000 | **FROZEN at `8125cbf` — never edited again** |
+
+The freeze is enforced, not merely intended. This must print nothing:
+
+```bash
+git diff --stat 8125cbf -- apps/web apps/worker/src/case_prep/server.py apps/worker/tools
+```
+
+Start with **[`CLAUDE.md`](CLAUDE.md)** — the repo map: the five test gates, the freeze
+line, the stage model and the two traps that have each cost a session. Then
+[`docs/engagement/product-runbook.md`](docs/engagement/product-runbook.md) to run the
+product app, [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how it fits together, and
+[`docs/engagement/product-app-plan.md`](docs/engagement/product-app-plan.md) for the plan
+and its §10 record of queued client direction.
+
 ## 🎬 Live demo — quick how-to
+
+**This section is the FROZEN demo (`apps/web`, :5173).** It is kept working for client
+presentations and is never modified; to work on the product, use the runbook above.
 
 The interactive client demo: pick a real doctor's scan, watch the end-to-end automation
 run (detect → confirm/brush → align → identify variant → measure → construct → export),
@@ -76,8 +101,14 @@ Findings & go/no-go evidence: [`docs/engagement/phase2a-spike-findings.md`](docs
 ## Layout
 
 ```
-apps/worker     Phase 2 automation, pipeline API (Python) — built; see apps/worker/README.md
-apps/web        Live demo UI (React + Vite + three.js) — built
+apps/worker     Phase 2 automation + the pipeline/domain/adapters the product runs on
+                (Python) — built; see apps/worker/README.md
+apps/product    Operator product app (React + Vite + TS, :5174) — ACTIVE
+apps/bff        Product API: session state, gates, evidence, disclosure (FastAPI, :8001)
+                — ACTIVE
+packages/viewer The PRODUCT's 3D viewer (three.js). apps/web keeps its own frozen copy,
+                so the two legitimately differ — see CLAUDE.md
+apps/web        Live demo UI (React + Vite + three.js) — FROZEN at 8125cbf
 apps/api        Phase 1 backend (NestJS) — placeholder
 packages/shared Shared TS types / case contract — placeholder
 docs            Design documents, specs, engagement records

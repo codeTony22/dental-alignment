@@ -1,5 +1,18 @@
 # Demo runbook — the predictable demo
 
+> **Scope: this is the FROZEN client demo** — `apps/web` (:5173) with
+> `case_prep.server` (:8000), frozen at `8125cbf` and never edited. It is kept working
+> for presentations.
+>
+> It is **not** the product app. The operator product is `apps/product` (:5174) +
+> `apps/bff` (:8001), it has five stages, and its own script is
+> [`product-runbook.md`](product-runbook.md). Nothing below applies to it —
+> different ports, different vocabulary, different stages.
+>
+> One number differs on purpose and will look like a bug if you compare screens: the
+> verify panes' display band is **9 mm** here and **11 mm** in the product. Both are
+> correct; reconciling them would break the freeze.
+
 **Purpose:** the same demo, every time. One command answers "is the fleet behaving the way it
 behaved when we last looked?", and this page holds the script for everything the fleet is
 KNOWN to say. Baseline: 2026-07-26 (10 sites, all rim seats, declared==identified 7/7,
@@ -27,7 +40,7 @@ make serve
 
 ```bash
 # from apps/web — the demo UI on :5173
-npm run dev
+pnpm dev
 ```
 
 Browser window **≥1600×1000** (verified layout; 1280×800 also verified but tighter).

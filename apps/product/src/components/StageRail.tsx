@@ -1,5 +1,7 @@
 /**
- * THE STAGE RAIL — the product's four stages (plan §4) as the case shell's left rail.
+ * THE STAGE RAIL — the product's five stages (plan §4, retitled §10-M) as the case
+ * shell's left rail. It maps over STAGE_ORDER and names nothing itself, which is why the
+ * fifth stage needed no change here.
  *
  * The demo's rail DOCTRINE, reimplemented for these stages: the rail IS the
  * navigation, its ticks come from the flow model judging the payload rather than

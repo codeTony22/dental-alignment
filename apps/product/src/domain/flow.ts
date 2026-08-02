@@ -1,6 +1,13 @@
 /**
- * THE PRODUCT'S FLOW MODEL — the four stages of plan §4: Intake → Declare → Adjust →
- * Deliver. This is the PRODUCT's stage model, not the demo's (case/mark/verify/process);
+ * THE PRODUCT'S FLOW MODEL — the FIVE stages of plan §4, as the client retitled them on
+ * 2026-08-01 (§10-M): Intake → Alignment → Adjustment → Construction library → Delivery.
+ *
+ * THE KEYS ARE NOT THE TITLES and never became them: `declare`, `adjust` and `deliver` are
+ * still the keys in every route, session field and `stage ===` comparison, because renaming
+ * them would have been a rewrite of the whole app to change five strings. `STAGE_INFO`
+ * below is the only place the operator's words live. When reading a URL, translate.
+ *
+ * This is the PRODUCT's stage model, not the demo's (case/mark/verify/process);
  * the demo's rail doctrine — navigation that tells the truth, a blocked stage carries the
  * sentence that says why — is reimplemented here against these stages, not copied.
  *
@@ -422,7 +429,7 @@ export interface StageState {
   readonly blockedReason: string | null;
 }
 
-/** The rail's whole truth in one pass — what each of the four stages may render. */
+/** The rail's whole truth in one pass — what each of the five stages may render. */
 export function stageStates(facts: FlowFacts): readonly StageState[] {
   return STAGE_ORDER.map((id, index) => ({
     id,
