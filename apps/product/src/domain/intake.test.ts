@@ -255,7 +255,26 @@ describe("choicesUpdateFrom — one change makes the whole panel explicit", () =
       construction_path: "dess/conical-scanbody.stl", // the case's suggestion
       jaw: "upper",
       gingival_offset_mm: 0.2, // the standing default
+      turnaround: null,
     });
+  });
+
+  it("CARRIES THE TURNAROUND, so one panel cannot un-choose another's rush", () => {
+    /* PUT semantics, stated on the wire type itself (api/client.ts): a write that
+       omits a field un-chooses it. This helper omitted `turnaround` entirely while
+       LibraryStage's own write preserves it — so the two surfaces disagreed about one
+       field, and an Intake choice would have silently reverted a rush to standard.
+       Latent rather than live only because no control sets a rush yet; it is money-
+       adjacent, and the next person to add those chips would have shipped the defect
+       with them. */
+    const rushed = caseSessionDetail({
+      ...detail,
+      choices: { ...detail.choices, turnaround: "rush" },
+    });
+    expect(choicesUpdateFrom(rushed, { jaw: "upper" }).turnaround).toBe("rush");
+    // ...and an explicit change still wins over the standing value
+    expect(choicesUpdateFrom(rushed, { turnaround: "standard" }).turnaround)
+      .toBe("standard");
   });
 
   it("a persisted choice beats the pre-fill (the BFF attributes it 'chosen')", () => {
@@ -276,6 +295,7 @@ describe("choicesUpdateFrom — one change makes the whole panel explicit", () =
       construction_path: "atlantis/other.stl",
       jaw: "upper",
       gingival_offset_mm: 0.05,
+      turnaround: null,
     });
   });
 

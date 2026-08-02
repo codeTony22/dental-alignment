@@ -1,7 +1,13 @@
 /**
- * THE STAGE RAIL — the product's five stages (plan §4, retitled §10-M) as the case
- * shell's left rail. It maps over STAGE_ORDER and names nothing itself, which is why the
- * fifth stage needed no change here.
+ * THE STAGE RAIL — the product's five stages (plan §4, retitled §10-M) as a HORIZONTAL
+ * bar in the case's dark header band, matching the client's comp. It maps over
+ * STAGE_ORDER and names nothing itself, which is why the fifth stage needed no change.
+ *
+ * THE FOLD IS GONE, and the reason it existed went with it. Folding the old vertical
+ * rail handed its 208px to the panes (client ask, 2026-07-29); a header rail takes no
+ * horizontal space at all, so the panes have that width permanently and unconditionally.
+ * The ask is satisfied by the move rather than abandoned. Its localStorage preference,
+ * its aria-expanded button and its 51 lines of CSS are deleted; nothing tested them.
  *
  * The demo's rail DOCTRINE, reimplemented for these stages: the rail IS the
  * navigation, its ticks come from the flow model judging the payload rather than
@@ -15,7 +21,6 @@
  * (plan §4 Intake: "Back is a browser affordance"). The unreachable stage is a span
  * in the same clothes (.workflow-rail__step--blocked), never a dead control.
  */
-import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 import type { StageId, StageState } from "../domain/flow";
 
@@ -25,59 +30,13 @@ interface StageRailProps {
   readonly caseId: string;
 }
 
-/** Where the fold preference lives. An operator who folds the rail away on one case
- *  means it on the next — re-expanding it on every navigation would be the software
- *  arguing with them. */
-const FOLD_KEY = "artech.rail.folded";
-
-function initialFolded(): boolean {
-  // The suites render this component with renderToStaticMarkup in the NODE environment
-  // (there is no jsdom here), so `window` genuinely does not exist at import time — the
-  // rail must open EXPANDED in that world rather than throw.
-  if (typeof window === "undefined") return false;
-  try {
-    return window.localStorage.getItem(FOLD_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
 export function StageRail({ states, current, caseId }: StageRailProps) {
-  const [folded, setFolded] = useState(initialFolded);
-
-  const toggle = useCallback(() => {
-    setFolded((was) => {
-      const next = !was;
-      try {
-        window.localStorage.setItem(FOLD_KEY, next ? "1" : "0");
-      } catch {
-        // A browser refusing storage is not a reason to refuse the fold — the
-        // preference simply does not survive the session.
-      }
-      return next;
-    });
-  }, []);
-
   return (
     <nav
       aria-label="Case stages"
       data-role="stage-rail"
-      data-folded={folded ? "true" : "false"}
-      className={`workflow-rail${folded ? " workflow-rail--folded" : ""}`}
+      className="workflow-rail"
     >
-      <button
-        type="button"
-        data-role="rail-fold"
-        className="workflow-rail__fold"
-        aria-expanded={!folded}
-        // The label says what the CLICK does, not what the state is — the arrow alone
-        // is ambiguous to a screen reader and to anyone who did not fold it themselves.
-        aria-label={folded ? "Expand the stage rail" : "Collapse the stage rail"}
-        title={folded ? "Expand the stage rail" : "Collapse the stage rail"}
-        onClick={toggle}
-      >
-        <span aria-hidden="true">{folded ? "»" : "«"}</span>
-      </button>
       <ol className="workflow-rail__list">
         {states.map((stage) => {
           const isCurrent = stage.id === current;

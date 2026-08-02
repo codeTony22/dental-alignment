@@ -532,6 +532,17 @@ export function choicesUpdateFrom(
       patch.gingival_offset_mm !== undefined
         ? patch.gingival_offset_mm
         : chosen.effective_relief.value,
+    // THE TURNAROUND RIDES TOO. This is a PUT of the whole panel, and the wire type
+    // says so in as many words: "a panel that renders the turnaround chips must submit
+    // the field on EVERY choices write, or the next write un-chooses it back to the
+    // standing default". Omitting it here while LibraryStage's own write preserves it
+    // made two surfaces disagree about one field — an Intake choice would have quietly
+    // reverted a rush to standard. Latent only because no control sets a rush yet; the
+    // field is money-adjacent, so it is carried now rather than when the chips land.
+    // The RAW act is the right source: `turnaround` is what the operator chose, where
+    // `effective_turnaround` folds in a default this write must not promote to a choice.
+    turnaround:
+      patch.turnaround !== undefined ? patch.turnaround : (chosen.turnaround ?? null),
   };
 }
 
