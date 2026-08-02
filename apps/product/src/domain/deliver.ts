@@ -1123,6 +1123,12 @@ export interface ConstructionOption {
   readonly path_id: string;
   readonly label: string;
   readonly vendor: string;
+  /** The catalog row's own SERVED url (BFF `GET /api/constructions/{vendor}/
+   *  {filename}/mesh`) — this app never assembles it (the same posture
+   *  `declare.variantMeshUrl` states for cap variants). Optional/nullable: a row
+   *  from an older BFF that predates the route (CLAUDE.md's stale-server trap)
+   *  is still a valid option to PICK, just not one this app can preview alone. */
+  readonly mesh_url?: string | null;
 }
 
 export interface ConstructionGroup {
@@ -1387,5 +1393,33 @@ export function libraryPreviewPending(): string {
     "The unified construction-and-scan preview is not built yet — the only unified " +
     "mesh that exists today is the one the run bakes after this step. What you pick " +
     "here is what Delivery cuts."
+  );
+}
+
+/* --- THE UNRUN CANDIDATE'S OWN PREVIEW (§10-M2 "the natural next slice", client
+ * ruling 2026-08-02) ------------------------------------------------------------
+ *
+ * §10-M2 answered "what does the construction look like ON the scan" for a run
+ * that already exists. It named, and left open, the harder case: previewing a
+ * part the case has NOT run at all — there is no baked union, and there will not
+ * be one until a run fires with this part chosen. `library.py`'s construction
+ * route serves the vendor's catalog mesh alone (unposed, in its own local frame),
+ * which is real geometry and a real improvement over hunting blind through a
+ * flat picklist — but it is not the union, and saying so is the whole point.
+ */
+
+/**
+ * WHOSE MESH THE ARMED CANDIDATE'S PREVIEW IS SHOWING — the SAME caption doctrine
+ * as `libraryPreviewCaption` above (§10-M2: a preview must never imply geometry
+ * nobody computed), applied to a part that has not been run at all rather than
+ * one a run already baked. This mesh is the VENDOR'S CATALOG PART ALONE: not
+ * cut, not seated, not measured against any site in this case. A caption that
+ * let the operator read this as the union, or as THIS site's own construction,
+ * would be exactly the over-claim the run-mesh caption already refuses.
+ */
+export function libraryPartPreviewCaption(label: string): string {
+  return (
+    `This is ${label} — the vendor's catalog part alone, in its own frame. It is ` +
+    `not yet cut, seated, or measured for any site in this case.`
   );
 }

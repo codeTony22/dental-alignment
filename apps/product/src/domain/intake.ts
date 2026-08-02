@@ -488,20 +488,34 @@ export function siteEvidence(
  * `vendor` rides along (worker's `construction_entries`: every row is
  * `{vendor, filename, path_id, label}`) — ADDITIVE (client 2026-08-01, Deliver's own
  * copy of this picker groups by vendor); Intake's flat `<select>` ignores the extra
- * field, so this stays the one catalog reader both surfaces share. */
+ * field, so this stays the one catalog reader both surfaces share.
+ *
+ * `mesh_url` rides along too (application/catalog.py's `construction_parts` wrapper,
+ * landed da698b5) — ADDITIVE again, for the library page's unrun-part preview
+ * (§10-M2's "natural next slice"): the SERVED url, kept verbatim, never assembled
+ * here (the same posture `declare.variantMeshUrl` already states for cap variants).
+ * `null` for a row that predates the route or carries a non-string value — the
+ * option is still choosable, it just cannot be previewed alone. */
 export function constructionOptions(
   detail: CaseSessionDetail,
-): readonly { readonly path_id: string; readonly label: string; readonly vendor: string }[] {
+): readonly {
+  readonly path_id: string;
+  readonly label: string;
+  readonly vendor: string;
+  readonly mesh_url: string | null;
+}[] {
   return detail.catalog.constructions.flatMap((row) => {
     const path = row["path_id"];
     if (typeof path !== "string") return [];
     const label = row["label"];
     const vendor = row["vendor"];
+    const meshUrl = row["mesh_url"];
     return [
       {
         path_id: path,
         label: typeof label === "string" ? label : path,
         vendor: typeof vendor === "string" ? vendor : "unknown vendor",
+        mesh_url: typeof meshUrl === "string" ? meshUrl : null,
       },
     ];
   });

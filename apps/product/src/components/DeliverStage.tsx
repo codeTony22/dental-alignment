@@ -32,6 +32,7 @@
  */
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useDialogEscape } from "./useDialogEscape";
+import { useDialogFocus } from "./useDialogFocus";
 import { CheckoutDialog } from "../pages/CheckoutPage";
 import { DeliverPreview } from "./DeliverPreview";
 import {
@@ -829,6 +830,9 @@ export function DeliverStageView({
   const packageFiles = runFacts?.kind === "ok" ? runFacts.data.package_files : [];
   // Escape closes the full-report modal.
   useDialogEscape(reportOpen, onCloseReport);
+  // Focus moves in, is trapped, and comes back on close (§10-O.8) — see useDialogFocus.
+  const reportDialogRef = useRef<HTMLElement | null>(null);
+  useDialogFocus(reportOpen, reportDialogRef);
   const previewTeeth = assurance.kind === "ok" ? assurance.data.sites.map((s) => s.tooth) : [];
   const meshPreviewTabs = previewTabs(packageFiles, previewTeeth);
 
@@ -1431,11 +1435,13 @@ export function DeliverStageView({
           onClick={onCloseReport}
         >
           <section
+            ref={reportDialogRef}
             data-role="report-dialog"
             className="decode-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="report-dialog-heading"
+            tabIndex={-1}
             // the card is not the backdrop: a click inside must not dismiss
             onClick={(event) => event.stopPropagation()}
           >
@@ -1449,9 +1455,14 @@ export function DeliverStageView({
                   {assurance.data.run_id}
                 </p>
               </div>
+              {/* data-autofocus, not the first-focusable fallback: the table's own
+                  disposition/expand controls render after this one, and the modal
+                  footer holds "Confirm over this evidence" — a control this dialog
+                  must never land the operator's very next Enter keypress on. */}
               <button
                 type="button"
                 data-role="report-close"
+                data-autofocus=""
                 className="button button--ghost button--small"
                 onClick={onCloseReport}
                 title="Close the report (Esc)"
@@ -1592,16 +1603,12 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
     };
   }, []);
 
-  // Esc closes the report — bound only while it is open, so the key means nothing
-  // when there is no dialog to dismiss
-  useEffect(() => {
-    if (!reportOpen) return undefined;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setReportOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [reportOpen]);
+  // Esc closing the report used to be hand-rolled here, bubble-phase, predating
+  // `useDialogEscape` — a SECOND window keydown listener doing the same
+  // `setReportOpen(false)` as the capture-phase one `DeliverStageView` already binds
+  // (useDialogEscape(reportOpen, onCloseReport)). Removed 2026-08-02 (§10-O.8): it was
+  // dead weight, not a second layer of safety — the capture listener's own
+  // `stopPropagation()` meant this one never even saw the key.
 
   const reloadEvidence = useCallback(() => {
     setAssurance({ kind: "loading" });

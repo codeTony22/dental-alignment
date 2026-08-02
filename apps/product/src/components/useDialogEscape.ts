@@ -4,12 +4,15 @@
  * listened for Escape — so a keyboard operator could open the checkout, the arch, the
  * gate reasons or the full report and have no way out but the mouse.
  *
- * THE EFFECT ITSELF IS NOT COVERED BY THE SUITE, and that is worth saying rather than
- * implying: these tests render with `renderToStaticMarkup` in NODE, with no jsdom, so
- * nothing here can dispatch a keydown. The two RULES it applies — which key dismisses,
- * and whether a dismissal is allowed while an act is in flight — are pure and pinned in
- * `domain/dialog.test.ts`. Covering the listener means adding jsdom to this package,
- * which is a decision of its own and not one to smuggle in beside a modal fix.
+ * THE EFFECT ITSELF IS NOW COVERED (§10-O.8, 2026-08-02): jsdom landed in this package
+ * in the same slice that added `useDialogFocus`, its sibling gap (focus never moved
+ * INTO a dialog, either) — so the listener no longer needs to be hand-verified.
+ * `useDialogEscape.test.tsx` drives it with `createRoot`/`act` against a fixture,
+ * pinning the capture-phase-plus-`stopPropagation` contract (a bubble-phase listener
+ * added by the test never sees the key), the busy refusal, and that only Escape acts.
+ * The two RULES the listener applies — which key dismisses, and whether a dismissal is
+ * allowed while an act is in flight — stay pure and pinned in `domain/dialog.test.ts`,
+ * which stays node-only: nothing about that arithmetic needed a DOM, so it never got one.
  */
 import { useEffect } from "react";
 import { dismissAllowed, isDismissKey } from "../domain/dialog";

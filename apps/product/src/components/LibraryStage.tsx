@@ -21,6 +21,14 @@
  * re-running — the pose is provably construction-independent, so the alignment need
  * never be redone. It is priced and not built, so this page tells the truth about the
  * cost rather than pretending it is free.
+ *
+ * ARMING A CANDIDATE PREVIEWS IT, ALONE (§10-M2's "natural next slice", 2026-08-02).
+ * The stage's single preview pane REPLACES its content with the armed part's own
+ * catalog mesh — not stacked beside the run's mesh, which is `PartPreview.tsx`'s own
+ * module doc's decision, restated here because it is this page's layout, not that
+ * component's: ONE pane is the comp's own shape, and the workbench grid's column
+ * budget is already tight (plan §10-P.2). Disarming (Cancel, or committing so the
+ * candidate clears) returns the pane to whatever it showed before.
  */
 import { useEffect, useState } from "react";
 import type { CaseSessionDetail } from "../api/client";
@@ -39,6 +47,7 @@ import {
 } from "../domain/deliver";
 import { DeliverPreview } from "./DeliverPreview";
 import { ErrorBanner } from "./ErrorBanner";
+import { PartPreview } from "./PartPreview";
 
 export interface LibraryStageViewProps {
   readonly detail: CaseSessionDetail;
@@ -74,6 +83,12 @@ export function LibraryStageView({
   // the run's OWN unified mesh, where it built one — this page is only reachable over
   // a done run, so the file the route serves is on disk by construction
   const previewTab = libraryPreviewTab(packageFiles);
+  // THE ARMED CANDIDATE (§10-M2's "natural next slice", 2026-08-02): a part picked
+  // but not yet committed has no run behind it at all, so there is no union to show
+  // for it — only the catalog's own mesh, alone. `candidate` is already the arming
+  // state the confirm step below reads; this is the same fact, read a second way.
+  const armedOption =
+    candidate !== null ? options.find((o) => o.path_id === candidate) ?? null : null;
 
   return (
     /* TWO CHILDREN, because `.stage-contents` is `display: contents` — a stage's own
@@ -201,7 +216,15 @@ export function LibraryStageView({
             wears the scan cap's palette, so porting it would depict the cap and imply
             a union that is not there. Where the RUN built a real unified mesh this
             renders that; where it did not, the gap is stated. */}
-        {previewTab === null ? (
+        {armedOption !== null ? (
+          // DECISION (client direction, 2026-08-02): an ARMED candidate REPLACES the
+          // pane's content rather than stacking a second pane beside the run's own
+          // mesh — ONE pane, the comp's own shape, and the workbench grid's column
+          // budget is already tight (plan §10-P.2). Disarming (Cancel, or committing
+          // so the candidate clears) returns the pane to whatever it showed before:
+          // the run's own union above, or the stated gap.
+          <PartPreview label={armedOption.label} meshUrl={armedOption.mesh_url ?? null} />
+        ) : previewTab === null ? (
           <p data-role="library-preview-pending" className="panel__hint">
             {libraryPreviewPending()}
           </p>

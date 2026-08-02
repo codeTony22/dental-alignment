@@ -20,6 +20,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useDialogEscape } from "./useDialogEscape";
+import { useDialogFocus } from "./useDialogFocus";
 import { useNavigate } from "react-router-dom";
 import {
   fetchRun,
@@ -554,6 +555,9 @@ export function DeclareStageView({
   const [archOpen, setArchOpen] = useState(false);
   // Escape closes the arch-context dialog.
   useDialogEscape(archOpen, () => setArchOpen(false));
+  // Focus moves in, is trapped, and comes back on close (§10-O.8) — see useDialogFocus.
+  const archDialogRef = useRef<HTMLElement | null>(null);
+  useDialogFocus(archOpen, archDialogRef);
   // Per-SITE shelves: the detector's proposal is a fact about the active site, so the
   // same catalog marks a different card as the operator moves down the queue.
   const shelves = variantShelves(detail, active);
@@ -841,20 +845,26 @@ export function DeclareStageView({
           onClick={() => setArchOpen(false)}
         >
           <section
+            ref={archDialogRef}
             data-role="arch-dialog"
             className="decode-dialog decode-dialog--stage"
             role="dialog"
             aria-modal="true"
             aria-labelledby="arch-dialog-heading"
+            tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
           >
             <header className="decode-dialog__header">
               <h2 id="arch-dialog-heading" className="decode-dialog__title">
                 Arch context — the whole scan with its sites
               </h2>
+              {/* data-autofocus, not the first-focusable fallback: MainStage's own
+                  view-preset buttons render after this one in the DOM, and a body
+                  that reorders them must not silently move the landing spot. */}
               <button
                 type="button"
                 data-role="arch-close"
+                data-autofocus=""
                 className="button button--ghost button--small"
                 onClick={() => setArchOpen(false)}
               >

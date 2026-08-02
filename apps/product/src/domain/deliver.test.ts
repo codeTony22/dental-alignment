@@ -56,6 +56,7 @@ import {
   constructionGroups,
   constructionStepWords,
   previewTabs,
+  libraryPartPreviewCaption,
   type ConstructionOption,
 } from "./deliver";
 import {
@@ -1535,5 +1536,32 @@ describe("the library page's own preview tab", () => {
 
   it("still states the gap when there is no unified mesh to show", () => {
     expect(libraryPreviewPending()).toContain("not built yet");
+  });
+});
+
+// --- the unrun-part preview (§10-M2's "natural next slice", 2026-08-02): the
+// operator arms a candidate the case has NOT run, so there is no baked union to
+// show — the caption must say this is the vendor's catalog part alone, never let
+// it read as the boolean the run mesh above shows. -----------------------------
+describe("libraryPartPreviewCaption — the ARMED candidate's own words", () => {
+  it("names the part and says it is the vendor's catalog part alone", () => {
+    const words = libraryPartPreviewCaption("Conical scanbody");
+    expect(words).toContain("Conical scanbody");
+    expect(words).toContain("vendor's catalog part");
+  });
+
+  it("says the part has NOT been cut, seated, or measured for any site", () => {
+    // §10-M2's doctrine, restated for the unrun case: this mesh must never imply
+    // geometry nobody computed — it is not posed, not cut, not measured
+    const words = libraryPartPreviewCaption("Conical scanbody").toLowerCase();
+    expect(words).toContain("not yet cut");
+    expect(words).toContain("seated");
+    expect(words).toContain("measured");
+  });
+
+  it("never claims this is the run's own mesh — that is libraryPreviewCaption's job", () => {
+    const words = libraryPartPreviewCaption("Conical scanbody").toLowerCase();
+    expect(words).not.toContain("run's own");
+    expect(words).not.toContain("re-run");
   });
 });

@@ -7,7 +7,13 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StaticRouter } from "react-router-dom";
-import { ADDABLE_CARDS, CheckoutView, SAVED_CARDS, nextAddableCard } from "./CheckoutPage";
+import {
+  ADDABLE_CARDS,
+  CheckoutDialog,
+  CheckoutView,
+  SAVED_CARDS,
+  nextAddableCard,
+} from "./CheckoutPage";
 import {
   assuranceSite,
   assuranceView,
@@ -456,5 +462,41 @@ describe("the sticky bar carries its own qualifier", () => {
       invoice: { kind: "ok" as const, data: invoiceView({ status: "final" }) },
     });
     expect(html).not.toContain('data-role="checkout-pay-placeholder"');
+  });
+});
+
+describe("CheckoutDialog's focus wiring (§10-O.8) — static markup only", () => {
+  // `renderToStaticMarkup` runs no effects and commits no refs, so this pins ONLY
+  // that the surface CARRIES the wiring a real DOM would act on (`tabindex="-1"` on
+  // the dialog itself, `data-autofocus` on the safe landing control) — never that
+  // `useDialogFocus` behaves correctly, which is `useDialogFocus.test.tsx`'s job
+  // against a real jsdom fixture, for the reasons stated there (this dialog's own
+  // content cannot mount in jsdom: the "add a card" panel's effect calls
+  // `scrollIntoView`, unimplemented there).
+  function dialogHtml(): string {
+    return renderToStaticMarkup(
+      <StaticRouter location="/case/case-a/deliver">
+        <CheckoutDialog
+          detail={confirmedDetail()}
+          onDetail={() => undefined}
+          onClose={() => undefined}
+        />
+      </StaticRouter>,
+    );
+  }
+
+  it("is a modal dialog, focusable as a container", () => {
+    const html = dialogHtml();
+    expect(html).toContain('data-role="checkout-dialog"');
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toMatch(/data-role="checkout-dialog"[^>]*tabindex="-1"/);
+  });
+
+  it("marks Cancel — never Pay or a wallet mock — as the initial-focus landing spot", () => {
+    const html = dialogHtml();
+    expect(html).toMatch(/data-role="checkout-cancel"[^>]*data-autofocus=""/);
+    expect(html).not.toMatch(/data-role="checkout-pay"[^>]*data-autofocus/);
+    expect(html).not.toMatch(/data-role="wallet-pay"[^>]*data-autofocus/);
   });
 });

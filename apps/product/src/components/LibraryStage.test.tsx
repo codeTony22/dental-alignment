@@ -20,6 +20,21 @@ const CATALOG = {
   ],
 };
 
+/** The same catalog, but its rows now carry the served mesh_url (application/catalog.py's
+ * `construction_parts` wrapper, landed da698b5) — the unrun-part preview's one input. */
+const CATALOG_WITH_MESH = {
+  groups: [],
+  constructions: [
+    {
+      path_id: "dess/conical-scanbody.stl",
+      label: "Conical scanbody",
+      vendor: "dess",
+      mesh_url: "/api/constructions/dess/conical-scanbody.stl/mesh",
+    },
+    { path_id: "atlantis/ti-base.stl", label: "Ti base", vendor: "atlantis" },
+  ],
+};
+
 function view(overrides: Partial<Parameters<typeof LibraryStageView>[0]> = {}) {
   return renderToStaticMarkup(
     <LibraryStageView
@@ -109,5 +124,72 @@ describe("the construction library page", () => {
   it("shows the gap, not a fake, when the run built no unified mesh", () => {
     const html = view({ packageFiles: ["case-lower.stl"] });
     expect(html).toContain('data-role="library-preview-pending"');
+  });
+});
+
+// --- the unrun-part preview (§10-M2's "natural next slice", 2026-08-02): arming a
+// candidate replaces the pane's content with the CATALOG's own mesh for that part,
+// because there is no run behind an unarmed candidate for a union to exist from.
+describe("the construction library page's ARMED-candidate preview", () => {
+  it("replaces the pane with the candidate's own catalog mesh, not the gap", () => {
+    const html = view({
+      detail: runnableDetail({ catalog: CATALOG_WITH_MESH }),
+      candidate: "dess/conical-scanbody.stl",
+    });
+    expect(html).toContain('data-role="library-part-preview"');
+    expect(html).toContain("Conical scanbody");
+    expect(html).not.toContain('data-role="library-preview-pending"');
+  });
+
+  it("carries the unrun-part caption, never the run-mesh caption's words", () => {
+    const html = view({
+      detail: runnableDetail({ catalog: CATALOG_WITH_MESH }),
+      candidate: "dess/conical-scanbody.stl",
+    });
+    expect(html).toContain('data-role="library-part-preview-caption"');
+    // renderToStaticMarkup HTML-escapes the apostrophe (DeclarePanes.test.tsx /
+    // MainStage.test.tsx's own convention for asserting on rendered text)
+    expect(html).toContain("vendor&#x27;s catalog part");
+    // the run-mesh caption's own words (libraryPreviewCaption) must not appear —
+    // a candidate that has not run cannot borrow the run's "re-run" language
+    expect(html).not.toContain("cannot change it until the case is re-run");
+  });
+
+  it("REPLACES the run's own mesh too — one pane, not two stacked (§10-P.2's budget)", () => {
+    // DECISION recorded in LibraryStage.tsx's own doc comment: replace-in-one-pane,
+    // not stacked panes. Arming a candidate while a run mesh already exists still
+    // swaps the pane, because the candidate is what the operator is JUDGING right
+    // now — showing the OLD run's mesh beside it would answer a question nobody
+    // asked and bury the one they did.
+    const html = view({
+      detail: runnableDetail({ catalog: CATALOG_WITH_MESH }),
+      candidate: "dess/conical-scanbody.stl",
+      packageFiles: ["case-arch-with-constructions.stl"],
+    });
+    expect(html).toContain('data-role="library-part-preview"');
+    expect(html).not.toContain('data-role="library-preview-caption"');
+    expect(html).not.toContain('data-role="deliver-mesh-preview-tabs"');
+  });
+
+  it("a candidate whose row carries no mesh_url states the gap, never a guessed URL", () => {
+    const html = view({
+      detail: runnableDetail({ catalog: CATALOG_WITH_MESH }),
+      candidate: "atlantis/ti-base.stl",
+    });
+    expect(html).toContain('data-role="library-part-preview"');
+    expect(html).toContain('data-role="library-part-preview-pending"');
+  });
+
+  it("disarming (candidate back to null) returns the pane to what it showed before", () => {
+    // no separate state machine to pin here: candidate=null is exactly the "says
+    // nothing about a change nobody has proposed" branch already covered above —
+    // this test only pins that the ARMED-candidate role itself is gone with it
+    const html = view({
+      detail: runnableDetail({ catalog: CATALOG_WITH_MESH }),
+      candidate: null,
+      packageFiles: ["case-arch-with-constructions.stl"],
+    });
+    expect(html).not.toContain('data-role="library-part-preview"');
+    expect(html).toContain('data-role="library-preview-caption"');
   });
 });

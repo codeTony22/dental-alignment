@@ -848,7 +848,10 @@ now would mean rebuilding that ladder twice.
 7. **`emit_from_poses` is DEFERRED.** The flow works, and the hazards in §10-M are sharp —
    chiefly that a naive re-emit erases `implant.json`'s append-only operator provenance.
 8. **jsdom arrives WITH focus management**, not before. Until then the dialog listener is
-   hand-verified and says so.
+   hand-verified and says so. *(Landed later that day: jsdom as a product-only devDep with
+   per-file pragmas, `useDialogFocus` on all four dialogs — autofocus/trap/restore — the
+   checkout's Escape aligned to its own Cancel rule, and DeliverStage's dead pre-hook
+   Escape listener deleted. The node default stands; only the hook fixtures opt in.)*
 
 **P. THE ZOOM, AND TWO DEFECTS THAT ONLY THE BROWSER FOUND (2026-08-02).**
 

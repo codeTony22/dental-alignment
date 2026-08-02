@@ -5950,3 +5950,21 @@ button.package-files__link:hover {
 .workspace-insight__row-event {
   font-weight: 600;
 }
+
+/* ==========================================================================================
+   THE UNRUN CONSTRUCTION-PART PREVIEW (§10-M2's "natural next slice", 2026-08-02).
+   Appended at the END of this file per its own concurrent-editing convention — another
+   agent may be appending elsewhere in this same file at the same time, so this block
+   anchors on nothing above it.
+   ========================================================================================== */
+
+/* The armed-candidate pane borrows the SAME steel-blue the viewer package's own
+   PALETTE.construction paints the mesh with (packages/viewer/src/viewer/palette.ts,
+   0x7d93b8) — one colour, one meaning, chrome agreeing with geometry rather than the
+   chrome inventing a second colour for the same idea. Everything else about the pane
+   (the canvas, the loading/error notices) is `.deliver-mesh-preview`'s own shape,
+   reused as-is: a lone catalog part and the run's own union are framed and bordered
+   identically, and only the words beneath them say which one is on screen. */
+.library-part-preview {
+  border-top: 3px solid #7d93b8;
+}

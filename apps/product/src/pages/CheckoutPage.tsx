@@ -19,6 +19,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useDialogEscape } from "../components/useDialogEscape";
+import { useDialogFocus } from "../components/useDialogFocus";
 import {
   postCheckoutReturn,
   postPayment,
@@ -738,9 +739,15 @@ export function CheckoutView({
                   amount is the invoice's total, rendered — never assembled here. */}
               {payButtonLabel(priced, busy)}
             </button>
+            {/* data-autofocus, not the first-focusable fallback: the express-checkout
+                MOCK buttons (Apple/Google Pay) render before this one in the DOM, and
+                landing focus there would put a one-Enter-away pay act in front of the
+                operator the instant the dialog opened — Cancel is the one control in
+                this dialog that is safe to have not asked for. */}
             <button
               type="button"
               data-role="checkout-cancel"
+              data-autofocus=""
               className="button button--secondary"
               disabled={busy}
               onClick={onCancel}
@@ -815,7 +822,22 @@ export function CheckoutDialog({
   const handlePay = () => pay(card);
 
   // Escape leaves the checkout, unless a payment is already with the server.
-  useDialogEscape(true, onClose, phase !== "idle");
+  //
+  // THE ESCAPE-BUSY FIX (§10-O.8, 2026-08-02): this read `phase !== "idle"`, which
+  // ALSO blocks Escape in "failed" — a payment that has already come back with a
+  // refusal, and is no longer with the server at all. The Cancel button below never
+  // shared that rule: it disables only on `phase === "paying"` (`busy` at the top of
+  // `CheckoutView`, mirrored here). A failed payment must be escapable by keyboard
+  // exactly as it already was by mouse — the mouse was right; Escape was stricter than
+  // the surface it is supposed to match.
+  useDialogEscape(true, onClose, phase === "paying");
+
+  const dialogRef = useRef<HTMLElement | null>(null);
+  // Focus moves in, is trapped, and comes back on close (§10-O.8) — see useDialogFocus.
+  // `true` because this component is only ever mounted while the dialog is open
+  // (DeliverStage renders `<CheckoutDialog>` behind `checkoutOpen ? … : null`, never
+  // pre-mounted and hidden) — there is no separate `open` boolean here to flip.
+  useDialogFocus(true, dialogRef);
 
   return (
     <div
@@ -824,11 +846,13 @@ export function CheckoutDialog({
       onClick={onClose}
     >
       <section
+        ref={dialogRef}
         data-role="checkout-dialog"
         className="decode-dialog decode-dialog--checkout"
         role="dialog"
         aria-modal="true"
         aria-label="Checkout (demo)"
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="decode-dialog__body decode-dialog__body--plain">

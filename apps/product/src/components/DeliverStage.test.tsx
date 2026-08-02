@@ -128,6 +128,12 @@ describe("the stage's compact evidence, and the report behind a modal (#5)", () 
     expect(html).toContain("decode-dialog__header");
     expect(html).toContain("decode-dialog__body");
     expect(html).toContain('data-role="report-close"');
+    // §10-O.8 (2026-08-02): the container is focusable (useDialogFocus's fallback
+    // target when nothing is marked), and Close — never the footer's "Confirm over
+    // this evidence" — is the explicit landing spot. The trap/restore behaviour
+    // itself lives in useDialogFocus.test.tsx; renderToStaticMarkup fires no effects.
+    expect(html).toMatch(/data-role="report-dialog"[^>]*tabindex="-1"/);
+    expect(html).toMatch(/data-role="report-close"[^>]*data-autofocus=""/);
     // the table, with every column, inside its own internal scroll
     expect(html).toMatch(/data-role="assurance-table"[^>]*class="results-table"/);
     // The scroll wrapper is GONE by design (client, 2026-07-27: "fit the modal view,

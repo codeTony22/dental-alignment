@@ -318,7 +318,7 @@ describe("constructionOptions — worker catalog rows, defensively typed", () =>
       },
     });
     expect(constructionOptions(detail)).toEqual([
-      { path_id: "dess/a.stl", label: "dess — a", vendor: "dess" },
+      { path_id: "dess/a.stl", label: "dess — a", vendor: "dess", mesh_url: null },
     ]);
   });
 
@@ -335,8 +335,34 @@ describe("constructionOptions — worker catalog rows, defensively typed", () =>
       },
     });
     expect(constructionOptions(detail)).toEqual([
-      { path_id: "dess/a.stl", label: "dess — a", vendor: "dess" },
-      { path_id: "b.stl", label: "no vendor field", vendor: "unknown vendor" },
+      { path_id: "dess/a.stl", label: "dess — a", vendor: "dess", mesh_url: null },
+      { path_id: "b.stl", label: "no vendor field", vendor: "unknown vendor", mesh_url: null },
+    ]);
+  });
+
+  // The unrun-part preview's one input (§10-M2's "natural next slice", 2026-08-02):
+  // the row's own SERVED mesh_url, kept verbatim — never assembled client-side,
+  // the same posture domain/declare.ts's variantMeshUrl already states for caps.
+  it("keeps a string mesh_url, and nulls a missing or non-string one", () => {
+    const detail = caseSessionDetail({
+      catalog: {
+        groups: [],
+        constructions: [
+          {
+            path_id: "dess/a.stl",
+            label: "dess — a",
+            vendor: "dess",
+            mesh_url: "/api/constructions/dess/a.stl/mesh",
+          },
+          { path_id: "b.stl", label: "no mesh_url field", vendor: "dess" },
+          { path_id: "c.stl", label: "broken mesh_url", vendor: "dess", mesh_url: 7 },
+        ],
+      },
+    });
+    expect(constructionOptions(detail).map((o) => o.mesh_url)).toEqual([
+      "/api/constructions/dess/a.stl/mesh",
+      null,
+      null,
     ]);
   });
 });

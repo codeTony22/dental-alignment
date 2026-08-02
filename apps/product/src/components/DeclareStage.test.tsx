@@ -485,6 +485,14 @@ describe("the DeclareStage container, statically (effects do not run)", () => {
     expect(html).toContain("Arch context");
     expect(html).not.toContain('data-role="arch-dialog"');
     expect(html).not.toContain('data-role="main-stage"');
+    // §10-O.8 (2026-08-02): the arch dialog is wired to useDialogFocus exactly like
+    // the other three (a ref, `tabIndex={-1}`, `data-autofocus` on `arch-close`) —
+    // but `archOpen` is LOCAL state inside `DeclareStageView` (see the comment beside
+    // its `useState`, above), not a prop this test can flip, and `renderToStaticMarkup`
+    // fires no click handlers. So unlike the reasons/report/checkout dialogs, this
+    // wiring cannot be pinned as static markup; it is exercised only by
+    // `useDialogFocus.test.tsx`'s fixture, which is honest about testing the HOOK's
+    // behaviour rather than this stage's wiring to it.
     // 5b: the three live panes and the review tick ride with the stage
     expect(html).toContain('data-role="declare-panes"');
     expect(html).toContain('data-role="pane-library"');

@@ -31,6 +31,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDialogEscape } from "./useDialogEscape";
+import { useDialogFocus } from "./useDialogFocus";
 import { useNavigate } from "react-router-dom";
 import { FREE_POINT_COLOR, type VerifyMarker } from "viewer";
 import {
@@ -532,6 +533,9 @@ export function AdjustStageView({
   const exceptionWords = flaggedExceptionWords(activeStatus);
   // Escape closes the gate-reasons dialog.
   useDialogEscape(reasonsFor !== null, onCloseReasons);
+  // Focus moves in, is trapped, and comes back on close (§10-O.8) — see useDialogFocus.
+  const reasonsDialogRef = useRef<HTMLElement | null>(null);
+  useDialogFocus(reasonsFor !== null, reasonsDialogRef);
 
   const reasonsShown =
     reasonsFor === null
@@ -1111,11 +1115,13 @@ export function AdjustStageView({
           onClick={onCloseReasons}
         >
           <section
+            ref={reasonsDialogRef}
             data-role="reasons-dialog"
             className="decode-dialog decode-dialog--narrow"
             role="dialog"
             aria-modal="true"
             aria-labelledby="reasons-dialog-heading"
+            tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
           >
             <header className="decode-dialog__header">
@@ -1127,9 +1133,14 @@ export function AdjustStageView({
                   The gate's own words. Nothing here is a summary of them.
                 </p>
               </div>
+              {/* THE ONLY CONTROL THIS DIALOG HAS (the reasons list below is plain text,
+                  not interactive) — data-autofocus is explicit rather than left to the
+                  first-focusable fallback, so a body that later grows a link or button
+                  cannot silently steal the landing spot from the safe one. */}
               <button
                 type="button"
                 data-role="reasons-close"
+                data-autofocus=""
                 className="button button--ghost button--small"
                 onClick={onCloseReasons}
               >

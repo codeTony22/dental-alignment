@@ -101,6 +101,16 @@ describe("the queue", () => {
     );
   });
 
+  it("carries the focus wiring (§10-O.8): a focusable container, Close marked as the landing spot", () => {
+    // renderToStaticMarkup runs no effects and commits no refs — this pins ONLY that
+    // the markup CARRIES the wiring (`tabindex="-1"`, `data-autofocus`); the trap and
+    // restore behaviour themselves are `useDialogFocus.test.tsx`'s job, against a real
+    // jsdom fixture.
+    const html = view({ reasonsFor: 13 });
+    expect(html).toMatch(/data-role="reasons-dialog"[^>]*tabindex="-1"/);
+    expect(html).toMatch(/data-role="reasons-close"[^>]*data-autofocus=""/);
+  });
+
   it("says so plainly when a flagged site carries no words at all", () => {
     // A site can be flagged with nothing recorded; the dialog must not render empty.
     expect(view({ reasonsFor: 4 })).toContain(
