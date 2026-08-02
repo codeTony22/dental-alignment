@@ -774,3 +774,42 @@ STILL NOT BUILT, and now the only part that isn't: previewing a part the case ha
 That needs `emit_from_poses` (§10-M's hazard list) or a client-side compose of the catalog
 part mesh against each site's shipped pose. The second is cheaper than it looks — the page
 has the poses and `library.py` already serves a part mesh — and is the natural next slice.
+
+**N. THE DESIGN COMP CONTRADICTS ITS OWN RAIL ON WHERE CONFIRMATION LIVES (measured
+2026-08-01, before moving anything).**
+
+The client ruled that confirmation and T&C move to Adjustment (page 3), citing the
+five-page spec and — as corroboration — the comp's rail sub-line for that stage,
+"tooling, reports, confirmation".
+
+THE SUB-LINE IS THE ONLY PLACE IN THE COMP THAT SAYS SO. Its actual confirmation control
+is `toggleClinical` at artech-flow.html:610, and an sc-if nesting walk puts that control
+inside `<sc-if value="{{ payOpen }}">` (opened line 583) — the PAYMENT DIALOG. `payOpen`
+is reset to false on every `goStage` and opened only from Delivery, and the pay button
+itself reads `st.clinical ? "pay … & release" : "confirm the metrics to pay"` (line 1555):
+the confirmation GATES PAYMENT and sits in the payment dialog.
+
+So the comp implements §10-A's position exactly — "legal weight belongs at the commercial
+moment, once" — and matches both what shipped and the client's own 2026-07-30 words
+quoted in `bff/resources/deliver.py`. Three artifacts agree; one rail sub-line does not.
+
+`st.clinical` and `st.terms` appear nowhere in the comp's Adjustment block. What the
+Adjustment stage actually renders is the toolset and the site queue; the sub-line's third
+noun has no control behind it.
+
+RECOMMENDATION UNCHANGED, and now on firmer ground than when it was an argument about
+legal placement: split the act. Adjustment gets the ALIGNMENT REPORTS and an explicit
+"I accept this alignment" review — a workflow attestation, which is what a stage of
+tooling can honestly carry — and the terms plus the authorization stay gating payment on
+Delivery, where the comp, the plan and the client's own quoted words all put them.
+
+IF THE CLIENT STILL WANTS THE FULL LEGAL ACT ON PAGE 3 after seeing this, the hazard to
+state to them is mechanical, not aesthetic: a construction change on page 4 fires the
+reset boundary, and `clear_confirmation` (session.py:525, called from case_sessions.py:
+1493 and :1628) retires the signature. Signing on 3 and choosing on 4 means the signature
+falls whenever the choice actually changes. Either pages 3 and 4 swap so the signature is
+last, or the surface must say out loud that picking a different part re-collects it.
+
+HELD, deliberately: the Deliver construction-picker removal (§10-M's three-homes finding).
+It lives in the same release ladder any confirmation move would restructure, so doing it
+now would mean rebuilding that ladder twice.
