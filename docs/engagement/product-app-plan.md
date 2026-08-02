@@ -989,3 +989,21 @@ Follow-ups flagged, not built: the Library pane previews the ARMED candidate onl
 case whose effective construction has no run yet still shows the pending gap (separable
 slice); Deliver's inert "unverified" em could route back to Adjust's tools (client call,
 §10-N territory); the session log is reachable only from the two workspace toolbars.
+
+**U. THE THREE ROWS OF CHROME (client 2026-08-02).** "There is three rows of buttons which
+takes a lot of real estate in the screen for the panels. Also on the tooling part."
+
+The third row existed to hold one button: the panes' own strip carried "link views" and
+nothing else. The toggle rides the workspace toolbar now, beside the zoom it is kin to —
+one act, all three cameras — with the link STATE lifted to the stage the same way the
+zoom counter was (controlled `options.linked` on the scene hook; DeclarePanes threads it
+down; the hook keeps only the OrbitLinkGroup plumbing). The panes' strip returns only
+while a pane is maximized, when the 1/2/3 switcher genuinely needs it. One deliberate
+behavior change: the toggle no longer disables while maximized — the toolbar cannot see
+the maximize, and a standing preference that takes effect when three panes return is the
+more honest control anyway.
+
+The drawer's head merged: title + re-read on one row, tabs directly under; the clock
+notice keeps its own full-width line because it is a paragraph of fact, not a control.
+The stat pills quieted (they are a readout, not controls). Measured at 1280x800: toolbar
+132→72px, drawer head −40px, panes 220→294px — the floor unstuck.

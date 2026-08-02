@@ -237,6 +237,9 @@ export interface AdjustStageViewProps {
    *  the whole workspace, held by the container. */
   readonly zoomLevel?: number;
   readonly onZoom?: (direction: 1 | -1) => void;
+  /** The stage-owned link state for the toolbar's toggle — see WorkspaceToolbarProps. */
+  readonly linked?: boolean;
+  readonly onToggleLinked?: () => void;
   /** THE PROVENANCE POPOVER (gap `deviation-budget-in-workspace`), already assembled
    *  by the container — same pattern as `panes` above, and for the same reason: the
    *  real control needs this stage's caseId, which the View was never given. Optional
@@ -547,6 +550,8 @@ export function AdjustStageView({
   viewPresetsAvailable,
   zoomLevel,
   onZoom,
+  linked,
+  onToggleLinked,
   insightSlot = null,
   rePreviewResult = null,
   onRePreview = () => undefined,
@@ -697,6 +702,8 @@ export function AdjustStageView({
           viewPresetsAvailable={viewPresetsAvailable}
           zoomLevel={zoomLevel}
           onZoom={onZoom}
+          linked={linked}
+          onToggleLinked={onToggleLinked}
         >
           {insightSlot}
         </WorkspaceToolbar>
@@ -704,6 +711,12 @@ export function AdjustStageView({
         <div className="workspace-drawer">
           <section data-role="adjust-toolbox" aria-label="Correction tools"
                    className="panel">
+            {/* ONE HEAD ROW (client 2026-08-02: "Also on the tooling part" — the
+                drawer opened with a heading band, a re-read band, then the tabs).
+                The title and the re-read act share the row; the clock notice keeps
+                its own full-width line below, because it is a paragraph of fact,
+                not a control. */}
+            <div data-role="drawer-head" className="drawer-head">
             <h3 className="panel__title">
               {active !== null ? `Tools — tooth ${active.tooth}` : "Tools"}
             </h3>
@@ -785,6 +798,7 @@ export function AdjustStageView({
                 )}
               </div>
             )}
+            </div>
 
             {clockNotice !== null && (
               /* THE UNVERIFIED CLOCK'S ACTIONABLE SURFACE (§10-H's "STILL OPEN" line,
@@ -1699,6 +1713,9 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
      adjustment views"). One number for the whole workspace, for the same reason the
      preset above is one: the panes are read side by side. */
   const [zoomLevel, setZoomLevel] = useState(0);
+  // the link toggle rides the toolbar now — same home as the zoom, same reason
+  const [linked, setLinked] = useState(false);
+  const handleToggleLinked = useCallback(() => setLinked((now) => !now), []);
   const handleZoom = useCallback((direction: 1 | -1) => {
     /* CLAMPED AT THE COUNTER, not only at the camera: an unbounded counter accepts
        presses the camera cannot answer, and the operator then presses the other way
@@ -1726,6 +1743,7 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
     viewPreset,
     viewPresetNonce,
     zoomLevel,
+    linked,
   });
   // The off-axis presets need a MEASURED roll. Before a preview lands, panes 2/3 frame
   // down the jaw's occlusal proxy with no clock reference, so buccal/mesial would be a
@@ -1828,6 +1846,8 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   );
 
   const panes = (
+    /* No link props — the toggle is the toolbar's now (client 2026-08-02); the panes'
+       own chrome row returns only while a pane is maximized. */
     <SitePanesView
       variantLabel={activeSite?.declared_variant ?? null}
       notices={notices}
@@ -1850,8 +1870,6 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       layers={scene.layers}
       onToggleLayer={scene.onToggleLayer}
       onChangeOpacity={scene.onChangeOpacity}
-      linked={scene.linked}
-      onToggleLinked={scene.onToggleLinked}
       maximizedId={scene.maximizedId}
       onToggleMaximized={scene.onToggleMaximized}
       onResetView={scene.onResetView}
@@ -1868,6 +1886,8 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       viewPresetsAvailable={viewPresetsAvailable}
       zoomLevel={zoomLevel}
       onZoom={handleZoom}
+      linked={linked}
+      onToggleLinked={handleToggleLinked}
       entries={entries}
       activeTooth={activeTooth}
       onSelectSite={handleSelectSite}

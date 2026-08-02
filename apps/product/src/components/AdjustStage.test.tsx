@@ -77,6 +77,20 @@ function view(overrides: Partial<Parameters<typeof AdjustStageView>[0]> = {}) {
   );
 }
 
+describe("the drawer head is one row, not a stack (client 2026-08-02)", () => {
+  /* "Also on the tooling part" — the drawer opened with a heading row, then a
+     re-read row, then the tabs: three bands before any tool. The heading and the
+     re-read act now share one head row; the clock notice, when present, keeps its
+     own full-width line below (it is a paragraph, not a control). */
+  it("wraps the title and the re-read act in one head container", () => {
+    const html = view();
+    const head = html.slice(html.indexOf('data-role="drawer-head"'));
+    const inHead = head.slice(0, head.indexOf("</div>") + 6);
+    expect(inHead).toContain("Tools —");
+    expect(inHead).toContain('data-role="re-preview"');
+  });
+});
+
 describe("the queue", () => {
   it("shows the flagged site with a COUNT of the gate's reasons, not the words", () => {
     const html = view();

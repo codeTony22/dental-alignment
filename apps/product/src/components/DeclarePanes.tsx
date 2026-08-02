@@ -249,6 +249,9 @@ export interface DeclarePanesProps {
   /** The workspace's shared zoom counter, forwarded to all three panes unchanged —
    *  see SitePaneSceneOptions.zoomLevel. */
   readonly zoomLevel?: number;
+  /** The stage-owned link state, forwarded into the scene — the toggle lives in the
+   *  workspace toolbar now (client 2026-08-02). */
+  readonly linked?: boolean;
   /**
    * WHAT THE PREVIEW PUBLISHED, REPORTED UP (design review 2026-07-31).
    *
@@ -275,6 +278,7 @@ export function DeclarePanes({
   viewPreset,
   viewPresetNonce,
   zoomLevel,
+  linked,
   onPreviewFigures,
 }: DeclarePanesProps) {
   const caseId = detail.case.id;
@@ -339,6 +343,7 @@ export function DeclarePanes({
     viewPreset,
     viewPresetNonce,
     zoomLevel,
+    linked,
   });
 
   /* Reported on the PRIMITIVES, not on the payload object: the payload is replaced
@@ -401,6 +406,9 @@ export function DeclarePanes({
   });
 
   return (
+    /* No link props flow to the view: the toggle moved to the workspace toolbar, and
+       with nothing to hold, SitePanesView's chrome row stands down except while a pane
+       is maximized (client 2026-08-02, the three-rows complaint). */
     <DeclarePanesView
       site={site}
       variantLabel={site?.declared_variant ?? null}
@@ -418,8 +426,6 @@ export function DeclarePanes({
       layers={scene.layers}
       onToggleLayer={scene.onToggleLayer}
       onChangeOpacity={scene.onChangeOpacity}
-      linked={scene.linked}
-      onToggleLinked={scene.onToggleLinked}
       maximizedId={scene.maximizedId}
       onToggleMaximized={scene.onToggleMaximized}
       onResetView={scene.onResetView}

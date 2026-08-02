@@ -1112,6 +1112,11 @@ export interface SitePaneSceneOptions {
    *  number, not three: the panes are read side by side and a zoom that reached only
    *  one of them would make that comparison lie about scale (client 2026-08-02). */
   readonly zoomLevel?: number;
+  /** CONTROLLED LINK STATE (client 2026-08-02, the three-rows complaint). When the
+   *  stage owns the toggle — it lives in the workspace toolbar now, beside the zoom
+   *  it is kin to — the hook takes the value and keeps only the OrbitLinkGroup
+   *  plumbing. Omitted, the hook's own state stands (the older callers and tests). */
+  readonly linked?: boolean;
 }
 
 export function useSitePaneScene(
@@ -1131,7 +1136,9 @@ export function useSitePaneScene(
   const [partBusy, setPartBusy] = useState(false);
   const [partError, setPartError] = useState<string | null>(null);
 
-  const [linked, setLinked] = useState(false);
+  const [internalLinked, setLinked] = useState(false);
+  // controlled when the stage owns the toggle (see SitePaneSceneOptions.linked)
+  const linked = options.linked ?? internalLinked;
   const [maximizedId, setMaximizedId] = useState<PaneId | null>(null);
   const [scaleId, setScaleId] = useState<DeviationScaleId>("signed");
   /* PER-PANE, deliberately: resetting the union's view must not yank the library pane's

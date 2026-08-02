@@ -120,6 +120,15 @@ describe("SitePanesView — the 1/2/3 switcher", () => {
     );
   });
 
+  it("renders NO toolbar row at all when nothing needs one", () => {
+    /* THE THIRD ROW OF CHROME (client 2026-08-02: "There is three rows of buttons
+       which takes a lot of real estate in the screen for the panels"). The row
+       existed to hold the link toggle, which now lives in the workspace toolbar
+       beside the zoom — the same kind of control, one row instead of two. The row
+       returns only while a pane is maximized, when the 1/2/3 switcher needs it. */
+    expect(view()).not.toContain("verify-panels__toolbar");
+  });
+
   it("offers all three numbers while one pane is the stage", () => {
     const markup = view({
       onToggleLinked: () => undefined,

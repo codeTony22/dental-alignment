@@ -628,6 +628,19 @@ describe("the workspace toolbar over the panes", () => {
     expect(floored).not.toMatch(/data-direction="out"[^>]*disabled/);
   });
 
+  it("the link toggle rides the toolbar, beside the zoom it is kin to", () => {
+    /* Moved out of the panes' own chrome row (client 2026-08-02, the three-rows
+       complaint): linking, like the zoom, moves all three cameras at once — it is
+       workspace chrome, not pane chrome, and the row it held alone is gone. */
+    expect(view()).not.toContain('data-role="pane-link"');
+    const wired = view({ linked: false, onToggleLinked: () => undefined });
+    expect(wired).toMatch(/data-role="pane-link"[^>]*aria-pressed="false"/);
+    expect(wired).toContain("link views");
+    const on = view({ linked: true, onToggleLinked: () => undefined });
+    expect(on).toMatch(/data-role="pane-link"[^>]*aria-pressed="true"/);
+    expect(on).toContain("views linked");
+  });
+
   it("the named view presets render only where the stage can actually apply them", () => {
     // Dead controls are worse than absent ones: with no handler the group is not
     // rendered at all (see DeclareStageView's note on the pane-camera seam).

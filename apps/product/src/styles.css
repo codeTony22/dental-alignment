@@ -6047,3 +6047,65 @@ button.package-files__link:hover {
      any markup test: colour is exactly what renderToStaticMarkup cannot see). */
   color: var(--color-text);
 }
+
+/* ===== THREE ROWS OF CHROME BECOME ONE-OR-TWO (client 2026-08-02) ==================
+   "There is three rows of buttons which takes a lot of real estate in the screen for
+   the panels. Also on the tooling part." The link-views row is gone structurally (the
+   toggle rides the workspace toolbar now); what remains is making the toolbar's
+   controls and its metrics FLOW — one row where the width allows, two where it must —
+   and the pills small enough that the wide case actually happens. */
+
+.workspace-toolbar {
+  row-gap: 4px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+/* The stat pills are a READOUT, not controls — they can be quiet. Measured before/
+   after at 1512px: the tightened set lets controls + metrics share one row, which is
+   the whole row the panes get back. */
+.workspace-toolbar__stat {
+  font-size: 10.5px;
+  padding: 3px 7px;
+}
+
+.workspace-toolbar__stat-key {
+  font-size: 9px;
+}
+
+.workspace-toolbar__metrics {
+  gap: 4px;
+}
+
+.workspace-toolbar__metrics-label {
+  font-size: 9px;
+}
+
+/* The drawer's head is one row: the title at the left, the re-read act beside it.
+   A re-read's outcome rows and error keep the full width below the row — they are
+   sentences, not head chrome. */
+.drawer-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin-bottom: 6px;
+}
+
+.drawer-head .panel__title {
+  margin: 0;
+}
+
+.drawer-head .adjust-reread {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.drawer-head [data-role="re-preview-result"],
+.drawer-head [data-role="re-preview-error"] {
+  flex: 1 1 100%;
+}

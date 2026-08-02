@@ -332,6 +332,13 @@ export interface WorkspaceToolbarProps {
    *  only one of them would make that comparison lie about scale. */
   readonly zoomLevel?: number;
   readonly onZoom?: (direction: 1 | -1) => void;
+  /** THE LINK TOGGLE, moved here from the panes' own chrome row (client 2026-08-02:
+   *  "There is three rows of buttons which takes a lot of real estate in the screen
+   *  for the panels"). Linking is workspace chrome by the same argument as the zoom
+   *  beside it — one act, all three cameras — and the row it held alone is gone;
+   *  SitePanesView's own strip now returns only while a pane is maximized. */
+  readonly linked?: boolean;
+  readonly onToggleLinked?: () => void;
   /** A stage's own control that belongs on this strip (Declare's arch opener) — so
    *  the stage keeps ONE row of chrome above the panes rather than two. */
   readonly children?: ReactNode;
@@ -379,6 +386,8 @@ export function WorkspaceToolbar({
   viewPresetsAvailable = false,
   zoomLevel = 0,
   onZoom,
+  linked = false,
+  onToggleLinked,
   children,
 }: WorkspaceToolbarProps) {
   const identity = siteIdentity(tooth, systemModel);
@@ -446,6 +455,21 @@ export function WorkspaceToolbar({
           ))}
         </span>
       )}
+      {onToggleLinked !== undefined && (
+        <button
+          type="button"
+          data-role="pane-link"
+          aria-pressed={linked}
+          className={`button button--ghost button--small${linked ? " button--active" : ""}`}
+          onClick={onToggleLinked}
+          /* No disabled-while-maximized state up here: the toolbar cannot see the
+             maximize, and the toggle is a standing preference either way — it takes
+             effect the moment three panes are back on screen. */
+          title="Rotate all three panels together (same angles and zoom, each around its own content)"
+        >
+          {linked ? "⛓ views linked" : "⛓ link views"}
+        </button>
+      )}
       <span data-role="alignment-strip" className="workspace-toolbar__metrics">
         <span className="workspace-toolbar__metrics-label">ALIGNMENT</span>
         <span
@@ -511,6 +535,10 @@ export interface DeclareStageViewProps {
    * buttons read one number — see WorkspaceToolbarProps for why it is not per-pane. */
   readonly zoomLevel?: number;
   readonly onZoom?: (direction: 1 | -1) => void;
+  /** The link toggle's state and act — held by the container like the zoom, because
+   *  the toolbar and the panes both read it (see WorkspaceToolbarProps). */
+  readonly linked?: boolean;
+  readonly onToggleLinked?: () => void;
   /** What the PREVIEW published for the active site, while no run has measured it
    *  (design review 2026-07-31) — see domain/declare.alignmentStats. */
   readonly previewFigures?: PreviewFigures | null;
@@ -544,6 +572,8 @@ export function DeclareStageView({
   viewPresetsAvailable,
   zoomLevel,
   onZoom,
+  linked,
+  onToggleLinked,
   previewFigures = null,
   panesSlot,
 }: DeclareStageViewProps) {
@@ -707,6 +737,8 @@ export function DeclareStageView({
           viewPresetsAvailable={viewPresetsAvailable}
           zoomLevel={zoomLevel}
           onZoom={onZoom}
+          linked={linked}
+          onToggleLinked={onToggleLinked}
         >
           <button
             type="button"
@@ -918,6 +950,10 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
      Unbounded on purpose: the band lives in viewer/zoom.ts, where the near/far planes it
      protects are, and `canZoom` stops the button before the counter runs away. */
   const [zoomLevel, setZoomLevel] = useState(0);
+  /* THE LINK STATE, same home as the zoom for the same reason: the toolbar's toggle
+     and the panes' OrbitLinkGroup both read one value. */
+  const [linked, setLinked] = useState(false);
+  const handleToggleLinked = useCallback(() => setLinked((now) => !now), []);
   const handleZoom = useCallback((direction: 1 | -1) => {
     /* CLAMPED AT THE COUNTER, not only at the camera: an unbounded counter accepts
        presses the camera cannot answer, and the operator then presses the other way
@@ -1110,6 +1146,8 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
       onDeclare={handleDeclare}
       zoomLevel={zoomLevel}
       onZoom={handleZoom}
+      linked={linked}
+      onToggleLinked={handleToggleLinked}
       panesSlot={
         <DeclarePanes
           detail={detail}
@@ -1118,6 +1156,7 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
           viewPreset={viewPreset}
           viewPresetNonce={viewPresetNonce}
           zoomLevel={zoomLevel}
+          linked={linked}
           onPreviewFigures={setPreviewFigures}
         />
       }
