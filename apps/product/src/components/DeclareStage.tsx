@@ -504,63 +504,12 @@ export function DeclareStageView({
             the buttons were simply gone. Taking the fork OUT of the scroll area is the
             only version that is true at every scroll position. */}
         <div className="workbench__work-scroll">
-        <section className="panel">
-          <h3 className="panel__title">Implant system</h3>
-          <SystemBar detail={detail} onAskSwitch={onAskSwitch} />
-          {pendingSwitch !== null && (
-            <SwitchConfirm
-              detail={detail}
-              pendingSwitch={pendingSwitch}
-              onConfirm={onConfirmSwitch}
-              onCancel={onCancelSwitch}
-            />
-          )}
-        </section>
         <SiteQueue
           detail={detail}
           activeTooth={activeTooth}
           runRows={runRows}
           onSelectSite={onSelectSite}
         />
-        <section data-role="variant-cards" aria-label="Variant cards" className="panel">
-          <h3 className="panel__title">
-            {active !== null
-              ? `Variants for tooth ${active.tooth}`
-              : "Variants"}
-          </h3>
-          <div className="decode-variant-list">
-            {shelves.current.map((card) => (
-              <VariantCardButton
-                key={card.id}
-                card={card}
-                declared={active?.declared_variant === card.id}
-                onDeclare={onDeclare}
-              />
-            ))}
-          </div>
-          {shelves.superseded.length > 0 && (
-            <details data-role="superseded-fold" className="decode-archive">
-              <summary className="decode-archive__title">
-                Superseded shelf — {shelves.superseded.length} archived part
-                {shelves.superseded.length === 1 ? "" : "s"}
-              </summary>
-              <p className="decode-archive__note">
-                Kept apart from the current shelf, never mixed into it.
-              </p>
-              <div className="decode-variant-list">
-                {shelves.superseded.map((card) => (
-                  <VariantCardButton
-                    key={card.id}
-                    card={card}
-                    declared={active?.declared_variant === card.id}
-                    archived
-                    onDeclare={onDeclare}
-                  />
-                ))}
-              </div>
-            </details>
-          )}
-        </section>
         {saving !== "idle" && (
           <div data-role="declare-saving" className="busy-state" role="status">
             <span className="busy-state__spinner" aria-hidden="true" />
@@ -627,93 +576,6 @@ export function DeclareStageView({
                Each RECORDS the decision (it rides into the evidence bundle) and then
                navigates. Reachability is untouched: skipping never closes Adjust. */}
         </div>
-        <div
-          data-role="declare-advance"
-          className="workbench__work-footer panel__actions panel__actions--advance"
-        >
-          {forkOpen ? (
-            <>
-              <ul data-role="attestation-summary" className="attestation-summary">
-                {summary.map((line) => (
-                  <li
-                    key={line.tooth}
-                    data-role="attestation-line"
-                    data-tooth={line.tooth}
-                    data-attested={line.attested}
-                    className={
-                      line.attested
-                        ? "attestation-summary__line"
-                        : "attestation-summary__line attestation-summary__line--owed"
-                    }
-                  >
-                    {line.words}
-                  </li>
-                ))}
-              </ul>
-              <p data-role="skip-consequence" className="panel__hint">
-                {skipConsequenceWords(facts.siteFlagged)}
-              </p>
-              <div className="declare-fork">
-                <button
-                  type="button"
-                  data-role="fork-skip"
-                  className={`button ${
-                    facts.siteFlagged > 0 ? "button--secondary" : "button--primary"
-                  }`}
-                  disabled={forkSaving !== "idle"}
-                  onClick={onSkipAdjustments}
-                >
-                  Skip adjustments — go to the construction library
-                </button>
-                <button
-                  type="button"
-                  data-role="fork-adjust"
-                  className={`button ${
-                    facts.siteFlagged > 0 ? "button--primary" : "button--secondary"
-                  }`}
-                  disabled={forkSaving !== "idle"}
-                  onClick={onAdjustFits}
-                >
-                  Adjust the fits
-                </button>
-              </div>
-              {decided !== null && (
-                <p data-role="fork-recorded" className="panel__hint">
-                  Recorded: {decided.decision === "skip"
-                    ? "adjustments skipped"
-                    : "adjustments taken up"} · {recordedAtWords(decided.at)} — rides
-                  into the evidence; a different choice here replaces it.
-                </p>
-              )}
-              {forkError !== null && (
-                <div data-role="fork-error" role="alert" className="panel__error">
-                  {forkError}
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <span
-                data-role="fork-skip"
-                aria-disabled="true"
-                className="button button--secondary button--blocked"
-              >
-                {/* the reason for the page this fork LEADS TO. It quoted Deliver's,
-                    which since the library landed can read "pick a construction part
-                    in the library first" — advice about a page two stages on, offered
-                    as the reason this door is shut. */}
-                Skip adjustments — {blockedReason("library", facts)}
-              </span>
-              <span
-                data-role="fork-adjust"
-                aria-disabled="true"
-                className="button button--secondary button--blocked"
-              >
-                Adjust the fits — {blockedReason("deliver", facts)}
-              </span>
-            </>
-          )}
-        </div>
       </div>
       <div className="workbench__stage workbench__stage--split">
         {/* THE ARCH IS A DIALOG NOW, not a standing strip (client 2026-07-30: "small
@@ -756,6 +618,148 @@ export function DeclareStageView({
           </button>
         </WorkspaceToolbar>
         {panesSlot}
+        <div className="workspace-drawer">
+          <section className="panel">
+            <h3 className="panel__title">Implant system</h3>
+            <SystemBar detail={detail} onAskSwitch={onAskSwitch} />
+            {pendingSwitch !== null && (
+              <SwitchConfirm
+                detail={detail}
+                pendingSwitch={pendingSwitch}
+                onConfirm={onConfirmSwitch}
+                onCancel={onCancelSwitch}
+              />
+            )}
+          </section>
+          <section data-role="variant-cards" aria-label="Variant cards" className="panel">
+            <h3 className="panel__title">
+              {active !== null
+                ? `Variants for tooth ${active.tooth}`
+                : "Variants"}
+            </h3>
+            <div className="decode-variant-list">
+              {shelves.current.map((card) => (
+                <VariantCardButton
+                  key={card.id}
+                  card={card}
+                  declared={active?.declared_variant === card.id}
+                  onDeclare={onDeclare}
+                />
+              ))}
+            </div>
+            {shelves.superseded.length > 0 && (
+              <details data-role="superseded-fold" className="decode-archive">
+                <summary className="decode-archive__title">
+                  Superseded shelf — {shelves.superseded.length} archived part
+                  {shelves.superseded.length === 1 ? "" : "s"}
+                </summary>
+                <p className="decode-archive__note">
+                  Kept apart from the current shelf, never mixed into it.
+                </p>
+                <div className="decode-variant-list">
+                  {shelves.superseded.map((card) => (
+                    <VariantCardButton
+                      key={card.id}
+                      card={card}
+                      declared={active?.declared_variant === card.id}
+                      archived
+                      onDeclare={onDeclare}
+                    />
+                  ))}
+                </div>
+              </details>
+            )}
+          </section>
+        </div>
+        <div className="workspace-advance">
+          <div
+            data-role="declare-advance"
+            className="workbench__work-footer panel__actions panel__actions--advance"
+          >
+            {forkOpen ? (
+              <>
+                <ul data-role="attestation-summary" className="attestation-summary">
+                  {summary.map((line) => (
+                    <li
+                      key={line.tooth}
+                      data-role="attestation-line"
+                      data-tooth={line.tooth}
+                      data-attested={line.attested}
+                      className={
+                        line.attested
+                          ? "attestation-summary__line"
+                          : "attestation-summary__line attestation-summary__line--owed"
+                      }
+                    >
+                      {line.words}
+                    </li>
+                  ))}
+                </ul>
+                <p data-role="skip-consequence" className="panel__hint">
+                  {skipConsequenceWords(facts.siteFlagged)}
+                </p>
+                <div className="declare-fork">
+                  <button
+                    type="button"
+                    data-role="fork-skip"
+                    className={`button ${
+                      facts.siteFlagged > 0 ? "button--secondary" : "button--primary"
+                    }`}
+                    disabled={forkSaving !== "idle"}
+                    onClick={onSkipAdjustments}
+                  >
+                    Skip adjustments — go to the construction library
+                  </button>
+                  <button
+                    type="button"
+                    data-role="fork-adjust"
+                    className={`button ${
+                      facts.siteFlagged > 0 ? "button--primary" : "button--secondary"
+                    }`}
+                    disabled={forkSaving !== "idle"}
+                    onClick={onAdjustFits}
+                  >
+                    Adjust the fits
+                  </button>
+                </div>
+                {decided !== null && (
+                  <p data-role="fork-recorded" className="panel__hint">
+                    Recorded: {decided.decision === "skip"
+                      ? "adjustments skipped"
+                      : "adjustments taken up"} · {recordedAtWords(decided.at)} — rides
+                    into the evidence; a different choice here replaces it.
+                  </p>
+                )}
+                {forkError !== null && (
+                  <div data-role="fork-error" role="alert" className="panel__error">
+                    {forkError}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <span
+                  data-role="fork-skip"
+                  aria-disabled="true"
+                  className="button button--secondary button--blocked"
+                >
+                  {/* the reason for the page this fork LEADS TO. It quoted Deliver's,
+                      which since the library landed can read "pick a construction part
+                      in the library first" — advice about a page two stages on, offered
+                      as the reason this door is shut. */}
+                  Skip adjustments — {blockedReason("library", facts)}
+                </span>
+                <span
+                  data-role="fork-adjust"
+                  aria-disabled="true"
+                  className="button button--secondary button--blocked"
+                >
+                  Adjust the fits — {blockedReason("deliver", facts)}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
       </div>
       {archOpen && (
         <div

@@ -604,12 +604,17 @@ describe("the workspace toolbar over the panes", () => {
   });
 
   it("the toolbar is NOT inside the work column's scroll box — that is the whole point", () => {
+    /* Anchored on the SITE QUEUE, the work column's only remaining occupant since the
+       system, the variants and the forward acts moved into the stage column beneath
+       the panes (2026-08-02). The old anchor was `workbench__work-footer`, which was
+       the column's last child until it moved as well. */
     const html = view();
     const scroll = html.indexOf("workbench__work-scroll");
+    const queue = html.indexOf('data-role="site-queue"');
     const toolbar = html.indexOf('data-role="workspace-toolbar"');
-    const scrollEnd = html.indexOf("workbench__work-footer");
-    expect(toolbar).toBeGreaterThan(scrollEnd);
-    expect(scroll).toBeLessThan(scrollEnd);
+    expect(scroll).toBeGreaterThan(-1);
+    expect(toolbar).toBeGreaterThan(scroll);
+    if (queue > -1) expect(toolbar).toBeGreaterThan(queue);
   });
 });
 

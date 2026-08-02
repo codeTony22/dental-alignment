@@ -776,9 +776,16 @@ describe("the workspace toolbar over the panes", () => {
   });
 
   it("the toolbar sits with the PANES, not inside the scrolling work column", () => {
+    /* Anchored on the QUEUE, which since 2026-08-02 is the only thing the work column
+       holds — the tools and the forward acts moved into the stage column beneath the
+       panes. This used to compare against `workbench__work-footer`, which was a fine
+       proxy while that footer was the work column's last child and a wrong one the
+       moment it moved too. The claim being made is unchanged: the toolbar belongs to
+       the panes, not to the scrolling column beside them. */
     const html = view();
-    const footer = html.indexOf("workbench__work-footer");
-    expect(html.indexOf('data-role="workspace-toolbar"')).toBeGreaterThan(footer);
+    const queue = html.indexOf('data-role="adjust-queue"');
+    expect(queue).toBeGreaterThan(-1);
+    expect(html.indexOf('data-role="workspace-toolbar"')).toBeGreaterThan(queue);
   });
 
   it("named view presets render only when a handler can apply them", () => {

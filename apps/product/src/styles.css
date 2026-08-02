@@ -5489,3 +5489,126 @@ button.package-files__link:hover {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* ===== THE WORKSPACE, ARRANGED AS THE COMP LAYS IT OUT (2026-08-02) ================
+   A narrow queue column beside the panes, with the tools in a drawer beneath them.
+
+   Built as an experiment and compared side by side before keeping, because the obvious
+   objection was that a 168px column would truncate queue rows the comp never had to
+   carry. It does not: they WRAP and stay readable. What the comparison actually showed
+   is that two things get better — the panes gain the whole 356px the work column used
+   to hold, and the variant cards go from a cramped 2-across list with four of six
+   visible to all six in one row — and one thing got worse, the forward acts, which
+   wrapped to three lines. So those moved out of the column instead (below).
+
+   Scoped to `--split`, which is exactly the two workspace stages: Intake, the library
+   and Delivery are document pages and keep the standing two-column grid. */
+.workbench:has(.workbench__stage--split) {
+  grid-template-columns: minmax(0, 176px) minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+}
+
+/* The queue is separated by a border rather than a gap, as the comp has it. */
+.workbench:has(.workbench__stage--split) .workbench__work {
+  background: #ffffff;
+  border-right: 1px solid var(--color-surface-line);
+  padding: 10px;
+}
+
+.workbench:has(.workbench__stage--split) .workbench__work .panel {
+  border: none;
+  padding: 0;
+}
+
+.workbench:has(.workbench__stage--split) .workbench__stage {
+  padding: 8px 14px 0;
+  gap: 8px;
+}
+
+/* THE DRAWER: the tools, under the panes, scrolling on their own so a long tool panel
+   never steals height from the geometry above it. */
+.workspace-drawer {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: min(238px, 27vh);
+  overflow-y: auto;
+  background: #ffffff;
+  border-top: 1px solid var(--color-border);
+  padding: 10px 14px 12px;
+}
+
+.workspace-drawer .panel {
+  border: none;
+  padding: 0;
+}
+
+/* Declare's two panels sit side by side in the drawer; Adjust's single toolbox fills it. */
+.workspace-drawer:has(> .panel + .panel) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 14px;
+}
+
+/* THE FORWARD ACTS ARE NOT QUEUE FURNITURE. They move the case to the next stage, and
+   in a narrow column "Skip adjustments — go to the construction library" wrapped to
+   three lines. Laid across the foot of the stage instead — which is also where the eye
+   ends up after reading the panes. */
+.workspace-advance {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 14px 12px;
+  background: #ffffff;
+  border-top: 1px solid var(--color-border);
+}
+
+.workspace-advance > .panel__hint,
+.workspace-advance .attestation-summary {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin: 0;
+}
+
+/* THE QUEUE ROW STACKS IN THE NARROW COLUMN. `.decode-stepper__item` lays its parts out
+   in a row with `justify-content: space-between`, which is right at 356px and wrong at
+   176px: the tooth badge and the chips took the width and the status sentence was left
+   wrapping two characters at a time down a 40px gutter. Stacked, every part gets the
+   full column and the sentence reads. */
+.workbench:has(.workbench__stage--split) .decode-stepper__item {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+}
+
+.workbench:has(.workbench__stage--split) .decode-stepper__item > * {
+  max-width: 100%;
+}
+
+/* The queue's own heading and summary shed the panel's inset so the column reads as one
+   list rather than a card inside a card. */
+.workbench:has(.workbench__stage--split) .workbench__work .panel__title {
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+/* DECLARE'S FORWARD BAR CARRIES A LIST; ADJUST'S DOES NOT. The attestation summary is
+   one line per site, so on a busy case this bar grew to 353px and took it straight out
+   of the panes (measured: panes 229px on an 786px stage). The list scrolls inside the
+   bar instead — the fork buttons and the consequence sentence stay on screen, which is
+   the half that must never be scrolled past. The work column's own footer already had
+   this rule for the same reason; it moved with the bar. */
+.workspace-advance .attestation-summary {
+  flex: 1 1 260px;
+  max-height: 84px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.workspace-advance {
+  max-height: min(196px, 24vh);
+  overflow-y: auto;
+}
