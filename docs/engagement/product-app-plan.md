@@ -1278,6 +1278,47 @@ Landings against this batch (same-day):
   the effective value presses, attribution chips as elsewhere, and no served
   options means NO chooser. The comp's "24 h"/"4 h" lead times have no source and
   stay absent.
+**AC. EMIT_FROM_POSES — THE PLAN, MEASURED (2026-08-02, §10-O.7 taken up; the client's
+"then the engineering items").** The seam was re-verified against the tree at `e80ad07`:
+`construction_mesh` enters `_align_and_package` only at the two signatures, the
+`package_sites` triple (auto_flow.py:2082) and the product-build block (2266-2275);
+everything from auto_flow.py:2234 down is pure emission over
+`(package_sites, final_products, audit_by_tooth, site_rows, frame/origin/L, scan)`, and
+`frame/origin/L` are DETERMINISTIC scan derivatives (`pts = scan.vertices`,
+`normals = scan.vertex_normals`, `_crowns_frame`, auto_flow.py:1699-1703 — no sampling,
+no RNG). The four M-hazards, answered by construction:
+1. **Provenance**: a re-emit mints a NEW run dir (AM-1 forbids writing into the old
+   one); the old run's `<case>-<tooth>-implant.json` `adjustments`/`nudge`/`best_fit`
+   keys are COPIED FORWARD into the new records — merge becomes copy-forward.
+2. **The emission-time refusal**: the re-emit enters through the worker port's existing
+   containment (`_leave_refusal`), so a design-rule or relief-block refusal lands as a
+   REFUSED run on the surfaces that already render refusals — the flow point §10-M
+   feared gets the run-refusal surface for free.
+3. **Vendor rename**: the new dir gets a fresh manifest from `emit_case_package`; the
+   old `-scanbody-<vendor>.stl` simply is not copied — "register_package_files never
+   removes" only bites in-place rewrites, which AM-1 already forbids.
+4. **Stale evidence**: `clear_confirmation` fires explicitly on the session transition;
+   exception drafts fall via `clear_exception_intents`; `adjust_decision` falls.
+Call sequence (worker, new `application/emit.py::emit_from_poses(case, selection,
+source_run_dir, out_dir)`): read per-site implant.json (pose_matrix is the ADJUSTED
+world pose — `_reemit_site` keeps it current) + the source report's site rows and
+`clocking`; rebuild `SitePackageSpec`s; per distinct variant
+`channel_from_boundary_loops` → `resolve_gingival_offset` → `build_final_product`;
+`delivered_channel_offsets` per site; `render_site_qc`; `emit_case_package` (the gate);
+arch trio + `view.html` + report. The report carries `emitted_from: <source_run_id>`
+(provenance on the receipt) and site rows whose pose/seat/clock facts are the source's
+VERBATIM while product facts (clamp trio, delivered channel, part label, design
+advisories) are fresh.
+BFF: the re-emit-eligible boundary is a construction-path or relief-only effective
+change over a DONE current run — those keep site rungs (the pose the review attested is
+untouched, the measured §10-M fact) and route through a new port submission
+(`mode="reemit"`, source_run_id) with the existing claim/land/withdraw pattern; jaw or
+model changes keep today's full retirement. Product UI: `constructionChangeWords` tells
+the NEW truth (re-emits from the run's own poses; the confirmation falls; flags may
+change) — the old "re-processes the case" promise retires with the behaviour.
+FOLLOW-ON (§10-B/C rides this): relief per-site on Adjustment becomes a re-emit with a
+per-site offset map once this lands.
+
 - **AB.3 LANDED** — the browser upload, retiring O.6's refusal WITH its reason. The
   storage policy (bff/resources/uploads.py's module doc, pinned in test_uploads.py):
   `POST /api/uploads/scans/{folder}/{filename}` takes the raw STL bytes — no
