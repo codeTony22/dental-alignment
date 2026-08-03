@@ -29,6 +29,7 @@ import {
   ceilingReadouts,
   choicesUpdateFrom,
   constructionOptions,
+  turnaroundPillLabel,
   detectionMarkers,
   EMPTY_MARK,
   markOnArmMark,
@@ -499,6 +500,45 @@ export function ChoicesPanel({ detail, saving, error, onChoice }: ChoicesPanelPr
             ))}
           </ul>
         </div>
+        {/* THE TURNAROUND CHOOSER (§10-AB.4, unblocked by AB.1's confirmed card):
+            pills like the jaw's, money the server's — each option prints its served
+            per-site unit via turnaroundPillLabel. No served options, no chooser:
+            a pill with invented money is exactly what this panel must never grow. */}
+        {(chosen.turnaround_options ?? []).length > 0 && (
+          <div>
+            <h4 className="decode-section__title">
+              Turnaround
+              <ChoiceSourceChip
+                source={chosen.effective_turnaround?.source ?? "default"}
+                choice="turnaround"
+              />
+            </h4>
+            <div
+              data-role="choice-turnaround"
+              className="decode-jaw"
+              role="group"
+              aria-label="Turnaround"
+            >
+              {(chosen.turnaround_options ?? []).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={option.value === chosen.effective_turnaround?.value}
+                  className={`decode-jaw__option${
+                    option.value === chosen.effective_turnaround?.value
+                      ? " decode-jaw__option--selected"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    onChoice({ turnaround: option.value as "standard" | "rush" })
+                  }
+                >
+                  {turnaroundPillLabel(option)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       {saving && (
         <div data-role="choices-saving" className="busy-state" role="status">

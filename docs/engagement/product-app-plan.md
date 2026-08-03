@@ -1263,3 +1263,18 @@ verbatim intent:
    renames) proceeds. §10-L's recess measurement and §10-J's tool-2 words still wait
    on the client's physical measurement and wording respectively — restated, not
    resolved, by this batch.
+
+Landings against this batch (same-day):
+- **AB.1 LANDED** — `bff.pricing`: status "final", version `client-2026-08-02-v1`,
+  note names the confirmation date; placeholder-v1 receipts stay readable as such.
+  The product's badges dropped by construction (they key off the served word).
+- **AB.2 LANDED** — `toleranceBandsWords` renders the served catalog bands
+  (`references[*].bands`) on Delivery's assurance header, exactly once, with the
+  guidance-decides disclaimer; the old blanket no-tolerance pin SHARPENED to
+  "only as the served line" rather than falling.
+- **AB.4 LANDED** — the Intake turnaround chooser: `turnaround_options` ride the
+  choices view priced from the ONE `bff.pricing` card ($32/$48 per site), pills
+  wear the jaw chooser's clothes with the served money via `turnaroundPillLabel`,
+  the effective value presses, attribution chips as elsewhere, and no served
+  options means NO chooser. The comp's "24 h"/"4 h" lead times have no source and
+  stay absent.

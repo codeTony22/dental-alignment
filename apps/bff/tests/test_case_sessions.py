@@ -181,6 +181,12 @@ class TestCaseSessionDetail:
             # a case nobody expedited is a standard case — the standing default,
             # attributed like the others (2026-07-31)
             "effective_turnaround": {"value": "standard", "source": "default"},
+            # the card's own per-site units ride with the choices so the Intake
+            # chooser prints the server's money, never its own (§10-AB.4)
+            "turnaround_options": [
+                {"value": "standard", "unit_amount_cents": 3200, "currency": "USD"},
+                {"value": "rush", "unit_amount_cents": 4800, "currency": "USD"},
+            ],
             "complete": True,
         }
         assert body["session"] == {
@@ -407,6 +413,10 @@ class TestChoices:
             "effective_jaw": {"value": "upper", "source": "chosen"},
             "effective_relief": {"value": 0.15, "source": "chosen"},
             "effective_turnaround": {"value": "standard", "source": "default"},
+            "turnaround_options": [
+                {"value": "standard", "unit_amount_cents": 3200, "currency": "USD"},
+                {"value": "rush", "unit_amount_cents": 4800, "currency": "USD"},
+            ],
             "complete": True,
         }
         # persisted: a fresh app serves the same choices and the worklist's fact
@@ -515,6 +525,17 @@ class TestChoices:
         assert body["choices"]["turnaround"] == "rush"
         assert body["choices"]["effective_turnaround"] == {"value": "rush",
                                                            "source": "chosen"}
+
+    def test_the_turnaround_options_price_from_the_one_rate_card(self, client):
+        # §10-AB.4: the chooser's money is the card's — the SAME module the invoice
+        # charges from, so the pill and the bill can never disagree
+        from bff.pricing import CURRENCY, TURNAROUNDS, unit_amount_cents
+        body = client.get("/api/case-sessions/neodent-gm").json()
+        assert body["choices"]["turnaround_options"] == [
+            {"value": word, "unit_amount_cents": unit_amount_cents(word),
+             "currency": CURRENCY}
+            for word in TURNAROUNDS
+        ]
 
     def test_an_unknown_turnaround_word_is_refused_at_the_wire(self, client):
         # a Literal, not a validated str: bff.pricing must never be handed a word it

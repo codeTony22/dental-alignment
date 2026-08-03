@@ -160,6 +160,11 @@ export function caseSessionDetail(
       // a case nobody expedited is a standard case — the standing default, and it
       // never gates `complete`
       effective_turnaround: { value: "standard", source: "default" },
+      // the card's own per-site units (§10-AB.4) — the chooser's whole vocabulary
+      turnaround_options: [
+        { value: "standard", unit_amount_cents: 3200, currency: "USD" },
+        { value: "rush", unit_amount_cents: 4800, currency: "USD" },
+      ],
       complete: false,
     },
     session: {

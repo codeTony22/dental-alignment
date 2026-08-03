@@ -24,6 +24,7 @@ import {
   siteEvidence,
   type MarkDraft,
   OFF_SCAN_MISS_WORDS,
+  turnaroundPillLabel,
 } from "./intake";
 import {
   captureAssessment,
@@ -694,5 +695,40 @@ describe("re-marking an existing site's centre (client 2026-08-01, the tooth-29 
       expect(words).toContain("current run");
       expect(words).toContain("anything signed over it");
     });
+  });
+});
+
+/**
+ * THE TURNAROUND PILL'S WORDS (§10-AB.4). The money is the SERVED per-site unit —
+ * bff.pricing's own cents, never a figure this app holds — and the label formats it,
+ * nothing more. The comp's "24 h" / "4 h" lead times have no source and are absent.
+ */
+describe("turnaroundPillLabel — the served unit, formatted and nothing more", () => {
+  it("prints whole dollars without cents noise", () => {
+    expect(
+      turnaroundPillLabel({ value: "standard", unit_amount_cents: 3200, currency: "USD" }),
+    ).toBe("standard · $32/site");
+  });
+
+  it("keeps cents when the card carries them", () => {
+    expect(
+      turnaroundPillLabel({ value: "rush", unit_amount_cents: 4850, currency: "USD" }),
+    ).toBe("rush · $48.50/site");
+  });
+
+  it("spells a non-USD currency by its code rather than guessing a symbol", () => {
+    expect(
+      turnaroundPillLabel({ value: "standard", unit_amount_cents: 3200, currency: "EUR" }),
+    ).toBe("standard · 32 EUR/site");
+  });
+
+  it("never invents the comp's lead times", () => {
+    const label = turnaroundPillLabel({
+      value: "standard",
+      unit_amount_cents: 3200,
+      currency: "USD",
+    });
+    expect(label).not.toContain("24 h");
+    expect(label).not.toContain("h ·");
   });
 });

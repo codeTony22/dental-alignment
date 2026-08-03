@@ -61,6 +61,7 @@ from case_prep.application.preview import (PreviewRefused, PreviewSelection,
 from .. import status
 from ..config import Settings
 from ..ports.worker import JobState, WorkerPort
+from ..pricing import CURRENCY, TURNAROUNDS, unit_amount_cents
 from ..session import (ACT_ADJUST_DECISION, ACT_CHOICES_SET, ACT_DETECTED,
                        ACT_RUN_AUTHORIZED, ACT_RUN_LANDED, ACT_RUN_REFUSED,
                        ACT_RUN_WITHDRAWN, ACT_SITE_DECLARED,
@@ -187,6 +188,17 @@ class EffectiveChoiceView(BaseModel):
     source: str   # "chosen" | "suggested" | "default" | "none"
 
 
+class TurnaroundOptionView(BaseModel):
+    """One turnaround the rate card prices, with its per-site unit in integer cents.
+    Served beside the choices (§10-AB.4) so the Intake chooser prints the CARD's
+    money — the same ``bff.pricing`` module the invoice charges from — and the pill
+    and the bill can never disagree. Read-only like everything else here."""
+
+    value: str
+    unit_amount_cents: int
+    currency: str
+
+
 class ChoicesView(BaseModel):
     """The operator's case-level choices as persisted (None = not yet made), plus the
     facts the UI needs to render them honestly: the worker's default relief ask, the
@@ -206,6 +218,8 @@ class ChoicesView(BaseModel):
     # "chosen" | "default" — never "suggested": no case fact suggests a turnaround,
     # and the standing default is the only fallback there is
     effective_turnaround: EffectiveChoiceView
+    # the rate card's priced turnarounds (§10-AB.4) — the chooser's whole vocabulary
+    turnaround_options: List[TurnaroundOptionView] = Field(default_factory=list)
     # DELIBERATELY unaffected by the turnaround (see ``CaseChoices.turnaround``):
     # the standing default answers it, so a case is never incomplete for want of a
     # commercial choice nobody has to make
@@ -894,6 +908,12 @@ def _choices_view(case: CaseRecord, session: CaseSession) -> ChoicesView:
             source=effective.gingival_offset_source),
         effective_turnaround=EffectiveChoiceView(
             value=effective.turnaround, source=effective.turnaround_source),
+        turnaround_options=[
+            TurnaroundOptionView(value=word,
+                                 unit_amount_cents=unit_amount_cents(word),
+                                 currency=CURRENCY)
+            for word in TURNAROUNDS
+        ],
         complete=effective.complete,
     )
 

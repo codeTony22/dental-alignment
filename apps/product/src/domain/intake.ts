@@ -13,6 +13,7 @@ import type {
   ChoicesUpdate,
   DetectedProposalView,
   SiteView,
+  TurnaroundOptionView,
 } from "../api/client";
 
 /**
@@ -596,4 +597,19 @@ export function ceilingReadouts(
       exceeded,
     };
   });
+}
+
+/**
+ * THE TURNAROUND PILL'S WORDS (§10-AB.4). The money is the SERVED per-site unit —
+ * ``bff.pricing``'s own integer cents, the same module the invoice charges from —
+ * and this formats it, nothing more. USD renders with its symbol; any other
+ * currency is spelled by its code rather than guessed at. The comp's lead times
+ * ("24 h" / "4 h") have no source in this product and are deliberately absent.
+ */
+export function turnaroundPillLabel(option: TurnaroundOptionView): string {
+  const dollars = option.unit_amount_cents / 100;
+  const amount = Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
+  const money =
+    option.currency === "USD" ? `$${amount}` : `${amount} ${option.currency}`;
+  return `${option.value} · ${money}/site`;
 }

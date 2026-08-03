@@ -484,3 +484,37 @@ describe("the comp's page clothes", () => {
     );
   });
 });
+
+/**
+ * THE TURNAROUND CHOOSER (§10-AB.4, unblocked by AB.1's confirmed rate card). Pills
+ * like the jaw's, money the server's: each option prints its served per-site unit,
+ * the effective value is pressed, the source chip states the attribution, and with
+ * no served options there is NO chooser — never a pill with invented money.
+ */
+describe("the turnaround chooser", () => {
+  it("offers each served option with the card's own money", () => {
+    const html = view();
+    expect(html).toContain('data-role="choice-turnaround"');
+    expect(html).toContain("standard · $32/site");
+    expect(html).toContain("rush · $48/site");
+  });
+
+  it("presses the EFFECTIVE turnaround and chips its attribution", () => {
+    const html = view();
+    expect(html).toMatch(/aria-pressed="true"[^>]*>standard · \$32\/site</);
+    expect(html).toMatch(
+      /data-role="choice-source"[^>]*data-choice="turnaround"[^>]*>default/,
+    );
+  });
+
+  it("renders NO chooser when the payload serves no options", () => {
+    const detail = caseSessionDetail();
+    const html = view({
+      detail: {
+        ...detail,
+        choices: { ...detail.choices, turnaround_options: [] },
+      },
+    });
+    expect(html).not.toContain('data-role="choice-turnaround"');
+  });
+});

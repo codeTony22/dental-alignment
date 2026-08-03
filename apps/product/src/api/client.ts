@@ -178,9 +178,21 @@ export interface ChoicesView {
   /** "chosen" | "default" — never "suggested": no case fact suggests a turnaround,
    * and the standing default is the only fallback there is. */
   effective_turnaround?: EffectiveChoiceView<Turnaround>;
+  /** The rate card's priced turnarounds (§10-AB.4) — the chooser's vocabulary AND
+   * its money, both the server's. Absent/empty on an older payload: the chooser
+   * simply does not render rather than inventing a price. */
+  turnaround_options?: readonly TurnaroundOptionView[];
   /** DELIBERATELY unaffected by the turnaround: the standing default always answers
    * it, so a case is never incomplete for want of a commercial choice. */
   complete: boolean;
+}
+
+/** One turnaround the rate card prices — value + per-site unit in integer cents,
+ * from the SAME bff.pricing module the invoice charges from (§10-AB.4). */
+export interface TurnaroundOptionView {
+  value: string;
+  unit_amount_cents: number;
+  currency: string;
 }
 
 export interface CaseView {
