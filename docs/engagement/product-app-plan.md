@@ -1319,7 +1319,34 @@ change) — the old "re-processes the case" promise retires with the behaviour.
 FOLLOW-ON (§10-B/C rides this): relief per-site on Adjustment becomes a re-emit with a
 per-site offset map once this lands.
 
-**AC LANDED IN PART (2026-08-02, commit `03a1628`): the worker layer.**
+**AB AMENDED (client, 2026-08-02, second batch):** the second-actor question (item in
+A) is NOT NEEDED FOR NOW — closed until the client reopens it; the final Terms &
+Conditions text STAYS OPEN (placeholder renders until it arrives; one string to swap).
+
+**AD. ALIGNMENT TUNING + TOOL COHESIVENESS (client 2026-08-02: "when adjustment and
+rerunning the alignment it does not take effect").** ROOT CAUSE, verified in code, not
+guessed: `_authorized_selection` (case_sessions.py:1858-1878) sends the run exactly
+`model / construction_path / jaw / gingival_offset_mm / variants / marked_centers`,
+and `SiteSession` persists only `marked_center` — the adjust tools' evidence (fit
+pairs, align-to-mark marks, best-fit pairs, nudge deltas) is applied to the CURRENT
+run's implant.json in place (`_reemit_site`/`_finish_adjustment`) and stored nowhere
+else. A re-run therefore re-aligns from scratch and silently discards every operator
+adjustment; the flag that prompted the rework returns.
+THE DESIGN (respecting the standing trust rules, incl. the re-click pair-integrity
+record): operator alignment evidence is a MEASUREMENT in the scan's world frame —
+valid across runs like `marked_center` already is — so it PERSISTS per site in the
+session (a new `alignment_evidence` record: kind + points, appended by the adjust
+routes at apply time, cleared only by an explicit operator act or a re-mark of that
+site's centre) and RIDES the selection into every future run; `run_case` re-applies
+it per site AFTER automation through the same application.adjust functions the tools
+use, landing the same provenance entries in implant.json ("re-applied from session
+evidence, run X"). The bare rotation NUDGE deliberately does NOT auto-re-apply (its
+own provenance says eyeball, no marks — re-applying it silently would promote the
+weakest evidence class); its cumulative degrees stay reported. The preview seat in
+the screenshot (rim 0.80 mm on cap7030 t29) is the pre-run preview's own seat — the
+same persistence gives the preview the evidence too. Wire: SiteSession +
+`alignment_evidence`, the adjust routes append on apply, `_authorized_selection`
+gains the field, `application/run.py` re-applies post-align, tests at every layer.
 `application/emit.py::emit_from_poses(case, selection, source_run_dir, out_dir)` exists
 and is verified on the real tree (tests/test_emit.py): pose bit-identity, provenance
 copy-forward + re-hash, vendor-rename cleanliness, `emitted_from` on the receipt, the
