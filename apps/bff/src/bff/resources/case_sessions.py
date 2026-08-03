@@ -1879,6 +1879,17 @@ def _authorized_selection(case: CaseRecord, case_id: str,
             for view in sites
             if session.sites[str(view.tooth)].marked_center is not None
         },
+        # THE OPERATOR'S ALIGNMENT EVIDENCE (§10-AD): every persisted mark/pairs/
+        # best-fit rides into the run so the automation's pass is followed by the
+        # same re-apply the tools performed — an adjustment must survive the re-run
+        # that used to discard it. Only sites holding any appear, like the centres.
+        "alignment_evidence": {
+            str(view.tooth): [e.model_dump()
+                              for e in session.sites[
+                                  str(view.tooth)].alignment_evidence]
+            for view in sites
+            if session.sites[str(view.tooth)].alignment_evidence
+        },
     }
 
 

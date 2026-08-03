@@ -80,6 +80,14 @@ class RunSelection:
     # the selection with every other operator act rather than being merged into the
     # case, so the case record stays exactly what the ingest produced.
     marked_centers: Mapping[int, Sequence[float]] = field(default_factory=dict)
+    # THE OPERATOR'S ALIGNMENT EVIDENCE (§10-AD, client 2026-08-02: adjustments must
+    # survive a re-run). tooth → the session's AlignmentEvidence dicts in apply
+    # order (kind mark|pairs|best_fit + payload). Re-applied AFTER automation via
+    # the same application.adjust functions the tools use — the marks are
+    # world-frame measurements on a scan that has not changed, so they stay valid
+    # across runs exactly like marked_centers. The bare rotation nudge is never in
+    # here, by design (its provenance is eyeball with no marks).
+    alignment_evidence: Mapping[int, Sequence[dict]] = field(default_factory=dict)
 
 
 def _require_selection(case: CaseRecord, selection: RunSelection) -> None:
@@ -103,6 +111,86 @@ def _require_selection(case: CaseRecord, selection: RunSelection) -> None:
         raise RunRefused("the library selection is incomplete: choose "
                          + " and ".join(missing)
                          + ". The software will not pick one for you." + hint)
+
+
+def _reapply_evidence(case: CaseRecord, run_dir: Path,
+                      evidence_by_tooth: Mapping[int, Sequence[dict]],
+                      summary: dict) -> None:
+    """Re-apply the operator's persisted alignment evidence to a FRESH run, through
+    the same ``application.adjust`` functions the tools use — same physics, same
+    gates, same in-run provenance (§10-AD). Mutates ``summary`` in place: each act's
+    outcome lands in ``summary["evidence_reapplied"]`` (applied / already-optimal /
+    refused, with the gate's own words — a refusal here is an ANSWER about the new
+    geometry, never a failed run), the re-derived row numbers fold into the site's
+    row, and rewritten file names join ``package_files``.
+
+    The correspondence QC block is deliberately NOT reconstructed on the row this
+    increment: a re-applied pairs fit reports through ``evidence_reapplied`` and its
+    implant.json provenance, and the row under-claims (no agreement figure) rather
+    than claiming a block this layer would have to rebuild by hand."""
+    from . import adjust  # heavy import, deferred like the pipeline's own
+
+    outcomes: list = []
+    rows_by_tooth = {r.get("tooth"): r for r in summary.get("sites", [])
+                     if "error" not in r}
+    for tooth in sorted(int(t) for t in evidence_by_tooth):
+        for entry in evidence_by_tooth[tooth]:
+            kind = entry.get("kind")
+            receipt = {"tooth": tooth, "kind": kind,
+                       "applied_at": entry.get("applied_at")}
+            try:
+                if kind == "mark":
+                    outcome = adjust.align_to_mark(case, run_dir, tooth,
+                                                   entry["point"])
+                elif kind == "pairs":
+                    pairs = [adjust.Correspondence(
+                        scan_point=p["scan_point"],
+                        scan_point_end=p.get("scan_point_end"),
+                        feature_id=p.get("feature_id"),
+                        part_point=p.get("part_point"),
+                        part_point_end=p.get("part_point_end"))
+                        for p in (entry.get("pairs") or [])]
+                    outcome = adjust.align_to_correspondence(case, run_dir,
+                                                             tooth, pairs)
+                elif kind == "best_fit":
+                    outcome = adjust.best_fit_site(
+                        case, run_dir, tooth,
+                        matching_diameter_mm=float(
+                            entry.get("matching_diameter_mm") or
+                            adjust._BEST_FIT_DEFAULT_DIAMETER_MM),
+                        apply=True)
+                else:
+                    receipt.update(outcome="refused",
+                                   detail=f"unknown evidence kind {kind!r} — "
+                                          "nothing was re-applied")
+                    outcomes.append(receipt)
+                    continue
+            except adjust.AlreadyOptimal as exc:
+                # the one refusal that is a PASS: the fresh automation already
+                # stands where the evidence would put it
+                receipt.update(outcome="already-optimal", detail=str(exc))
+                outcomes.append(receipt)
+                continue
+            except (adjust.AdjustInvalid, adjust.AdjustRefused) as exc:
+                receipt.update(outcome="refused", detail=str(exc))
+                outcomes.append(receipt)
+                continue
+            receipt.update(outcome="applied", operation=outcome.operation,
+                           detail=outcome.detail)
+            outcomes.append(receipt)
+            row = rows_by_tooth.get(tooth)
+            if row is not None:
+                if outcome.clocking is not None:
+                    row["clocking"] = outcome.clocking
+                if outcome.deviation:
+                    row.update(outcome.deviation)
+                if outcome.stale_metrics:
+                    row["stale_metrics"] = list(outcome.stale_metrics)
+            for name in outcome.files:
+                if name not in summary.get("package_files", []):
+                    summary.setdefault("package_files", []).append(name)
+    if outcomes:
+        summary["evidence_reapplied"] = outcomes
 
 
 def run_case(case: CaseRecord, selection: RunSelection, out_dir: Path) -> dict:
@@ -147,7 +235,7 @@ def run_case(case: CaseRecord, selection: RunSelection, out_dir: Path) -> dict:
     scan = _scan_mesh(case.scan)
     jaw = selection.jaw or case.jaw
     try:
-        return run_auto_case(
+        summary = run_auto_case(
             case_id=case.id, scan=scan, library=library,
             construction_mesh=_construction_mesh(str(construction_file)),
             vendor=construction_catalog.vendor_of(selection.construction_path),
@@ -163,3 +251,18 @@ def run_case(case: CaseRecord, selection: RunSelection, out_dir: Path) -> dict:
         # export gates ("package NOT emitted", the relief gate) and "no confirmed
         # site could be aligned"; answers to the operator, in the gate's words
         raise RunRefused(str(exc)) from exc
+    # THE OPERATOR'S EVIDENCE OUTLIVES THE RUN THAT RECEIVED IT (§10-AD): re-apply
+    # it now, after automation, into the run's own directory — the same functions,
+    # gates and provenance as the live tools. Refusals land as receipts on the
+    # summary, never as a failed run: a mark the new geometry cannot take is an
+    # answer the operator reads, not a crash.
+    if selection.alignment_evidence:
+        _reapply_evidence(case, Path(out_dir), selection.alignment_evidence,
+                          summary)
+        # the report on disk carries the receipts too — the run dir must never
+        # say less than the summary the BFF landed (AM-1's honesty half)
+        report_path = Path(out_dir) / f"{case.id}-auto-report.json"
+        if report_path.is_file():
+            import json as _json
+            report_path.write_text(_json.dumps(summary, indent=2))
+    return summary

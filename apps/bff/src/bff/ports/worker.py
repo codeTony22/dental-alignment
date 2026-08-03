@@ -211,6 +211,11 @@ class InProcessWorker:
             marked_centers={int(t): [float(c) for c in centre]
                             for t, centre in (sel.get("marked_centers")
                                               or {}).items()},
+            # the operator's persisted marks/pairs/best-fits (§10-AD) — carried
+            # like the centres, re-applied by the run after automation
+            alignment_evidence={int(t): list(entries)
+                                for t, entries in (sel.get("alignment_evidence")
+                                                   or {}).items()},
         )
 
     @staticmethod

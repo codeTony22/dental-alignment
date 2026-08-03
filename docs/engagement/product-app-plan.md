@@ -1348,6 +1348,25 @@ same persistence gives the preview the evidence too. Wire: SiteSession +
 `alignment_evidence`, the adjust routes append on apply, `_authorized_selection`
 gains the field, `application/run.py` re-applies post-align, tests at every layer.
 
+**AD LANDED (2026-08-02, the whole wire).** `SiteSession.alignment_evidence`
+(mark/pairs/best_fit, wire-shaped, apply order); the three evidence-bearing routes
+append through `_land` on APPLY only, the nudge never; a centre re-mark clears the
+site's evidence (pair-integrity); `_authorized_selection` ships it, the port passes
+it, and `run_case` re-applies AFTER automation via the same `application.adjust`
+functions — outcomes land as receipts on `summary["evidence_reapplied"]`
+(applied / already-optimal / refused with the gate's own words, never a failed run),
+re-derived row numbers fold in, rewritten files join `package_files`, and the
+on-disk report says what the summary says. Verified on the real tree
+(test_evidence_reapply.py's slow test) and pinned at both layers (worker dispatch +
+BFF persistence/selection/re-mark). TWO STATED FOLLOW-UPS, recorded not built:
+the PREVIEW still seats the automation's raw pose (the review attests automation;
+the run's receipts state what re-applied — giving the preview the same re-apply is
+a later slice), and the UI does not yet SAY "N measurements will re-apply on the
+next run" on the queue/site (a surfacing slice; the mechanism does not depend on
+it). The correspondence QC block is not reconstructed on a re-applied row — it
+under-claims (no agreement figure) rather than hand-rebuilding the block, stated
+in `_reapply_evidence`'s doc.
+
 **AE. PANE 2's CAMERA AND CROP (client 2026-08-02, with a screenshot: "We lost the
 global view of the rotation of the camera. The second panel doesn't default to the top
 of the healing cap … maybe [cutting to] just the healing cap and a little more in

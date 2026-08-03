@@ -290,6 +290,9 @@ class TestTheRunLands:
             # case, and shipping a redundant copy would invite the two drifting
             # apart. The map carries the marked ones and nothing else.
             "marked_centers": {},
+            # §10-AD: the operator's persisted marks/pairs/best-fits ride the
+            # selection so a re-run re-applies them — empty here: nobody adjusted
+            "alignment_evidence": {},
         }
 
     def test_an_authorized_run_consumes_the_effective_choices(
@@ -314,6 +317,9 @@ class TestTheRunLands:
             # case, and shipping a redundant copy would invite the two drifting
             # apart. The map carries the marked ones and nothing else.
             "marked_centers": {},
+            # §10-AD: the operator's persisted marks/pairs/best-fits ride the
+            # selection so a re-run re-applies them — empty here: nobody adjusted
+            "alignment_evidence": {},
         }
 
     def test_verdicts_land_on_the_ladder_ready_holds_attention_flags(
