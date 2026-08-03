@@ -106,30 +106,28 @@ export function confirmChip(confirmed: boolean): string {
 
 /**
  * HOW A SCAN ACTUALLY ARRIVES (design flow.dc.html 76-83; gap "a scan arrives",
- * 2026-07-31).
+ * 2026-07-31 — AMENDED §10-AB.3, 2026-08-02: the browser upload is REAL now).
  *
- * The design prototype puts a dashed drop zone here — "Drop a scan file · STL or PLY ·
- * upper or lower jaw · watertight mesh", with a "browse files" button. It is scenery:
- * `browseUpload: () => this.pickScan(SCANS[0].id)` (flow.dc.html:1105) selects a
- * fixture. Shipping that zone would teach a workflow this installation does not have,
- * so the affordance is a STATEMENT instead, and every clause of it was checked against
- * the code that really mints cases (case_prep.application.cases.discover_cases).
+ * The design prototype's dashed drop zone was scenery (`browseUpload` selected a
+ * fixture), and until 2026-08-02 this module's job was to refuse it honestly. The
+ * client then greenlit a real write path, so the drop zone exists — as its own band
+ * (Worklist's ScanDropZone), writing `scans/<folder>/<file>.stl` into the scan root
+ * through POST /api/uploads. THIS panel stays what it always was: the statement of
+ * the folder rules, which now describe BOTH routes in (the lab's copy and the
+ * browser's upload), still checked clause by clause against discover_cases.
  *
- * THREE OF THE PROTOTYPE'S FOUR CLAIMS ARE WRONG HERE, and the copy says so:
+ * TWO OF THE PROTOTYPE'S CLAIMS STAY REFUSED, and the copy still says so:
  *
  *  - "PLY" — discovery accepts STL and nothing else (cases.py). A PLY-only folder is
  *    not a case and never appears; pinned by
  *    worker tests/test_application.py::test_a_folder_holding_only_a_ply_is_not_a_case.
+ *    The upload endpoint refuses non-STL filenames for the same reason.
  *  - "watertight mesh" — measured 2026-07-31 over the client's shipped tree: 0 of 6
- *    real intraoral scans is watertight (two are not even a single body). Advertising
- *    watertightness as an acceptance criterion would have every scan this product has
- *    ever run read as invalid, and would send a lab hunting a scanner fault that is
- *    not there. Nothing checks it, and nothing should.
- *  - "Drop a scan file" — no file travels through this app at all. See
- *    SCAN_UPLOAD_ABSENT for what a real browser ingest would take.
+ *    real intraoral scans is watertight (two are not even a single body). Nothing
+ *    checks it, and nothing should — at upload time or any other.
  *
- * The one true claim is "upper or lower jaw", and even that is a SUGGESTION read off
- * the filename (cases.py:89), settled by the operator at Intake.
+ * "Upper or lower jaw" stays a SUGGESTION read off the filename (cases.py:89),
+ * settled by the operator at Intake — for uploaded scans exactly as for copied ones.
  *
  * Display copy, not a rule: nothing here is computed and nothing here is a verdict.
  * It lives in domain/ so the claims have one home and a test that pins them.
@@ -147,7 +145,9 @@ export const SCAN_ARRIVAL: readonly ScanArrivalStep[] = [
     detail:
       "The lab copies the case folder into the scan root this service was configured " +
       "with — the same place the morning's scans already land. The runbook names the " +
-      "path for this installation.",
+      "path for this installation. The upload band above does the same thing from " +
+      "the browser: it creates the folder in the scan root and writes your STL " +
+      "into it.",
   },
   {
     key: "stl",
@@ -198,13 +198,34 @@ export const SCAN_ARRIVAL: readonly ScanArrivalStep[] = [
   },
 ];
 
-/** Why there is no control here, said plainly so nobody hunts for the button the
- *  design drew. The honest alternative to a zone that pretends. */
-export const SCAN_UPLOAD_ABSENT =
-  "There is no browser upload. Files do not travel through this app — scans reach the " +
-  "scan root the way the lab already moves them, and this worklist reads what is " +
-  "there. Nothing on this page will accept a dragged file: if a case is missing here, " +
-  "it is missing from the scan root.";
+/** What the two routes in have in common, said plainly (§10-AB.3): everything on
+ *  this worklist came out of the scan root, however it got in. */
+export const SCAN_UPLOAD_NOTE =
+  "Both routes end in the scan root — the upload writes there, one folder per case, " +
+  "one STL, and the lab's own copy route works unchanged. This worklist reads what " +
+  "is there: if a case is missing here, it is missing from the scan root.";
+
+/** The upload's name rule, mirrored from the BFF's own (resources/uploads.py) so the
+ *  band can pre-check before the wire — the server still refuses for itself. */
+const UPLOAD_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+
+export function uploadNameUsable(name: string): boolean {
+  return UPLOAD_NAME.test(name);
+}
+
+/** A usable default case-folder name off the scan's own filename: the stem,
+ *  lowercased, runs of anything else collapsed to a dash. Empty stems fall back to
+ *  "new-case" — a SUGGESTION for the operator to edit, exactly like the jaw. */
+export function suggestedUploadFolder(filename: string): string {
+  const stem = filename.replace(/\.[^.]*$/, "");
+  const cleaned = stem
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[^a-z0-9]+/, "")
+    .replace(/[^a-z0-9]+$/, "")
+    .slice(0, 80);
+  return cleaned !== "" && uploadNameUsable(cleaned) ? cleaned : "new-case";
+}
 
 const isRollup = (value: unknown): value is SiteRollup => {
   if (typeof value !== "object" || value === null) return false;

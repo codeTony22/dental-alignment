@@ -17,7 +17,9 @@ import {
   rollupLabel,
   runChip,
   SCAN_ARRIVAL,
-  SCAN_UPLOAD_ABSENT,
+  SCAN_UPLOAD_NOTE,
+  suggestedUploadFolder,
+  uploadNameUsable,
   worklistBand,
   type WorklistEntry,
 } from "./worklist";
@@ -258,11 +260,40 @@ describe("the scan-arrival statement", () => {
     expect(prose).toContain("Watertightness is not a requirement");
   });
 
-  it("never invites a browser drag — this app moves no files", () => {
-    // "drop" is the prototype's whole verb. If it ever reappears here, an operator
-    // will try dragging a file onto a page that cannot accept one.
-    expect(prose.toLowerCase()).not.toContain("drop");
-    expect(SCAN_UPLOAD_ABSENT.toLowerCase()).not.toContain("drop");
-    expect(SCAN_UPLOAD_ABSENT).toContain("no browser upload");
+  it("names the upload as a route IN, and the scan root as the one truth", () => {
+    /* AMENDED (§10-AB.3): the upload is real now, so the old never-say-drop rule
+       retired WITH its reason — the drop zone exists and accepts the drag. What
+       this panel still owes is the shared invariant of both routes: everything on
+       the worklist came out of the scan root. */
+    expect(prose).toContain("upload band above");
+    expect(SCAN_UPLOAD_NOTE).toContain("scan root");
+    expect(SCAN_UPLOAD_NOTE).toContain("one folder per case");
+    expect(SCAN_UPLOAD_NOTE.toLowerCase()).not.toContain("no browser upload");
+  });
+});
+
+/** The upload band's name rules — mirrors of the BFF's own (resources/uploads.py),
+ * a pre-check for the operator, never the refusal itself. */
+describe("the upload name rules", () => {
+  it("accepts what the server accepts", () => {
+    expect(uploadNameUsable("doctor-costa-4471")).toBe(true);
+    expect(uploadNameUsable("case_2.v1")).toBe(true);
+  });
+
+  it("refuses what the server refuses", () => {
+    expect(uploadNameUsable("")).toBe(false);
+    expect(uploadNameUsable(".hidden")).toBe(false);
+    expect(uploadNameUsable("a b")).toBe(false);
+    expect(uploadNameUsable("a/b")).toBe(false);
+    expect(uploadNameUsable("x".repeat(81))).toBe(false);
+  });
+
+  it("suggests a usable folder off the scan filename, as a SUGGESTION", () => {
+    expect(suggestedUploadFolder("Lower Jaw (Dr Costa).stl")).toBe(
+      "lower-jaw-dr-costa",
+    );
+    expect(suggestedUploadFolder("scan.stl")).toBe("scan");
+    // an unusable stem falls back rather than refusing — the operator edits it
+    expect(suggestedUploadFolder("....stl")).toBe("new-case");
   });
 });

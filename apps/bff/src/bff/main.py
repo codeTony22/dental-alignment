@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 
 from .config import Settings, default_settings
 from .ports.worker import InProcessWorker
-from .resources import activity, adjust, case_sessions, deliver, library
+from .resources import activity, adjust, case_sessions, deliver, library, uploads
 from .session import SessionStore
 
 
@@ -61,6 +61,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.include_router(activity.router)
     app.include_router(library.router)
     app.include_router(library.constructions_router)
+    # the browser upload (§10-AB.3): its own prefix — it creates a case in the
+    # scan tree, it is not an action on a session (see uploads.py's own doc)
+    app.include_router(uploads.router)
 
     @app.exception_handler(RequestValidationError)
     async def validation_refusal(request: Request, exc: RequestValidationError):

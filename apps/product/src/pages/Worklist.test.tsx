@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StaticRouter } from "react-router-dom";
 import { worklistErrorRow, worklistRow } from "../testing/fixtures";
-import { WorklistPage, WorklistScreen } from "./Worklist";
+import { ScanDropZoneView, WorklistPage, WorklistScreen } from "./Worklist";
 
 function screenHtml(state: Parameters<typeof WorklistScreen>[0]["state"]) {
   return renderToStaticMarkup(
@@ -135,13 +135,13 @@ describe("the blocked-first order reaches the markup", () => {
 });
 
 describe("the page head", () => {
-  it("keeps the honest title and wears the comp's lead — no upload implication", () => {
+  it("keeps the honest title and wears the comp's lead, whole now", () => {
+    /* AMENDED (§10-AB.3): the lead's "or drop a new scan" clause was withheld while
+       it was false; the upload is real, so the comp's full sentence ships. */
     const html = screenHtml({ kind: "ok", data: [worklistRow()] });
     expect(html).toContain("Worklist");
-    // the comp's lead promises "or drop a new scan" — this product has no browser
-    // upload (see the scan-arrival pins below), so the lead carries only the true half
+    expect(html).toContain("or drop a new scan");
     expect(html).toContain("declare the truth in Alignment");
-    expect(html).not.toContain("drop a new scan");
   });
 });
 
@@ -225,16 +225,18 @@ describe("the scan-arrival panel", () => {
     expect(html).toContain("first by name");
   });
 
-  it("offers nothing that behaves like an upload", () => {
+  it("stays a control-free statement — the upload's controls live in the zone", () => {
+    /* AMENDED (§10-AB.3): the upload is real, in its OWN band above this panel.
+       The panel remains prose — a control inside the procedure note would be a
+       second, unwired upload — and its note now names both routes rather than
+       denying one. */
     const html = screenHtml({ kind: "ok", data: [worklistRow()] });
-    // scoped to the panel's own markup: a control elsewhere on the screen is not this
-    // test's business, but a control INSIDE the zone is exactly what must never exist
     const panel = html.slice(html.indexOf('data-role="scan-arrival"'));
     expect(panel).not.toContain("<button");
     expect(panel).not.toContain("<input");
     expect(panel).not.toContain("browse files");
-    expect(panel).not.toContain("Drop a scan file");
-    expect(panel).toContain("There is no browser upload");
+    expect(panel).toContain("if a case is missing here");
+    expect(panel).not.toContain("There is no browser upload");
   });
 
   it("is loudest on the empty worklist — the one time the operator asks 'where?'", () => {
@@ -248,5 +250,88 @@ describe("the scan-arrival panel", () => {
     expect(
       screenHtml({ kind: "error", detail: "the case service is unreachable" }),
     ).not.toContain('data-role="scan-arrival"');
+  });
+});
+
+/**
+ * THE DROP ZONE (§10-AB.3, retiring O.6's honest refusal now the write path is
+ * real). The zone rides between the cards and the procedure note; its three faces
+ * are stated states, its refusals are the BFF's words verbatim, and its folder rule
+ * is the server's rule mirrored — the wire still refuses for itself.
+ */
+describe("the scan drop zone", () => {
+  it("renders between the cards and the procedure note, offering the browse door", () => {
+    const html = screenHtml({ kind: "ok", data: [worklistRow()] });
+    const zoneAt = html.indexOf('data-role="scan-upload"');
+    expect(zoneAt).toBeGreaterThanOrEqual(0);
+    expect(zoneAt).toBeLessThan(html.indexOf('data-role="scan-arrival"'));
+    expect(html).toContain("Drop a scan file");
+    expect(html).toContain("browse files");
+    expect(html).toContain("one folder per case");
+  });
+
+  it("stays out of the way while loading and when the BFF is unreachable", () => {
+    expect(screenHtml({ kind: "loading" })).not.toContain('data-role="scan-upload"');
+    expect(
+      screenHtml({ kind: "error", detail: "down" }),
+    ).not.toContain('data-role="scan-upload"');
+  });
+
+  it("armed: names the file, pre-fills the folder, and gates on the name rule", () => {
+    const html = renderToStaticMarkup(
+      <ScanDropZoneView
+        phase={{
+          kind: "armed",
+          filename: "lower_jaw.stl",
+          folder: "doctor-costa",
+          error: null,
+          busy: false,
+        }}
+      />,
+    );
+    expect(html).toContain("lower_jaw.stl");
+    expect(html).toMatch(/data-role="upload-folder"[^>]*value="doctor-costa"/);
+    expect(html).toMatch(/data-role="upload-go"(?![^>]*disabled)/);
+    expect(html).toContain('data-role="upload-cancel"');
+  });
+
+  it("an unusable folder name disarms the act instead of letting the wire refuse late", () => {
+    const html = renderToStaticMarkup(
+      <ScanDropZoneView
+        phase={{
+          kind: "armed",
+          filename: "lower_jaw.stl",
+          folder: ".hidden",
+          error: null,
+          busy: false,
+        }}
+      />,
+    );
+    expect(html).toMatch(/data-role="upload-go"[^>]*disabled/);
+  });
+
+  it("a refusal renders in the BFF's own words", () => {
+    const html = renderToStaticMarkup(
+      <ScanDropZoneView
+        phase={{
+          kind: "armed",
+          filename: "lower_jaw.stl",
+          folder: "doctor-neodent-gm",
+          error:
+            "the case folder 'doctor-neodent-gm' already exists — one folder per case",
+          busy: false,
+        }}
+      />,
+    );
+    expect(html).toContain('data-role="upload-error"');
+    expect(html).toContain("already exists");
+  });
+
+  it("done: names the discovered case, not the request", () => {
+    const html = renderToStaticMarkup(
+      <ScanDropZoneView phase={{ kind: "done", caseId: "costa-4471" }} />,
+    );
+    expect(html).toContain('data-role="upload-done"');
+    expect(html).toContain("Case costa-4471");
   });
 });

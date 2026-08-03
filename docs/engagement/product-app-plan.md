@@ -1278,3 +1278,20 @@ Landings against this batch (same-day):
   the effective value presses, attribution chips as elsewhere, and no served
   options means NO chooser. The comp's "24 h"/"4 h" lead times have no source and
   stay absent.
+- **AB.3 LANDED** — the browser upload, retiring O.6's refusal WITH its reason. The
+  storage policy (bff/resources/uploads.py's module doc, pinned in test_uploads.py):
+  `POST /api/uploads/scans/{folder}/{filename}` takes the raw STL bytes — no
+  multipart, no request model — and writes the ONE thing the BFF may now write,
+  `data_root/scans/<folder>/<file>.stl`, streaming under a 256 MB cap to a temp
+  name, refusing an existing folder (one folder per case, never overwrite), non-STL
+  names, unsafe names and empty bodies, and removing its folder on any failure. The
+  response is the DISCOVERED case read back through `discover_cases` — an uploaded
+  case is indistinguishable from a lab-copied one, deliberately. Own prefix, outside
+  the case-sessions action allowlist: it creates a case, it is not a session act,
+  and it mints no session (product data plane untouched). The worklist's drop zone
+  is the comp's dashed band, honest at last — browse or drag one STL, name the
+  folder (`suggestedUploadFolder` pre-fills off the filename; the BFF's name rule
+  mirrored client-side as a pre-check), refusals verbatim, and the landing case
+  named from the response. The scan-arrival note now describes BOTH routes in; the
+  comp's lead ships whole ("or drop a new scan" became true). `config.Settings.
+  data_root`'s read-only comment names its one exception.

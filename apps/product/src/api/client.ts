@@ -1608,3 +1608,33 @@ export async function fetchActivity(
     `/api/case-sessions/${encodeURIComponent(caseId)}/activity`,
   );
 }
+
+/** The upload's answer: the DISCOVERED case, read back through the same
+ * discover_cases the worklist uses — what the next read will say, never an echo
+ * of the request (§10-AB.3). */
+export interface UploadedCaseView {
+  case_id: string;
+  folder: string;
+  scan_filename: string;
+  doctor: string;
+  jaw: string;
+  suggested_model: string | null;
+  scan_bytes: number;
+}
+
+/**
+ * THE BROWSER UPLOAD (§10-AB.3): the raw STL bytes as the body — no multipart, no
+ * form, nothing else travels. The names ride the path; the BFF's storage policy
+ * (one folder per case, never overwrite, size cap, STL only) does the refusing,
+ * and a refusal surfaces verbatim like every other one.
+ */
+export async function uploadScan(
+  folder: string,
+  filename: string,
+  file: Blob,
+): Promise<ApiResult<UploadedCaseView>> {
+  return fetchJson<UploadedCaseView>(
+    `/api/uploads/scans/${encodeURIComponent(folder)}/${encodeURIComponent(filename)}`,
+    { method: "POST", body: file },
+  );
+}

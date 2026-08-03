@@ -11,9 +11,9 @@
  * bands get visible captions, the flagged one in the attention amber. The captions
  * only NAME the order domain/worklist already computed — no re-sorting here.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchWorklist, type FetchState } from "../api/client";
+import { fetchWorklist, uploadScan, type FetchState } from "../api/client";
 import { ErrorBanner } from "../components/ErrorBanner";
 import {
   classifyWorklist,
@@ -23,8 +23,10 @@ import {
   resumeTarget,
   runChip,
   SCAN_ARRIVAL,
-  SCAN_UPLOAD_ABSENT,
+  SCAN_UPLOAD_NOTE,
   siteCountChip,
+  suggestedUploadFolder,
+  uploadNameUsable,
   teethLine,
   worklistBand,
   type WorklistEntry,
@@ -157,21 +159,194 @@ const bandOf = (entry: WorklistEntry): number =>
   entry.kind === "unreadable" ? -1 : worklistBand(entry.row);
 
 /**
- * WHERE THE DESIGN'S DROP ZONE WENT (design flow.dc.html 76-83, gap "a scan arrives").
- *
- * The prototype draws a dashed "Drop a scan file" rectangle with a "browse files"
- * button whose handler is `() => this.pickScan(SCANS[0].id)` — it selects a fixture.
- * There is no ingest behind it, and there is none in this product either: the BFF's
- * `data_root` is the worker's tree, READ-ONLY to the BFF by design (bff/config.py:20),
- * and every case's identity, doctor, jaw and library suggestion is read out of the
- * folder the lab created. A dashed rectangle that quietly loaded a fixture — or one
- * that accepted a file this installation has nowhere to put — would teach a workflow
- * that does not exist, which is strictly worse than no zone at all.
- *
- * So the zone states the route that IS real, in the operator's terms. It is prose and
- * a heading: no button, no input, nothing droppable. The claims are in
- * domain/worklist.SCAN_ARRIVAL with the measurements that refuted the prototype's.
+ * THE DESIGN'S DROP ZONE, REAL NOW (§10-AB.3, 2026-08-02). Its 2026-07-31 refusal
+ * was about the missing ingest, not the zone: the prototype's "browse files" loaded
+ * a fixture and this installation had nowhere to put a file. The client then decided
+ * the write path (POST /api/uploads → scans/<folder>/<file>.stl, the BFF's one
+ * write into data_root), so the zone and its reason arrive together. The procedure
+ * note below it stays, describing BOTH routes in.
  */
+/** The drop zone's statically-testable face (§10-AB.3): three states, each a
+ * stated one. The words are the storage policy's — one STL, one folder per case,
+ * the folder name IS the case identity — and every refusal renders verbatim. */
+export interface ScanDropZoneViewProps {
+  readonly phase:
+    | { readonly kind: "idle" }
+    | {
+        readonly kind: "armed";
+        readonly filename: string;
+        readonly folder: string;
+        readonly error: string | null;
+        readonly busy: boolean;
+      }
+    | { readonly kind: "done"; readonly caseId: string };
+  readonly onBrowse?: () => void;
+  readonly onFolder?: (name: string) => void;
+  readonly onUpload?: () => void;
+  readonly onCancel?: () => void;
+}
+
+export function ScanDropZoneView({
+  phase,
+  onBrowse = () => undefined,
+  onFolder = () => undefined,
+  onUpload = () => undefined,
+  onCancel = () => undefined,
+}: ScanDropZoneViewProps) {
+  if (phase.kind !== "armed") {
+    return (
+      <section data-role="scan-upload" className="scan-upload">
+        <span aria-hidden="true" className="scan-upload__tile">
+          STL
+        </span>
+        <span className="scan-upload__text">
+          <strong className="scan-upload__title">Drop a scan file</strong>
+          <span className="scan-upload__sub">
+            one STL · one folder per case — the folder name becomes the case
+          </span>
+        </span>
+        {phase.kind === "done" && (
+          <span data-role="upload-done" className="scan-upload__done">
+            Case {phase.caseId} is on the worklist above.
+          </span>
+        )}
+        <button
+          type="button"
+          data-role="upload-browse"
+          className="button button--ghost button--small"
+          onClick={onBrowse}
+        >
+          browse files
+        </button>
+      </section>
+    );
+  }
+  return (
+    <section data-role="scan-upload" className="scan-upload scan-upload--armed">
+      <span className="scan-upload__text">
+        <strong className="scan-upload__title">{phase.filename}</strong>
+        <span className="scan-upload__sub">
+          The folder name becomes the case id and the doctor line; a name containing
+          a library system preselects its construction part.
+        </span>
+      </span>
+      <label className="scan-upload__folder">
+        case folder
+        <input
+          data-role="upload-folder"
+          className="scan-upload__input"
+          value={phase.folder}
+          disabled={phase.busy}
+          onChange={(event) => onFolder(event.target.value)}
+        />
+      </label>
+      <button
+        type="button"
+        data-role="upload-go"
+        className="button button--primary button--small"
+        disabled={phase.busy || !uploadNameUsable(phase.folder)}
+        onClick={onUpload}
+      >
+        {phase.busy ? "Uploading…" : "Upload this scan"}
+      </button>
+      <button
+        type="button"
+        data-role="upload-cancel"
+        className="button button--ghost button--small"
+        disabled={phase.busy}
+        onClick={onCancel}
+      >
+        Cancel
+      </button>
+      {phase.error !== null && (
+        <span data-role="upload-error" role="alert" className="panel__error">
+          {phase.error}
+        </span>
+      )}
+    </section>
+  );
+}
+
+/** The drop zone's wiring: browse or drag in ONE file, name its folder, upload.
+ * The dashed border is honest now — the zone really accepts the drag (§10-AB.3
+ * retiring the 2026-07-31 refusal and its reason together). */
+function ScanDropZone({ onUploaded }: { readonly onUploaded: (id: string) => void }) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [folder, setFolder] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [doneCase, setDoneCase] = useState<string | null>(null);
+
+  const arm = (picked: File) => {
+    setFile(picked);
+    setFolder(suggestedUploadFolder(picked.name));
+    setError(null);
+    setDoneCase(null);
+  };
+
+  const upload = async () => {
+    if (file === null) return;
+    setBusy(true);
+    setError(null);
+    // the filename travels as-is when the name rule accepts it; otherwise the
+    // sanitized stem keeps the jaw-suggesting words without the refused characters
+    const filename = uploadNameUsable(file.name)
+      ? file.name
+      : `${suggestedUploadFolder(file.name)}.stl`;
+    const result = await uploadScan(folder, filename, file);
+    setBusy(false);
+    if (result.kind === "ok") {
+      setFile(null);
+      setDoneCase(result.data.case_id);
+      onUploaded(result.data.case_id);
+    } else {
+      setError(result.detail);
+    }
+  };
+
+  const phase =
+    file !== null
+      ? ({ kind: "armed", filename: file.name, folder, error, busy } as const)
+      : doneCase !== null
+        ? ({ kind: "done", caseId: doneCase } as const)
+        : ({ kind: "idle" } as const);
+
+  return (
+    <div
+      className="scan-upload__zone"
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        event.preventDefault();
+        const dropped = event.dataTransfer.files?.[0];
+        if (dropped !== undefined) arm(dropped);
+      }}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".stl,.STL"
+        hidden
+        onChange={(event) => {
+          const picked = event.target.files?.[0];
+          if (picked !== undefined) arm(picked);
+          event.target.value = "";
+        }}
+      />
+      <ScanDropZoneView
+        phase={phase}
+        onBrowse={() => inputRef.current?.click()}
+        onFolder={setFolder}
+        onUpload={() => void upload()}
+        onCancel={() => {
+          setFile(null);
+          setError(null);
+        }}
+      />
+    </div>
+  );
+}
+
 function ScanArrival() {
   return (
     <section data-role="scan-arrival" className="scan-arrival">
@@ -184,8 +359,8 @@ function ScanArrival() {
           </li>
         ))}
       </ol>
-      <p data-role="scan-upload-absent" className="scan-arrival__note">
-        {SCAN_UPLOAD_ABSENT}
+      <p data-role="scan-upload-note" className="scan-arrival__note">
+        {SCAN_UPLOAD_NOTE}
       </p>
     </section>
   );
@@ -193,10 +368,15 @@ function ScanArrival() {
 
 interface WorklistScreenProps {
   readonly state: FetchState<readonly unknown[]>;
+  /** Fired when an upload lands, with the new case id — the page refetches. */
+  readonly onUploaded?: (id: string) => void;
 }
 
 /** The presentational screen — every branch is a stated one, testable statically. */
-export function WorklistScreen({ state }: WorklistScreenProps) {
+export function WorklistScreen({
+  state,
+  onUploaded = () => undefined,
+}: WorklistScreenProps) {
   if (state.kind === "loading") {
     return (
       <p data-role="worklist-loading" className="panel__hint">
@@ -221,11 +401,11 @@ export function WorklistScreen({ state }: WorklistScreenProps) {
   return (
     <section data-role="worklist" className="worklist">
       <h2 className="worklist__title">Worklist</h2>
-      {/* The comp's lead, minus its false clause: "or drop a new scan" has no
-          workflow behind it here (see ScanArrival) and is not promised. */}
+      {/* The comp's lead, whole — its "drop a new scan" clause became TRUE when
+          §10-AB.3 landed the real upload below. */}
       <p className="worklist__lead">
-        Open a case from the worklist below. Detection proposes a variant per cap
-        site; you declare the truth in Alignment.
+        Open a case from the worklist below, or drop a new scan. Detection proposes
+        a variant per cap site; you declare the truth in Alignment.
       </p>
       {entries.length === 0 ? (
         <p data-role="worklist-empty" className="panel__copy">
@@ -258,8 +438,9 @@ export function WorklistScreen({ state }: WorklistScreenProps) {
         ))
       )}
       {/* Below the work, not above it: the 20-scan morning opens this page to pick a
-          case, not to read a procedure. It matters most on the empty list, which is
-          exactly where it ends up being the only thing on screen. */}
+          case, not to read a procedure. The drop zone rides between them — the comp's
+          position — and the procedure note now describes BOTH routes in. */}
+      <ScanDropZone onUploaded={onUploaded} />
       <ScanArrival />
     </section>
   );
@@ -269,6 +450,9 @@ export function WorklistPage() {
   const [state, setState] = useState<FetchState<readonly unknown[]>>({
     kind: "loading",
   });
+  // bumped by an upload: discovery is uncached server-side, so a refetch is the
+  // whole story — the new case appears through the same read as everything else
+  const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -278,11 +462,14 @@ export function WorklistPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [generation]);
 
   return (
     <div className="page">
-      <WorklistScreen state={state} />
+      <WorklistScreen
+        state={state}
+        onUploaded={() => setGeneration((current) => current + 1)}
+      />
     </div>
   );
 }

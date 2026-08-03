@@ -17,7 +17,10 @@ _REPO = Path(__file__).resolve().parents[4]
 
 @dataclass(frozen=True)
 class Settings:
-    data_root: Path       # the worker's case/library tree (read-only to the BFF)
+    # the worker's case/library tree — read-only to the BFF save for exactly ONE
+    # writer: the upload endpoint's scans/<folder>/<file>.stl (§10-AB.3; the whole
+    # storage policy is resources/uploads.py's module doc)
+    data_root: Path
     product_root: Path    # the product data plane: reports/product/<case>/session.json
 
 
