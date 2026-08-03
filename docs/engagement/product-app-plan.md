@@ -1347,6 +1347,29 @@ the screenshot (rim 0.80 mm on cap7030 t29) is the pre-run preview's own seat �
 same persistence gives the preview the evidence too. Wire: SiteSession +
 `alignment_evidence`, the adjust routes append on apply, `_authorized_selection`
 gains the field, `application/run.py` re-applies post-align, tests at every layer.
+
+**AE. PANE 2's CAMERA AND CROP (client 2026-08-02, with a screenshot: "We lost the
+global view of the rotation of the camera. The second panel doesn't default to the top
+of the healing cap … maybe [cutting to] just the healing cap and a little more in
+panel 2 would have made the alignment more accurate?").** Two asks, and one boundary
+to keep:
+1. **Pane 2's DEFAULT camera must look down the seated pose axis** (top of the cap).
+   The screenshot's own footer reads "45° off the seated pose axis" at rest — the
+   readout is honest (paneReadout's live angle), the DEFAULT it reports drifted.
+   Find where pane 2's initial camera frame is set (SitePanes/DeclarePanes + the
+   viewer's frame helpers — the effective-choices slice's siteFrameFor/
+   partCameraFrame) and default it to the pose axis; the readout should then say
+   "down the seated pose axis" on open, as panes 1/3 do.
+2. **Pane 2's display band tightens to the cap + a little more.** Today it draws
+   "within 11 mm of the site's centre" (~117k triangles of jaw around a ~7 mm cap).
+   The band is DISPLAY-ONLY (meshCrop.ts, the §10-K constant; the demo's 9 mm copy
+   is frozen — the two-constants rule stands): tightening it must be a pane-2-scoped
+   display radius, NEVER a bound that reaches the aligner (§10-I.3's trust
+   inversion). The honest accuracy claim, stated to the client: a tighter view
+   improves alignments only through the operator's mark placement — the aligner's
+   own input radius is the server's and unchanged. Pick the radius from the cap
+   catalog's largest variant diameter + margin, not a new magic number; verify the
+   fit-by-points click flow on the cropped mesh still lands world-frame points.
 `application/emit.py::emit_from_poses(case, selection, source_run_dir, out_dir)` exists
 and is verified on the real tree (tests/test_emit.py): pose bit-identity, provenance
 copy-forward + re-hash, vendor-rename cleanliness, `emitted_from` on the receipt, the
