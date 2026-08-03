@@ -1319,6 +1319,33 @@ change) — the old "re-processes the case" promise retires with the behaviour.
 FOLLOW-ON (§10-B/C rides this): relief per-site on Adjustment becomes a re-emit with a
 per-site offset map once this lands.
 
+**AC LANDED IN PART (2026-08-02, commit `03a1628`): the worker layer.**
+`application/emit.py::emit_from_poses(case, selection, source_run_dir, out_dir)` exists
+and is verified on the real tree (tests/test_emit.py): pose bit-identity, provenance
+copy-forward + re-hash, vendor-rename cleanliness, `emitted_from` on the receipt, the
+gate refusal as `RunRefused` — and the re-emit runs in seconds. REMAINING, the BFF+UI
+wiring, mapped precisely for the next session:
+1. **Port**: `InProcessWorker._execute` dispatches on `request["mode"] == "reemit"`
+   (+ `source_run_id`) to `emit_from_poses` with
+   `source_run_dir = product_root/<case>/runs/<source_run_id>`; same containment.
+2. **Boundary**: `put_choices` (case_sessions.py:1140-1175) — when the effective
+   change is construction-path and/or relief ONLY and `session.run` is done: keep the
+   site rungs (skip `invalidate_preview`/`clear_preview_facts` — the pose the review
+   attested is untouched, the measured §10-M fact), snapshot the source run_id, mint a
+   new one, set the queued receipt (+ `adjust_decision = None`,
+   `clear_exception_intents`, **`clear_confirmation` explicitly** — hazard 4), submit
+   the reemit, land through the same guidance→flag mapping (levels carried verbatim →
+   flags land unchanged), withdraw the receipt on no-verdict. Jaw/model changes keep
+   today's full retirement.
+3. **Tests to amend to the new truth**: the BFF pins that a construction change
+   retires the run (test_case_sessions choices-boundary tests, test_withhold_intent's
+   boundary expectations), and the product's `constructionChangeWords` pins
+   ("re-processes the case", "a new run re-bores and re-renders everything" in
+   domain/deliver tests + LibraryStage/DeliverStage) — the words must tell the new
+   truth: re-emits from the run's own poses, seconds not minutes, the confirmation
+   falls, the design gate can refuse. The disclosure-before-act rule is unchanged;
+   only the disclosed consequence shrinks.
+
 - **AB.3 LANDED** — the browser upload, retiring O.6's refusal WITH its reason. The
   storage policy (bff/resources/uploads.py's module doc, pinned in test_uploads.py):
   `POST /api/uploads/scans/{folder}/{filename}` takes the raw STL bytes — no
