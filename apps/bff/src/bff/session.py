@@ -91,9 +91,39 @@ class SeatedSelection(BaseModel):
     gingival_offset_mm: float
 
 
+class AlignmentEvidence(BaseModel):
+    """ONE operator alignment measurement, persisted so it survives the run that
+    received it (§10-AD, client 2026-08-02: "when adjustment and rerunning the
+    alignment it does not take effect"). The payload is exactly what the adjust
+    route received — world/canonical-frame points, replayable against any future
+    run of the SAME scan — plus the act's own identity. The bare rotation NUDGE is
+    deliberately never recorded here: its provenance is eyeball with no marks, and
+    auto-re-applying it would silently promote the weakest evidence class.
+
+    Cleared only by an explicit operator act or a re-mark of this site's centre
+    (the pair-integrity rule: a moved centre retires measurements made against the
+    old one) — NOT by run boundaries, which is the whole point."""
+
+    # "mark" (align-to-mark: one scan point) | "pairs" (fit-by-points: the
+    # correspondence list, wire-shaped) | "best_fit" (the refinement act + its
+    # search diameter — its input is the scan itself)
+    kind: str
+    applied_at: str
+    # kind="mark": the [x, y, z] scan point
+    point: Optional[List[float]] = None
+    # kind="pairs": the PairIn dicts exactly as received (part half + scan half)
+    pairs: Optional[List[dict]] = None
+    # kind="best_fit": the search diameter the operator ran with
+    matching_diameter_mm: Optional[float] = None
+
+
 class SiteSession(BaseModel):
     status: SiteStatus = SiteStatus.DETECTED
     declared_variant: Optional[str] = None
+    # THE OPERATOR'S ALIGNMENT EVIDENCE (§10-AD): every applied mark/pairs/best-fit,
+    # in apply order — re-applied by every future run AFTER automation, through the
+    # same application.adjust functions, with provenance. Survives run boundaries.
+    alignment_evidence: List[AlignmentEvidence] = Field(default_factory=list)
     # THE OPERATOR'S OWN CENTRE (client 2026-07-28): where this site exists because a
     # HUMAN marked it, not because detection found it. Detection misses 2 of the 10
     # sites on this fleet, and a missed cap was previously unworkable — the case

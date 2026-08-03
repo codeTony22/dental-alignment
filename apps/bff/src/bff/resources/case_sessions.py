@@ -1516,6 +1516,10 @@ def put_remarked_site(case_id: str, tooth: int, body: RemarkedSiteIn,
         site.marked_center = new_center
         site.status = status.invalidate_preview(site.status)
         site.clear_preview_facts()
+        # THE PAIR-INTEGRITY RULE reaches the evidence too (§10-AD): marks and
+        # pairs were measured against the OLD centre's crop — a moved centre
+        # retires them rather than letting a future run re-apply stale geometry
+        site.alignment_evidence = []
         # the run boundary (5c, mirrored for a fourth trigger): the current run
         # was cropped around the OLD centre, so stale physics can never
         # masquerade as current the instant the centre moves

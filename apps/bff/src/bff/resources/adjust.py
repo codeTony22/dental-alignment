@@ -70,8 +70,15 @@ from case_prep.application.detection import ScanUnreadable
 
 from .. import status
 from ..config import Settings
-from ..session import (ACT_SITE_ADJUSTED, ACT_SITE_RE_READ, CaseSession, RunSession,
-                       SessionStore, SiteStatus, clear_confirmation, record_activity)
+from ..session import (ACT_SITE_ADJUSTED, ACT_SITE_RE_READ, AlignmentEvidence,
+                       CaseSession, RunSession, SessionStore, SiteStatus,
+                       clear_confirmation, record_activity)
+
+
+def _now_iso() -> str:
+    """The evidence record's own timestamp — when the act was received."""
+    import datetime
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
 from .case_sessions import (CaseSessionDetail, _case_or_404, _context, _detail,
                             _mutate_session, _require_known_tooth)
 # ONE home for the run directory's path shape (the disclosure edge's) — two spellings
@@ -450,7 +457,8 @@ def _fold_outcome(run: RunSession, tooth: int, outcome: AdjustOutcome,
 
 def _land(store: SessionStore, case: CaseRecord, tooth: int, run_id: str,
           outcome: AdjustOutcome,
-          correspondence_pairs: Optional[int] = None) -> CaseSession:
+          correspondence_pairs: Optional[int] = None,
+          evidence: Optional[AlignmentEvidence] = None) -> CaseSession:
     """Persist what an APPLIED tool did, inside one CAS mutation.
 
     The run pointer is re-judged on the fresh document: the physics already wrote into
@@ -469,6 +477,12 @@ def _land(store: SessionStore, case: CaseRecord, tooth: int, run_id: str,
         # the ladder's own move — never a status assigned by hand (AM-4). READY falls
         # here by construction: the pose the review attested has moved.
         site.status = status.adjust(site.status)
+        # THE EVIDENCE PERSISTS (§10-AD): what the tool measured survives the run
+        # that received it, so a re-run can re-apply the same physics instead of
+        # silently discarding the operator's work. Append-order is apply-order; the
+        # nudge route never passes one (its provenance is eyeball, by design).
+        if evidence is not None:
+            site.alignment_evidence.append(evidence)
         _fold_outcome(run, tooth, outcome, correspondence_pairs)
         # the stage was worked in — a fact about the session, derived from the act
         session.adjust_visited = True
@@ -536,7 +550,8 @@ def _tool_context(request: Request, case_id: str, tooth: int):
 
 
 def _apply_tool(request: Request, case_id: str, tooth: int, run_tool,
-                correspondence_pairs: Optional[int] = None) -> AdjustResultView:
+                correspondence_pairs: Optional[int] = None,
+                evidence: Optional[AlignmentEvidence] = None) -> AdjustResultView:
     """Judge → run the physics (outside the mutation: it takes seconds and a CAS retry
     must never re-run it) → land. A measure-only outcome lands nothing and says so.
 
@@ -555,7 +570,7 @@ def _apply_tool(request: Request, case_id: str, tooth: int, run_tool,
         # confirmation falls, nothing is persisted at all
         return _result(case, store.load(case_id), settings, outcome)
     session = _land(store, case, tooth, run.run_id or run.job_id, outcome,
-                    correspondence_pairs)
+                    correspondence_pairs, evidence=evidence)
     return _result(case, session, settings, outcome)
 
 
@@ -703,7 +718,10 @@ def post_mark_trench(case_id: str, tooth: int, body: MarkTrenchIn,
     NEAREST code feature lands there — through the same gates as every other rotation.
     A template carrying no coded relief refuses (409): there is nothing to align to."""
     return _apply_tool(request, case_id, tooth, lambda case, run_dir: align_to_mark(
-        case, run_dir, tooth, body.scan_point))
+        case, run_dir, tooth, body.scan_point),
+        # the measurement outlives the run it landed on (§10-AD)
+        evidence=AlignmentEvidence(kind="mark", applied_at=_now_iso(),
+                                   point=[float(c) for c in body.scan_point]))
 
 
 @router.post("/{case_id}/sites/{tooth}/fit-by-points", response_model=AdjustResultView)
@@ -720,7 +738,11 @@ def post_fit_by_points(case_id: str, tooth: int, body: FitByPointsIn,
     return _apply_tool(request, case_id, tooth,
                        lambda case, run_dir: align_to_correspondence(
                            case, run_dir, tooth, pairs),
-                       correspondence_pairs=len(pairs))
+                       correspondence_pairs=len(pairs),
+                       # wire-shaped, replayable: exactly what the operator placed
+                       evidence=AlignmentEvidence(
+                           kind="pairs", applied_at=_now_iso(),
+                           pairs=[p.model_dump() for p in body.pairs]))
 
 
 @router.post("/{case_id}/sites/{tooth}/best-fit", response_model=AdjustResultView)
@@ -731,4 +753,8 @@ def post_best_fit(case_id: str, tooth: int, body: BestFitIn,
     outcome is a PASS with its widen attached, never a bare refusal (see ``_refuse``)."""
     return _apply_tool(request, case_id, tooth, lambda case, run_dir: best_fit_site(
         case, run_dir, tooth, matching_diameter_mm=body.matching_diameter_mm,
-        apply=body.apply))
+        apply=body.apply),
+        # a measure-only pass lands nothing, so _apply_tool never persists this one
+        evidence=AlignmentEvidence(kind="best_fit", applied_at=_now_iso(),
+                                   matching_diameter_mm=float(
+                                       body.matching_diameter_mm)))
