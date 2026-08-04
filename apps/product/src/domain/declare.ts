@@ -311,6 +311,16 @@ export function variantMeshUrl(
  * re-fires forever; one that compares a stable key fires once per distinct
  * preview).
  */
+/** The statuses the BFF's ladder accepts a preview FROM — its own 422 words
+ * ("the ladder allows preview only from: declared, previewed, ready"), mirrored so
+ * the auto-fire never posts a request whose refusal is already known (§10-AE:
+ * reproduced live on cap7020 t3, where a flagged site auto-fired an eternal 422 and
+ * the panes rested 45° off the cap with a retry that could never succeed). Not a
+ * client verdict — the server still refuses for itself; this only declines to ask. */
+const PREVIEWABLE_STATUSES: ReadonlySet<string> = new Set([
+  "declared", "previewed", "ready",
+]);
+
 export function previewKeyFor(
   detail: CaseSessionDetail,
   tooth: number | null,
@@ -318,6 +328,7 @@ export function previewKeyFor(
   if (tooth === null) return null;
   const site = detail.sites.find((s) => s.tooth === tooth);
   if (site === undefined || site.declared_variant === null) return null;
+  if (site.status !== null && !PREVIEWABLE_STATUSES.has(site.status)) return null;
   if (!detail.choices.complete) return null;
   if (detail.system.effective_model === null) return null;
   return [
@@ -344,6 +355,30 @@ export function shouldAutoPreview(args: {
   readonly slotKey: string | null;
 }): boolean {
   return args.key !== null && args.key !== args.slotKey;
+}
+
+/**
+ * THE SEATED FALLBACK (§10-AE): a site the ladder will not preview — flagged or
+ * adjusted — with a DONE run still has a fit the server knows: the shipped one,
+ * served by GET .../sites/{tooth}/seated (a read; no rung moves). Declare's panes
+ * read it so pane 2 frames down the cap's own axis instead of resting on the
+ * occlusal proxy, which on a tilted cap is the 45°-off view the client screenshotted.
+ * Deliberately NARROW: a null key on a declared/detected site means the declaration
+ * or choices are incomplete — the seated read answers a different question there
+ * and stays quiet; the preview lane keeps every status the ladder accepts.
+ */
+export function seatedReadWanted(args: {
+  readonly tooth: number | null;
+  readonly previewKey: string | null;
+  readonly runState: string;
+  readonly siteStatus: string | null;
+}): boolean {
+  return (
+    args.tooth !== null &&
+    args.previewKey === null &&
+    args.runState === "done" &&
+    (args.siteStatus === "flagged" || args.siteStatus === "adjusted")
+  );
 }
 
 // --- the preview firer: the panes' async guards, framework-free (5b review M1) -------

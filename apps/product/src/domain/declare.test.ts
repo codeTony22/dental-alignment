@@ -28,6 +28,7 @@ import {
   partCameraFrame,
   positionsFrom,
   previewKeyFor,
+  seatedReadWanted,
   siteFrameFor,
   resetCount,
   attestationAction,
@@ -266,6 +267,28 @@ describe("previewKeyFor — the preview's identity, from server facts only", () 
       choices: { ...previewable.choices, jaw: null, complete: false },
     });
     expect(previewKeyFor(incomplete, 19)).toBeNull();
+  });
+
+  it("refuses the statuses the server's ladder refuses — no auto-fired 422 (§10-AE)", () => {
+    /* Reproduced live on cap7020 t3: a FLAGGED site auto-fired a preview the BFF
+       always refuses ("the ladder allows preview only from: declared, previewed,
+       ready"), so the panes never got a pose and rested 45° off the cap. The key
+       mirrors the server's own ladder rule — not a client verdict, just declining
+       to fire a request whose refusal is already known. */
+    for (const status of ["flagged", "adjusted"] as const) {
+      const blocked = caseSessionDetail({
+        ...previewable,
+        sites: [siteView({ tooth: 19, status, declared_variant: "5020" })],
+      });
+      expect(previewKeyFor(blocked, 19)).toBeNull();
+    }
+    for (const status of ["declared", "previewed", "ready"] as const) {
+      const open = caseSessionDetail({
+        ...previewable,
+        sites: [siteView({ tooth: 19, status, declared_variant: "5020" })],
+      });
+      expect(previewKeyFor(open, 19)).not.toBeNull();
+    }
   });
 
   it("a different variant or choice is a different key — the re-fire trigger", () => {
@@ -1284,5 +1307,33 @@ describe("presetFraming — the frame a pane got, and the words for what it fram
 
   it("no frame in: no frame, and no claim about one", () => {
     expect(presetFraming(null, "side-b")).toEqual({ frame: null, presetLabel: null });
+  });
+});
+
+/**
+ * THE SEATED FALLBACK (§10-AE): a site the ladder will not preview (flagged or
+ * adjusted) with a DONE run still has a fit the server knows — the shipped one.
+ * Declare's panes read it through GET .../seated (no rung moves) so pane 2 frames
+ * down the cap's own axis instead of resting on the occlusal proxy.
+ */
+describe("seatedReadWanted — the panes' fallback to the shipped fit", () => {
+  it("wants the seated read exactly when the preview lane is closed over a done run", () => {
+    expect(seatedReadWanted({ tooth: 19, previewKey: null, runState: "done",
+                              siteStatus: "flagged" })).toBe(true);
+    expect(seatedReadWanted({ tooth: 19, previewKey: null, runState: "done",
+                              siteStatus: "adjusted" })).toBe(true);
+  });
+
+  it("stays out of the preview lane's way, and never fires without a run", () => {
+    expect(seatedReadWanted({ tooth: 19, previewKey: "k", runState: "done",
+                              siteStatus: "ready" })).toBe(false);
+    expect(seatedReadWanted({ tooth: 19, previewKey: null, runState: "none",
+                              siteStatus: "flagged" })).toBe(false);
+    expect(seatedReadWanted({ tooth: null, previewKey: null, runState: "done",
+                              siteStatus: "flagged" })).toBe(false);
+    // a detected/declared site with a null key is missing its declaration or
+    // choices — the seated read answers a different question and stays quiet
+    expect(seatedReadWanted({ tooth: 19, previewKey: null, runState: "done",
+                              siteStatus: "declared" })).toBe(false);
   });
 });

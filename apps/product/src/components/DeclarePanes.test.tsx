@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DeclarePanesView } from "./DeclarePanes";
+import { DeclarePanesView, seatedRunCaption } from "./DeclarePanes";
 import { paneNotices, reviewTick } from "../domain/declare";
 import { sitePreviewPayload, siteView } from "../testing/fixtures";
 import type { SiteView } from "../api/client";
@@ -294,5 +294,44 @@ describe("the panes' way home (client 2026-07-29: the pane camera vs the main st
     // Static callers that predate the control must keep their markup — a dead button
     // that cannot restore anything is worse than none.
     expect(view()).not.toContain('data-role="pane-reset-view"');
+  });
+});
+
+/**
+ * THE SEATED FALLBACK (§10-AE, reproduced live on cap7020 t3): a flagged site's
+ * panes wear the RUN's own fit, not preview words and not an eternal 422 retry.
+ */
+describe("the seated fallback's words and chrome", () => {
+  it("seatedRunCaption names the shipped fit and where rework lives", () => {
+    const words = seatedRunCaption({
+      ...sitePreviewPayload(),
+      seat: { seat_method: "rim-seat", rim_agreement_mm: 0.8 },
+    });
+    expect(words).toContain("the run's own fit");
+    expect(words).toContain("rim-seat seat, rim 0.80 mm");
+    expect(words).toContain("rework belongs to Adjustment");
+    expect(words).not.toContain("preview");
+    expect(seatedRunCaption(null)).toBeNull();
+  });
+
+  it("a seated payload wears the run caption, never the preview's", () => {
+    const html = view({
+      payload: sitePreviewPayload(),
+      payloadSource: "seated",
+    });
+    expect(html).toContain("the run&#x27;s own fit");
+    expect(html).not.toContain("nothing processed yet");
+    expect(html).not.toContain('data-role="preview-retry"');
+  });
+
+  it("a failed seated read states itself instead of pretending an empty pane", () => {
+    const html = view({
+      payload: null,
+      previewPhase: "idle",
+      seatedPhase: "error",
+      seatedError: "the case service is unreachable",
+    });
+    expect(html).toContain("the shipped fit could not be read");
+    expect(html).toContain("the case service is unreachable");
   });
 });

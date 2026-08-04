@@ -24,6 +24,7 @@ import { type DeviationScaleId } from "viewer";
 import {
   deleteReview,
   fetchCaseSession,
+  fetchSeated,
   postPreview,
   postReview,
   type CaseSessionDetail,
@@ -37,6 +38,7 @@ import {
   paneNotices,
   previewKeyFor,
   reviewTick,
+  seatedReadWanted,
   shouldAutoPreview,
   type PaneNotices,
   type PostPreviewFn,
@@ -63,15 +65,27 @@ export type ReviewSaving = "idle" | "ticking" | "unticking";
 /** WHOSE colouring the union pane is showing (the demo's honesty, kept): a preview
  * and a shipped read look identical and mean different things, so the caption says.
  * Exported because Adjust states the other half of the same sentence. */
-export function previewCaption(payload: SitePreviewPayload | null): string | null {
-  if (payload === null) return null;
+function seatPhrase(payload: SitePreviewPayload): string {
   const seat = payload.seat ?? null;
   const seated = seat?.seat_method ? `${seat.seat_method} seat` : "seated";
   const rim =
     seat?.rim_agreement_mm !== null && seat?.rim_agreement_mm !== undefined
       ? `, rim ${seat.rim_agreement_mm.toFixed(2)} mm`
       : "";
-  return `preview — this selection seated now (${seated}${rim}); nothing processed yet`;
+  return `${seated}${rim}`;
+}
+
+export function previewCaption(payload: SitePreviewPayload | null): string | null {
+  if (payload === null) return null;
+  return `preview — this selection seated now (${seatPhrase(payload)}); nothing processed yet`;
+}
+
+/** The SEATED lane's caption (§10-AE): the same sentence shape, the other truth —
+ * this is the run's shipped fit, not a preview, and the rework act lives on
+ * Adjustment. A flagged site's panes must never wear preview words. */
+export function seatedRunCaption(payload: SitePreviewPayload | null): string | null {
+  if (payload === null) return null;
+  return `the run's own fit (${seatPhrase(payload)}) — rework belongs to Adjustment`;
 }
 
 export interface DeclarePanesViewProps {
@@ -83,6 +97,11 @@ export interface DeclarePanesViewProps {
   readonly scanCaption: string | null;
   readonly previewPhase: PreviewPhase;
   readonly payload: SitePreviewPayload | null;
+  /** WHOSE payload the panes are wearing (§10-AE): the preview lane's, or the
+   *  seated fallback's — the union caption follows. Default "preview". */
+  readonly payloadSource?: "preview" | "seated";
+  readonly seatedPhase?: "idle" | "loading" | "ready" | "error";
+  readonly seatedError?: string | null;
   readonly tick: ReviewTickState;
   readonly reviewSaving: ReviewSaving;
   readonly reviewError: string | null;
@@ -117,6 +136,9 @@ export function DeclarePanesView({
   scanCaption,
   previewPhase,
   payload,
+  payloadSource = "preview",
+  seatedPhase = "idle",
+  seatedError = null,
   tick,
   reviewSaving,
   reviewError,
@@ -143,12 +165,20 @@ export function DeclarePanesView({
       partBusy={partBusy}
       scanBusy={scanBusy}
       scanCaption={scanCaption}
-      unionCaption={previewCaption(payload)}
-      unionBusy={previewPhase === "computing" || scanBusy}
+      unionCaption={
+        seatedPhase === "error" && seatedError !== null
+          ? `the shipped fit could not be read — ${seatedError}`
+          : payloadSource === "seated"
+            ? seatedRunCaption(payload)
+            : previewCaption(payload)
+      }
+      unionBusy={previewPhase === "computing" || seatedPhase === "loading" || scanBusy}
       unionBusyMessage={
         previewPhase === "computing"
           ? "seating this selection on the scan — preview, nothing is being processed…"
-          : null
+          : seatedPhase === "loading"
+            ? "reading the shipped fit for this site…"
+            : null
       }
       payload={payload}
       libraryViewer={libraryViewer}
@@ -286,6 +316,15 @@ export function DeclarePanes({
   const mountedRef = useRef(true);
 
   const [previews, setPreviews] = useState<PreviewSlots>({});
+  // THE SEATED FALLBACK's slots (§10-AE): per tooth, the shipped fit for sites the
+  // ladder will not preview. A read, never an act — see domain/declare.
+  const [seatedSlots, setSeatedSlots] = useState<
+    Record<number, {
+      readonly phase: "loading" | "ready" | "error";
+      readonly payload: SitePreviewPayload | null;
+      readonly error: string | null;
+    }>
+  >({});
   const [reviewSaving, setReviewSaving] = useState<ReviewSaving>("idle");
   const [reviewError, setReviewError] = useState<string | null>(null);
 
@@ -332,6 +371,39 @@ export function DeclarePanes({
     slot !== undefined && slot.key === key && slot.state === "ready"
       ? (slot.payload ?? null)
       : null;
+
+  // THE SEATED FALLBACK (§10-AE): fire the read exactly when the pure rule says the
+  // preview lane is closed over a done run; a settled slot never re-fires.
+  const wantSeated = seatedReadWanted({
+    tooth,
+    previewKey: key,
+    runState: detail.session.run_state,
+    siteStatus: site?.status ?? null,
+  });
+  const seatedSlot = tooth !== null && wantSeated ? seatedSlots[tooth] : undefined;
+  useEffect(() => {
+    if (!wantSeated || tooth === null) return;
+    if (seatedSlot !== undefined) return;
+    setSeatedSlots((slots) => ({
+      ...slots,
+      [tooth]: { phase: "loading", payload: null, error: null },
+    }));
+    void fetchSeated(caseId, tooth).then((result) => {
+      if (!mountedRef.current) return;
+      setSeatedSlots((slots) => ({
+        ...slots,
+        [tooth]:
+          result.kind === "ok"
+            ? { phase: "ready", payload: result.data, error: null }
+            : { phase: "error", payload: null, error: result.detail },
+      }));
+    });
+  }, [wantSeated, tooth, caseId, seatedSlot]);
+  const seatedPayload =
+    seatedSlot?.phase === "ready" ? (seatedSlot.payload ?? null) : null;
+  // the SCENE wears whichever payload exists; the preview FIGURES stay the preview
+  // lane's own (the strip's (run) numbers already speak for the shipped fit)
+  const panePayload = payload ?? seatedPayload;
   const previewPhase: PreviewPhase =
     key === null || slot === undefined || slot.key !== key
       ? "idle"
@@ -339,7 +411,7 @@ export function DeclarePanes({
         ? "ready"
         : slot.state;
 
-  const scene = useSitePaneScene(detail, site, payload, {
+  const scene = useSitePaneScene(detail, site, panePayload, {
     viewPreset,
     viewPresetNonce,
     zoomLevel,
@@ -417,7 +489,10 @@ export function DeclarePanes({
       scanBusy={scene.scanBusy}
       scanCaption={scene.scanCaption}
       previewPhase={previewPhase}
-      payload={payload}
+      payload={panePayload}
+      payloadSource={payload !== null ? "preview" : seatedPayload !== null ? "seated" : "preview"}
+      seatedPhase={wantSeated ? (seatedSlot?.phase ?? "idle") : "idle"}
+      seatedError={wantSeated ? (seatedSlot?.error ?? null) : null}
       tick={reviewTick(site)}
       reviewSaving={reviewSaving}
       reviewError={reviewError}

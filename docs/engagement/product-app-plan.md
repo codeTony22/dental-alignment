@@ -1379,6 +1379,17 @@ to keep:
    viewer's frame helpers — the effective-choices slice's siteFrameFor/
    partCameraFrame) and default it to the pose axis; the readout should then say
    "down the seated pose axis" on open, as panes 1/3 do.
+AE.1 LANDED (2026-08-03): the 45° was not a camera defect — REPRODUCED as the
+auto-preview firing on a FLAGGED site and the ladder refusing it forever ("cannot
+preview a site that is 'flagged'"), leaving the panes payload-less on the occlusal
+proxy with a retry that could never succeed. Two-part fix, verified live on cap7020
+t3: `previewKeyFor` mirrors the server's ladder (no known-refused POST is ever
+auto-fired — not a client verdict, a refusal already known), and a flagged/adjusted
+site over a DONE run reads the SHIPPED fit instead (`seatedReadWanted` +
+GET .../seated — a read, no rung moves), so pane 2 rests down the cap's own axis and
+the union wears the honest caption "the run's own fit — rework belongs to
+Adjustment". Preview figures stay the preview lane's own (provenance).
+
 2. **Pane 2's display band tightens to the cap + a little more.** Today it draws
    "within 11 mm of the site's centre" (~117k triangles of jaw around a ~7 mm cap).
    The band is DISPLAY-ONLY (meshCrop.ts, the §10-K constant; the demo's 9 mm copy
