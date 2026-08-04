@@ -33,16 +33,23 @@ def _case(tmp_path: Path) -> CaseRecord:
 
 
 def _outcome(**overrides):
+    # every field the canonical fold reads (AdjustOutcome's own defaults) — the
+    # fold serves the live tools too, so the fake must wear the whole shape
     values = dict(tooth=13, operation="fit-by-points", detail="re-applied",
                   files=["case-x-13-implant.json"], clocking={"deg": 3.0},
                   deviation={"deviation_rms_mm": 0.11}, stale_metrics=["guidance"],
+                  nudge=None, best_fit=None, pairs=[], residual_rms_mm=None,
                   applied=True)
     values.update(overrides)
     return SimpleNamespace(**values)
 
 
 def _summary():
-    return {"sites": [{"tooth": 13, "fit": {}, "clocking": {"deg": 9.0}}],
+    # the pipeline's clocking block carries keys the tools never re-measure
+    # (rotation_unverified above all) — the fold must MERGE, not replace
+    return {"sites": [{"tooth": 13, "fit": {},
+                       "clocking": {"deg": 9.0, "rotation_unverified": True,
+                                    "evidence": "codes"}}],
             "package_files": ["case-x-manifest.json"]}
 
 
@@ -73,9 +80,15 @@ class TestTheDispatch:
         assert [c[0] for c in calls] == ["mark", "pairs", "best_fit"]
         receipts = summary["evidence_reapplied"]
         assert [r["outcome"] for r in receipts] == ["applied"] * 3
-        # the re-derived numbers fold into the row; the rewritten file is listed once
-        assert summary["sites"][0]["clocking"] == {"deg": 3.0}
+        # the re-derived numbers MERGE into the row (audit 2026-08-04: a replace
+        # erased rotation_unverified and claimed a verified rotation), staleness
+        # lands under rework — the ONE key the assurance projection reads — and
+        # the rewritten file is listed once
+        assert summary["sites"][0]["clocking"] == {
+            "deg": 3.0, "rotation_unverified": True, "evidence": "codes"}
         assert summary["sites"][0]["deviation_rms_mm"] == 0.11
+        assert summary["sites"][0]["rework"] == {"stale_metrics": ["guidance"]}
+        assert "stale_metrics" not in summary["sites"][0]  # never the unread key
         assert summary["package_files"].count("case-x-13-implant.json") == 1
 
     def test_a_refusal_is_a_receipt_with_the_gates_words_never_a_raise(
@@ -90,7 +103,8 @@ class TestTheDispatch:
         assert receipt["outcome"] == "refused"
         assert "too far" in receipt["detail"]
         # nothing folded: the row keeps the automation's own numbers
-        assert summary["sites"][0]["clocking"] == {"deg": 9.0}
+        assert summary["sites"][0]["clocking"]["deg"] == 9.0
+        assert "rework" not in summary["sites"][0]
 
     def test_already_optimal_is_a_pass_shaped_receipt(self, tmp_path, monkeypatch):
         def optimal(case, run_dir, tooth, matching_diameter_mm, apply):
@@ -116,6 +130,76 @@ class TestTheDispatch:
         summary = _summary()
         _reapply_evidence(_case(tmp_path), tmp_path, {}, summary)
         assert "evidence_reapplied" not in summary
+
+
+class TestTheFoldMatchesTheLiveTools:
+    """AUDIT 2026-08-04: the re-apply's hand-fold had drifted from the BFF's
+    interactive fold on four shapes (rework key, clocking merge, nudge, best_fit).
+    One function now serves both callers — ``adjust.fold_outcome_into_row`` — and
+    these pin the shapes the assurance/receipt projections actually read
+    (bff/resources/deliver.py reads rework.stale_metrics, clocking.evidence/
+    rotation_unverified, nudge.cumulative_deg, best_fit.matching_diameter_mm)."""
+
+    def test_a_rotating_tool_folds_its_nudge_but_a_best_fit_never_does(
+            self, tmp_path, monkeypatch):
+        monkeypatch.setattr(adjust, "align_to_mark",
+                            lambda case, run_dir, tooth, point:
+                            _outcome(operation="align-to-mark",
+                                     nudge={"cumulative_deg": 4.0}))
+        monkeypatch.setattr(adjust, "best_fit_site",
+                            lambda case, run_dir, tooth, matching_diameter_mm,
+                            apply: _outcome(operation="best-fit",
+                                            nudge={"cumulative_deg": 9.9},
+                                            best_fit={"matching_diameter_mm": 0.4}))
+        summary = _summary()
+        _reapply_evidence(_case(tmp_path), tmp_path, {13: [
+            {"kind": "mark", "point": [1.0, 2.0, 3.0]},
+            {"kind": "best_fit", "matching_diameter_mm": 0.4},
+        ]}, summary)
+        row = summary["sites"][0]
+        # the demo's 2026-07-25 rule, kept on re-apply: a best-fit is a 6-DoF
+        # move, not a clock nudge — it must not overwrite the cumulative rotation
+        assert row["nudge"] == {"cumulative_deg": 4.0}
+        assert row["best_fit"] == {"matching_diameter_mm": 0.4}
+
+    def test_a_pairs_fit_rebuilds_the_correspondence_block_it_stands_on(
+            self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            adjust, "align_to_correspondence",
+            lambda case, run_dir, tooth, pairs:
+            _outcome(pairs=[{"observation": "midpoint"},
+                            {"observation": "direction"}],
+                     residual_rms_mm=0.05))
+        summary = _summary()
+        _reapply_evidence(_case(tmp_path), tmp_path, {13: [
+            {"kind": "pairs", "pairs": [
+                {"scan_point": [0.0, 0.0, 0.0], "scan_point_end": [1.0, 0.0, 0.0]},
+                {"scan_point": [2.0, 0.0, 0.0]}]},
+        ]}, summary)
+        # the interactive fold's own block, from the entry's own pair count —
+        # no longer the documented under-claim (§10-AD's "this increment")
+        assert summary["sites"][0]["correspondence"] == {
+            "pairs": 2, "observations": 2, "spans": 1, "directions_used": 1,
+            "max_pairs": 8, "residual_rms_mm": 0.05,
+            "cross_checked": adjust.cross_checked(2)}
+
+    def test_the_block_belongs_to_the_act_that_produced_it(
+            self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            adjust, "align_to_correspondence",
+            lambda case, run_dir, tooth, pairs:
+            _outcome(pairs=[{"observation": "midpoint"}], residual_rms_mm=None))
+        monkeypatch.setattr(adjust, "align_to_mark",
+                            lambda case, run_dir, tooth, point:
+                            _outcome(operation="align-to-mark"))
+        summary = _summary()
+        _reapply_evidence(_case(tmp_path), tmp_path, {13: [
+            {"kind": "pairs", "pairs": [{"scan_point": [0.0, 0.0, 0.0]}]},
+            {"kind": "mark", "point": [1.0, 2.0, 3.0]},
+        ]}, summary)
+        # the later mark replaced the pose the pairs measured — the sealed row
+        # must not keep describing a correspondence that no longer exists
+        assert "correspondence" not in summary["sites"][0]
 
 
 @real_only

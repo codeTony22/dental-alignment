@@ -100,13 +100,19 @@ class AlignmentEvidence(BaseModel):
     deliberately never recorded here: its provenance is eyeball with no marks, and
     auto-re-applying it would silently promote the weakest evidence class.
 
-    Cleared only by an explicit operator act or a re-mark of this site's centre
-    (the pair-integrity rule: a moved centre retires measurements made against the
-    old one) — NOT by run boundaries, which is the whole point."""
+    What clears it, exhaustively — NOT run boundaries, which is the whole point:
+    a re-mark of this site's centre clears everything (the pair-integrity rule: a
+    moved centre retires measurements made against the old one), and a variant
+    re-declaration or system switch retires the "pairs" kind alone (audit
+    2026-08-04: a pair's PART half was measured against the part the site no
+    longer declares; the scan-frame kinds survive because the scan did not
+    change). A JAW change retires nothing — it moves the alignment's own input,
+    not the scan or the part, and the re-apply's own gates judge the result."""
 
     # "mark" (align-to-mark: one scan point) | "pairs" (fit-by-points: the
     # correspondence list, wire-shaped) | "best_fit" (the refinement act + its
-    # search diameter — its input is the scan itself)
+    # search diameter — a correspondence-cutoff ASK, not a part coordinate,
+    # which is why it survives the part boundaries that retire "pairs")
     kind: str
     applied_at: str
     # kind="mark": the [x, y, z] scan point

@@ -113,6 +113,16 @@ class TestReEmitOnTheRealTree:
                                   "detail": "seeded by test_emit"}]
         record_path.write_text(json.dumps(record, indent=2))
 
+        # seed re-apply receipts onto the source report — §10-AD's receipts must
+        # ride a §10-AC re-emit, because the copied poses still stand on those acts
+        source_report_path = source_dir / f"{case.id}-auto-report.json"
+        source_report = json.loads(source_report_path.read_text())
+        source_report["evidence_reapplied"] = [
+            {"tooth": tooth, "kind": "mark", "applied_at": "2026-08-02T00:00:00",
+             "outcome": "applied", "operation": "align-to-mark",
+             "detail": "seeded by test_emit"}]
+        source_report_path.write_text(json.dumps(source_report, indent=2))
+
         # a DIFFERENT part from a DIFFERENT vendor, and a different relief ask
         reemit_selection = RunSelection(
             model="neodent-gm",
@@ -159,6 +169,9 @@ class TestReEmitOnTheRealTree:
         # 4. the receipt names its source and refreshes the product facts
         assert summary_b["emitted_from"] == "source"
         assert summary_b["mode"] == "reemit-from-poses"
+        # 4c. and the source run's re-apply receipts RIDE it — a summary that
+        # dropped them would deny evidence the copied poses embody (§10-AD×AC)
+        assert summary_b["evidence_reapplied"][0]["detail"] == "seeded by test_emit"
         row_b = next(r for r in summary_b["sites"] if r["tooth"] == tooth)
         row_a = next(r for r in summary_a["sites"] if r["tooth"] == tooth)
         # pose/seat/clock facts verbatim; the product facts are the NEW part's

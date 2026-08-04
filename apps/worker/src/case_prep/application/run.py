@@ -126,12 +126,12 @@ def _reapply_evidence(case: CaseRecord, run_dir: Path,
     outcome lands in ``summary["evidence_reapplied"]`` (applied / already-optimal /
     refused, with the gate's own words — a refusal here is an ANSWER about the new
     geometry, never a failed run), the re-derived row numbers fold into the site's
-    row, and rewritten file names join ``package_files``.
-
-    The correspondence QC block is deliberately NOT reconstructed on the row this
-    increment: a re-applied pairs fit reports through ``evidence_reapplied`` and its
-    implant.json provenance, and the row under-claims (no agreement figure) rather
-    than claiming a block this layer would have to rebuild by hand."""
+    row through the SAME fold the interactive landing uses
+    (``adjust.fold_outcome_into_row`` — one fold since the 2026-08-04 audit caught
+    the two hand-written copies drifting), and rewritten file names join
+    ``package_files``. A re-applied pairs fit rebuilds the correspondence QC block
+    from the entry's own pair count — the canonical fold retired this function's
+    earlier documented under-claim."""
     from . import adjust  # heavy import, deferred like the pipeline's own
 
     outcomes: list = []
@@ -184,12 +184,10 @@ def _reapply_evidence(case: CaseRecord, run_dir: Path,
             outcomes.append(receipt)
             row = rows_by_tooth.get(tooth)
             if row is not None:
-                if outcome.clocking is not None:
-                    row["clocking"] = outcome.clocking
-                if outcome.deviation:
-                    row.update(outcome.deviation)
-                if outcome.stale_metrics:
-                    row["stale_metrics"] = list(outcome.stale_metrics)
+                adjust.fold_outcome_into_row(
+                    row, outcome,
+                    correspondence_pairs=(len(entry.get("pairs") or [])
+                                          if kind == "pairs" else None))
             for name in outcome.files:
                 if name not in summary.get("package_files", []):
                     summary.setdefault("package_files", []).append(name)

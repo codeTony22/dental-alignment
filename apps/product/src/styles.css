@@ -6877,6 +6877,49 @@ button.package-files__link:hover {
   font-weight: 600;
 }
 
+/* The run's re-apply receipts (§10-AD's answer half, audit 2026-08-04): what the
+   standing run DID with each persisted measurement. `already-optimal` is a PASS
+   by meaning — its tone matches applied, not refused. */
+.adjust-receipts {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border, #d8d8d8);
+  border-radius: 6px;
+  background: var(--color-surface-raised, #fafafa);
+}
+
+.adjust-receipts__title {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: none;
+}
+
+.adjust-receipts__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.adjust-receipts__item {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+/* Tones are EXPLICIT per outcome — an outcome this stylesheet has no rule for
+   renders in the muted default, never in a tone it did not earn. */
+.adjust-receipts__item[data-outcome="applied"] .adjust-receipts__verdict,
+.adjust-receipts__item[data-outcome="already-optimal"] .adjust-receipts__verdict {
+  color: var(--color-accent-green-dark, #0a6d2e);
+}
+
+.adjust-receipts__item[data-outcome="refused"] .adjust-receipts__verdict {
+  color: var(--color-accent-amber-dark, #8a5b00);
+}
+
 /* Per-site relief (§10-B/C): a quiet field among the site acts. */
 .site-relief {
   display: flex;

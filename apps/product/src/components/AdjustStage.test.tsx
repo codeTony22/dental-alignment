@@ -31,6 +31,7 @@ const FLAGGED: AdjustQueueEntry = {
   dropped: false,
   exceptionAcknowledged: false,
       evidenceCount: 0,
+      receipts: [],
   declaredVariant: "5020",
   reasons: [ACTION],
 };
@@ -43,6 +44,7 @@ const CLEAN: AdjustQueueEntry = {
   dropped: false,
   exceptionAcknowledged: false,
       evidenceCount: 0,
+      receipts: [],
   declaredVariant: "5020",
   reasons: [],
 };
@@ -90,6 +92,7 @@ describe("accepting a flagged exception, in advance (client 2026-08-02)", () => 
     dropped: false,
     exceptionAcknowledged: false,
       evidenceCount: 0,
+      receipts: [],
     declaredVariant: "5020",
     reasons: ["re-run the refinement at a matching diameter"],
   } as const;
@@ -1189,6 +1192,85 @@ describe("the queue's evidence line", () => {
   it("stays silent at zero — no empty claim", () => {
     const html = view({ entries: [FLAGGED] });
     expect(html).not.toContain('data-role="queue-evidence"');
+  });
+});
+
+/** §10-AD's ANSWER half (audit 2026-08-04): after a run, the row and the site
+ * panel say what each persisted measurement actually DID — the server's own
+ * receipts, detail verbatim. The promise line ("rides the next run") stands
+ * down where the answer is on screen: both at once would read as a promise
+ * about a run that already answered. */
+describe("the run's re-apply receipts", () => {
+  const RECEIPTS = [
+    { tooth: 13, kind: "mark", outcome: "applied", appliedAt: "t1",
+      detail: "trench matched — clocking re-read" },
+    { tooth: 13, kind: "best_fit", outcome: "already-optimal", appliedAt: "t2",
+      detail: "already within the certified bound" },
+    { tooth: 13, kind: "pairs", outcome: "refused", appliedAt: "t3",
+      detail: "the marks disagree with each other — fit refused" },
+  ];
+
+  it("the queue row answers with counts and stands down the stale promise", () => {
+    const html = view({
+      entries: [{ ...FLAGGED, evidenceCount: 3, receipts: RECEIPTS }],
+    });
+    expect(html).toContain('data-role="queue-receipts"');
+    expect(html).toContain(
+      "this run: 1 re-applied · 1 already optimal · 1 refused",
+    );
+    expect(html).not.toContain('data-role="queue-evidence"');
+  });
+
+  it("the site panel lists each receipt with the server's sentence verbatim", () => {
+    const html = view({ entries: [{ ...FLAGGED, receipts: RECEIPTS }] });
+    expect(html).toContain('data-role="evidence-receipts"');
+    expect(html).toContain("What this run re-applied");
+    expect(html).toContain('data-outcome="applied"');
+    expect(html).toContain("trench mark — re-applied");
+    expect(html).toContain("trench matched — clocking re-read");
+    expect(html).toContain("point pairs — refused");
+    expect(html).toContain("the marks disagree with each other — fit refused");
+  });
+
+  it("already-optimal wears the pass tone, never the refusal one", () => {
+    const html = view({ entries: [{ ...FLAGGED, receipts: [RECEIPTS[1]!] }] });
+    expect(html).toContain('data-outcome="already-optimal"');
+    expect(html).toContain("best fit — already optimal");
+    expect(html).not.toContain("run-refusal");
+  });
+
+  it("a re-emit's carried receipts title the block honestly — and the queue row agrees", () => {
+    const html = view({
+      entries: [{ ...FLAGGED, receipts: [RECEIPTS[0]!] }],
+      receiptsCarried: true,
+    });
+    expect(html).toContain("What the source run re-applied");
+    // review 2026-08-04: the row and the panel are one screen — the row must not
+    // attribute to this run an act the panel says the source run performed
+    expect(html).toContain("carried forward: 1 re-applied");
+    expect(html).not.toContain("this run: 1 re-applied");
+  });
+
+  it("a dropped cap's PANEL keeps the receipts — facts, not asks", () => {
+    // the queue row is the ASK and a dropped cap stops asking; the receipts are
+    // measurements of the standing run, and dropping changes what ships, never
+    // what was measured
+    const html = view({
+      entries: [{ ...FLAGGED, dropped: true, receipts: [RECEIPTS[0]!] }],
+    });
+    expect(html).toContain('data-role="evidence-receipts"');
+  });
+
+  it("stays silent with no receipts — no empty panel, and static callers predate the props", () => {
+    expect(view()).not.toContain('data-role="evidence-receipts"');
+    expect(view()).not.toContain('data-role="queue-receipts"');
+  });
+
+  it("a dropped cap's row stops showing receipts — the row has stopped asking", () => {
+    const html = view({
+      entries: [{ ...FLAGGED, dropped: true, receipts: RECEIPTS }],
+    });
+    expect(html).not.toContain('data-role="queue-receipts"');
   });
 });
 

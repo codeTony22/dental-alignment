@@ -487,6 +487,15 @@ describe("staleMetricsWords — what a reworked row's numbers still describe", (
     expect(staleMetricsWords(assuranceSite({ stale_metrics: ["some_new_metric"] })))
       .toContain("some_new_metric");
   });
+
+  it("never claims the rework happened AFTER the run — §10-AG's re-apply happens inside it", () => {
+    // both lanes' stale numbers describe the automation's own fit: the operator
+    // reworking after the run, and the run RE-APPLYING persisted evidence after
+    // its own automation. "After the run" was false on the second lane.
+    const words = staleMetricsWords(assuranceSite({ stale_metrics: ["guidance"] }))!;
+    expect(words).toContain("Reworked since the automation's own fit");
+    expect(words).not.toContain("after the run");
+  });
 });
 
 /**

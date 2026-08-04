@@ -917,6 +917,75 @@ class AdjustOutcome:
     pane_payload: Optional[dict] = None
 
 
+def fold_outcome_into_row(row: dict, outcome: AdjustOutcome,
+                          correspondence_pairs: Optional[int] = None) -> None:
+    """Fold an applied tool's outcome into the run-summary row that DESCRIBES THE
+    POSE THAT SHIPPED (finding E, 2026-07-28) — the ONE fold, serving both callers:
+    the BFF's interactive landing (``bff.resources.adjust._fold_outcome``) and the
+    run's evidence re-apply (``application.run._reapply_evidence``, §10-AD). They
+    were two hand-written folds once and drifted on four shapes (audit 2026-08-04:
+    staleness under a key no projection read, clocking replaced wholesale — erasing
+    ``rotation_unverified`` and claiming a verified rotation — nudge and best_fit
+    never folded). Sharing one function is what retires that defect class.
+
+    The shapes, and why each is the way it is:
+
+    - ``clocking`` MERGES over the pipeline's block. The tool re-measures only the
+      notch keys (``_clocking_fields``); ``evidence``/``consistency_deg``/
+      ``rotation_unverified`` are the automation's own facts and survive any rework
+      by design — the product's rotation-unverified notice depends on it.
+    - ``deviation`` overwrites even with None values: "missing" is the honest
+      reading of a pose nobody could measure; keeping pre-rework figures would be
+      the stale-row bug again.
+    - what could NOT be re-derived lands under ``rework.stale_metrics`` — the ONE
+      key the assurance and receipt projections read (bff/resources/deliver.py). An
+      act with nothing stale (the reset) CLEARS it: nothing predates a rework that
+      has been undone.
+    - ``nudge`` only when the tool rotated (the demo's 2026-07-25 rule: a manual
+      best-fit is a 6-DoF move, not a clock nudge, and must not overwrite the
+      site's cumulative rotation); ``best_fit`` only when one landed, and a
+      rotation-reset clears it — the site is back on the pipeline's own pose.
+    - the correspondence block BELONGS TO THE ACT THAT PRODUCED IT: rebuilt with
+      the caller's pair count on a fit-by-points (span/direction counts off the
+      observations' own KINDS — three chord spans are not three clean clicks), and
+      popped by every other applied act, because a residual measured against a
+      pose that no longer exists must not stand in a sealed document.
+      ``cross_checked`` derives HERE from the observation count the same block
+      states, so the two numbers in one block can never disagree (the vacuous-RMS
+      defect, 2026-08-01).
+
+    Package-file bookkeeping stays with the callers — their containers differ
+    (session receipt vs run summary); every ROW shape lives here.
+    """
+    if outcome.clocking:
+        row["clocking"] = {**(row.get("clocking") or {}), **outcome.clocking}
+    if outcome.deviation:
+        row.update(outcome.deviation)
+    if outcome.stale_metrics:
+        row["rework"] = {"stale_metrics": list(outcome.stale_metrics)}
+    else:
+        row.pop("rework", None)
+    if outcome.nudge is not None and outcome.operation != "best-fit":
+        row["nudge"] = outcome.nudge
+    if outcome.best_fit is not None:
+        row["best_fit"] = outcome.best_fit
+    elif outcome.operation == "rotation-reset":
+        row.pop("best_fit", None)
+    if correspondence_pairs is not None:
+        kinds = [str(p.get("observation") or "") for p in outcome.pairs
+                 if isinstance(p, dict)]
+        observations = len(outcome.pairs)
+        row["correspondence"] = {"pairs": correspondence_pairs,
+                                 "observations": observations,
+                                 "spans": kinds.count("midpoint"),
+                                 "directions_used": kinds.count("direction"),
+                                 "max_pairs": _CORRESPONDENCE_MAX_PAIRS,
+                                 "residual_rms_mm": outcome.residual_rms_mm,
+                                 "cross_checked": cross_checked(observations)}
+    else:
+        row.pop("correspondence", None)
+
+
 def _adopt_rotation(ctx: SiteContext, cand: np.ndarray, applied: float,
                     cumulative: float, operation: str, detail: str,
                     evidence: Optional[dict] = None) -> Tuple[dict, dict, List[str]]:

@@ -841,9 +841,14 @@ export function staleMetricsWords(site: AssuranceSite): string | null {
   if (named === null) return null;
   const one = site.stale_metrics.length === 1;
   return (
-    `Reworked after the run — ${named} below still ${one ? "describes" : "describe"} ` +
-    `the fit the run produced, not the one on this site now. Confirming seals ` +
-    `${one ? "it" : "them"} as ${one ? "it stands" : "they stand"}.`
+    // "since the automation's own fit", not "after the run" — since §10-AG the
+    // rework can be the run's own evidence RE-APPLY, which happens inside the
+    // run after automation; both lanes' stale numbers describe the automation's
+    // fit, and "after the run" was false on one of them (review 2026-08-04)
+    `Reworked since the automation's own fit — ${named} below still ` +
+    `${one ? "describes" : "describe"} that fit, not the one standing on this ` +
+    `site now. Confirming seals ${one ? "it" : "them"} as ` +
+    `${one ? "it stands" : "they stand"}.`
   );
 }
 

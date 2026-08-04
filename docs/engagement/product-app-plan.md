@@ -1503,3 +1503,72 @@ placeholder text. It stands down in the SAME commit the real text lands, not bef
 not pre-wire it to the served status. The demo-phase asks (2026-07-26) stay in the same
 file under their own date — none was formally answered in the record, and #3 (the
 RealGUIDE round-trip) is still the automation plan's last unvalidated assumption.
+
+**AG. THE RE-APPLY CHAIN VERIFIED END TO END, AND THE FOLD UNIFIED (2026-08-04; the
+client's "make sure the adjustments tooling works and it reapplies ... and it shows
+the alignment that was done with that tool").** A three-way adversarial audit of the
+§10-AD chain (worker physics / BFF lifecycle / product surface) confirmed the spine —
+same adjust functions on re-apply as on the live tools, same gate bounds, summary
+served verbatim — and caught FIVE defects the narrow suites had never pinned:
+
+1. **The two folds had drifted.** The BFF's interactive `_fold_outcome` and the
+   worker's re-apply fold were two hand-written copies: on re-apply, staleness landed
+   at `row["stale_metrics"]` — a key NO projection reads (Deliver would present
+   rim_agreement_mm and the guidance sentence as CURRENT and seal them, the finding-E
+   class); `clocking` was REPLACED wholesale, erasing `rotation_unverified`/
+   `evidence`/`consistency_deg` (a re-applied mark silently claimed a verified
+   rotation); `nudge` and `best_fit` never folded at all. CURED STRUCTURALLY:
+   `application.adjust.fold_outcome_into_row` is now THE one fold, called by both —
+   and the re-apply of a pairs fit now rebuilds the correspondence QC block honestly
+   (the "under-claim" was only ever a symptom of the fold living in two places).
+   Verified on a real re-run: all six clocking keys survive with
+   `rotation_unverified: true`, `rework.stale_metrics` lands where deliver.py reads
+   it, the 9.9° nudge folds.
+2. **Pairs evidence outlived its part.** A variant re-declaration or system switch
+   replaced the geometry a pair's PART half (feature_id / part_point) was measured
+   against — the next run would re-apply it against the NEW part and land an
+   "applied" receipt over physics nobody measured. Both boundaries now retire the
+   site's "pairs" kind; marks and best-fit asks survive (scan-frame; the scan did not
+   change); a JAW change deliberately retires nothing — all four pinned, and
+   `AlignmentEvidence`'s docstring now names its clearers exhaustively.
+3. **The §10-AC re-emit dropped the receipts**: `emit_from_poses` now copies the
+   source report's `evidence_reapplied` forward — the copied poses still stand on
+   those acts (the provenance-keys doctrine, applied to the summary).
+4. **Nothing rendered the receipts.** The container fetched the run and kept only
+   `sites`; `evidence_reapplied` reached the browser and died there. Built (§10-AD's
+   answer half): `evidenceReceipts` narrows the wire defensively; the queue row says
+   "this run: 1 re-applied · 1 refused" (the ride-words PROMISE stands down where the
+   answer is on screen); the site panel lists each receipt — tool name, the server's
+   outcome word, the server's sentence VERBATIM, `already-optimal` in the pass tone
+   by rule; a re-emit's carried receipts title themselves "What the source run
+   re-applied — this package's poses carry it".
+5. **The union caption denied re-applied work**: "no operator adjustment on this site
+   yet" over a pose standing on the operator's own re-applied marks. It now counts
+   the site's applied receipts: "the fit as the run delivered it — it stands on N
+   re-applied operator measurements".
+
+PROVED LIVE on cap7020 t3, the client's own scenario: best-fit refused twice with the
+gates' own words (already-optimal at Ø0.30; trust-region at Ø0.60 — receipts of a
+seat that already stands), mark-trench applied (+9.9°, rotation −142.7° → −133.0°),
+the queue said "1 measurement rides the next run", a jaw flip there-and-back retired
+the run (evidence surviving, as pinned), one re-review re-fired the run — and the
+fresh run RE-APPLIED THE MARK ITSELF: receipt `mark · applied · "marked trench at
++9.8°: rotated +9.9° ..."`, the queue row reading "this run: 1 re-applied", the
+panel quoting the sentence, the caption owning the pose. The flag stays flagged —
+a re-applied trench mark does not verify the rotation, and now provably cannot claim
+to (that is what the clocking merge preserves).
+
+REVIEWED same-day (code-reviewer, blocking find fixed before landing): the queue line
+hard-coded "this run" while the panel beside it honestly said a §10-AC re-emit CARRIED
+the receipts — it now says "carried forward: …" on that lane; Deliver's staleness
+sentence stopped claiming "after the run" (false on the re-apply lane — it reads
+"Reworked since the automation's own fit"); an unknown receipt outcome now counts
+under its own verbatim word instead of blanking the line while suppressing the
+ride-words fallback; receipt tones are explicit per outcome (an outcome without a
+rule renders muted, never in a tone it did not earn); and the BFF's `_MAX_PAIRS` is
+now the application's own constant imported, not a second literal pinned equal.
+FILED SEPARATELY, pre-existing (review item 4): a re-emit re-reads the SOURCE
+report's rows, which the interactive tools never rewrite — so a re-emit after a hand
+adjustment carries correct poses and fresh deviation stats but PRE-adjustment
+clocking/nudge/best_fit/correspondence/rework on the served rows, and renders QC from
+the stale clocking. Its own slice; do not fold it into this one.

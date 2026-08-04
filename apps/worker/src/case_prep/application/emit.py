@@ -316,6 +316,13 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
         "jaw": jaw_label,
         "confirmed_sites": report.get("confirmed_sites", []),
         "sites": source_rows,
+        # §10-AD × §10-AC: the source run's re-apply receipts ride forward — the
+        # copied poses still stand on those acts, and a summary that dropped the
+        # receipts would deny evidence the package embodies. Same copy-forward
+        # doctrine as the per-site provenance keys (``_PROVENANCE_KEYS``,
+        # applied per implant record above).
+        **({"evidence_reapplied": report["evidence_reapplied"]}
+           if report.get("evidence_reapplied") else {}),
         "gingival_relief": _relief_summary(selection.gingival_offset_mm,
                                            clamp_by_tooth),
         "package_files": [f.name for f in manifest.files]

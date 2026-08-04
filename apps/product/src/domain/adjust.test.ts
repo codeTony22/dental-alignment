@@ -11,7 +11,13 @@ import type {
   LandmarkView,
 } from "../api/client";
 import {
+  evidenceReceiptLine,
+  evidenceReceipts,
+  evidenceReceiptsTitle,
   evidenceRideWords,
+  receiptKindWords,
+  receiptOutcomeWords,
+  receiptsCarriedByReemit,
   ADJUST_TOOLS,
   DEFAULT_DIAMETER_MM,
   MAX_DIAMETER_MM,
@@ -246,6 +252,7 @@ describe("the panes' words on this stage", () => {
     dropped: false,
   exceptionAcknowledged: false,
       evidenceCount: 0,
+      receipts: [],
     declaredVariant: "5020",
     reasons: [ACTION],
   };
@@ -1378,5 +1385,127 @@ describe("evidenceRideWords", () => {
   it("never promises an outcome", () => {
     expect(evidenceRideWords(2)).not.toContain("will apply");
     expect(evidenceRideWords(2)).not.toContain("re-applied");
+  });
+});
+
+/** §10-AD's ANSWER half (audit 2026-08-04): the run's own receipts —
+ * summary.evidence_reapplied, served verbatim on the run read — say what each
+ * persisted measurement actually did. The ride words are the promise; these are
+ * the answer, and the client's original complaint ("rerunning ... does not take
+ * effect") is only closed when the operator can SEE the answer. */
+describe("the run's re-apply receipts", () => {
+  const SUMMARY: Record<string, unknown> = {
+    evidence_reapplied: [
+      { tooth: 4, kind: "mark", applied_at: "t1", outcome: "applied",
+        operation: "align-to-mark", detail: "trench matched — clocking re-read" },
+      { tooth: 4, kind: "best_fit", applied_at: "t2",
+        outcome: "already-optimal",
+        detail: "already within the certified bound" },
+      { tooth: 13, kind: "pairs", applied_at: "t3", outcome: "refused",
+        detail: "the marks disagree with each other — fit refused" },
+    ],
+  };
+
+  it("narrows the wire shape defensively — junk renders as no receipts", () => {
+    expect(evidenceReceipts(null)).toEqual([]);
+    expect(evidenceReceipts({})).toEqual([]);
+    expect(evidenceReceipts({ evidence_reapplied: "junk" })).toEqual([]);
+    expect(
+      evidenceReceipts({ evidence_reapplied: [42, { tooth: "x" }] }),
+    ).toEqual([]);
+  });
+
+  it("passes the server's receipts through, detail verbatim", () => {
+    const receipts = evidenceReceipts(SUMMARY);
+    expect(receipts).toHaveLength(3);
+    expect(receipts[0]).toMatchObject({
+      tooth: 4,
+      kind: "mark",
+      outcome: "applied",
+      detail: "trench matched — clocking re-read",
+      appliedAt: "t1",
+    });
+  });
+
+  it("attaches each site's receipts to its queue entry", () => {
+    const sites = [
+      siteView({ tooth: 4, status: "ready", declared_variant: "5020" }),
+      siteView({ tooth: 13, status: "flagged", declared_variant: "5020" }),
+    ];
+    const rows = [row(4), row(13, "attention", [ACTION])];
+    const queue = adjustQueue(sites, rows, evidenceReceipts(SUMMARY));
+    expect(queue.find((e) => e.tooth === 4)!.receipts).toHaveLength(2);
+    expect(queue.find((e) => e.tooth === 13)!.receipts).toHaveLength(1);
+    // callers predating the third argument still get a defined, empty list
+    expect(adjustQueue(sites, rows).find((e) => e.tooth === 4)!.receipts)
+      .toEqual([]);
+  });
+
+  it("sums the queue line by outcome in a fixed order, silent at zero", () => {
+    expect(evidenceReceiptLine([])).toBeNull();
+    const receipts = evidenceReceipts(SUMMARY);
+    expect(evidenceReceiptLine(receipts.filter((r) => r.tooth === 4)))
+      .toBe("this run: 1 re-applied · 1 already optimal");
+    expect(evidenceReceiptLine(receipts.filter((r) => r.tooth === 13)))
+      .toBe("this run: 1 refused");
+  });
+
+  it("a re-emit's carried receipts never claim 'this run' — it re-applied nothing", () => {
+    // review 2026-08-04: the panel beside this line says "the source run" — the
+    // queue's half must not contradict it on the same screen
+    const receipts = evidenceReceipts(SUMMARY).filter((r) => r.tooth === 4);
+    expect(evidenceReceiptLine(receipts, true))
+      .toBe("carried forward: 1 re-applied · 1 already optimal");
+    expect(evidenceReceiptLine(receipts, true)).not.toContain("this run");
+  });
+
+  it("an unknown outcome is counted under its own verbatim word, never dropped", () => {
+    // the pass-through doctrine: swallowing it would blank the line while also
+    // standing down the ride-words fallback
+    const receipts = evidenceReceipts({
+      evidence_reapplied: [
+        { tooth: 4, kind: "mark", applied_at: "t1", outcome: "vetoed",
+          detail: "x" },
+        { tooth: 4, kind: "pairs", applied_at: "t2", outcome: "applied",
+          detail: "y" },
+      ],
+    });
+    expect(evidenceReceiptLine(receipts)).toBe("this run: 1 re-applied · 1 vetoed");
+  });
+
+  it("speaks the tools' own names and the server's outcome words", () => {
+    expect(receiptKindWords("mark")).toBe("trench mark");
+    expect(receiptKindWords("pairs")).toBe("point pairs");
+    expect(receiptKindWords("best_fit")).toBe("best fit");
+    // an unknown kind passes through verbatim — never our invention
+    expect(receiptKindWords("telepathy")).toBe("telepathy");
+    expect(receiptOutcomeWords("applied")).toBe("re-applied");
+    expect(receiptOutcomeWords("already-optimal")).toBe("already optimal");
+    expect(receiptOutcomeWords("refused")).toBe("refused");
+  });
+
+  it("titles the block for both lanes — a run's own re-apply and a re-emit's carried poses", () => {
+    expect(evidenceReceiptsTitle(false)).toBe("What this run re-applied");
+    expect(evidenceReceiptsTitle(true)).toContain("source run");
+    expect(receiptsCarriedByReemit({ mode: "reemit-from-poses" })).toBe(true);
+    expect(receiptsCarriedByReemit({ mode: "anything-else" })).toBe(false);
+    expect(receiptsCarriedByReemit(null)).toBe(false);
+  });
+
+  it("the union caption stops denying re-applied work", () => {
+    const payload = { preview: false } as never;
+    // two receipts stand on the pose the run delivered: the caption must not
+    // claim "no operator adjustment" over the operator's own re-applied marks
+    expect(adjustUnionCaption(payload, null, 2)).toBe(
+      "the fit as the run delivered it — it stands on 2 re-applied operator " +
+        "measurements",
+    );
+    expect(adjustUnionCaption(payload, null, 1)).toContain(
+      "1 re-applied operator measurement",
+    );
+    // with none re-applied the standing sentence is still the honest one
+    expect(adjustUnionCaption(payload, null, 0)).toContain(
+      "no operator adjustment on this site yet",
+    );
   });
 });

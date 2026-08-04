@@ -57,13 +57,14 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from case_prep.application.adjust import (AdjustInvalid, AdjustOutcome, AdjustRefused,
+from case_prep.application.adjust import (_CORRESPONDENCE_MAX_PAIRS, AdjustInvalid,
+                                          AdjustOutcome, AdjustRefused,
                                           AlreadyOptimal, Correspondence,
                                           align_to_correspondence, align_to_mark,
                                           best_fit_site, clock_landmarks,
-                                          cross_checked, load_site,
-                                          rederived_reading, rotate_site,
-                                          seated_payload)
+                                          cross_checked, fold_outcome_into_row,
+                                          load_site, rederived_reading,
+                                          rotate_site, seated_payload)
 from case_prep.application.cases import CaseRecord
 from case_prep.application.catalog import UnknownSelection
 from case_prep.application.detection import ScanUnreadable
@@ -92,8 +93,10 @@ router = APIRouter(prefix="/api/case-sessions", tags=["adjust"])
 
 # server.py:1268, verbatim — a nudge is a correction, not a re-seat.
 _MAX_STEP_DEG = 45.0
-# server.py:1768, verbatim.
-_MAX_PAIRS = 8
+# server.py:1768, verbatim — and tied BY CONSTRUCTION to the cap the application
+# layer enforces and the folded correspondence block reports (review 2026-08-04:
+# two literals that must agree are one literal imported twice, not two).
+_MAX_PAIRS = _CORRESPONDENCE_MAX_PAIRS
 # server.py:2012-2017, verbatim (the ceiling is the winner pass's own cutoff, doubled).
 _MIN_DIAMETER_MM = 0.05
 _MAX_DIAMETER_MM = 2.0
@@ -367,89 +370,21 @@ def _fold_outcome(run: RunSession, tooth: int, outcome: AdjustOutcome,
         pipeline's own certified pose, so nothing predates anything and no block may go
         on describing a fit that has been undone.
 
-    ``nudge`` is written only when the tool ROTATED (the demo's 2026-07-25 rule kept
-    verbatim: a manual best-fit is a 6-DoF move, not a clock nudge, and must not
-    overwrite the site's cumulative rotation with a number it did not apply);
-    ``best_fit`` only when a best-fit landed. The new files JOIN the package list —
-    the alignment proof is EVIDENCE the operator should see, and the rewritten cap and
+    Every ROW shape — the clocking merge, the deviation overwrite, the
+    ``rework.stale_metrics`` naming, the nudge/best_fit rules, and the whole
+    correspondence-block doctrine (span accounting off observation KINDS, the block
+    belonging to the act that produced it, ``cross_checked`` derived beside its own
+    residual) — lives in ``application.adjust.fold_outcome_into_row``, THE one fold
+    shared with the run's evidence re-apply since the 2026-08-04 audit caught the
+    two hand-written copies drifting (staleness under a key no projection read,
+    clocking replaced wholesale). What stays here is what is this receipt's own:
+    finding the row, and joining the rewritten files into the package list — the
+    alignment proof is EVIDENCE the operator should see, and the rewritten cap and
     record must not disappear from what the run claims."""
     row = _summary_row(run, tooth)
     if row is None:
         return
-    if outcome.clocking:
-        row["clocking"] = {**(row.get("clocking") or {}), **outcome.clocking}
-    if outcome.deviation:
-        # a re-derivation that came back EMPTY (too sparse a footprint at the new pose)
-        # writes None over the old numbers on purpose: "missing" is the honest reading
-        # of a pose nobody could measure, and the acceptance catalog already renders it
-        # that way. Keeping the pre-rework figures would be the stale-row bug again.
-        row.update(outcome.deviation)
-    if outcome.stale_metrics:
-        row["rework"] = {"stale_metrics": list(outcome.stale_metrics)}
-    else:
-        row.pop("rework", None)
-    if outcome.nudge is not None and outcome.operation != "best-fit":
-        row["nudge"] = outcome.nudge
-    if outcome.best_fit is not None:
-        row["best_fit"] = outcome.best_fit
-    elif outcome.operation == "rotation-reset":
-        row.pop("best_fit", None)
-    # THE CORRESPONDENCE THE SHIPPED POSE STANDS ON (design flow.dc.html's PAIRS
-    # metric; gap ``per-site-pairs-rotation-diameter``, 2026-07-31). Until now the
-    # count lived only in a client-side draft: reload the page and it was gone, and
-    # no Deliver row could say what a fit was built from.
-    #
-    # THE MEANING, DECIDED, because the design and the product disagree. The design
-    # treats pairs as a MONOTONIC per-site counter; the product cannot honestly do
-    # that — every fit-by-points call is a FRESH correspondence set that replaces
-    # the pose outright, so a running total would have the sealed row claim a
-    # history the record does not carry. What is written here is the LAST APPLIED
-    # correspondence: how many pairs the operator named, how many OBSERVATIONS they
-    # produced, how many of those pairs were SPANS and how many spans' DIRECTIONS
-    # actually counted, and the cap the wire enforces — so a surface can render
-    # "3/8" without hard-coding the server's own bound.
-    #
-    # THE SPAN ACCOUNTING IS THE PHYSICS', NOT AN ASSUMPTION (audit finding 6,
-    # 2026-07-31). The block used to claim pairs and observations "differ exactly
-    # when spans were used". False: ``observations_for`` emits a span's direction
-    # ONLY when the span reads as RADIAL (``abs(radial_offset_deg) <=
-    # SPAN_RADIAL_TOLERANCE_DEG``); a chord across the feature contributes its
-    # midpoint alone, which is why the worker writes an explicit ``direction_note``
-    # for it. So three chord spans read {pairs: 3, observations: 3} — byte-identical
-    # to three clean single clicks, and the reader of a sealed row could not tell
-    # that three spans were placed and every direction discarded. The counts are
-    # taken off the observations' own KINDS instead: one ``midpoint`` per span, one
-    # ``direction`` per span whose direction counted.
-    #
-    # THE BLOCK BELONGS TO THE ACT THAT PRODUCED IT (audit finding 5). The guard was
-    # inverted in the same change: it used to clear only on ``rotation-reset``, so
-    # every other applied act — including ``best-fit``, a full 6-DoF re-pose that
-    # replaces ``row["best_fit"]`` two lines above — left a residual measured against
-    # a pose that no longer exists standing in the sealed document, unnamed by
-    # ``rework.stale_metrics``. A 15° nudge after a 0.021mm fit is the sharpest case:
-    # the marks now disagree by fifteen degrees and the row still said 0.021mm. This
-    # is the invariant this function's own docstring was rewritten for (finding E,
-    # 2026-07-28), so any applied act that is not the fit-by-points which WROTE the
-    # block drops it.
-    #
-    # AND WHETHER THE RESIDUAL BESIDE IT IS EVIDENCE (the vacuous-RMS defect,
-    # 2026-08-01). ``cross_checked`` is derived HERE from the observation count this
-    # same block states, by the worker's own predicate, so the two numbers in one block
-    # can never disagree — a fit of ONE observation is exactly determined, its residual
-    # is zero by construction, and ``residual_rms_mm`` arrives as None for that reason.
-    if correspondence_pairs is not None:
-        kinds = [str(p.get("observation") or "") for p in outcome.pairs
-                 if isinstance(p, dict)]
-        observations = len(outcome.pairs)
-        row["correspondence"] = {"pairs": correspondence_pairs,
-                                 "observations": observations,
-                                 "spans": kinds.count("midpoint"),
-                                 "directions_used": kinds.count("direction"),
-                                 "max_pairs": _MAX_PAIRS,
-                                 "residual_rms_mm": outcome.residual_rms_mm,
-                                 "cross_checked": cross_checked(observations)}
-    else:
-        row.pop("correspondence", None)
+    fold_outcome_into_row(row, outcome, correspondence_pairs)
     for name in outcome.files:
         if name not in run.package_files:
             run.package_files.append(name)

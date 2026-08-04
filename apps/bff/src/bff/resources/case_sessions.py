@@ -1435,6 +1435,14 @@ def put_system(case_id: str, body: SystemIn, request: Request) -> CaseSessionDet
                 site.status = status.regress_to_detected(site.status)
                 site.declared_variant = None
                 site.clear_preview_facts()   # a preview of a dropped variant (5b)
+                # AUDIT 2026-08-04: a "pairs" entry's PART half (feature_id /
+                # part_point) was measured against the old system's cap —
+                # re-applying it against the new one would land an 'applied'
+                # receipt over physics nobody measured on this part. The
+                # scan-frame kinds (mark; best_fit's diameter ask) survive:
+                # the scan did not change.
+                site.alignment_evidence = [
+                    e for e in site.alignment_evidence if e.kind != "pairs"]
             # the run boundary (5c): a run of the old system — and the fork
             # decided over its verdicts (see ``clear_current_run``)
             clear_current_run(session)
@@ -1499,6 +1507,11 @@ def put_declaration(case_id: str, tooth: int, body: DeclarationIn,
             # the declaration is the reset boundary (5a's stated rule, real since
             # 5b): the old part's preview facts fall with its rung
             site.clear_preview_facts()
+            # AUDIT 2026-08-04: pairs evidence carries a PART half measured
+            # against the variant this site no longer declares — it retires with
+            # the rung. Marks and best-fit asks are scan-frame and survive.
+            site.alignment_evidence = [
+                e for e in site.alignment_evidence if e.kind != "pairs"]
             # the run boundary (5c): the current run aligned a part this site no
             # longer declares — the pointer clears (the run dir stays, as history),
             # and the fork decided over its verdicts goes with it

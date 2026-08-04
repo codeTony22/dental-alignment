@@ -511,8 +511,9 @@ def _assurance_site(row: dict, session: CaseSession, run: RunSession,
                   if isinstance(row.get("production"), dict) else {})
     variant = row.get("variant") if isinstance(row.get("variant"), dict) else {}
     rework = row.get("rework") if isinstance(row.get("rework"), dict) else {}
-    # the adjust landing's own blocks (adjust._fold_outcome), read defensively like
-    # every other worker-shaped block on this row
+    # the fold's own blocks (application.adjust.fold_outcome_into_row — one fold
+    # since 2026-08-04, reached via the adjust landing AND the run's evidence
+    # re-apply), read defensively like every other worker-shaped block on this row
     nudge = row.get("nudge") if isinstance(row.get("nudge"), dict) else {}
     best_fit = row.get("best_fit") if isinstance(row.get("best_fit"), dict) else {}
     correspondence = (row.get("correspondence")

@@ -60,7 +60,13 @@ import {
 import {
   ADJUST_TOOLS,
   acceptExceptionOffer,
+  evidenceReceiptLine,
+  evidenceReceipts,
+  evidenceReceiptsTitle,
   evidenceRideWords,
+  receiptKindWords,
+  receiptOutcomeWords,
+  receiptsCarriedByReemit,
   exceptionDraftWords,
   DEFAULT_DIAMETER_MM,
   MAX_DIAMETER_MM,
@@ -216,6 +222,9 @@ function SiteReliefControl({
 export interface AdjustStageViewProps {
   readonly entries: readonly AdjustQueueEntry[];
   readonly activeTooth: number | null;
+  /** §10-AD's answer half: true when the standing run is a §10-AC re-emit whose
+   * receipts were CARRIED with the copied poses — the block's title says so. */
+  readonly receiptsCarried?: boolean;
   /** §10-B/C: the active site's relief facts + the apply act. */
   readonly relief?: {
     readonly siteValue: number | null;
@@ -604,6 +613,7 @@ function PairsList({
 export function AdjustStageView({
   entries,
   activeTooth,
+  receiptsCarried = false,
   relief = null,
   onSelectSite,
   tool,
@@ -740,13 +750,20 @@ export function AdjustStageView({
                       {exceptionDraftWords()}
                     </span>
                   )}
-                  {entry.evidenceCount > 0 && !entry.dropped && (
+                  {entry.receipts.length > 0 && !entry.dropped ? (
+                    /* §10-AD's ANSWER: the standing run's own receipts, counted.
+                       The promise line stands down here — both at once would read
+                       as a promise about a run that already answered. */
+                    <span data-role="queue-receipts" className="adjust-queue__evidence">
+                      {evidenceReceiptLine(entry.receipts, receiptsCarried)}
+                    </span>
+                  ) : entry.evidenceCount > 0 && !entry.dropped ? (
                     /* §10-AD: the operator's marks survive — said where the rework
                        lives, so re-running never reads as losing the work again */
                     <span data-role="queue-evidence" className="adjust-queue__evidence">
                       {evidenceRideWords(entry.evidenceCount)}
                     </span>
-                  )}
+                  ) : null}
                   {entry.dropped ? (
                     /* A DROPPED CAP STOPS ASKING (design queue row 1183-1191). The
                        flag line is the queue's ASK — "rework me" — and a cap the
@@ -1272,6 +1289,39 @@ export function AdjustStageView({
               </p>
             )}
 
+            {active !== null && active.receipts.length > 0 && (
+              /* §10-AD's ANSWER half (audit 2026-08-04): what the standing run
+                 DID with each persisted measurement — the server's own outcome
+                 word and sentence, verbatim. `already-optimal` is a PASS by
+                 meaning (the fresh automation already stands where the evidence
+                 would put it) and must never wear the refusal tone. Deliberately
+                 NOT gated on `dropped` like the queue line: the queue row is the
+                 ASK and a dropped cap stops asking, but these receipts are facts
+                 about the standing run, and dropping changes what ships, never
+                 what was measured. */
+              <div data-role="evidence-receipts" className="adjust-receipts">
+                <h4 className="adjust-receipts__title">
+                  {evidenceReceiptsTitle(receiptsCarried)}
+                </h4>
+                <ul className="adjust-receipts__list">
+                  {active.receipts.map((receipt, index) => (
+                    <li
+                      key={`${receipt.kind}-${receipt.appliedAt ?? index}`}
+                      data-role="evidence-receipt"
+                      data-outcome={receipt.outcome}
+                      className="adjust-receipts__item"
+                    >
+                      <strong className="adjust-receipts__verdict">
+                        {receiptKindWords(receipt.kind)} —{" "}
+                        {receiptOutcomeWords(receipt.outcome)}.
+                      </strong>{" "}
+                      {receipt.detail}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {active !== null && (
               <div data-role="drawer-acts" className="drawer-acts">
                 {/* RE-PREVIEW (gap `re-preview-a-site-without-applying-a-tool`,
@@ -1592,14 +1642,23 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
      outcome panel describing the new pose, and `adjustQueue`'s gate reasons read the
      same stale rows (design review 2026-07-31). */
   const [rowsNonce, setRowsNonce] = useState(0);
+  /* §10-AD's answer half rides the SAME response the rows already come from:
+     summary.evidence_reapplied is the run's own receipts — the audit (2026-08-04)
+     found this container fetching the summary and keeping only the sites. */
+  const [runSummary, setRunSummary] = useState<Record<string, unknown> | null>(null);
   useEffect(() => {
     void fetchRun(caseId).then((result) => {
       if (!mountedRef.current) return;
       setRows(result.kind === "ok" ? result.data.sites : []);
+      setRunSummary(result.kind === "ok" ? result.data.summary : null);
     });
   }, [caseId, detail.session.run_state, rowsNonce]);
 
-  const entries = useMemo(() => adjustQueue(detail.sites, rows), [detail.sites, rows]);
+  const receipts = useMemo(() => evidenceReceipts(runSummary), [runSummary]);
+  const entries = useMemo(
+    () => adjustQueue(detail.sites, rows, receipts),
+    [detail.sites, rows, receipts],
+  );
   // The footer's facts: the SAME projection the rail judges, so Adjust's own door to
   // Deliver can never open on a case the rail calls blocked (or vice versa).
   const facts = useMemo(() => factsFromCaseSession(detail), [detail]);
@@ -2052,7 +2111,15 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       partBusy={scene.partBusy}
       scanBusy={scene.scanBusy}
       scanCaption={scene.scanCaption}
-      unionCaption={adjustUnionCaption(payload, lastOutcome)}
+      unionCaption={adjustUnionCaption(
+        payload,
+        lastOutcome,
+        /* the caption must not deny the operator's own re-applied work (the
+           audit's caption misclaim) — count this site's applied receipts */
+        receipts.filter(
+          (r) => r.tooth === activeTooth && r.outcome === "applied",
+        ).length,
+      )}
       unionBusy={seatedPhase === "loading" || scene.scanBusy || phase === "working"}
       unionBusyMessage={
         phase === "working"
@@ -2115,6 +2182,7 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       linked={linked}
       onToggleLinked={handleToggleLinked}
       entries={entries}
+      receiptsCarried={receiptsCarriedByReemit(runSummary)}
       activeTooth={activeTooth}
       onSelectSite={handleSelectSite}
       tool={tool}

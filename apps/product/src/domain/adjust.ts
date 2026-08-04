@@ -134,8 +134,119 @@ export interface AdjustQueueEntry {
   readonly exceptionAcknowledged: boolean;
   /** §10-AD: persisted measurements that ride the next run (a served count). */
   readonly evidenceCount: number;
+  /** §10-AD's ANSWER half: this site's rows out of the run's own
+   * `evidence_reapplied` receipts — what the standing run actually did with the
+   * persisted measurements. Required: `adjustQueue` always sets it, and a
+   * partial production type to serve test fixtures would weaken the invariant
+   * (review 2026-08-04). */
+  readonly receipts: readonly EvidenceReceipt[];
   readonly declaredVariant: string | null;
   readonly reasons: readonly string[];
+}
+
+/** One receipt out of the run summary's `evidence_reapplied` — the worker's own
+ * record of re-applying a persisted measurement after automation (§10-AD).
+ * `detail` is the server's sentence, verbatim; `outcome` is the server's word.
+ * NOTE `already-optimal` is a PASS by meaning (the fresh automation already
+ * stands where the evidence would put it) and must never wear the refusal tone —
+ * the same rule as the best-fit's AlreadyOptimal. */
+export interface EvidenceReceipt {
+  readonly tooth: number;
+  readonly kind: string;
+  readonly outcome: string;
+  readonly detail: string;
+  /** The act's own timestamp, passed through — a stable identity for rendering. */
+  readonly appliedAt: string | null;
+}
+
+/** Narrow the run summary's receipts, defensively — the worker's summary is the
+ * schema (the rows' own convention), the key is ABSENT when nothing rode, and
+ * junk renders as no receipts, never a throw. */
+export function evidenceReceipts(
+  summary: Record<string, unknown> | null,
+): readonly EvidenceReceipt[] {
+  const raw = summary?.["evidence_reapplied"];
+  if (!Array.isArray(raw)) return [];
+  const receipts: EvidenceReceipt[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    const tooth = record["tooth"];
+    const kind = record["kind"];
+    const outcome = record["outcome"];
+    if (typeof tooth !== "number" || typeof kind !== "string") continue;
+    if (typeof outcome !== "string") continue;
+    receipts.push({
+      tooth,
+      kind,
+      outcome,
+      detail: typeof record["detail"] === "string" ? record["detail"] : "",
+      appliedAt:
+        typeof record["applied_at"] === "string" ? record["applied_at"] : null,
+    });
+  }
+  return receipts;
+}
+
+/** The queue row's one-line answer — counts only, known outcomes in a fixed
+ * order, an UNKNOWN outcome counted under its own verbatim word (never dropped:
+ * the pass-through doctrine, review 2026-08-04); the site's receipts block
+ * carries the server's sentences. Null at zero: no claim.
+ *
+ * `carried` is the §10-AC re-emit lane: this run COPIED the poses and
+ * re-applied nothing itself — "this run:" there would state an act the server
+ * never attributed to it (the same misclaim class the caption fix retired). */
+export function evidenceReceiptLine(
+  receipts: readonly EvidenceReceipt[],
+  carried = false,
+): string | null {
+  if (receipts.length === 0) return null;
+  const KNOWN = ["applied", "already-optimal", "refused"] as const;
+  const count = (outcome: string) =>
+    receipts.filter((r) => r.outcome === outcome).length;
+  const parts = KNOWN.filter((o) => count(o) > 0).map(
+    (o) => `${count(o)} ${receiptOutcomeWords(o)}`,
+  );
+  const seen = new Set<string>();
+  for (const receipt of receipts) {
+    if ((KNOWN as readonly string[]).includes(receipt.outcome)) continue;
+    if (seen.has(receipt.outcome)) continue;
+    seen.add(receipt.outcome);
+    parts.push(`${count(receipt.outcome)} ${receipt.outcome}`);
+  }
+  return `${carried ? "carried forward" : "this run"}: ${parts.join(" · ")}`;
+}
+
+/** The tools' own names for the receipt kinds — an unknown kind passes through
+ * verbatim rather than being guessed at. */
+export function receiptKindWords(kind: string): string {
+  if (kind === "mark") return "trench mark";
+  if (kind === "pairs") return "point pairs";
+  if (kind === "best_fit") return "best fit";
+  return kind;
+}
+
+/** The server's outcome words, in the operator's grammar. */
+export function receiptOutcomeWords(outcome: string): string {
+  if (outcome === "applied") return "re-applied";
+  if (outcome === "already-optimal") return "already optimal";
+  return outcome;
+}
+
+/** Whether the standing run is a §10-AC re-emit — its receipts were CARRIED with
+ * the copied poses, not produced by this run's own automation, and the block's
+ * title must say so. */
+export function receiptsCarriedByReemit(
+  summary: Record<string, unknown> | null,
+): boolean {
+  return summary?.["mode"] === "reemit-from-poses";
+}
+
+/** The receipts block's title, honest for both lanes. */
+export function evidenceReceiptsTitle(carried: boolean): string {
+  return carried
+    ? "What the source run re-applied — this package's poses carry it"
+    : "What this run re-applied";
 }
 
 /** The gate's own action words for one run row (worker `guidance.actions`), passed
@@ -174,6 +285,7 @@ function rowFor(
 export function adjustQueue(
   sites: readonly SiteView[],
   rows: ReadonlyArray<Record<string, unknown>>,
+  receipts: readonly EvidenceReceipt[] = [],
 ): readonly AdjustQueueEntry[] {
   const entries = sites
     .filter((site) => rowFor(rows, site.tooth) !== undefined)
@@ -186,6 +298,8 @@ export function adjustQueue(
       dropped: site.withhold_intent === true,
       exceptionAcknowledged: site.exception_acknowledged === true,
       evidenceCount: site.alignment_evidence_count ?? 0,
+      // the run's own receipts for this site (§10-AD's answer half)
+      receipts: receipts.filter((r) => r.tooth === site.tooth),
       declaredVariant: site.declared_variant,
       reasons: gateActions(rowFor(rows, site.tooth)),
     }));
@@ -370,10 +484,20 @@ export function adjustPaneNotices(inputs: AdjustNoticeInputs): AdjustNotices {
 export function adjustUnionCaption(
   payload: SitePreviewPayload | null,
   lastOutcome: AdjustOutcomeView | null,
+  reappliedCount = 0,
 ): string | null {
   if (payload === null) return null;
   if (lastOutcome !== null && lastOutcome.applied) {
     return `the fit as it stands now — ${lastOutcome.detail}`;
+  }
+  if (reappliedCount > 0) {
+    // the run's own receipts say the pose stands on re-applied operator work —
+    // denying it here was the audit's caption misclaim (2026-08-04)
+    const noun =
+      reappliedCount === 1
+        ? "1 re-applied operator measurement"
+        : `${reappliedCount} re-applied operator measurements`;
+    return `the fit as the run delivered it — it stands on ${noun}`;
   }
   return "the fit as the run delivered it — no operator adjustment on this site yet";
 }

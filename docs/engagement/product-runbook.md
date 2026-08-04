@@ -140,7 +140,9 @@ worker battery (~13 min) before anything client-facing that touched the pipeline
   applied, and a mark on the screw access is refused locally before the round trip.
   Since §10-AD, the tools' EVIDENCE persists: marks, pairs and best-fits ride every future
   run and re-apply after automation (the queue says "N measurements ride the next run";
-  the run's receipts say what happened; the bare nudge deliberately never re-applies).
+  the bare nudge deliberately never re-applies). Since §10-AG the RECEIPTS are on screen:
+  after a re-run the queue row answers "this run: 1 re-applied", the site panel quotes the
+  server's own sentence per measurement, and the union caption owns the re-applied pose.
   Since §10-B/C, RELIEF is also per-site here — each site's own ask beside the case value
   and the served ceiling, applied as a ~1 s re-emit over a done run.
 - **Where confirmation lives is SETTLED** (§10-Z/AB, the client's own rulings ratified):

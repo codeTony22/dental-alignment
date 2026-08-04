@@ -162,6 +162,70 @@ class TestTheReMarkRetiresIt:
         assert evidence_of(product_root, 4) == []
 
 
+class TestThePartBoundaryRetiresPairs:
+    """AUDIT 2026-08-04: a "pairs" entry's PART half (feature_id / part_point) was
+    measured against the DECLARED part. Re-declaring a different variant or switching
+    the implant system replaces that geometry, and re-applying the old part half
+    against the new part would land an 'applied' receipt over physics the operator
+    never measured on this part. The scan-frame kinds survive — the mark is a real
+    trench on a scan that did not change, and best_fit's diameter is an ask, not a
+    part coordinate. A JAW change retires nothing: it moves the alignment's own
+    input, not the scan or the part, and the re-apply's own gates judge the result."""
+
+    def pairs_and_mark_on(self, client, tooth: int) -> None:
+        client.post(f"{BASE}/{tooth}/mark-trench",
+                    json={"scan_point": [1.0, 1.0, 1.0]})
+        client.post(f"{BASE}/{tooth}/fit-by-points",
+                    json={"pairs": [{"feature_id": "trench-01",
+                                     "scan_point": [1.0, 2.0, 3.0]}]})
+
+    def test_a_variant_redeclaration_retires_that_sites_pairs_evidence(
+            self, settings, product_root, monkeypatch):
+        # the catalog reads the filesystem — the second variant exists by existing
+        (settings.data_root / "library/caps/neodent-gm"
+         / "neodent-gm-6020.stl").touch()
+        client, _ = tooled(settings, product_root, monkeypatch)
+        self.pairs_and_mark_on(client, 4)
+        assert [e.kind for e in evidence_of(product_root, 4)] == ["mark", "pairs"]
+        res = client.put(f"/api/case-sessions/{CASE}/sites/4/declaration",
+                         json={"variant": "6020"})
+        assert res.status_code == 200, res.text
+        assert [e.kind for e in evidence_of(product_root, 4)] == ["mark"]
+
+    def test_a_same_variant_redeclaration_retires_nothing(
+            self, settings, product_root, monkeypatch):
+        client, _ = tooled(settings, product_root, monkeypatch)
+        self.pairs_and_mark_on(client, 4)
+        res = client.put(f"/api/case-sessions/{CASE}/sites/4/declaration",
+                         json={"variant": "5020"})
+        assert res.status_code == 200, res.text
+        assert [e.kind for e in evidence_of(product_root, 4)] == ["mark", "pairs"]
+
+    def test_a_system_switch_retires_pairs_on_every_site(
+            self, settings, product_root, monkeypatch):
+        caps = settings.data_root / "library/caps/zimmer-4.5"
+        caps.mkdir(parents=True, exist_ok=True)
+        (caps / "zimmer-4.5-5020.stl").touch()
+        client, _ = tooled(settings, product_root, monkeypatch)
+        self.pairs_and_mark_on(client, 4)
+        self.pairs_and_mark_on(client, 13)
+        res = client.put(f"/api/case-sessions/{CASE}/system",
+                         json={"model": "zimmer-4.5"})
+        assert res.status_code == 200, res.text
+        assert [e.kind for e in evidence_of(product_root, 4)] == ["mark"]
+        assert [e.kind for e in evidence_of(product_root, 13)] == ["mark"]
+
+    def test_a_jaw_change_leaves_evidence_standing(
+            self, settings, product_root, monkeypatch):
+        client, _ = tooled(settings, product_root, monkeypatch)
+        self.pairs_and_mark_on(client, 4)
+        res = client.put(f"/api/case-sessions/{CASE}/choices",
+                         json={"construction_path": "dess/neodent-gm-scanbody.stl",
+                               "jaw": "lower", "gingival_offset_mm": 0.2})
+        assert res.status_code == 200, res.text
+        assert [e.kind for e in evidence_of(product_root, 4)] == ["mark", "pairs"]
+
+
 class TestTheCountRidesTheDetail:
     def test_the_site_view_says_how_many_measurements_stand(
             self, settings, product_root, monkeypatch):
