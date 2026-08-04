@@ -1319,6 +1319,22 @@ change) — the old "re-processes the case" promise retires with the behaviour.
 FOLLOW-ON (§10-B/C rides this): relief per-site on Adjustment becomes a re-emit with a
 per-site offset map once this lands.
 
+**AC FULLY LANDED (2026-08-04): the whole wire.** The worker layer landed at
+`03a1628` (application/emit.py, real-tree verified); now the port dispatches
+`mode: "reemit"` to `emit_from_poses` under the same containment (a gate refusal is a
+REFUSED run); `put_choices` recognises a part/relief-only effective change over a DONE
+run and re-emits — site rungs SURVIVE (the pose the review attested is untouched),
+the confirmation and every draft fall explicitly, the activity names the act and its
+source run, and jaw/model changes keep the full retirement. The disclosure words
+follow the truth on both surfaces (`constructionChangeWords` gains `runDone`; the old
+full-reset words remain exactly where they are still true — no done run). Pins
+amended to the new truth: test_pricing's boundary helper now drives the JAW (a relief
+change no longer crosses a run boundary), test_reemit_boundary (8 new pins),
+test_worker_port (+4), and the three constructionChangeWords sites. MEASURED LIVE on
+cap6020: the full run took 10 s; the relief re-emit took **1.26 s**, landing
+`mode: reemit-from-poses` with `emitted_from` on the receipt and the flagged rung
+preserved end to end.
+
 **AB AMENDED (client, 2026-08-02, second batch):** the second-actor question (item in
 A) is NOT NEEDED FOR NOW — closed until the client reopens it; the final Terms &
 Conditions text STAYS OPEN (placeholder renders until it arrives; one string to swap).

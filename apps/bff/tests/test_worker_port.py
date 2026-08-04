@@ -254,3 +254,63 @@ class TestCrashContainment:
         worker.submit("neodent-gm", _request(run_id="run-1"))
         with pytest.raises(FileExistsError):
             worker.submit("neodent-gm", _request(run_id="run-1"))
+
+
+class TestTheReemitLane:
+    """§10-AC: the re-emit enters through the SAME port shape — job-shaped truth,
+    same containment — dispatched on ``mode: "reemit"`` to the injectable
+    reemitter (wired to ``application.emit.emit_from_poses`` by default)."""
+
+    def test_a_reemit_request_dispatches_with_the_source_run_dir(
+            self, data_root, product_root):
+        calls = []
+
+        def reemitter(case, selection, source_dir, out_dir):
+            calls.append((case.id, str(source_dir), str(out_dir)))
+            (Path(out_dir) / "marker.json").write_text("{}")
+            return SUMMARY
+
+        worker = InProcessWorker(data_root, product_root,
+                                 runner=_ok_runner(SUMMARY),
+                                 reemitter=reemitter)
+        request = _request(run_id="run-2")
+        request["mode"] = "reemit"
+        request["source_run_id"] = "run-1"
+        job_id = worker.submit("neodent-gm", request)
+        assert worker.status(job_id).state is JobState.DONE
+        ((case_id, source_dir, out_dir),) = calls
+        assert case_id == "neodent-gm"
+        assert source_dir.endswith("neodent-gm/runs/run-1")
+        assert out_dir.endswith("neodent-gm/runs/run-2")
+
+    def test_a_reemit_without_its_source_run_is_a_stated_refusal(
+            self, data_root, product_root):
+        worker = InProcessWorker(data_root, product_root,
+                                 runner=_ok_runner(SUMMARY))
+        request = _request(run_id="run-3")
+        request["mode"] = "reemit"
+        job_id = worker.submit("neodent-gm", request)
+        status = worker.status(job_id)
+        assert status.state is JobState.REFUSED
+        assert "must name its source run" in status.refusal
+
+    def test_a_reemit_refusal_leaves_refusal_json_like_any_other(
+            self, data_root, product_root):
+        def refusing(case, selection, source_dir, out_dir):
+            raise RunRefused("catastrophic design-rule failure — package NOT emitted")
+
+        worker = InProcessWorker(data_root, product_root,
+                                 runner=_ok_runner(SUMMARY), reemitter=refusing)
+        request = _request(run_id="run-4")
+        request["mode"] = "reemit"
+        request["source_run_id"] = "run-1"
+        job_id = worker.submit("neodent-gm", request)
+        assert worker.status(job_id).state is JobState.REFUSED
+        run_dir = product_root / "neodent-gm" / "runs" / "run-4"
+        assert sorted(p.name for p in run_dir.iterdir()) == ["refusal.json"]
+
+    def test_the_default_reemitter_is_the_application_lift(
+            self, data_root, product_root):
+        from case_prep.application.emit import emit_from_poses
+        worker = InProcessWorker(data_root, product_root)
+        assert worker._reemitter is emit_from_poses

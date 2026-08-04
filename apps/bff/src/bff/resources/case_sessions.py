@@ -1127,6 +1127,9 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
     """
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
+    worker: WorkerPort = request.app.state.worker
+    reemit_run_id = _mint_run_id()
+    reemit: Dict[str, dict] = {}
     if body.construction_path is not None:
         try:
             require_construction(settings.data_root, body.construction_path)
@@ -1144,9 +1147,54 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
             gingival_offset_mm=body.gingival_offset_mm,
             turnaround=body.turnaround,
         )
-        effective_changed = (_effective_choices(case, replacement).values
-                             != _effective_choices(case, session.choices).values)
-        if effective_changed:
+        eff_new = _effective_choices(case, replacement)
+        eff_old = _effective_choices(case, session.choices)
+        effective_changed = eff_new.values != eff_old.values
+        # THE RE-EMIT BOUNDARY (§10-AC, retiring §10-M's deadlock): a change that
+        # touches ONLY the construction part and/or the relief, over a DONE run,
+        # owes a RE-EMIT — the pose is construction-independent (measured), so the
+        # fits the operator reviewed stand, and the package re-emits from the
+        # run's own poses into a NEW run directory in seconds. Rungs survive: the
+        # pose the review attested is untouched. A jaw change (or a system switch,
+        # which has its own route) keeps the full retirement below.
+        part_or_relief_only = (
+            effective_changed and eff_new.jaw == eff_old.jaw)
+        run_done = (session.run is not None and session.run.state == "done"
+                    and (session.run.run_id or session.run.job_id) is not None)
+        if effective_changed and part_or_relief_only and run_done:
+            source_run_id = session.run.run_id or session.run.job_id
+            session.run = RunSession(job_id=reemit_run_id, run_id=reemit_run_id,
+                                     state="queued")
+            # a NEW run's fork has not been faced, and every drafted
+            # acknowledgment was given over the OLD run's rows (the claim path's
+            # own rules, §10-AC) — and the confirmation falls EXPLICITLY: the QC
+            # evidence is cap+pose and would verify unchanged while
+            # prosthesis_cad.stl changed underneath (hazard 4)
+            session.adjust_decision = None
+            clear_exception_intents(session)
+            clear_confirmation(session)
+            reemit["request"] = {
+                "run_id": reemit_run_id,
+                "mode": "reemit",
+                "source_run_id": source_run_id,
+                "selection": {
+                    "model": _effective_model(case, session),
+                    "construction_path": eff_new.construction_path,
+                    "jaw": eff_new.jaw,
+                    "gingival_offset_mm": eff_new.gingival_offset_mm,
+                    # identity rides the source records; the variants map is the
+                    # gate's shape, from the declarations that produced the run
+                    "variants": {t: site.declared_variant
+                                 for t, site in session.sites.items()
+                                 if site.declared_variant is not None},
+                    "marked_centers": {},
+                    "alignment_evidence": {},
+                },
+            }
+            record_activity(session, ACT_RUN_AUTHORIZED,
+                            f"construction/relief changed — re-emitting run "
+                            f"{source_run_id}'s poses as run {reemit_run_id}")
+        elif effective_changed:
             for site in session.sites.values():
                 site.status = status.invalidate_preview(site.status)
                 site.clear_preview_facts()
@@ -1166,15 +1214,76 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
         # nothing. What the entry then states is the CONSEQUENCE — whether previews
         # fell — because that is the thing an operator later asks about.
         if replacement != session.choices:
-            record_activity(session, ACT_CHOICES_SET,
-                            "case choices set — the previews and the current run were "
-                            "retired (they described a different shipped part)"
-                            if effective_changed else
-                            "case choices set — the effective selection did not move, "
-                            "so nothing was retired")
+            record_activity(
+                session, ACT_CHOICES_SET,
+                ("case choices set — the fits stand; the package re-emits from "
+                 "the run's own poses")
+                if "request" in reemit else
+                "case choices set — the previews and the current run were "
+                "retired (they described a different shipped part)"
+                if effective_changed else
+                "case choices set — the effective selection did not move, "
+                "so nothing was retired")
         session.choices = replacement
 
     session = _mutate_session(store, case_id, apply)
+    if "request" in reemit:
+        # From here a ``queued`` receipt is on disk; every exit that lands no
+        # verdict withdraws it — run_case_action's own containment, mirrored.
+        try:
+            job_id = worker.submit(case_id, reemit["request"])
+            outcome = worker.status(job_id)
+            if outcome.state is JobState.FAILED:
+                raise HTTPException(
+                    500, f"the re-emit crashed before reaching a verdict — "
+                         f"{outcome.error}; the queued receipt was withdrawn, and "
+                         f"the choices stand — re-firing is a fresh part change "
+                         f"or a run authorization")
+
+            def land(inner: CaseSession) -> None:
+                if inner.run is None or inner.run.job_id != job_id:
+                    raise HTTPException(
+                        409, f"case {case_id!r} changed while the re-emit was "
+                             f"computing — its artifacts remain under its run "
+                             f"directory as history; re-read the case")
+                if outcome.state is JobState.REFUSED:
+                    # the §10-M flow point that never had a refusal surface: the
+                    # design/relief gate's words land as a REFUSED run, first-class
+                    inner.run = RunSession(job_id=job_id, run_id=reemit_run_id,
+                                           state="refused",
+                                           refusal=outcome.refusal)
+                    record_activity(inner, ACT_RUN_REFUSED,
+                                    f"re-emit {reemit_run_id} refused — "
+                                    f"{outcome.refusal}")
+                    return
+                summary = worker.result(job_id)
+                inner.run = RunSession(
+                    job_id=job_id, run_id=reemit_run_id, state="done",
+                    summary=summary,
+                    package_files=[str(n)
+                                   for n in (summary.get("package_files") or [])])
+                # guidance rides the rows VERBATIM from the source run, so the
+                # flags land where they already stood — the mapping only moves a
+                # site that is not already flagged (rungs survived the boundary)
+                for row in summary.get("sites") or []:
+                    site = inner.sites.get(str(row.get("tooth")))
+                    if site is None:
+                        continue
+                    level = (row.get("guidance") or {}).get("level")
+                    if level != "ready" and site.status is not SiteStatus.FLAGGED:
+                        site.status = status.flag(site.status)
+                record_activity(inner, ACT_RUN_LANDED,
+                                f"re-emit {reemit_run_id} completed — the package "
+                                f"stands on run "
+                                f"{reemit['request']['source_run_id']}'s poses")
+
+            try:
+                session = _mutate_session(store, case_id, land)
+            except status.IllegalTransition as exc:
+                raise HTTPException(422, str(exc))
+        except Exception:
+            _withdraw_queued_receipt(store, case_id, reemit_run_id)
+            raise
     return _detail(case, session, settings)
 
 

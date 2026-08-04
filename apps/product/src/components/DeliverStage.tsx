@@ -249,6 +249,8 @@ interface ConstructionStepProps {
   /** Whether a confirmation is standing to fall — feeds constructionChangeWords so
    *  the blast-radius sentence never claims a consequence that is not real. */
   readonly confirmed: boolean;
+  /** §10-AC: over a done run the change RE-EMITS — the words follow. */
+  readonly runDone: boolean;
   readonly onEdit: () => void;
   readonly onCancelEdit: () => void;
   readonly onPick: (pathId: string) => void;
@@ -279,6 +281,7 @@ function ConstructionStep({
   saving,
   error,
   confirmed,
+  runDone,
   onEdit,
   onCancelEdit,
   onPick,
@@ -362,7 +365,7 @@ function ConstructionStep({
                 className="switch-confirm"
               >
                 <p data-role="construction-change-words" className="switch-confirm__words">
-                  {constructionChangeWords(pendingOption.label, confirmed)}
+                  {constructionChangeWords(pendingOption.label, confirmed, runDone)}
                 </p>
                 <div className="switch-confirm__actions">
                   <button
@@ -1185,6 +1188,7 @@ export function DeliverStageView({
                   saving={constructionSaving}
                   error={constructionError}
                   confirmed={detail.session.confirmed}
+                  runDone={detail.session.run_state === "done"}
                   onEdit={onConstructionEdit}
                   onCancelEdit={onConstructionCancelEdit}
                   onPick={onConstructionPick}

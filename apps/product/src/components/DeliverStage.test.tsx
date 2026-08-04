@@ -538,8 +538,12 @@ describe("the Construction step (client 2026-08-01): after Confirmed, before Pai
     });
     expect(html).toContain('data-role="construction-change-confirm"');
     expect(html).toContain('data-role="construction-change-words"');
-    expect(html).toContain("re-processes the case");
-    expect(html).toContain("a new run re-bores and re-renders everything");
+    /* AMENDED (§10-AC): over a DONE run the change RE-EMITS from the run's own
+       poses — the disclosure-before-act rule is unchanged, the disclosed
+       consequence shrank with the behaviour. */
+    expect(html).toContain("re-emits the package from the run&#x27;s own poses");
+    expect(html).toContain("the fits stand, nothing re-aligns");
+    expect(html).not.toContain("re-bores and re-renders everything");
     expect(html).toContain("the standing confirmation falls");
     expect(html).toContain('data-role="construction-confirm-change"');
     expect(html).toContain('data-role="construction-cancel-change"');

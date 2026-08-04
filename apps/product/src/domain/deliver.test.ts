@@ -1390,6 +1390,25 @@ describe("constructionChangeWords — the blast radius, before the PUT", () => {
     expect(words).not.toContain("confirmation falls");
     expect(words).toContain("Declare confirms them again");
   });
+
+  /* §10-AC: over a DONE run the truth changed and the words follow — a part
+     change re-emits from the run's own poses. The full-reset words above stay
+     exactly for the runless case, where they are still true. */
+  it("over a done run, discloses the re-emit — smaller, and its one new risk", () => {
+    const words = constructionChangeWords("Conical scan body", false, true);
+    expect(words).toContain("re-emits the package from the run's own poses");
+    expect(words).toContain("the fits stand, nothing re-aligns");
+    expect(words).toContain("the design gate judges the new pairing and can refuse");
+    expect(words).not.toContain("re-processes the case");
+    expect(words).not.toContain("confirmation falls");
+  });
+
+  it("over a done run WITH a confirmation, says the confirmation falls", () => {
+    const words = constructionChangeWords("Conical scan body", true, true);
+    expect(words).toContain("re-emits the package");
+    expect(words).toContain("the standing confirmation falls");
+    expect(words).toContain("confirm again over the re-emitted evidence");
+  });
 });
 
 // --- the three 3D preview tabs (client 2026-08-01) -------------------------------------

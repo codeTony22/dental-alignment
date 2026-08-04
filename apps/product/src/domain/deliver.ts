@@ -1258,7 +1258,30 @@ export function constructionChangeRetiresSomething(
  * confirmed has nothing there to lose, and saying otherwise would be exactly the
  * false consequence this doctrine exists to keep out of a reset warning.
  */
-export function constructionChangeWords(label: string, confirmed: boolean): string {
+export function constructionChangeWords(
+  label: string,
+  confirmed: boolean,
+  runDone = false,
+): string {
+  /* THE RE-EMIT TRUTH (§10-AC): over a DONE run, a part change re-emits the
+     package from the run's own poses — the pose is construction-independent
+     (measured), so the fits the operator reviewed stand and nothing re-aligns.
+     The disclosure-before-act rule is unchanged; the disclosed consequence
+     SHRANK with the behaviour, and the one new consequence is stated: the
+     design gate judges the new (part × cap) pairing and can refuse. Without a
+     done run the old full-reset truth still applies, and the old words stay. */
+  if (runDone) {
+    const consequence = confirmed
+      ? "the standing confirmation falls — you confirm again over the " +
+        "re-emitted evidence"
+      : "the design gate judges the new pairing and can refuse — a refusal " +
+        "lands as a refused run, with its words";
+    return (
+      `Changing the construction part to ${label} re-emits the package from ` +
+      `the run's own poses — the fits stand, nothing re-aligns, and ` +
+      `${consequence}.`
+    );
+  }
   const consequence = confirmed
     ? "the standing confirmation falls — you confirm again over the new evidence"
     : "every site's preview and review resets — Declare confirms them again before " +

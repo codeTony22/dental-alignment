@@ -29,6 +29,7 @@ from typing import Any, Callable, Dict, Optional, Protocol
 from case_prep.application.cases import CaseRecord, discover_cases
 from case_prep.application.catalog import UnknownSelection
 from case_prep.application.detection import ScanUnreadable
+from case_prep.application.emit import emit_from_poses
 from case_prep.application.run import RunRefused, RunSelection, run_case
 
 
@@ -127,10 +128,15 @@ class InProcessWorker:
     """
 
     def __init__(self, data_root: Path, product_root: Path,
-                 runner: Callable[[CaseRecord, RunSelection, Path], dict] = run_case):
+                 runner: Callable[[CaseRecord, RunSelection, Path], dict] = run_case,
+                 reemitter: Callable[[CaseRecord, RunSelection, Path, Path],
+                                     dict] = emit_from_poses):
         self._data_root = Path(data_root)
         self._product_root = Path(product_root)
         self._runner = runner
+        # the §10-AC re-emit lane — injectable exactly like the runner, wired to
+        # the application lift by default
+        self._reemitter = reemitter
         self._jobs: Dict[str, _Job] = {}
 
     # --- the port -----------------------------------------------------------------
@@ -178,7 +184,22 @@ class InProcessWorker:
                          if c.id == case_id), None)
             if case is None:
                 raise RunRefused(f"unknown case {case_id!r} — nothing to run")
-            job.summary = self._runner(case, self._selection(job.request), run_dir)
+            if job.request.get("mode") == "reemit":
+                # THE RE-EMIT (§10-AC): same containment, same job shape — a
+                # refusal from the design/relief gates lands as a REFUSED run on
+                # the surfaces that already render refusals. The source run is
+                # read-only history; the poses come out of its implant.json.
+                source_run_id = job.request.get("source_run_id")
+                if not isinstance(source_run_id, str) or not source_run_id:
+                    raise RunRefused("a re-emit request must name its source run "
+                                     "— the poses come out of that run's package")
+                source_dir = (self._product_root / case_id / "runs"
+                              / source_run_id)
+                job.summary = self._reemitter(case, self._selection(job.request),
+                                              source_dir, run_dir)
+            else:
+                job.summary = self._runner(case, self._selection(job.request),
+                                           run_dir)
             job.state = JobState.DONE
         except (RunRefused, UnknownSelection, ScanUnreadable) as exc:
             job.state = JobState.REFUSED

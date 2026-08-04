@@ -11,16 +11,15 @@
  * real catalog, so none of them are shown. Inventing a price on a presentational
  * surface would be this app quoting money the server never said.
  *
- * THE CHANGE IS DISCLOSED BEFORE IT IS MADE. Changing the effective construction is a
- * reset boundary server-side: it invalidates every preview and clears the current-run
- * pointer, because a different part means a different emitted package. That is the
- * same blast radius Deliver's own picker states, through the same
- * `constructionChangeWords`, so the two surfaces cannot describe one act differently.
- *
- * The plan's `emit_from_poses` (§4) would let a part change RE-EMIT instead of
- * re-running — the pose is provably construction-independent, so the alignment need
- * never be redone. It is priced and not built, so this page tells the truth about the
- * cost rather than pretending it is free.
+ * THE CHANGE IS DISCLOSED BEFORE IT IS MADE, through the same
+ * `constructionChangeWords` Deliver's picker states, so the two surfaces cannot
+ * describe one act differently. WHAT the words disclose changed with §10-AC:
+ * `emit_from_poses` is BUILT — over a done run, a part (or relief) change RE-EMITS
+ * the package from the run's own poses in seconds (the pose is provably
+ * construction-independent, so nothing re-aligns and the fits the operator
+ * reviewed stand); the confirmation still falls explicitly, and the design gate
+ * can refuse the new pairing as a refused run. Without a done run the old full
+ * reset is still the truth, and the old words still say it.
  *
  * ARMING A CANDIDATE PREVIEWS IT, ALONE (§10-M2's "natural next slice", 2026-08-02).
  * The stage's single preview pane REPLACES its content with the armed part's own
@@ -173,6 +172,7 @@ export function LibraryStageView({
                   {constructionChangeWords(
                     options.find((o) => o.path_id === candidate)?.label ?? candidate,
                     detail.session.confirmed,
+                    detail.session.run_state === "done",
                   )}
                 </p>
                 <div className="panel__actions">

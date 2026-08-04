@@ -87,8 +87,15 @@ def rerun_across_a_boundary(client, product_root, offset: float = 0.25) -> str:
 
     The re-review is written through the store because there is no client path to a
     READY rung by design (``seed_ready``'s own rule) — the seat record mirrors what
-    the preview route persists, so the authorized gate accepts it."""
-    assert put_choices(client, gingival_offset_mm=offset).status_code == 200
+    the preview route persists, so the authorized gate accepts it.
+
+    AMENDED (§10-AC): a relief-only change no longer crosses a run boundary — it
+    RE-EMITS from the standing poses. The boundary this helper needs is therefore
+    driven by the JAW, the one choices field whose change still retires the run
+    (a jaw change moves the alignment's own input); the seat records seed with the
+    same jaw so the authorized gate's drift check accepts them."""
+    assert put_choices(client, jaw="lower",
+                       gingival_offset_mm=offset).status_code == 200
     store = SessionStore(product_root)
     session = store.load("neodent-gm")
     assert session.run is None, "the boundary must have cleared the run pointer"
@@ -99,7 +106,7 @@ def rerun_across_a_boundary(client, product_root, offset: float = 0.25) -> str:
             seated_selection=SeatedSelection(
                 model="neodent-gm",
                 construction_path="dess/neodent-gm-scanbody.stl",
-                variant="5020", jaw="upper", gingival_offset_mm=offset))
+                variant="5020", jaw="lower", gingival_offset_mm=offset))
     store.save(session)
     assert client.post("/api/case-sessions/neodent-gm/run").status_code == 200
     return materialize_run(client, product_root)
@@ -294,11 +301,13 @@ class TestTheAmountIsNeverAClientClaim:
         from test_deliver import confirm, deliverable_client
         client = deliverable_client(settings, product_root)
         assert confirm(client).status_code == 200
-        # a choices change is a reset boundary: it clears the run pointer and
-        # leaves the confirmation standing
+        # a JAW change is the reset boundary that still retires the run and
+        # leaves the confirmation standing (§10-AC: a part/relief-only change
+        # now RE-EMITS instead — its confirmation falls explicitly, so it can
+        # no longer stage this test's run-gone-confirmation-standing shape)
         assert client.put("/api/case-sessions/neodent-gm/choices", json={
             "construction_path": "dess/neodent-gm-scanbody.stl",
-            "jaw": "upper", "gingival_offset_mm": 0.25}).status_code == 200
+            "jaw": "lower", "gingival_offset_mm": 0.25}).status_code == 200
         session = SessionStore(product_root).load("neodent-gm")
         assert session.run is None, "the boundary must have cleared the run"
         assert session.confirmation is not None, "and left the confirmation"

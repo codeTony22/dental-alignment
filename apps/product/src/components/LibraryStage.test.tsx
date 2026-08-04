@@ -143,11 +143,25 @@ describe("the construction library page", () => {
 
   it("states the blast radius BEFORE the change, never after it", () => {
     // the visible-reset doctrine, third home: the operator reads what a change costs
-    // while they can still decline it
+    // while they can still decline it (this fixture predates a run, so the full
+    // reset words are still the truth here)
     const html = view({ candidate: "dess/ti-base" });
     expect(html).toContain('data-role="library-confirm"');
     expect(html).toContain("re-processes the case");
     expect(html).toContain('data-role="library-cancel"');
+  });
+
+  it("over a done run, the disclosed cost is the re-emit (§10-AC)", () => {
+    const base = runnableDetail({ catalog: CATALOG });
+    const html = view({
+      detail: {
+        ...base,
+        session: { ...base.session, run_state: "done" },
+      },
+      candidate: "dess/ti-base",
+    });
+    expect(html).toContain("re-emits the package from the run&#x27;s own poses");
+    expect(html).not.toContain("re-processes the case");
   });
 
   it("says nothing about a change nobody has proposed", () => {
