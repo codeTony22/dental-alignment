@@ -160,3 +160,15 @@ class TestTheReMarkRetiresIt:
                          json={"center": [9.0, 9.0, 9.0]})
         assert res.status_code == 200, res.text
         assert evidence_of(product_root, 4) == []
+
+
+class TestTheCountRidesTheDetail:
+    def test_the_site_view_says_how_many_measurements_stand(
+            self, settings, product_root, monkeypatch):
+        client, _ = tooled(settings, product_root, monkeypatch)
+        client.post(f"{BASE}/4/mark-trench", json={"scan_point": [1.0, 1.0, 1.0]})
+        client.post(f"{BASE}/4/best-fit", json={"matching_diameter_mm": 0.3})
+        body = client.get(f"/api/case-sessions/{CASE}").json()
+        by_tooth = {s["tooth"]: s for s in body["sites"]}
+        assert by_tooth[4]["alignment_evidence_count"] == 2
+        assert by_tooth[13]["alignment_evidence_count"] == 0

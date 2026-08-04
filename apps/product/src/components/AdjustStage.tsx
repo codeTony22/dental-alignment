@@ -59,6 +59,7 @@ import {
 import {
   ADJUST_TOOLS,
   acceptExceptionOffer,
+  evidenceRideWords,
   exceptionDraftWords,
   DEFAULT_DIAMETER_MM,
   MAX_DIAMETER_MM,
@@ -642,6 +643,13 @@ export function AdjustStageView({
                   {entry.exceptionAcknowledged && !entry.dropped && (
                     <span data-role="queue-exception" className="adjust-queue__exception">
                       {exceptionDraftWords()}
+                    </span>
+                  )}
+                  {entry.evidenceCount > 0 && !entry.dropped && (
+                    /* §10-AD: the operator's marks survive — said where the rework
+                       lives, so re-running never reads as losing the work again */
+                    <span data-role="queue-evidence" className="adjust-queue__evidence">
+                      {evidenceRideWords(entry.evidenceCount)}
                     </span>
                   )}
                   {entry.dropped ? (

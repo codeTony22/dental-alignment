@@ -132,6 +132,8 @@ export interface AdjustQueueEntry {
   /** The standing draft acknowledgment (`SiteView.exception_acknowledged`) — the
    * BFF's field passed through, like `dropped`. */
   readonly exceptionAcknowledged: boolean;
+  /** §10-AD: persisted measurements that ride the next run (a served count). */
+  readonly evidenceCount: number;
   readonly declaredVariant: string | null;
   readonly reasons: readonly string[];
 }
@@ -183,6 +185,7 @@ export function adjustQueue(
       // the BFF's own fields, passed through — this app derives no disposition
       dropped: site.withhold_intent === true,
       exceptionAcknowledged: site.exception_acknowledged === true,
+      evidenceCount: site.alignment_evidence_count ?? 0,
       declaredVariant: site.declared_variant,
       reasons: gateActions(rowFor(rows, site.tooth)),
     }));
@@ -225,6 +228,15 @@ export function acceptExceptionOffer(
 /** The queue row's amber word while a draft stands — the fact, not a status. */
 export function exceptionDraftWords(): string {
   return "accepted as exception — Deliver's confirmation signs it";
+}
+
+/** §10-AD's surfacing half: the queue says the operator's measurements SURVIVE.
+ * "Ride", deliberately — a re-apply can still be refused by the gates, and the
+ * run's own receipts (`evidence_reapplied`) say what actually happened. */
+export function evidenceRideWords(count: number): string {
+  return count === 1
+    ? "1 measurement rides the next run"
+    : `${count} measurements ride the next run`;
 }
 
 /** The queue's one-line header — what the operator is looking at before they read a

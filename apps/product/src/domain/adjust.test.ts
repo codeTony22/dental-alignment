@@ -11,6 +11,7 @@ import type {
   LandmarkView,
 } from "../api/client";
 import {
+  evidenceRideWords,
   ADJUST_TOOLS,
   DEFAULT_DIAMETER_MM,
   MAX_DIAMETER_MM,
@@ -244,6 +245,7 @@ describe("the panes' words on this stage", () => {
     optional: false,
     dropped: false,
   exceptionAcknowledged: false,
+      evidenceCount: 0,
     declaredVariant: "5020",
     reasons: [ACTION],
   };
@@ -1361,5 +1363,20 @@ describe("unverifiedClockNotice — disclosure + routing to auto-mark, never a p
     };
     const notice = unverifiedClockNotice([row], 29)!;
     expect(notice.facts).not.toContain("a stale sentence");
+  });
+});
+
+/** §10-AD's surfacing half: the queue names surviving measurements as RIDING the
+ * next run — never promising they apply (the gates still judge; the run's own
+ * receipts say what happened). */
+describe("evidenceRideWords", () => {
+  it("counts in the operator's grammar", () => {
+    expect(evidenceRideWords(1)).toBe("1 measurement rides the next run");
+    expect(evidenceRideWords(3)).toBe("3 measurements ride the next run");
+  });
+
+  it("never promises an outcome", () => {
+    expect(evidenceRideWords(2)).not.toContain("will apply");
+    expect(evidenceRideWords(2)).not.toContain("re-applied");
   });
 });

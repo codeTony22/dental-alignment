@@ -6867,3 +6867,12 @@ button.package-files__link:hover {
 .scan-upload__zone .panel__error {
   flex: 1 1 100%;
 }
+
+/* The queue's evidence line (§10-AD surfacing): a quiet fact beside the row —
+   the operator's measurements ride the next run. */
+.adjust-queue__evidence {
+  display: block;
+  font-size: 10.5px;
+  color: var(--color-accent-green-dark, #0a6d2e);
+  font-weight: 600;
+}

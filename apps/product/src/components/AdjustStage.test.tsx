@@ -30,6 +30,7 @@ const FLAGGED: AdjustQueueEntry = {
   optional: false,
   dropped: false,
   exceptionAcknowledged: false,
+      evidenceCount: 0,
   declaredVariant: "5020",
   reasons: [ACTION],
 };
@@ -41,6 +42,7 @@ const CLEAN: AdjustQueueEntry = {
   optional: true,
   dropped: false,
   exceptionAcknowledged: false,
+      evidenceCount: 0,
   declaredVariant: "5020",
   reasons: [],
 };
@@ -87,6 +89,7 @@ describe("accepting a flagged exception, in advance (client 2026-08-02)", () => 
     optional: false,
     dropped: false,
     exceptionAcknowledged: false,
+      evidenceCount: 0,
     declaredVariant: "5020",
     reasons: ["re-run the refinement at a matching diameter"],
   } as const;
@@ -1168,5 +1171,23 @@ describe("the unverified clock's actionable surface", () => {
     for (const tool of ["fit-by-points", "best-fit", "rotation", "mark-trench", "auto-mark"] as const) {
       expect(view({ tool, clockNotice: NOTICE })).toContain('data-role="clock-unverified"');
     }
+  });
+});
+
+/** §10-AD's surfacing half: the queue row says the operator's measurements ride the
+ * next run — the mechanism's visible face, worded as a fact about the SELECTION,
+ * never a promised outcome. */
+describe("the queue's evidence line", () => {
+  it("renders the ride words when the site holds measurements", () => {
+    const html = view({
+      entries: [{ ...FLAGGED, evidenceCount: 2 }],
+    });
+    expect(html).toContain('data-role="queue-evidence"');
+    expect(html).toContain("2 measurements ride the next run");
+  });
+
+  it("stays silent at zero — no empty claim", () => {
+    const html = view({ entries: [FLAGGED] });
+    expect(html).not.toContain('data-role="queue-evidence"');
   });
 });

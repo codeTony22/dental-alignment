@@ -131,6 +131,10 @@ export interface SiteView {
    *  row by row — AM-12) is the only thing that signs. Optional so older
    *  sessions read as "no draft". */
   exception_acknowledged?: boolean;
+  /** How many persisted measurements (marks/pairs/best-fits, §10-AD) will ride the
+   *  next run's selection and re-apply after automation. A served COUNT — the
+   *  surface says "N measurements ride the next run", never the coordinates. */
+  alignment_evidence_count?: number;
 }
 
 /** A detector proposal: centre + evidence + the NON-BINDING tooth guess + capture. */

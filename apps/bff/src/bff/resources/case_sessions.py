@@ -151,6 +151,11 @@ class SiteView(BaseModel):
     # surface that renders this must say what the operator DID, never what the site
     # IS (see ``SiteSession.withhold_intent``).
     withhold_intent: bool = False
+    # THE OPERATOR'S PERSISTED MEASUREMENTS (§10-AD): how many marks/pairs/best-fits
+    # will ride the next run's selection and re-apply after automation. A COUNT, not
+    # the payloads — the wire carries what a surface renders, and the surface says
+    # "N measurements ride the next run", never the coordinates themselves.
+    alignment_evidence_count: int = 0
     # THE ACCEPT-AS-FLAGGED-EXCEPTION DRAFT (client ruling 2026-08-02): whether the
     # operator has pre-acknowledged this site's flagged verdict from Adjust — a
     # standing INTENT that PRE-FILLS Deliver's row-by-row checkbox, never a
@@ -583,6 +588,8 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
             seat_method=(sess.seat_method if sess else None),
             rim_agreement_mm=(sess.rim_agreement_mm if sess else None),
             withhold_intent=(sess.withhold_intent if sess else False),
+            alignment_evidence_count=(len(sess.alignment_evidence)
+                                      if sess else 0),
             exception_acknowledged=(sess.exception_intent is not None
                                     if sess else False),
         )
@@ -601,6 +608,8 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
                                     seat_method=sess.seat_method,
                                     rim_agreement_mm=sess.rim_agreement_mm,
                                     withhold_intent=sess.withhold_intent,
+                                    alignment_evidence_count=len(
+                                        sess.alignment_evidence),
                                     exception_acknowledged=(
                                         sess.exception_intent is not None))
     return [views[t] for t in sorted(views)]
