@@ -1490,3 +1490,16 @@ wiring, mapped precisely for the next session:
   named from the response. The scan-arrival note now describes BOTH routes in; the
   comp's lead ships whole ("or drop a new scan" became true). `config.Settings.
   data_root`'s read-only comment names its one exception.
+
+**AF. THE THREE CLIENT ASKS, PACKAGED (2026-08-04).** With the AB batch and its whole
+engineering queue landed, everything still open is client-supplied: the terms texts
+(§10-A), §10-L's arbitration measurement, §10-J's tool-2 words.
+`docs/engagement/client-asks.md` now carries them as a SENDABLE one-pager plus the exact
+engineering landing per answer — version ids to mint, the one client-side mirror
+constant, which pins amend — so each answer lands in one sitting. Verified while
+packaging, and worth keeping: the DeliverStage placeholder banner is DELIBERATELY
+unconditional — independent of any fetch, so a failed read can never hide it over
+placeholder text. It stands down in the SAME commit the real text lands, not before; do
+not pre-wire it to the served status. The demo-phase asks (2026-07-26) stay in the same
+file under their own date — none was formally answered in the record, and #3 (the
+RealGUIDE round-trip) is still the automation plan's last unvalidated assumption.

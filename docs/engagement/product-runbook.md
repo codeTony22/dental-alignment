@@ -1,10 +1,11 @@
 # Product app — how to run and demo
 
-**State (2026-08-02, HEAD `d84a0f9`):** the client's FIVE-STAGE flow is complete — a case
+**State (2026-08-04, HEAD `01a25ee`+):** the client's FIVE-STAGE flow is complete — a case
 walks Intake → Alignment → run → Adjustment → Construction library → Delivery, finishing with
 a confirmation sealed over an evidence bundle and a gated, paid (stub), per-site release.
-Adjustment carries five correction tools. Remaining: slice 9 (predictability gate v2), plus
-the items plan §10-M/N record as open.
+Adjustment carries five correction tools, persistent evidence and per-site relief. Remaining:
+slice 9 (predictability gate v2), plus the three client-supplied asks packaged in
+`client-asks.md` (terms texts, the §10-L measurement, §10-J's tool-2 words).
 
 THE STAGE KEYS ARE NOT THE TITLES, and the URL shows the key. Narrate from the right column:
 
@@ -147,7 +148,8 @@ worker battery (~13 min) before anything client-facing that touched the pipeline
   confirmation is the only signature; terms gate payment at Delivery.
 - **Payment** is a stub and says so on the button and in the record (`provider: "stub"`).
   The RATES are the client's confirmed card ($32/$48/half, status "final" on the wire);
-  the TERMS text is still the placeholder, loudly, pending their legal wording.
+  the TERMS text is still the placeholder, loudly, pending their legal wording — the
+  ask, sendable, is `client-asks.md` §1.
 - **Visual parity**: the five pages wear the client's comp (§10-AA) — worklist cards +
   drop zone, mirrored intake, library part cards, Delivery's page layout — with the
   recorded refusals (no invented lead times, batch codes or clinic names). The frozen
