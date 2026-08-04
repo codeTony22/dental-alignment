@@ -66,13 +66,17 @@ Use **Doctor Cap6030 Neodent GM** (clean end-to-end; rim 0.22 mm, rotation code-
 `cap6020` is already walked-through/confirmed from verification — either demo material ("here
 is a finished one") or delete its session.json to reuse it.
 
-1. **Worklist** (`/`): nine cases, blocked-first, live rollup chips. Say: "one row per case —
-   the tech's whole morning; opening a row resumes wherever it left off."
+1. **Worklist** (`/`): nine cases, blocked-first, live rollup chips — and the DROP ZONE is
+   real (§10-AB.3): browse or drag one STL, name the folder, and the case appears through
+   the same discovery as a lab copy. Say: "one row per case — the tech's whole morning;
+   opening a row resumes wherever it left off."
 2. **Intake** — open the case. Detection fires ITSELF: "Detecting caps…", then the proposal
    lands as a marker on the 3D with a tooth guess and the capture verdict speaks first —
    rescan-grade problems are announced before any work is invested, in the pipeline's own
    sentences. Pick construction/jaw/relief (defaults pre-filled; the relief ceiling is stated
-   beside the input). The rail ticks.
+   beside the input) and the TURNAROUND (Standard $32/site · Rush $48/site — the
+   confirmed card's own money, priced by the same module the invoice charges from).
+   The rail ticks.
 3. **Declare** — the site queue left, the system bar top (suggested system pre-selected;
    switching warns "resets N declared sites" before acting), variant cards with Ø × height.
    Click the variant → the PREVIEW fires itself and the three panes fill: library part
@@ -84,10 +88,12 @@ is a finished one") or delete its session.json to reuse it.
 5. **Construction library** — pick the part Delivery cuts. The rows are the real catalog
    (grouped by vendor, the effective one chipped "suggested" or "selected"), and the pane
    beside them renders the RUN'S OWN unified mesh — the arch with every site's construction
-   posed into it. Say: "this is the construction against the patient's scan, and the caption
-   tells you it is the part the run used — choosing a different one cannot change the picture
-   until the case re-runs." That honesty is the point; do not promise a live preview of an
-   unrun part, which is not built (plan §10-M).
+   posed into it. Arming a DIFFERENT part previews the catalog's own mesh alone, with a
+   caption that says exactly that (never the run's language). And the second kill shot lives
+   here (§10-AC): COMMIT a part change over the done run — the package RE-EMITS from the
+   run's own poses in about a second (measured 1.26 s vs the 10 s run), the reviews stand,
+   and the activity log names the source run. Nothing re-aligns, because the pose is
+   provably construction-independent.
    Reachable only over a DONE run with every site resolved, and **Delivery will not open
    until a part is chosen here** — if Delivery looks blocked, this is why.
 6. **Delivery** — the assurance table, worst-first, flags pinned; expand a row for the two QC
@@ -129,15 +135,20 @@ worker battery (~13 min) before anything client-facing that touched the pipeline
 - **Adjustment** is built and skippable BY DESIGN (the client's own ruling); flagged sites
   can also be handled at Delivery via withhold. Five tools: fit by points (a pair may span
   two points on the scan, two on the LIBRARY part, or both), best fit, rotation dial, mark
-  trench, auto-mark. A fit whose marks disagree with each other is now REFUSED rather than
+  trench, auto-mark. A fit whose marks disagree with each other is REFUSED rather than
   applied, and a mark on the screw access is refused locally before the round trip.
-- **Previewing a construction part the case has NOT run** is not built — the library page
-  shows the run's own unified mesh and says so on the caption.
-- **Where confirmation lives is an open client decision.** It is on Delivery today; their
-  five-page prose puts it on Adjustment; their own design comp puts the control inside the
-  payment dialog. Plan §10-N has the evidence. Do not improvise an answer on a call.
+  Since §10-AD, the tools' EVIDENCE persists: marks, pairs and best-fits ride every future
+  run and re-apply after automation (the queue says "N measurements ride the next run";
+  the run's receipts say what happened; the bare nudge deliberately never re-applies).
+  Since §10-B/C, RELIEF is also per-site here — each site's own ask beside the case value
+  and the served ceiling, applied as a ~1 s re-emit over a done run.
+- **Where confirmation lives is SETTLED** (§10-Z/AB, the client's own rulings ratified):
+  Adjustment carries the accept-as-flagged-exception DRAFT; Delivery's row-by-row
+  confirmation is the only signature; terms gate payment at Delivery.
 - **Payment** is a stub and says so on the button and in the record (`provider: "stub"`).
-- **Import/upload** is not built; cases come from the data root (the select flow).
-- **Visual polish** is thinner than the frozen demo's — structure and the audit chain were
-  built first, deliberately. The frozen demo remains the pretty one; the product app is the
-  correct-shaped one. Both run side by side.
+  The RATES are the client's confirmed card ($32/$48/half, status "final" on the wire);
+  the TERMS text is still the placeholder, loudly, pending their legal wording.
+- **Visual parity**: the five pages wear the client's comp (§10-AA) — worklist cards +
+  drop zone, mirrored intake, library part cards, Delivery's page layout — with the
+  recorded refusals (no invented lead times, batch codes or clinic names). The frozen
+  demo still runs beside it, unchanged.

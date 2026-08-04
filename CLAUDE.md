@@ -39,12 +39,14 @@ table. If yours is higher and green, the table is stale — not your branch.
 
 | gate | passing |
 |---|---|
-| worker `make test` | **1032** |
-| worker `make test-fast` / `make test-slow` | 801 / 231 (they partition it exactly) |
-| bff | **560** |
-| apps/product | **986** |
+| worker `make test` | **1044** |
+| worker `make test-fast` / `make test-slow` | 811 / 233 (they partition it exactly) |
+| bff | **630** |
+| apps/product | **1183** |
 | packages/viewer | **125** |
 | apps/web (frozen) | **789** |
+
+(Re-measured 2026-08-04 at `1f26e78`+.)
 
 Also `cd apps/worker && make rehearse` — the demo-readiness gate: every case down the UI's
 own path against a known baseline.
@@ -95,6 +97,16 @@ The plan's §4 and §7 describe the FOUR-stage build as it happened and are left
 **`case_prep.server` may never be imported outside the frozen demo** — an AST test enforces
 it. `application/` is the seam: BFF-facing logic is lifted there, not reached for in
 `server.py`.
+
+**The re-emit lane (§10-AC, 2026-08-04):** a construction-part or relief-only change over a
+DONE run does NOT re-run — the worker port dispatches `mode: "reemit"` to
+`application/emit.py::emit_from_poses`, which re-emits the package from the source run's
+own poses into a NEW run dir in ~1 s (vs ~10 s for a run). Site rungs survive; the
+confirmation falls explicitly; jaw/model changes keep the full retirement. Related acts
+that persist across runs: `SiteSession.alignment_evidence` (marks/pairs/best-fits,
+re-applied after automation — §10-AD) and per-site relief overrides (§10-B/C). Cases can
+also arrive by browser upload: `POST /api/uploads/scans/{folder}/{file}.stl` is the BFF's
+ONE write into `data_root` (§10-AB.3).
 
 Statuses, verdicts and gates are **derived server-side, never accepted from a client**. The
 enforcing test is `apps/bff/tests/test_case_sessions.py::TestStatusesAreNeverClientWritable`
