@@ -28,6 +28,7 @@ import {
   partCameraFrame,
   positionsFrom,
   previewKeyFor,
+  scanPaneRadiusMm,
   seatedReadWanted,
   siteFrameFor,
   resetCount,
@@ -1335,5 +1336,54 @@ describe("seatedReadWanted — the panes' fallback to the shipped fit", () => {
     // choices — the seated read answers a different question and stays quiet
     expect(seatedReadWanted({ tooth: 19, previewKey: null, runState: "done",
                               siteStatus: "declared" })).toBe(false);
+  });
+});
+
+/**
+ * PANE 2's DISPLAY RADIUS (§10-AE.2): the cap + a little more, derived from the
+ * SERVED catalog (largest rim diameter's radius + 3 mm of surrounding anatomy),
+ * never wider than the standing 11 mm band and never below a workable 6 mm.
+ * DISPLAY-ONLY — §10-I.3: no client bound ever reaches the aligner.
+ */
+describe("scanPaneRadiusMm — the cap-tight display band", () => {
+  it("derives from the largest served rim diameter plus the margin", () => {
+    const detail = caseSessionDetail({
+      catalog: {
+        groups: [{
+          model: "conical-4x4",
+          variants: [
+            { id: "5020", label: "5020", rim_diameter_mm: 6.2, height_mm: 3.4 },
+            { id: "7030", label: "7030", rim_diameter_mm: 8.2, height_mm: 5.4 },
+          ],
+        }],
+        constructions: [],
+      },
+    });
+    expect(scanPaneRadiusMm(detail)).toBeCloseTo(7.1, 5);
+  });
+
+  it("falls back to the standing band when the catalog serves no dimensions", () => {
+    expect(scanPaneRadiusMm(caseSessionDetail())).toBe(11);
+  });
+
+  it("never narrows below 6 mm and never widens past the standing band", () => {
+    const tiny = caseSessionDetail({
+      catalog: {
+        groups: [{ model: "conical-4x4",
+                   variants: [{ id: "x", label: "x", rim_diameter_mm: 3.0,
+                                height_mm: 2.0 }] }],
+        constructions: [],
+      },
+    });
+    expect(scanPaneRadiusMm(tiny)).toBe(6);
+    const huge = caseSessionDetail({
+      catalog: {
+        groups: [{ model: "conical-4x4",
+                   variants: [{ id: "x", label: "x", rim_diameter_mm: 30.0,
+                                height_mm: 9.0 }] }],
+        constructions: [],
+      },
+    });
+    expect(scanPaneRadiusMm(huge)).toBe(11);
   });
 });

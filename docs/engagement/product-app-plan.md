@@ -1390,6 +1390,16 @@ GET .../seated — a read, no rung moves), so pane 2 rests down the cap's own ax
 the union wears the honest caption "the run's own fit — rework belongs to
 Adjustment". Preview figures stay the preview lane's own (provenance).
 
+AE.2 LANDED (2026-08-03): `scanPaneRadiusMm` — the largest SERVED rim diameter's
+radius + 3 mm, one decimal, floored at 6 mm, capped at the standing 11 mm band, and
+exactly that band when the catalog serves no dimensions. The crop, the frame and the
+caption read the ONE number (pane 2 cannot claim a band it is not drawing); on
+cap7020 the band derives to 7.1 mm and the crop halves (83k → 40k triangles — the
+cap fills the pane). `CAP_REGION_RADIUS_MM` itself is untouched (§10-K's two-constants
+rule stands); §10-I.3 stands (display-only, stated in the function's own doc). The
+pane-3 "preview has not run" notice STANDS DOWN when the seated fallback's fit is on
+the panes — it contradicted the colouring it overlaid.
+
 2. **Pane 2's display band tightens to the cap + a little more.** Today it draws
    "within 11 mm of the site's centre" (~117k triangles of jaw around a ~7 mm cap).
    The band is DISPLAY-ONLY (meshCrop.ts, the §10-K constant; the demo's 9 mm copy

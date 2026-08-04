@@ -34,7 +34,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  CAP_REGION_RADIUS_MM,
   CONTACTS_MAX_MM,
   OrbitLinkGroup,
   PALETTE,
@@ -72,6 +71,7 @@ import {
 import {
   indicesFrom,
   partCameraFrame,
+  scanPaneRadiusMm,
   positionsFrom,
   presetFraming,
   siteFrameFor,
@@ -1260,10 +1260,15 @@ export function useSitePaneScene(
     return c && c.length === 3 ? [c[0]!, c[1]!, c[2]!] : null;
   }, [site]);
 
+  // PANE 2's CAP-TIGHT BAND (§10-AE.2): derived from the served catalog, display
+  // only — the crop, the frame and the caption all read this ONE number so the
+  // pane can never claim a band it is not drawing.
+  const scanRadiusMm = scanPaneRadiusMm(detail);
+
   const scanCrop = useMemo(() => {
     if (scanPositions === null || siteCenter === null) return null;
-    return cropTrianglesNear(scanPositions, siteCenter, CAP_REGION_RADIUS_MM);
-  }, [scanPositions, siteCenter]);
+    return cropTrianglesNear(scanPositions, siteCenter, scanRadiusMm);
+  }, [scanPositions, siteCenter, scanRadiusMm]);
 
   const scanGeometry: VerifyLayerGeometry | null = useMemo(
     () =>
@@ -1310,7 +1315,7 @@ export function useSitePaneScene(
     return (computeAnatomyFrame(scanPositions)?.occlusal ?? null) as Vec3 | null;
   }, [scanPositions]);
   const siteFrameBase = siteFrameFor(siteCenter, payload?.pose ?? null, occlusal,
-                                     CAP_REGION_RADIUS_MM);
+                                     scanRadiusMm);
   const siteFraming = presetFraming(siteFrameBase, viewPreset);
   const siteFrame = siteFraming.frame;
 
@@ -1393,7 +1398,7 @@ export function useSitePaneScene(
     scanEmpty: scanCrop !== null && scanCrop.length === 0,
     scanCaption:
       scanCrop !== null && scanCrop.length > 0
-        ? scanPaneCaption(site?.tooth ?? null, triangleCount(scanCrop), CAP_REGION_RADIUS_MM)
+        ? scanPaneCaption(site?.tooth ?? null, triangleCount(scanCrop), scanRadiusMm)
         : null,
     layers,
     onToggleLayer,

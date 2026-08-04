@@ -475,6 +475,9 @@ export function DeclarePanes({
     scanEmpty: scene.scanEmpty,
     previewPhase,
     previewError: slot?.state === "error" ? (slot.error ?? null) : null,
+    // the seated fallback's fit is on the panes — "the preview has not run"
+    // would contradict the colouring it overlays (§10-AE.1)
+    shippedReadPresent: seatedPayload !== null,
   });
 
   return (

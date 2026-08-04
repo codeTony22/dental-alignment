@@ -357,6 +357,37 @@ export function shouldAutoPreview(args: {
   return args.key !== null && args.key !== args.slotKey;
 }
 
+/** The standing display band (§10-K; packages/viewer meshCrop's own constant,
+ * restated here as the fallback + ceiling so this module stays viewer-free). */
+const STANDING_BAND_MM = 11;
+const SCAN_PANE_MARGIN_MM = 3;
+const SCAN_PANE_FLOOR_MM = 6;
+
+/**
+ * PANE 2's DISPLAY RADIUS (§10-AE.2, client: "just the healing cap and maybe a
+ * little more"). Derived from the SERVED catalog — the largest rim diameter's
+ * radius plus a 3 mm margin of surrounding anatomy — never below a workable 6 mm,
+ * never wider than the standing 11 mm band, and exactly that band when the catalog
+ * serves no dimensions (an honest fallback, not a guess). DISPLAY-ONLY: §10-I.3's
+ * rule stands — no client bound ever reaches the aligner; a tighter pane improves
+ * alignments only through the operator's mark placement.
+ */
+export function scanPaneRadiusMm(detail: CaseSessionDetail): number {
+  const diameters: number[] = [];
+  for (const group of declarableGroups(detail)) {
+    for (const row of group.variants ?? []) {
+      const dia = (row as Record<string, unknown>)["rim_diameter_mm"];
+      if (typeof dia === "number" && Number.isFinite(dia)) diameters.push(dia);
+    }
+  }
+  if (diameters.length === 0) return STANDING_BAND_MM;
+  // one decimal: the caption prints this number, and "within 7.085 mm" would wear
+  // a precision the 3 mm margin does not have
+  const derived =
+    Math.round((Math.max(...diameters) / 2 + SCAN_PANE_MARGIN_MM) * 10) / 10;
+  return Math.min(STANDING_BAND_MM, Math.max(SCAN_PANE_FLOOR_MM, derived));
+}
+
 /**
  * THE SEATED FALLBACK (§10-AE): a site the ladder will not preview — flagged or
  * adjusted — with a DONE run still has a fit the server knows: the shipped one,
@@ -639,6 +670,9 @@ export interface PaneNoticeInputs {
   readonly scanEmpty: boolean;
   readonly previewPhase: PreviewPhase;
   readonly previewError: string | null;
+  /** true when the SEATED fallback's payload is on the panes (§10-AE.1) — the
+   *  union is showing the run's own fit, so preview-lane notices stand down. */
+  readonly shippedReadPresent?: boolean;
 }
 
 export interface PaneNotices {
@@ -663,6 +697,7 @@ export function paneNotices(inputs: PaneNoticeInputs): PaneNotices {
     scanEmpty,
     previewPhase,
     previewError,
+    shippedReadPresent = false,
   } = inputs;
   const noSite = site === null ? "No site selected — pick a site in the queue." : null;
   const undeclared =
@@ -701,6 +736,7 @@ export function paneNotices(inputs: PaneNoticeInputs): PaneNotices {
         "the cap with them."
       );
     }
+    if (shippedReadPresent) return null; // the run's own fit IS the colouring
     if (previewPhase === "error") {
       return previewError ?? "The alignment preview failed.";
     }

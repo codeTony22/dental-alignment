@@ -305,7 +305,7 @@ describe("the seated fallback's words and chrome", () => {
   it("seatedRunCaption names the shipped fit and where rework lives", () => {
     const words = seatedRunCaption({
       ...sitePreviewPayload(),
-      seat: { seat_method: "rim-seat", rim_agreement_mm: 0.8 },
+      seat: { seat_method: "rim-seat", rim_agreement_mm: 0.8, fit: null },
     });
     expect(words).toContain("the run's own fit");
     expect(words).toContain("rim-seat seat, rim 0.80 mm");
