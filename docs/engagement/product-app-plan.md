@@ -1391,12 +1391,16 @@ functions — outcomes land as receipts on `summary["evidence_reapplied"]`
 re-derived row numbers fold in, rewritten files join `package_files`, and the
 on-disk report says what the summary says. Verified on the real tree
 (test_evidence_reapply.py's slow test) and pinned at both layers (worker dispatch +
-BFF persistence/selection/re-mark). TWO STATED FOLLOW-UPS, recorded not built:
-the PREVIEW still seats the automation's raw pose (the review attests automation;
-the run's receipts state what re-applied — giving the preview the same re-apply is
-a later slice), and the UI does not yet SAY "N measurements will re-apply on the
-next run" on the queue/site (a surfacing slice; the mechanism does not depend on
-it). The correspondence QC block is not reconstructed on a re-applied row — it
+BFF persistence/selection/re-mark). FOLLOW-UPS, RESOLVED (2026-08-04):
+the surfacing half LANDED (SiteView.alignment_evidence_count + the queue's
+"N measurements ride the next run" line, 560d9fd); the PREVIEW re-apply is
+DECLINED FOR NOW, deliberately — after AE.1 the flagged/adjusted sites (the ones
+whose evidence matters) read the SEATED fallback, which shows the re-applied
+shipped fit, so the only diverging surface is a fresh preview on a
+declared/previewed/ready site that kept evidence through a re-run; that pane is
+labelled "preview — nothing processed yet" by its own caption, and buying
+coherence there would spend seconds of adjust-tool physics on every site-step.
+Reopen if an operator reads a preview as the standing truth despite the caption. The correspondence QC block is not reconstructed on a re-applied row — it
 under-claims (no agreement figure) rather than hand-rebuilding the block, stated
 in `_reapply_evidence`'s doc.
 
