@@ -142,6 +142,20 @@ class TestReEmitOnTheRealTree:
         assert f"{case.id}-{tooth}-scanbody-dess.stl" not in names
         assert not (out_dir / f"{case.id}-{tooth}-scanbody-dess.stl").exists()
 
+        # 4b. PER-SITE RELIEF (§10-B/C): a site override rides the selection and
+        # lands on that site's production row (single-site case: the one row)
+        reemit_persite = RunSelection(
+            model="neodent-gm",
+            construction_path="dess/neodent-gm-scanbody.stl",
+            variants={t: "5020" for t in teeth}, jaw=None,
+            gingival_offset_mm=0.2,
+            site_reliefs={tooth: 0.05})
+        persite_dir = tmp_path / "runs" / "persite"
+        persite_dir.mkdir(parents=True)
+        summary_c = emit_from_poses(case, reemit_persite, source_dir, persite_dir)
+        row_c = next(r for r in summary_c["sites"] if r["tooth"] == tooth)
+        assert row_c["production"]["gingival_offset_requested_mm"] == 0.05
+
         # 4. the receipt names its source and refreshes the product facts
         assert summary_b["emitted_from"] == "source"
         assert summary_b["mode"] == "reemit-from-poses"

@@ -1504,6 +1504,9 @@ class TestStatusesAreNeverClientWritable:
         # reset it causes is entirely the status machine's and session.py's
         # boundary helpers, never a value in this request.
         ("PUT", "/api/case-sessions/{case_id}/sites/{tooth}/mark"),
+        # ONE site's relief override (§10-B/C): the ask in mm or null — WHAT the
+        # operator wants cut, never what the site IS; over a done run it re-emits
+        ("PUT", "/api/case-sessions/{case_id}/sites/{tooth}/relief"),
         # ACCEPT AS FLAGGED EXCEPTION, IN ADVANCE (client ruling 2026-08-02):
         # body-less both ways, ``withhold_intent``'s sibling — the act's whole
         # content is the request itself, both directions. It is a DRAFT that

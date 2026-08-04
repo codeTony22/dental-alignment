@@ -39,6 +39,7 @@ import {
   fetchRun,
   fetchSeated,
   postBestFit,
+  putSiteRelief,
   postFitByPoints,
   postMarkTrench,
   postRePreview,
@@ -76,6 +77,8 @@ import {
   crossCheckCaution,
   diameterBandWords,
   dropLabel,
+  siteReliefApplyNote,
+  siteReliefCeilingLine,
   dropNote,
   droppedRowWords,
   flaggedExceptionWords,
@@ -129,9 +132,100 @@ import { WorkspaceInsight } from "./WorkspaceInsight";
 /** What the surface is waiting on — named, so it never freezes silently. */
 export type ToolPhase = "idle" | "working";
 
+/** PER-SITE RELIEF (§10-B/C): the site's own ask beside the case value, with the
+ * served ceiling and the §10-AC disclosure. The draft is local; the ACT is the
+ * apply, and the landed detail (a re-emit over a done run) replaces everything. */
+function SiteReliefControl({
+  siteValue,
+  caseValue,
+  ceilingLine,
+  runDone,
+  saving,
+  error,
+  onApply,
+}: {
+  readonly siteValue: number | null;
+  readonly caseValue: number | null;
+  readonly ceilingLine: string | null;
+  readonly runDone: boolean;
+  readonly saving: boolean;
+  readonly error: string | null;
+  readonly onApply: (value: number | null) => void;
+}) {
+  const [draft, setDraft] = useState<string>(
+    siteValue !== null ? String(siteValue) : "",
+  );
+  useEffect(() => {
+    setDraft(siteValue !== null ? String(siteValue) : "");
+  }, [siteValue]);
+  const parsed = draft.trim() === "" ? null : Number(draft);
+  const usable = parsed === null || (Number.isFinite(parsed) && parsed >= 0);
+  return (
+    <div data-role="site-relief" className="site-relief">
+      <span className="site-relief__label">
+        Relief — this site
+        <span className="site-relief__case">
+          {siteValue !== null
+            ? ` (case ${caseValue ?? "—"}mm, overridden)`
+            : ` (case ${caseValue ?? "—"}mm stands)`}
+        </span>
+      </span>
+      <label className="site-relief__field">
+        <input
+          data-role="site-relief-input"
+          className="decode-offset__input"
+          type="number"
+          min={0}
+          max={1}
+          step={0.05}
+          value={draft}
+          disabled={saving}
+          placeholder={caseValue !== null ? String(caseValue) : ""}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <span className="decode-offset__unit">mm</span>
+      </label>
+      <button
+        type="button"
+        data-role="site-relief-apply"
+        className="button button--secondary button--small"
+        disabled={saving || !usable || parsed === siteValue}
+        onClick={() => onApply(parsed)}
+      >
+        {saving
+          ? "Applying…"
+          : parsed === null && siteValue !== null
+            ? "Clear the override"
+            : "Apply to this site"}
+      </button>
+      {ceilingLine !== null && (
+        <span data-role="site-relief-ceiling" className="site-relief__note">
+          {ceilingLine}
+        </span>
+      )}
+      <span className="site-relief__note">{siteReliefApplyNote(runDone)}</span>
+      {error !== null && (
+        <span data-role="site-relief-error" role="alert" className="panel__error">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export interface AdjustStageViewProps {
   readonly entries: readonly AdjustQueueEntry[];
   readonly activeTooth: number | null;
+  /** §10-B/C: the active site's relief facts + the apply act. */
+  readonly relief?: {
+    readonly siteValue: number | null;
+    readonly caseValue: number | null;
+    readonly ceilingLine: string | null;
+    readonly runDone: boolean;
+    readonly saving: boolean;
+    readonly error: string | null;
+    readonly onApply: (value: number | null) => void;
+  } | null;
   readonly onSelectSite: (tooth: number) => void;
   readonly tool: AdjustToolId;
   readonly onSelectTool: (tool: AdjustToolId) => void;
@@ -510,6 +604,7 @@ function PairsList({
 export function AdjustStageView({
   entries,
   activeTooth,
+  relief = null,
   onSelectSite,
   tool,
   onSelectTool,
@@ -1287,6 +1382,17 @@ export function AdjustStageView({
               </button>
               </div>
             )}
+            {active !== null && relief !== null && (
+              <SiteReliefControl
+                siteValue={relief.siteValue}
+                caseValue={relief.caseValue}
+                ceilingLine={relief.ceilingLine}
+                runDone={relief.runDone}
+                saving={relief.saving}
+                error={relief.error}
+                onApply={relief.onApply}
+              />
+            )}
             {active !== null && (
               /* DROP THIS CAP — DON'T RELEASE OR BILL IT (design dropSite 1345-1354,
                  its sticky footer's third control, template 471).
@@ -1432,6 +1538,10 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   const [pass, setPass] = useState<AlreadyOptimal | null>(null);
   const [lastOutcome, setLastOutcome] = useState<AdjustOutcomeView | null>(null);
   const [payload, setPayload] = useState<SitePreviewPayload | null>(null);
+  // §10-B/C: the per-site relief act — the landed detail (a re-emit over a done
+  // run) replaces everything, optimism OFF as always
+  const [reliefSaving, setReliefSaving] = useState(false);
+  const [reliefError, setReliefError] = useState<string | null>(null);
   const [seatedPhase, setSeatedPhase] = useState<SeatedPhase>("idle");
   const [seatedError, setSeatedError] = useState<string | null>(null);
   const [diameterMm, setDiameterMm] = useState(DEFAULT_DIAMETER_MM);
@@ -1969,6 +2079,34 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
 
   return (
     <AdjustStageView
+      relief={
+        activeTooth === null
+          ? null
+          : {
+              siteValue:
+                detail.sites.find((x) => x.tooth === activeTooth)
+                  ?.gingival_offset_mm ?? null,
+              caseValue: detail.choices.effective_relief?.value ?? null,
+              ceilingLine: siteReliefCeilingLine(
+                detail.relief_ceilings,
+                detail.sites.find((x) => x.tooth === activeTooth)
+                  ?.declared_variant ?? null,
+              ),
+              runDone: detail.session.run_state === "done",
+              saving: reliefSaving,
+              error: reliefError,
+              onApply: (value) => {
+                setReliefSaving(true);
+                setReliefError(null);
+                void putSiteRelief(caseId, activeTooth, value).then((result) => {
+                  if (!mountedRef.current) return;
+                  setReliefSaving(false);
+                  if (result.kind === "ok") onDetail(result.data);
+                  else setReliefError(result.detail);
+                });
+              },
+            }
+      }
       viewPreset={viewPreset}
       onSelectView={handleSelectView}
       viewPresetsAvailable={viewPresetsAvailable}

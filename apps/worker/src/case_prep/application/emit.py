@@ -149,28 +149,39 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
             (spec, _template_for(spec.variant_code), construction_mesh))
 
     # ---- the product block, mirrored from auto_flow.py:2239-2323 ----
-    product_by_variant: Dict[str, object] = {}
-    clamp_by_variant: Dict[str, object] = {}
+    # PER-SITE RELIEF (§10-B/C): the ask is the site's own override where one
+    # stands, else the selection's case-level value; the shared-product cache
+    # keys on (variant, ask) — two same-variant sites with different reliefs are
+    # two different bored products.
+    site_offsets = {int(t): float(v)
+                    for t, v in (selection.site_reliefs or {}).items()}
+
+    def _relief_ask(tooth: int) -> float:
+        return site_offsets.get(tooth, selection.gingival_offset_mm)
+
+    product_by_variant: Dict[tuple, object] = {}
+    clamp_by_variant: Dict[tuple, object] = {}
     clamp_by_tooth: Dict[int, object] = {}
     final_products: Dict[int, object] = {}
     for spec, _tmpl, _cons in package_sites:
-        if spec.variant_code not in product_by_variant:
+        key = (spec.variant_code, _relief_ask(spec.tooth))
+        if key not in product_by_variant:
             cap_spec = next((s for s in library.specs
                              if s.variant == spec.variant_code), None)
             channel = (channel_from_boundary_loops(library.template(cap_spec))
                        if cap_spec is not None else None)
-            clamp_by_variant[spec.variant_code] = resolve_gingival_offset(
-                construction_mesh, selection.gingival_offset_mm,
+            clamp_by_variant[key] = resolve_gingival_offset(
+                construction_mesh, _relief_ask(spec.tooth),
                 library_channel=channel,
                 screw_radius_mm=DEFAULT_SCREW_RADIUS_MM,
                 part_label=(f"{spec.vendor}/{spec.implant_model} "
                             f"{spec.variant_code}"))
-            product_by_variant[spec.variant_code] = build_final_product(
+            product_by_variant[key] = build_final_product(
                 construction_mesh, screw_radius_mm=DEFAULT_SCREW_RADIUS_MM,
                 library_channel=channel,
-                gingival_offset_mm=clamp_by_variant[spec.variant_code].applied_mm)
-        final_products[spec.tooth] = product_by_variant[spec.variant_code]
-        clamp_by_tooth[spec.tooth] = clamp_by_variant[spec.variant_code]
+                gingival_offset_mm=clamp_by_variant[key].applied_mm)
+        final_products[spec.tooth] = product_by_variant[key]
+        clamp_by_tooth[spec.tooth] = clamp_by_variant[key]
 
     distinct = {spec.variant_code for spec, _, _ in package_sites}
     shared_note = (f"single construction part shared across sites identifying "
@@ -184,7 +195,7 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
         row["production"] = {
             "screw_channel_radius_mm": float(DEFAULT_SCREW_RADIUS_MM),
             "gingival_offset_mm": float(clamp.applied_mm if clamp is not None
-                                        else selection.gingival_offset_mm),
+                                        else _relief_ask(spec.tooth)),
             **(clamp.as_json() if clamp is not None else {}),
         }
         if shared_note:
@@ -207,7 +218,7 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
                      "gingival_offset_mm": (
                          float(clamp_by_tooth[r["tooth"]].applied_mm)
                          if r["tooth"] in clamp_by_tooth
-                         else float(selection.gingival_offset_mm)),
+                         else _relief_ask(int(r["tooth"]))),
                      **(clamp_by_tooth[r["tooth"]].as_json()
                         if r["tooth"] in clamp_by_tooth else {})}
         for r in source_rows}

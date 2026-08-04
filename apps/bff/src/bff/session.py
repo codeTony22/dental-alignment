@@ -124,6 +124,12 @@ class SiteSession(BaseModel):
     # in apply order — re-applied by every future run AFTER automation, through the
     # same application.adjust functions, with provenance. Survives run boundaries.
     alignment_evidence: List[AlignmentEvidence] = Field(default_factory=list)
+    # PER-SITE RELIEF OVERRIDE (§10-B/C, set on Adjustment): this site's own ask,
+    # None = the case-level effective value stands. Relief shapes the EMITTED part
+    # only (§10-C's measured fact), so setting it moves no rung and retires no
+    # review — over a done run it re-emits (§10-AC). Survives run boundaries like
+    # the other operator acts.
+    gingival_offset_mm: Optional[float] = None
     # THE OPERATOR'S OWN CENTRE (client 2026-07-28): where this site exists because a
     # HUMAN marked it, not because detection found it. Detection misses 2 of the 10
     # sites on this fleet, and a missed cap was previously unworkable — the case

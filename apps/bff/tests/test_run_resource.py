@@ -203,13 +203,17 @@ class TestTheAuthorizedGate:
 
     def test_a_drifted_effective_value_after_review_refuses_the_run(
             self, settings, product_root):
-        """THE 2026-07-28 REVIEW'S SCENARIO, pinned: reviews landed READY, then an
-        effective fallback drifted — here tooth 4's recorded seat says its review
-        attested a 0.15 relief (a former standing default), while the case's
-        current effective relief is 0.20. No reset boundary fires for a fallback
-        (they live outside the session), so the GATE itself must refuse — naming
-        the drifted tooth and only it — rather than seat physics the review never
-        attested."""
+        """THE 2026-07-28 RULE, SHARPENED BY §10-AC/C (2026-08-04): the gate
+        refuses drift in the POSE INPUTS — model, variant, jaw — because those are
+        what the review's seat attested. Relief and the construction part are
+        provably pose-independent (§10-M measured construction entering no
+        alignment stage; §10-C: relief shapes only the EMITTED part), so their
+        drift no longer refuses: the attested seat is bit-identical under them,
+        and their changes have their own honest path (the §10-AC re-emit). Without
+        this sharpening, #8's rung-preserving boundary wedged the next full run.
+
+        Here: tooth 4's seat records a 0.15 relief against today's 0.20 —
+        AUTHORIZES; tooth 13's seat records the wrong JAW — REFUSES, named."""
         seed_ready(product_root, choices_complete=False)
         store = SessionStore(product_root)
         s = store.load("neodent-gm")
@@ -219,13 +223,19 @@ class TestTheAuthorizedGate:
         worker = FakeWorker(summary=summary_for([row(4), row(13)]))
         client = client_with(settings, worker)
         res = client.post("/api/case-sessions/neodent-gm/run")
+        assert res.status_code == 200, res.text   # relief drift seats identically
+
+        # …but a POSE input drifting still refuses, naming the tooth
+        s = store.load("neodent-gm")
+        s.run = None
+        s.sites["13"].seated_selection = s.sites["13"].seated_selection.model_copy(
+            update={"jaw": "lower"})
+        store.save(s)
+        res = client.post("/api/case-sessions/neodent-gm/run")
         assert res.status_code == 422
         detail = res.json()["detail"]
-        assert "tooth 4 re-previewed and re-reviewed" in detail
-        assert "tooth 13" not in detail   # its recorded seat still matches
-        # asking created nothing: no physics fired over the unattested selection
-        assert worker.submitted == []
-        assert SessionStore(product_root).load("neodent-gm").run is None
+        assert "tooth 13 re-previewed and re-reviewed" in detail
+        assert "tooth 4" not in detail   # its pose inputs still match
 
     def test_a_ready_site_with_no_recorded_seat_is_refused(
             self, settings, product_root):
@@ -290,6 +300,9 @@ class TestTheRunLands:
             # case, and shipping a redundant copy would invite the two drifting
             # apart. The map carries the marked ones and nothing else.
             "marked_centers": {},
+            # §10-B/C: per-site relief overrides ride beside the case value —
+            # empty here: nobody overrode a site
+            "site_reliefs": {},
             # §10-AD: the operator's persisted marks/pairs/best-fits ride the
             # selection so a re-run re-applies them — empty here: nobody adjusted
             "alignment_evidence": {},
@@ -317,6 +330,9 @@ class TestTheRunLands:
             # case, and shipping a redundant copy would invite the two drifting
             # apart. The map carries the marked ones and nothing else.
             "marked_centers": {},
+            # §10-B/C: per-site relief overrides ride beside the case value —
+            # empty here: nobody overrode a site
+            "site_reliefs": {},
             # §10-AD: the operator's persisted marks/pairs/best-fits ride the
             # selection so a re-run re-applies them — empty here: nobody adjusted
             "alignment_evidence": {},

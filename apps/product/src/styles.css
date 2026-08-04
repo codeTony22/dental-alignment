@@ -6876,3 +6876,35 @@ button.package-files__link:hover {
   color: var(--color-accent-green-dark, #0a6d2e);
   font-weight: 600;
 }
+
+/* Per-site relief (§10-B/C): a quiet field among the site acts. */
+.site-relief {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 0 0;
+}
+
+.site-relief__label {
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.site-relief__case {
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.site-relief__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.site-relief__note {
+  flex: 1 1 100%;
+  font-size: 10.5px;
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}

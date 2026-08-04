@@ -1335,6 +1335,23 @@ cap6020: the full run took 10 s; the relief re-emit took **1.26 s**, landing
 `mode: reemit-from-poses` with `emitted_from` on the receipt and the flagged rung
 preserved end to end.
 
+**§10-B/C LANDED (2026-08-04, on the §10-AC lane): PER-SITE RELIEF.** The pipeline
+takes ``site_gingival_offsets`` (the shared-product cache keys on (variant, ask) —
+two same-variant sites with different reliefs are two bored products);
+``RunSelection.site_reliefs`` rides run and re-emit alike; ``SiteSession`` holds the
+override (an act — no rung moves, no review falls: relief shapes the emitted part
+only); ``PUT /sites/{tooth}/relief`` sets or clears it, re-emitting over a done run
+with every standing override in the selection; the Adjust acts row carries the
+control (site ask beside the standing case value, the served ceiling, the §10-AC
+disclosure). THE DRIFT GATE SHARPENED with it: the authorized gate's seat equality
+now covers the POSE INPUTS — model, variant, jaw — because relief and the
+construction part are provably pose-independent (§10-M/C) and their changes ride the
+re-emit lane; an absent seat record still fails closed. Without the sharpening, #8's
+rung-preserving boundary wedged the next full run. Verified live on cap6020: the
+override re-emitted with site 29 cut at its own 0.05 ask (requested AND applied on
+the receipt), rung untouched; clearing re-emitted back. Case-level relief at Intake
+stays the standing default, exactly as before.
+
 **AB AMENDED (client, 2026-08-02, second batch):** the second-actor question (item in
 A) is NOT NEEDED FOR NOW — closed until the client reopens it; the final Terms &
 Conditions text STAYS OPEN (placeholder renders until it arrives; one string to swap).

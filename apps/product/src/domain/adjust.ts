@@ -1424,3 +1424,33 @@ function blockOfLike(
     ? (block as Record<string, unknown>)
     : undefined;
 }
+
+/** §10-B/C: the per-site relief act's disclosure, before the apply. Over a done run
+ * the truth is the §10-AC re-emit; without one the override simply rides the next
+ * run. Never an outcome promise — the clamp trio on the landed row is the receipt. */
+export function siteReliefApplyNote(runDone: boolean): string {
+  return runDone
+    ? "Applying re-emits the package from the run's own poses — the fits stand, " +
+        "and this site is cut at its own ask (the ceiling still clamps)."
+    : "The override rides the next run; this site is cut at its own ask " +
+        "(the ceiling still clamps).";
+}
+
+/** The active site's ceiling line from the SERVED (part × variant) readings —
+ * null when the catalog stated none for this variant. */
+export function siteReliefCeilingLine(
+  ceilings: readonly {
+    readonly variant: string;
+    readonly max_safe_mm?: number | null;
+  }[],
+  variant: string | null,
+): string | null {
+  if (variant === null) return null;
+  const row = ceilings.find((c) => c.variant === variant);
+  if (row === undefined || row.max_safe_mm === null ||
+      row.max_safe_mm === undefined) {
+    return null;
+  }
+  return `ceiling ${row.max_safe_mm.toFixed(2)}mm for ${variant} — a larger ask ` +
+    "is cut at the ceiling";
+}

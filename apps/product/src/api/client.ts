@@ -131,6 +131,10 @@ export interface SiteView {
    *  row by row — AM-12) is the only thing that signs. Optional so older
    *  sessions read as "no draft". */
   exception_acknowledged?: boolean;
+  /** PER-SITE RELIEF OVERRIDE (§10-B/C): this site's own ask in mm, null when the
+   *  case-level effective value stands. The raw act, served — the display composes
+   *  it with `choices.effective_relief`, two served facts side by side. */
+  gingival_offset_mm?: number | null;
   /** How many persisted measurements (marks/pairs/best-fits, §10-AD) will ride the
    *  next run's selection and re-apply after automation. A served COUNT — the
    *  surface says "N measurements ride the next run", never the coordinates. */
@@ -1640,5 +1644,22 @@ export async function uploadScan(
   return fetchJson<UploadedCaseView>(
     `/api/uploads/scans/${encodeURIComponent(folder)}/${encodeURIComponent(filename)}`,
     { method: "POST", body: file },
+  );
+}
+
+/** SET (or clear, with null) one site's relief override (§10-B/C). Over a done run
+ * the BFF re-emits from the run's own poses; the response is the landed detail. */
+export async function putSiteRelief(
+  caseId: string,
+  tooth: number,
+  gingivalOffsetMm: number | null,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(
+    `/api/case-sessions/${encodeURIComponent(caseId)}/sites/${tooth}/relief`,
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ gingival_offset_mm: gingivalOffsetMm }),
+    },
   );
 }

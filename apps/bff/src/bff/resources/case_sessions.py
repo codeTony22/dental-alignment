@@ -151,6 +151,10 @@ class SiteView(BaseModel):
     # surface that renders this must say what the operator DID, never what the site
     # IS (see ``SiteSession.withhold_intent``).
     withhold_intent: bool = False
+    # PER-SITE RELIEF OVERRIDE (§10-B/C): this site's own ask, null when the
+    # case-level effective value stands. The raw act — the effective composition
+    # is the surface's to render from the two served facts.
+    gingival_offset_mm: Optional[float] = None
     # THE OPERATOR'S PERSISTED MEASUREMENTS (§10-AD): how many marks/pairs/best-fits
     # will ride the next run's selection and re-apply after automation. A COUNT, not
     # the payloads — the wire carries what a surface renders, and the surface says
@@ -466,6 +470,26 @@ class ChoicesIn(BaseModel):
         return float(v)
 
 
+class SiteReliefIn(BaseModel):
+    """ONE site's relief override (§10-B/C, the Adjustment act): the ask in mm, or
+    null to clear the override so the case-level value stands again. Same bounds as
+    the case-level ask — the ceiling is judged at cut time per (part × variant),
+    exactly as it always was."""
+
+    model_config = ConfigDict(extra="forbid")
+    gingival_offset_mm: Optional[float] = None
+
+    @field_validator("gingival_offset_mm")
+    @classmethod
+    def _sane_offset(cls, v):
+        if v is None:
+            return v
+        if not math.isfinite(v) or v < 0.0 or v > _MAX_GINGIVAL_OFFSET_MM:
+            raise ValueError(f"gingival_offset_mm must be a clearance between 0 and "
+                             f"{_MAX_GINGIVAL_OFFSET_MM}mm, got {v!r}")
+        return float(v)
+
+
 class SystemIn(BaseModel):
     """The case-scoped implant SYSTEM (plan §4 Declare / AM-8) — one required name.
     Membership is judged in the handler through ``application.catalog.
@@ -590,6 +614,7 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
             withhold_intent=(sess.withhold_intent if sess else False),
             alignment_evidence_count=(len(sess.alignment_evidence)
                                       if sess else 0),
+            gingival_offset_mm=(sess.gingival_offset_mm if sess else None),
             exception_acknowledged=(sess.exception_intent is not None
                                     if sess else False),
         )
@@ -610,6 +635,7 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
                                     withhold_intent=sess.withhold_intent,
                                     alignment_evidence_count=len(
                                         sess.alignment_evidence),
+                                    gingival_offset_mm=sess.gingival_offset_mm,
                                     exception_acknowledged=(
                                         sess.exception_intent is not None))
     return [views[t] for t in sorted(views)]
@@ -1103,6 +1129,76 @@ def detect_case(case_id: str, request: Request, fresh: bool = False) -> CaseSess
     return _detail(case, session, settings)
 
 
+def _site_reliefs_of(session: CaseSession) -> Dict[str, float]:
+    """The standing per-site overrides, wire-shaped (§10-B/C)."""
+    return {t: float(site.gingival_offset_mm)
+            for t, site in session.sites.items()
+            if site.gingival_offset_mm is not None}
+
+
+def _drive_reemit_job(worker: WorkerPort, store: SessionStore, settings: Settings,
+                      case: CaseRecord, case_id: str, reemit_run_id: str,
+                      reemit_request: dict) -> CaseSession:
+    """Submit and land a §10-AC re-emit whose queued receipt is already on disk —
+    run_case_action's containment, shared by every boundary that re-emits (the
+    choices PUT and the per-site relief PUT). Every exit that lands no verdict
+    withdraws the receipt."""
+    try:
+        job_id = worker.submit(case_id, reemit_request)
+        outcome = worker.status(job_id)
+        if outcome.state is JobState.FAILED:
+            raise HTTPException(
+                500, f"the re-emit crashed before reaching a verdict — "
+                     f"{outcome.error}; the queued receipt was withdrawn, and "
+                     f"the choices stand — re-firing is a fresh part change "
+                     f"or a run authorization")
+
+        def land(inner: CaseSession) -> None:
+            if inner.run is None or inner.run.job_id != job_id:
+                raise HTTPException(
+                    409, f"case {case_id!r} changed while the re-emit was "
+                         f"computing — its artifacts remain under its run "
+                         f"directory as history; re-read the case")
+            if outcome.state is JobState.REFUSED:
+                # the §10-M flow point that never had a refusal surface: the
+                # design/relief gate's words land as a REFUSED run, first-class
+                inner.run = RunSession(job_id=job_id, run_id=reemit_run_id,
+                                       state="refused",
+                                       refusal=outcome.refusal)
+                record_activity(inner, ACT_RUN_REFUSED,
+                                f"re-emit {reemit_run_id} refused — "
+                                f"{outcome.refusal}")
+                return
+            summary = worker.result(job_id)
+            inner.run = RunSession(
+                job_id=job_id, run_id=reemit_run_id, state="done",
+                summary=summary,
+                package_files=[str(n)
+                               for n in (summary.get("package_files") or [])])
+            # guidance rides the rows VERBATIM from the source run, so the
+            # flags land where they already stood — the mapping only moves a
+            # site that is not already flagged (rungs survived the boundary)
+            for row in summary.get("sites") or []:
+                site = inner.sites.get(str(row.get("tooth")))
+                if site is None:
+                    continue
+                level = (row.get("guidance") or {}).get("level")
+                if level != "ready" and site.status is not SiteStatus.FLAGGED:
+                    site.status = status.flag(site.status)
+            record_activity(inner, ACT_RUN_LANDED,
+                            f"re-emit {reemit_run_id} completed — the package "
+                            f"stands on run "
+                            f"{reemit_request['source_run_id']}'s poses")
+
+        try:
+            return _mutate_session(store, case_id, land)
+        except status.IllegalTransition as exc:
+            raise HTTPException(422, str(exc))
+    except Exception:
+        _withdraw_queued_receipt(store, case_id, reemit_run_id)
+        raise
+
+
 @router.put("/{case_id}/choices", response_model=CaseSessionDetail)
 def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionDetail:
     """Persist the operator's case-level choices — the whole document, replaced (PUT
@@ -1196,6 +1292,7 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
                     "variants": {t: site.declared_variant
                                  for t, site in session.sites.items()
                                  if site.declared_variant is not None},
+                    "site_reliefs": _site_reliefs_of(session),
                     "marked_centers": {},
                     "alignment_evidence": {},
                 },
@@ -1237,62 +1334,77 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
 
     session = _mutate_session(store, case_id, apply)
     if "request" in reemit:
-        # From here a ``queued`` receipt is on disk; every exit that lands no
-        # verdict withdraws it — run_case_action's own containment, mirrored.
-        try:
-            job_id = worker.submit(case_id, reemit["request"])
-            outcome = worker.status(job_id)
-            if outcome.state is JobState.FAILED:
-                raise HTTPException(
-                    500, f"the re-emit crashed before reaching a verdict — "
-                         f"{outcome.error}; the queued receipt was withdrawn, and "
-                         f"the choices stand — re-firing is a fresh part change "
-                         f"or a run authorization")
+        session = _drive_reemit_job(worker, store, settings, case, case_id,
+                                    reemit_run_id, reemit["request"])
+    return _detail(case, session, settings)
 
-            def land(inner: CaseSession) -> None:
-                if inner.run is None or inner.run.job_id != job_id:
-                    raise HTTPException(
-                        409, f"case {case_id!r} changed while the re-emit was "
-                             f"computing — its artifacts remain under its run "
-                             f"directory as history; re-read the case")
-                if outcome.state is JobState.REFUSED:
-                    # the §10-M flow point that never had a refusal surface: the
-                    # design/relief gate's words land as a REFUSED run, first-class
-                    inner.run = RunSession(job_id=job_id, run_id=reemit_run_id,
-                                           state="refused",
-                                           refusal=outcome.refusal)
-                    record_activity(inner, ACT_RUN_REFUSED,
-                                    f"re-emit {reemit_run_id} refused — "
-                                    f"{outcome.refusal}")
-                    return
-                summary = worker.result(job_id)
-                inner.run = RunSession(
-                    job_id=job_id, run_id=reemit_run_id, state="done",
-                    summary=summary,
-                    package_files=[str(n)
-                                   for n in (summary.get("package_files") or [])])
-                # guidance rides the rows VERBATIM from the source run, so the
-                # flags land where they already stood — the mapping only moves a
-                # site that is not already flagged (rungs survived the boundary)
-                for row in summary.get("sites") or []:
-                    site = inner.sites.get(str(row.get("tooth")))
-                    if site is None:
-                        continue
-                    level = (row.get("guidance") or {}).get("level")
-                    if level != "ready" and site.status is not SiteStatus.FLAGGED:
-                        site.status = status.flag(site.status)
-                record_activity(inner, ACT_RUN_LANDED,
-                                f"re-emit {reemit_run_id} completed — the package "
-                                f"stands on run "
-                                f"{reemit['request']['source_run_id']}'s poses")
 
-            try:
-                session = _mutate_session(store, case_id, land)
-            except status.IllegalTransition as exc:
-                raise HTTPException(422, str(exc))
-        except Exception:
-            _withdraw_queued_receipt(store, case_id, reemit_run_id)
-            raise
+@router.put("/{case_id}/sites/{tooth}/relief", response_model=CaseSessionDetail)
+def put_site_relief(case_id: str, tooth: int, body: SiteReliefIn,
+                    request: Request) -> CaseSessionDetail:
+    """SET (or clear) one site's relief override — §10-B/C landed on the §10-AC lane.
+
+    Relief shapes the EMITTED part and nothing else (§10-C's measured fact), so this
+    act moves no rung and retires no review; over a DONE run it RE-EMITS the package
+    from the run's own poses with the new per-site ask — the confirmation and every
+    draft fall explicitly, exactly as on the choices boundary. Without a done run
+    the override simply persists and rides the next run's selection. The ceiling is
+    judged at cut time per (part × variant) and lands on the row's clamp trio, as
+    it always has."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+    worker: WorkerPort = request.app.state.worker
+    reemit_run_id = _mint_run_id()
+    reemit: Dict[str, dict] = {}
+
+    def apply(session: CaseSession) -> None:
+        _require_known_tooth(case, session, tooth)
+        site = session.sites.setdefault(str(tooth), SiteSession())
+        before = site.gingival_offset_mm
+        after = body.gingival_offset_mm
+        if before == after:
+            return   # an identical re-assertion states nothing new
+        site.gingival_offset_mm = after
+        effective = _effective_choices(case, session.choices)
+        run_done = (session.run is not None and session.run.state == "done"
+                    and (session.run.run_id or session.run.job_id) is not None)
+        if run_done:
+            source_run_id = session.run.run_id or session.run.job_id
+            session.run = RunSession(job_id=reemit_run_id, run_id=reemit_run_id,
+                                     state="queued")
+            session.adjust_decision = None
+            clear_exception_intents(session)
+            clear_confirmation(session)
+            reemit["request"] = {
+                "run_id": reemit_run_id,
+                "mode": "reemit",
+                "source_run_id": source_run_id,
+                "selection": {
+                    "model": _effective_model(case, session),
+                    "construction_path": effective.construction_path,
+                    "jaw": effective.jaw,
+                    "gingival_offset_mm": effective.gingival_offset_mm,
+                    "variants": {t: st.declared_variant
+                                 for t, st in session.sites.items()
+                                 if st.declared_variant is not None},
+                    "site_reliefs": _site_reliefs_of(session),
+                    "marked_centers": {},
+                    "alignment_evidence": {},
+                },
+            }
+        ask = ("cleared — the case-level relief stands"
+               if after is None else f"set to {after:.2f}mm")
+        record_activity(session, ACT_CHOICES_SET,
+                        f"tooth {tooth}'s relief override {ask}"
+                        + (f" — re-emitting run {reemit['request']['source_run_id']}'s "
+                           f"poses as run {reemit_run_id}" if "request" in reemit
+                           else " — it rides the next run"),
+                        tooth=tooth)
+
+    session = _mutate_session(store, case_id, apply)
+    if "request" in reemit:
+        session = _drive_reemit_job(worker, store, settings, case, case_id,
+                                    reemit_run_id, reemit["request"])
     return _detail(case, session, settings)
 
 
@@ -1970,10 +2082,17 @@ def _authorized_selection(case: CaseRecord, case_id: str,
             # variant lookup cannot miss; the record is absent only on documents
             # persisted before it existed — unverifiable, so it fails closed too
             site = session.sites[str(view.tooth)]
-            if site.seated_selection != SeatedSelection(
-                    model=model, construction_path=effective.construction_path,
-                    variant=site.declared_variant, jaw=effective.jaw,
-                    gingival_offset_mm=effective.gingival_offset_mm):
+            seat = site.seated_selection
+            # SHARPENED (§10-AC/C, 2026-08-04): the equality covers the POSE
+            # INPUTS — model, variant, jaw — because those are what the seat the
+            # review attested depends on. Relief and the construction part are
+            # provably pose-independent (§10-M/C, measured), so their drift no
+            # longer refuses: the attested seat is bit-identical under them, and
+            # their changes ride the re-emit lane instead. An absent record still
+            # fails closed — READY without proof stays unverifiable.
+            if (seat is None or seat.model != model
+                    or seat.variant != site.declared_variant
+                    or seat.jaw != effective.jaw):
                 missing.append(f"tooth {view.tooth} re-previewed and re-reviewed "
                                f"— its review attested a seat the case's current "
                                f"selection no longer describes")
@@ -1997,6 +2116,9 @@ def _authorized_selection(case: CaseRecord, case_id: str,
             for view in sites
             if session.sites[str(view.tooth)].marked_center is not None
         },
+        # PER-SITE RELIEF OVERRIDES (§10-B/C): each site's own ask rides beside
+        # the case-level value it overrides
+        "site_reliefs": _site_reliefs_of(session),
         # THE OPERATOR'S ALIGNMENT EVIDENCE (§10-AD): every persisted mark/pairs/
         # best-fit rides into the run so the automation's pass is followed by the
         # same re-apply the tools performed — an adjustment must survive the re-run

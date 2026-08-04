@@ -1610,6 +1610,7 @@ def run_auto_case(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                   compute_confidence: bool = False,
                   render_qc: bool = True,
                   gingival_offset_mm: float = DEFAULT_GINGIVAL_OFFSET_MM,
+                  site_gingival_offsets: Optional[Dict[int, float]] = None,
                   rng: Optional[PipelineRng] = None) -> Dict:
     """Align, measure, gate and package every confirmed site — see ``_align_and_package``
     for the full contract. This wrapper exists for ONE reason: THE CALLER'S RANDOMNESS IS
@@ -1636,7 +1637,8 @@ def run_auto_case(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
             emit_package=emit_package,
             screw_radius_mm=screw_radius_mm, proposals=proposals,
             compute_confidence=compute_confidence, render_qc=render_qc,
-            gingival_offset_mm=gingival_offset_mm, rng=rng)
+            gingival_offset_mm=gingival_offset_mm,
+            site_gingival_offsets=site_gingival_offsets, rng=rng)
     finally:
         np.random.set_state(ambient)
 
@@ -1651,6 +1653,7 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                        compute_confidence: bool = False,
                        render_qc: bool = True,
                        gingival_offset_mm: float = DEFAULT_GINGIVAL_OFFSET_MM,
+                       site_gingival_offsets: Optional[Dict[int, float]] = None,
                        rng: Optional[PipelineRng] = None) -> Dict:
     """Align, measure, gate and package every confirmed site. Returns the case summary
     (also written as ``<case_id>-auto-report.json`` beside the package).
@@ -2234,7 +2237,7 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
     final_products = None
     # the relief actually cut per variant/tooth, next to the one the lab asked for —
     # empty when no production set is generated (nothing was cut, so nothing is claimed)
-    _clamp_by_variant: Dict[str, "ReliefClamp"] = {}
+    _clamp_by_variant: Dict[tuple, "ReliefClamp"] = {}
     _clamp_by_tooth: Dict[int, "ReliefClamp"] = {}
     if generate_product:
         # G1 WIRING (2026-07-23): each site's product is bored at ITS identified cap's
@@ -2242,10 +2245,20 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
         # world exactly where the cap CAD says the screw goes — measured miss collapses
         # 0.34-0.38mm -> 0.001-0.018mm. Built per distinct variant (the channel differs
         # per cap); sites sharing a variant share the product.
-        _product_by_variant: Dict[str, trimesh.Trimesh] = {}
+        # PER-SITE RELIEF (§10-B/C, 2026-08-04): each site's ask is its own
+        # override where one stands, else the case-level value — and because two
+        # sites can now share a variant while asking different reliefs, the
+        # shared-product cache keys on (variant, ask) rather than variant alone.
+        _site_offsets = site_gingival_offsets or {}
+
+        def _relief_ask(tooth: int) -> float:
+            return float(_site_offsets.get(tooth, gingival_offset_mm))
+
+        _product_by_variant: Dict[tuple, trimesh.Trimesh] = {}
         final_products = {}
         for spec, _, _ in package_sites:
-            if spec.variant_code not in _product_by_variant:
+            _key = (spec.variant_code, _relief_ask(spec.tooth))
+            if _key not in _product_by_variant:
                 _cap_spec = next((s for s in library.specs
                                   if s.variant == spec.variant_code), None)
                 _chan = (channel_from_boundary_loops(library.template(_cap_spec))
@@ -2263,18 +2276,18 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                 # size, not vendor. The gate itself is untouched and still blocks a part
                 # that fails even at 0.0 — this refuses the ASK and completes at the safe
                 # value, loudly (see the clamp trio on every row/audit below).
-                _clamp_by_variant[spec.variant_code] = resolve_gingival_offset(
-                    construction_mesh, gingival_offset_mm, library_channel=_chan,
+                _clamp_by_variant[_key] = resolve_gingival_offset(
+                    construction_mesh, _relief_ask(spec.tooth),
+                    library_channel=_chan,
                     screw_radius_mm=screw_radius_mm,
                     part_label=(f"{spec.vendor}/{spec.implant_model} "
                                 f"{spec.variant_code}"))
-                _product_by_variant[spec.variant_code] = build_final_product(
+                _product_by_variant[_key] = build_final_product(
                     construction_mesh, screw_radius_mm=screw_radius_mm,
                     library_channel=_chan,
-                    gingival_offset_mm=_clamp_by_variant[
-                        spec.variant_code].applied_mm)
-            final_products[spec.tooth] = _product_by_variant[spec.variant_code]
-            _clamp_by_tooth[spec.tooth] = _clamp_by_variant[spec.variant_code]
+                    gingival_offset_mm=_clamp_by_variant[_key].applied_mm)
+            final_products[spec.tooth] = _product_by_variant[_key]
+            _clamp_by_tooth[spec.tooth] = _clamp_by_variant[_key]
         # HONESTY (review M1): ONE construction part serves every site — when sites identify
         # DIFFERENT size variants, the shared product geometry cannot match all of them
         distinct = {spec.variant_code for spec, _, _ in package_sites}
@@ -2291,7 +2304,7 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                     # the APPLIED value: when the pair could not take the ask, the trio
                     # below says so rather than this key quietly meaning two things.
                     "gingival_offset_mm": float(_cl.applied_mm if _cl is not None
-                                                else gingival_offset_mm),
+                                                else _relief_ask(row["tooth"])),
                     **(_cl.as_json() if _cl is not None else {}),
                 }
                 if shared_note:
@@ -2339,7 +2352,9 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                                    "gingival_offset_mm": (
                                        float(_clamp_by_tooth[r["tooth"]].applied_mm)
                                        if r["tooth"] in _clamp_by_tooth
-                                       else (float(gingival_offset_mm)
+                                       else (float((site_gingival_offsets or {})
+                                                   .get(r["tooth"],
+                                                        gingival_offset_mm))
                                              if generate_product else None)),
                                    **(_clamp_by_tooth[r["tooth"]].as_json()
                                       if r["tooth"] in _clamp_by_tooth else {})}

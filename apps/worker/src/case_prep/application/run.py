@@ -80,6 +80,10 @@ class RunSelection:
     # the selection with every other operator act rather than being merged into the
     # case, so the case record stays exactly what the ingest produced.
     marked_centers: Mapping[int, Sequence[float]] = field(default_factory=dict)
+    # PER-SITE RELIEF OVERRIDES (§10-B/C, 2026-08-04): tooth → the operator's own
+    # ask for that site, set on Adjustment; a site absent here takes the case-level
+    # value. Overrides ride every future run and re-emit like the other acts.
+    site_reliefs: Mapping[int, float] = field(default_factory=dict)
     # THE OPERATOR'S ALIGNMENT EVIDENCE (§10-AD, client 2026-08-02: adjustments must
     # survive a re-run). tooth → the session's AlignmentEvidence dicts in apply
     # order (kind mark|pairs|best_fit + payload). Re-applied AFTER automation via
@@ -245,7 +249,9 @@ def run_case(case: CaseRecord, selection: RunSelection, out_dir: Path) -> dict:
             # computed, package emitted — the run IS the emission; disclosure gates
             # later (Deliver), never the physics
             generate_product=True, render_qc=True, compute_confidence=True,
-            emit_package=True)
+            emit_package=True,
+            site_gingival_offsets={int(t): float(v)
+                                   for t, v in selection.site_reliefs.items()})
     except ValueError as exc:
         # the pipeline's REFUSALS travel as ValueError with a human message — the
         # export gates ("package NOT emitted", the relief gate) and "no confirmed

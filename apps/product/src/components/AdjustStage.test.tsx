@@ -1191,3 +1191,41 @@ describe("the queue's evidence line", () => {
     expect(html).not.toContain('data-role="queue-evidence"');
   });
 });
+
+/** PER-SITE RELIEF (§10-B/C): the control renders the served facts — the site's own
+ * ask or the standing case value — with the §10-AC disclosure; static tests pin the
+ * words and the roles (the act itself is the container's PUT). */
+describe("the per-site relief control", () => {
+  const RELIEF = {
+    siteValue: null,
+    caseValue: 0.2,
+    ceilingLine: "ceiling 0.08mm for 5020 — a larger ask is cut at the ceiling",
+    runDone: true,
+    saving: false,
+    error: null,
+    onApply: () => undefined,
+  };
+
+  it("renders the case value standing and the served ceiling", () => {
+    const html = view({ relief: RELIEF });
+    expect(html).toContain('data-role="site-relief"');
+    expect(html).toContain("case 0.2mm stands");
+    expect(html).toContain("ceiling 0.08mm for 5020");
+  });
+
+  it("over a done run, discloses the re-emit — never a full re-run", () => {
+    const html = view({ relief: RELIEF });
+    expect(html).toContain("re-emits the package from the run&#x27;s own poses");
+    expect(html).not.toContain("re-processes the case");
+  });
+
+  it("an override names itself, and the refusal renders verbatim", () => {
+    const html = view({
+      relief: { ...RELIEF, siteValue: 0.05,
+                error: "gingival_offset_mm must be a clearance between 0 and 1.5mm" },
+    });
+    expect(html).toContain("overridden");
+    expect(html).toContain('data-role="site-relief-error"');
+    expect(html).toContain("clearance between 0 and");
+  });
+});

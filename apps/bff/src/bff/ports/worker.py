@@ -232,6 +232,10 @@ class InProcessWorker:
             marked_centers={int(t): [float(c) for c in centre]
                             for t, centre in (sel.get("marked_centers")
                                               or {}).items()},
+            # per-site relief overrides (§10-B/C) — the site's own ask rides
+            # beside the case-level value it overrides
+            site_reliefs={int(t): float(v)
+                          for t, v in (sel.get("site_reliefs") or {}).items()},
             # the operator's persisted marks/pairs/best-fits (§10-AD) — carried
             # like the centres, re-applied by the run after automation
             alignment_evidence={int(t): list(entries)
