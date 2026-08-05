@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from .cases import CaseRecord, discover_cases
+from .catalog import _library_for
 from .detection import detect
 from .run import RunSelection, run_case
 
@@ -119,7 +120,6 @@ def verify_case(case: CaseRecord, product_root: Path,
     import numpy as np
     import trimesh
 
-    from ..adapters.ingest import canonicalize_revolute
     from ..adapters.qc_render import site_deviation_stats
 
     run_dir = latest_run_dir(product_root, case.id)
@@ -135,8 +135,11 @@ def verify_case(case: CaseRecord, product_root: Path,
     else:
         detect_note = None
 
-    scan = trimesh.load(str(case.scan), process=True)
-    scan_pts = np.asarray(scan.vertices, float)
+    try:
+        scan = trimesh.load(str(case.scan), process=True)
+        scan_pts = np.asarray(scan.vertices, float)
+    except Exception as exc:  # noqa: BLE001 — a row, never a dead report
+        return [{"case": case.id, "note": f"scan unreadable: {exc}"}]
     rows: list[dict] = []
     for record_path in records:
         rec = json.loads(record_path.read_text())
@@ -151,11 +154,20 @@ def verify_case(case: CaseRecord, product_root: Path,
                              "note": "no case record and no session mark"})
                 continue
             site = {"tooth": tooth, "center": marked[tooth]}
-        raw = trimesh.load(str(case.data_root / "library" / "caps" / model /
-                               f"{model}-{variant}.stl"), process=True)
-        template, _ = canonicalize_revolute(raw)
-        shipped = site_deviation_stats(
-            scan_pts, np.asarray(rec["pose_matrix"], float), template)
+        try:
+            # the PIPELINE'S OWN resolution — it knows the superseded shelf
+            # (the hand-built `{model}-{variant}.stl` path crashed the whole
+            # report on an archived variant, 2026-08-05; a report that dies on
+            # its third case verified nothing)
+            library = _library_for(case.data_root, model, [variant])
+            spec = next(s for s in library.specs if s.variant == variant)
+            template = library.template(spec)
+            shipped = site_deviation_stats(
+                scan_pts, np.asarray(rec["pose_matrix"], float), template)
+        except Exception as exc:  # noqa: BLE001
+            rows.append({"case": case.id, "tooth": tooth,
+                         "note": f"unmeasurable: {exc}"})
+            continue
         row = {"case": case.id, "tooth": tooth, "variant": variant,
                "shipped_rms": round(shipped["rms_mm"], 4),
                "shipped_p90": round(shipped["p90_mm"], 4),

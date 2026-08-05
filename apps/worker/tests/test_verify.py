@@ -111,6 +111,32 @@ class TestSeedVariants:
         assert "center_mark" not in seeded
 
 
+class TestFailuresBecomeRows:
+    """The module's own rule, now pinned where it broke (2026-08-05): the live
+    fleet report DIED on 276794487's superseded variant because the template path
+    was hand-built instead of resolved through the pipeline's catalog door. A
+    fleet report that dies on its third case verified nothing — every failure is
+    a row that names itself."""
+
+    def test_an_unreadable_scan_is_a_row_never_a_raise(self, tmp_path):
+        from case_prep.application.cases import CaseRecord
+        from case_prep.application.verify import verify_case
+
+        product = tmp_path / "product"
+        run = product / "case-x" / "runs" / "20260801-a"
+        run.mkdir(parents=True)
+        (run / "case-x-4-implant.json").write_text(json.dumps(
+            {"tooth": 4, "implant_model": "m", "variant_code": "v",
+             "pose_matrix": [[1, 0, 0, 0], [0, 1, 0, 0],
+                             [0, 0, 1, 0], [0, 0, 0, 1]]}))
+        case = CaseRecord(id="case-x", doctor="D", jaw="upper",
+                          scan=tmp_path / "missing.stl", data_root=tmp_path,
+                          suggested_model=None, suggested_construction=None,
+                          suggested_sites=())
+        (row,) = verify_case(case, product, tmp_path / "scratch")
+        assert "scan unreadable" in row["note"]
+
+
 class TestImprovementOf:
     ROW = {"shipped_rms": 0.4157, "variants": [
         {"seed": "baseline (record)", "rms": 0.4160, "p90": 0.68},
