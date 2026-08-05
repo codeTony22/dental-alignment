@@ -52,6 +52,13 @@ test-serial:
 rehearse:
 	$(PY) tools/rehearse_demo.py
 
+# The standing alignment check across ALL cases (§10-AH): re-run every landed
+# site from each available seed provenance into scratch dirs and report which
+# have a better seat AVAILABLE, scored by the published DEV metric. A REPORT —
+# rehearse remains the gate.
+verify-fleet:
+	$(PY) -m case_prep.application.verify
+
 # Full demo: runs every scenario + the test suite and builds reports/demo/dashboard.html
 demo:
 	$(PY) -m case_prep.cli demo
