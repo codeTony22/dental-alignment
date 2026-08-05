@@ -33,6 +33,7 @@ import {
   detectionMarkers,
   EMPTY_MARK,
   markOnArmMark,
+  adoptableProposals,
   markOnArmPick,
   openingSiteFor,
   pickSiteAt,
@@ -45,6 +46,7 @@ import {
   sitePickerOffered,
   siteEvidence,
   SITE_PICK_RADIUS_MM,
+  type AdoptableProposal,
   type MarkDraft,
   OFF_SCAN_MISS_WORDS,
 } from "../domain/intake";
@@ -105,6 +107,63 @@ interface SiteListProps {
   readonly onAskRemark: () => void;
   readonly onConfirmRemark: () => void;
   readonly onCancelRemark: () => void;
+  /** Adopting a detected cap no site carries (client 2026-08-04) — the missed-cap
+   * door with the DETECTOR'S own centre; the operator only names the tooth. */
+  readonly adoptSaving: boolean;
+  readonly adoptError: string | null;
+  readonly onAdopt: (center: readonly number[], tooth: number) => void;
+}
+
+/** One adoptable detected cap: the detector's facts, the operator's tooth number,
+ * one act. The draft is local; the ACT is the adopt, and the landed detail (a new
+ * site at `detected`, same ladder as every other) replaces everything. */
+function AdoptProposalControl({
+  proposal,
+  saving,
+  error,
+  onAdopt,
+}: {
+  readonly proposal: AdoptableProposal;
+  readonly saving: boolean;
+  readonly error: string | null;
+  readonly onAdopt: (center: readonly number[], tooth: number) => void;
+}) {
+  const [tooth, setTooth] = useState("");
+  const parsed = Number(tooth);
+  const usable = tooth.trim() !== "" && Number.isInteger(parsed) && parsed > 0;
+  return (
+    <div data-role="adopt-proposal" className="adopt-proposal">
+      <span className="adopt-proposal__facts">
+        Detected cap — {proposal.facts}
+      </span>
+      <label className="adopt-proposal__tooth">
+        tooth
+        <input
+          data-role="adopt-tooth"
+          className="scan-upload__input adopt-proposal__input"
+          type="number"
+          min={1}
+          value={tooth}
+          disabled={saving}
+          onChange={(event) => setTooth(event.target.value)}
+        />
+      </label>
+      <button
+        type="button"
+        data-role="adopt-go"
+        className="button button--primary button--small"
+        disabled={saving || !usable}
+        onClick={() => onAdopt(proposal.center, parsed)}
+      >
+        {saving ? "Adopting…" : "Adopt as a site"}
+      </button>
+      {error !== null && (
+        <span data-role="adopt-error" role="alert" className="panel__error">
+          {error}
+        </span>
+      )}
+    </div>
+  );
 }
 
 /** The chip's demo clothes: pass/marginal/rescan traffic-light tones, muted "none". */
@@ -239,10 +298,12 @@ function SiteList({
   onAskRemark,
   onConfirmRemark,
   onCancelRemark,
+  adoptSaving,
+  adoptError,
+  onAdopt,
 }: SiteListProps) {
   const picker = sitePickerOffered(detail.sites);
-  const unassigned =
-    detail.detection?.proposals.filter((p) => p.tooth_guess === null).length ?? 0;
+  const adoptable = adoptableProposals(detail);
   const active = detail.sites.find((s) => s.tooth === activeTooth) ?? null;
   return (
     <section data-role="intake-sites" className="panel">
@@ -365,11 +426,29 @@ function SiteList({
           {pickMiss}
         </p>
       )}
-      {unassigned > 0 && (
-        <p data-role="unassigned-proposals" className="panel__hint">
-          {unassigned} detected site{unassigned === 1 ? "" : "s"} without a curated
-          tooth yet — Declare assigns teeth.
-        </p>
+      {adoptable.length > 0 && (
+        /* THE UPLOADED-ARCH DEADLOCK (client 2026-08-04). This line used to say
+           "Declare assigns teeth" — an act Declare never had, promised on a case
+           the flow would not let past Intake (Declare needs a site, and a
+           tooth-less proposal never became one). The adopt rows ARE the way
+           forward now: the detector's centre, the operator's tooth number, the
+           missed-cap door's own act. */
+        <>
+          <p data-role="unassigned-proposals" className="panel__hint">
+            The detector found {adoptable.length} cap
+            {adoptable.length === 1 ? "" : "s"} no site carries yet — name the
+            tooth to adopt {adoptable.length === 1 ? "it" : "each"} as a site.
+          </p>
+          {adoptable.map((proposal) => (
+            <AdoptProposalControl
+              key={proposal.index}
+              proposal={proposal}
+              saving={adoptSaving}
+              error={adoptError}
+              onAdopt={onAdopt}
+            />
+          ))}
+        </>
       )}
     </section>
   );
@@ -709,6 +788,10 @@ export interface IntakeStageViewProps {
   readonly onAskRemark?: () => void;
   readonly onConfirmRemark?: () => void;
   readonly onCancelRemark?: () => void;
+  /** Adopting a detected cap no site carries (client 2026-08-04). */
+  readonly adoptSaving?: boolean;
+  readonly adoptError?: string | null;
+  readonly onAdopt?: (center: readonly number[], tooth: number) => void;
 }
 
 /** The stage's whole surface, pure payload → markup — statically testable. */
@@ -743,6 +826,9 @@ export function IntakeStageView({
   onAskRemark = () => undefined,
   onConfirmRemark = () => undefined,
   onCancelRemark = () => undefined,
+  adoptSaving = false,
+  adoptError = null,
+  onAdopt = () => undefined,
 }: IntakeStageViewProps) {
   const facts = factsFromCaseSession(detail);
   const declareOpen = isReachable("declare", facts);
@@ -797,6 +883,9 @@ export function IntakeStageView({
             onAskRemark={onAskRemark}
             onConfirmRemark={onConfirmRemark}
             onCancelRemark={onCancelRemark}
+            adoptSaving={adoptSaving}
+            adoptError={adoptError}
+            onAdopt={onAdopt}
           />
         </section>
       </div>
@@ -945,6 +1034,29 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
     setPickArmed(false);
     setPickMiss(null);
   }, []);
+
+  /* ADOPTING A DETECTED CAP (client 2026-08-04, the uploaded-arch deadlock): the
+     missed-cap door's own POST with the detector's centre — the operator names
+     only the tooth. On success the adopted site becomes the active one, so the
+     framing and the re-mark door land exactly where the work continues. */
+  const [adoptSaving, setAdoptSaving] = useState(false);
+  const [adoptError, setAdoptError] = useState<string | null>(null);
+  const handleAdopt = useCallback(
+    (center: readonly number[], tooth: number) => {
+      setAdoptSaving(true);
+      setAdoptError(null);
+      void postMarkedSite(caseId, tooth, center).then((result) => {
+        setAdoptSaving(false);
+        if (result.kind === "ok") {
+          onDetail(result.data);
+          setActiveTooth(tooth);
+        } else {
+          setAdoptError(result.detail);
+        }
+      });
+    },
+    [caseId, onDetail],
+  );
 
   /* RE-MARKING THE ACTIVE SITE'S CENTRE (client 2026-08-01, the tooth-29 gap).
      THE BLAST RADIUS IN WORDS BEFORE THE ACT (the visible-reset doctrine —
@@ -1179,6 +1291,9 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
       onAskRemark={handleAskRemark}
       onConfirmRemark={handleConfirmRemark}
       onCancelRemark={handleCancelRemark}
+      adoptSaving={adoptSaving}
+      adoptError={adoptError}
+      onAdopt={handleAdopt}
     />
   );
 }

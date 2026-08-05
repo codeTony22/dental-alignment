@@ -89,13 +89,54 @@ describe("the site list with capture chips", () => {
     expect(html).toContain("not assessed");
   });
 
-  it("unmatched detections are counted, not hidden — Declare assigns teeth", () => {
+  it("an unmatched detection offers ADOPTION, and stops promising Declare an act it never had", () => {
+    // the uploaded-arch deadlock (client 2026-08-04): Declare needs a site to
+    // open, a tooth-less proposal never became one, and this line used to say
+    // "Declare assigns teeth" while the flow refused to advance
     const html = view({
       detail: caseSessionDetail({
-        detection: detectionView([detectedProposal({ tooth_guess: null })]),
+        sites: [],
+        detection: detectionView([
+          detectedProposal({
+            tooth_guess: null,
+            void_ratio: 0.47,
+            rim_below_cusps_mm: 5.7,
+          }),
+        ]),
       }),
     });
-    expect(html).toContain("1 detected site without a curated tooth yet");
+    expect(html).not.toContain("Declare assigns teeth");
+    expect(html).toContain('data-role="unassigned-proposals"');
+    expect(html).toContain("no site carries yet");
+    expect(html).toContain('data-role="adopt-proposal"');
+    expect(html).toContain("recess void 0.47 · rim 5.70mm below cusps");
+    expect(html).toContain('data-role="adopt-tooth"');
+    // an empty tooth number disarms the act — the operator names the tooth
+    expect(html).toMatch(/data-role="adopt-go"[^>]*disabled/);
+  });
+
+  it("a proposal already carried by a site offers no adoption — no duplicate door", () => {
+    const html = view({
+      detail: caseSessionDetail({
+        sites: [siteView({ tooth: 3, center: [1.0, 2.0, 3.0] })],
+        detection: detectionView([
+          detectedProposal({ tooth_guess: null, center: [1.0, 2.0, 3.0] }),
+        ]),
+      }),
+    });
+    expect(html).not.toContain('data-role="adopt-proposal"');
+  });
+
+  it("an adopt refusal renders in the BFF's own words", () => {
+    const html = view({
+      detail: caseSessionDetail({
+        sites: [],
+        detection: detectionView([detectedProposal({ tooth_guess: null })]),
+      }),
+      adoptError: "tooth 3 already has a site — re-mark its centre instead",
+    });
+    expect(html).toContain('data-role="adopt-error"');
+    expect(html).toContain("already has a site");
   });
 });
 

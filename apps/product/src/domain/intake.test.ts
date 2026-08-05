@@ -20,6 +20,7 @@ import {
   shouldAutoDetect,
   siteCentre,
   detectorDisagreement,
+  adoptableProposals,
   openingSiteFor,
   sitePickerOffered,
   siteEvidence,
@@ -501,6 +502,58 @@ describe("detectorDisagreement — the centre on screen vs the one the detector 
       29,
     );
     expect(found!.mm).toBeCloseTo(1.74, 2);
+  });
+});
+
+/**
+ * ADOPTING A DETECTED CAP (client 2026-08-04, the uploaded-arch deadlock: the
+ * detector found the cap, no site carried it, Declare needs a site to open, and
+ * the panel promised "Declare assigns teeth" — an act Declare never had).
+ */
+describe("adoptableProposals — detected caps no site carries yet", () => {
+  it("offers a tooth-less proposal with the detector's own centre and facts", () => {
+    const detail = caseSessionDetail({
+      sites: [],
+      detection: detectionView([
+        detectedProposal({
+          tooth_guess: null,
+          center: [4.0, 5.0, 6.0],
+          void_ratio: 0.47,
+          rim_below_cusps_mm: 5.7,
+        }),
+      ]),
+    });
+    expect(adoptableProposals(detail)).toEqual([
+      {
+        index: 0,
+        center: [4.0, 5.0, 6.0],
+        facts: "recess void 0.47 · rim 5.70mm below cusps",
+      },
+    ]);
+  });
+
+  it("a proposal WITH a tooth guess is not adoptable — it has a name already", () => {
+    const detail = caseSessionDetail({
+      sites: [],
+      detection: detectionView([detectedProposal({ tooth_guess: 30 })]),
+    });
+    expect(adoptableProposals(detail)).toEqual([]);
+  });
+
+  it("a proposal within the pick radius of an existing site IS that site", () => {
+    // either the detector re-found a curated cap, or the operator already
+    // adopted this one — offering it again would mint a duplicate site
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 3, center: [4.0, 5.0, 6.0] })],
+      detection: detectionView([
+        detectedProposal({ tooth_guess: null, center: [4.2, 5.1, 6.0] }),
+      ]),
+    });
+    expect(adoptableProposals(detail)).toEqual([]);
+  });
+
+  it("adopting is possible on a case with no detection record at all — empty, no throw", () => {
+    expect(adoptableProposals(caseSessionDetail({ detection: null }))).toEqual([]);
   });
 });
 

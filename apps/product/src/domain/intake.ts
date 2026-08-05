@@ -279,6 +279,57 @@ export function detectorDisagreement(
  * it renders in the list.
  */
 /**
+ * A DETECTED CAP NO SITE CARRIES YET, offered for ADOPTION (client 2026-08-04, the
+ * uploaded-arch deadlock: "we get a completely different center and does not let me
+ * advance"). An uploaded case has no curated sites.json, so when the detector's
+ * proposal carries no tooth guess it never became a site — the flow's Declare gate
+ * needs `siteTotal > 0`, and the old panel line promised "Declare assigns teeth",
+ * an act Declare never had. The way out already existed as the missed-cap door
+ * (POST /sites: WHICH tooth and WHERE) — adoption is that same act with the
+ * DETECTOR'S OWN centre, so the operator names the tooth and re-places nothing.
+ * The tooth number is the operator's alone: the detector offered no guess, and a
+ * client-side guess would be an invented verdict.
+ */
+export interface AdoptableProposal {
+  /** Identity in `detection.proposals` — stable for keys and per-row drafts. */
+  readonly index: number;
+  readonly center: readonly [number, number, number];
+  /** The detector's own facts for the row, already worded. */
+  readonly facts: string;
+}
+
+/** Proposals with no tooth guess AND no existing site standing within the pick
+ * radius of their centre — a proposal that close to a site IS that site (either
+ * the detector re-found a curated cap, or the operator already adopted it). */
+export function adoptableProposals(
+  detail: CaseSessionDetail,
+): readonly AdoptableProposal[] {
+  const centres = detail.sites
+    .map((site) => siteCentre(site))
+    .filter((c): c is readonly [number, number, number] => c !== null);
+  const out: AdoptableProposal[] = [];
+  (detail.detection?.proposals ?? []).forEach((proposal, index) => {
+    if (proposal.tooth_guess !== null) return;
+    const centre = asVec3(proposal.center);
+    if (centre === null) return;
+    const represented = centres.some(
+      (c) =>
+        Math.hypot(c[0] - centre[0], c[1] - centre[1], c[2] - centre[2]) <=
+        SITE_PICK_RADIUS_MM,
+    );
+    if (represented) return;
+    out.push({
+      index,
+      center: centre,
+      facts:
+        `recess void ${proposal.void_ratio.toFixed(2)} · ` +
+        `rim ${proposal.rim_below_cusps_mm.toFixed(2)}mm below cusps`,
+    });
+  });
+  return out;
+}
+
+/**
  * WHICH SITE INTAKE OPENS ON (client 2026-08-04: "Intake needs the ability to
  * re-center the cap that was selected" — reported as a missing feature).
  *
