@@ -38,6 +38,7 @@ import {
   droppedRowWords,
   flaggedExceptionWords,
   gateActions,
+  ghostScanMarkers,
   isComplete,
   landmarkLabel,
   needsReconfirm,
@@ -1385,6 +1386,58 @@ describe("evidenceRideWords", () => {
   it("never promises an outcome", () => {
     expect(evidenceRideWords(2)).not.toContain("will apply");
     expect(evidenceRideWords(2)).not.toContain("re-applied");
+  });
+});
+
+/**
+ * AUTO-MARK'S GHOSTS (§10-AI, serving the fleet report's one seed-proof misfit:
+ * cap7030's unverified rotation). The operator's hard part was WHERE to click on
+ * the scan — their first live attempt refused at 2.5mm RMS because point-3 named
+ * a different feature. The ghost is the CURRENT pose's own claim of where each
+ * placed part point sits on the scan, drawn faint; clicking where the feature
+ * actually is IS the correction, and the ghost-vs-click gap is the very rotation
+ * being measured. Display-only: no physics reads a ghost.
+ */
+describe("ghostScanMarkers — where the current pose expects the next click", () => {
+  const POSE = { origin: [10, 20, 30], axis: [0, 0, 1], x_axis: [1, 0, 0] };
+
+  it("projects a placed part point through the pose for a draft awaiting its scan click", () => {
+    const draft = withPick(newPairDraft("auto-1", false), "part", [2, 3, 4]);
+    const ghosts = ghostScanMarkers([draft], POSE);
+    expect(ghosts).toHaveLength(1);
+    // identity basis: world = origin + point
+    expect(ghosts[0]!.position).toEqual([12, 23, 34]);
+    expect(ghosts[0]!.label).toBe("1?");
+  });
+
+  it("uses the pose's own basis, not the world's", () => {
+    // x_axis y, axis z → part x lands on world y
+    const rotated = { origin: [0, 0, 0], axis: [0, 0, 1], x_axis: [0, 1, 0] };
+    const draft = withPick(newPairDraft("p", false), "part", [1, 0, 0]);
+    const [ghost] = ghostScanMarkers([draft], rotated);
+    expect(ghost!.position[0]).toBeCloseTo(0, 10);
+    expect(ghost!.position[1]).toBeCloseTo(1, 10);
+  });
+
+  it("a draft whose scan half is already placed casts no ghost — the truth is on screen", () => {
+    let draft = withPick(newPairDraft("p", false), "part", [2, 3, 4]);
+    draft = withPick(draft, "scan", [9, 9, 9]);
+    expect(ghostScanMarkers([draft], POSE)).toEqual([]);
+  });
+
+  it("a part span's second end casts its own b-ghost", () => {
+    let draft = withPick(newPairDraft("s", true, true), "part", [1, 0, 0]);
+    draft = withPick(draft, "part", [2, 0, 0]);
+    const ghosts = ghostScanMarkers([draft], POSE);
+    expect(ghosts.map((g) => g.label)).toEqual(["1a?", "1b?"]);
+  });
+
+  it("no pose, no ghosts — a guess drawn on the glass would be an invented claim", () => {
+    const draft = withPick(newPairDraft("p", false), "part", [2, 3, 4]);
+    expect(ghostScanMarkers([draft], null)).toEqual([]);
+    expect(
+      ghostScanMarkers([draft], { origin: [0, 0], axis: [0, 0, 1], x_axis: [1, 0, 0] }),
+    ).toEqual([]);
   });
 });
 

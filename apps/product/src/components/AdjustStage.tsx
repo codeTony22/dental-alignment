@@ -33,7 +33,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDialogEscape } from "./useDialogEscape";
 import { useDialogFocus } from "./useDialogFocus";
 import { useNavigate } from "react-router-dom";
-import { FREE_POINT_COLOR, type VerifyMarker } from "viewer";
+import { FREE_POINT_COLOR, GHOST_POINT_COLOR, type VerifyMarker } from "viewer";
 import {
   fetchLandmarks,
   fetchRun,
@@ -64,6 +64,7 @@ import {
   evidenceReceipts,
   evidenceReceiptsTitle,
   evidenceRideWords,
+  ghostScanMarkers,
   receiptKindWords,
   receiptOutcomeWords,
   receiptsCarriedByReemit,
@@ -279,6 +280,8 @@ export interface AdjustStageViewProps {
   /** §10-AD's answer half: true when the standing run is a §10-AC re-emit whose
    * receipts were CARRIED with the copied poses — the block's title says so. */
   readonly receiptsCarried?: boolean;
+  /** §10-AI: ghost markers are on the scan panes — the note says what they claim. */
+  readonly ghostsActive?: boolean;
   /** §10-B/C: the active site's relief facts + the apply act. */
   readonly relief?: {
     readonly siteValue: number | null;
@@ -676,6 +679,7 @@ export function AdjustStageView({
   entries,
   activeTooth,
   receiptsCarried = false,
+  ghostsActive = false,
   relief = null,
   onSelectSite,
   tool,
@@ -1126,6 +1130,17 @@ export function AdjustStageView({
                     <p data-role="pair-prompt" className="adjust-tool__readout">
                       {pairPrompt(openDraft)}
                     </p>
+                    {ghostsActive && (
+                      /* the ghost's honest caption: it is the current pose's
+                         CLAIM, and the difference from where the operator
+                         actually sees the feature is the correction itself */
+                      <p data-role="ghost-note" className="panel__hint">
+                        The faint amber marker shows where the current pose
+                        expects this point on the scan — click where you
+                        actually see the feature; the difference is the
+                        correction the fit measures.
+                      </p>
+                    )}
                     <div className="adjust-tool__row">
                       <button
                         type="button"
@@ -1979,7 +1994,29 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   /** The numbered marks, drawn where they were placed. Memoized by content: the
    * viewer diffs markers by identity, so a fresh array per render would churn the
    * scene graph on every keystroke elsewhere. */
-  const markers = useMemo(() => pairMarkers(drafts), [drafts]);
+  /* AUTO-MARK'S GHOSTS (§10-AI): where the CURRENT pose claims each placed
+     part point sits on the scan — faint, question-marked, display-only. The
+     ghost guides the eye; the operator's click stands alone, and the
+     ghost-vs-click gap IS the rotation being measured. */
+  const ghosts = useMemo(
+    () => ghostScanMarkers(drafts, payload?.pose ?? null),
+    [drafts, payload],
+  );
+  const markers = useMemo(() => {
+    const base = pairMarkers(drafts);
+    if (ghosts.length === 0) return base;
+    const drawn = ghosts.map((ghost) => ({
+      key: ghost.key,
+      position: ghost.position as [number, number, number],
+      color: GHOST_POINT_COLOR,
+      label: ghost.label,
+    }));
+    return {
+      ...base,
+      scan: [...(base.scan ?? []), ...drawn],
+      union: [...(base.union ?? []), ...drawn],
+    };
+  }, [drafts, ghosts]);
 
   const pickHandlers = useMemo(
     () => ({
@@ -2237,6 +2274,7 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       onToggleLinked={handleToggleLinked}
       entries={entries}
       receiptsCarried={receiptsCarriedByReemit(runSummary)}
+      ghostsActive={ghosts.length > 0}
       activeTooth={activeTooth}
       onSelectSite={handleSelectSite}
       tool={tool}

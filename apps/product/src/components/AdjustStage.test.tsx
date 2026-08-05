@@ -1209,6 +1209,27 @@ describe("the unverified clock's actionable surface", () => {
   });
 });
 
+describe("the ghost note (§10-AI) — the pose's claim, captioned honestly", () => {
+  it("renders beside the pair prompt while ghosts are on the glass", () => {
+    const html = view({
+      tool: "fit-by-points",
+      drafts: [withPick(newPairDraft("p", false), "part", [1, 0, 1])],
+      ghostsActive: true,
+    });
+    expect(html).toContain('data-role="ghost-note"');
+    expect(html).toContain("where the current pose expects");
+    expect(html).toContain("the difference is the correction");
+    // never a promise that the ghost is TRUTH — it is the pose's own claim
+    expect(html).not.toContain("where the feature is");
+  });
+
+  it("absent with no ghosts, and for static callers predating the prop", () => {
+    expect(view({ tool: "fit-by-points" })).not.toContain(
+      'data-role="ghost-note"',
+    );
+  });
+});
+
 describe("pairMarkers — every placed point is DRAWN (client 2026-08-04, twice)", () => {
   it("a SPAN BOTH draft draws two library markers, a/b like the scan's own", () => {
     // the reported bug: the second library click was recorded and never drawn —

@@ -1647,3 +1647,49 @@ STILL OPEN in this thread, dependency-ordered:
 3. **The centre-vs-pair guard** — reconsidered post-fix: with the splice gone, the
    record's pair and centre travel together, so measure whether any fleet record
    internally disagrees before building a guard for it.
+
+**AI. THE SURVEY, RE-READ AGAINST THE MEASURED RECORD — what fits, what is ruled
+out, what landed (2026-08-05; the client: "review what to research and see what
+fits ... we cannot make regression, we can only improve").**
+
+The 2026-07-14 alignment survey (docs/research/alignment-algorithm-survey.md) was
+re-read against everything measured since. The no-regression constraint maps onto
+the repo's own monotonic-accept discipline: a candidate may only ever be ACCEPTED
+when it beats the standing result on the published DEV metric — improvement by
+construction, never by hope.
+
+RULED OUT, with the record that rules them: the correspondence-robust global
+family (TEASER++/RANSAC-FPFH/FGR/4PCS — "an absence of true inliers, not an
+outlier problem", survey §3c); recess-anchored clocking (convicted twice:
+phantom-clock 2026-07-20, §10-L); free ICP as a primary solver (the survey's own
+verdict, re-confirmed by §10-AH's 2.3-23.1° real-data spread); and the rim-pair
+re-mark UI (§10-AH's F/C/E measurement — every pair-shaped variant of the
+operator's centre loses to the bare click that ships).
+
+LANDED THIS PASS, all regression-proof by construction:
+1. **Auto-mark GHOSTS** (display-only; serves cap7030, the fleet's one seed-proof
+   misfit — a rotation/matching problem). Every draft awaiting its scan click
+   casts a faint amber "1?" marker where the CURRENT pose claims that part point
+   sits on the scan (`ghostScanMarkers`, pose-frame projection, no solver reads
+   it). The client's first auto-mark attempt refused at 2.5mm RMS because one
+   click named a different feature; the ghost makes the matching clickable, and
+   the ghost-vs-click gap IS the rotation the fit measures. The note under the
+   prompt says exactly that — the ghost is a claim, never truth.
+2. **The stale-run remedy applied**: 297589851 t20 re-ran through the product's
+   own path and landed 0.175/0.291 — the fleet report's predicted seat, replacing
+   the stale 0.2467.
+3. cap6030's detector-centre improvement (0.1944→0.1750) is one click away at
+   Intake's adopt door — the OPERATOR'S click, by the consent doctrine; noted for
+   the demo script rather than auto-applied.
+
+NEXT, in the survey's own cheapest-diagnostics-first order, all gate-safe:
+1. **Fitzpatrick TRE advisory** (survey candidate 6, ~1 day): a graded, closed-form
+   click-quality advisory replacing binary refusals — display-only; needs FLE
+   calibrated from re-click spread on the labelled arches first.
+2. **Symmetric-objective inner ICP with normal-space sampling** (candidate 4,
+   ~2 days): swaps `_refine_best_fit`'s inner engine INSIDE the unchanged trust
+   region + monotonic accept; ship only behind a verify-fleet A/B showing fleet-
+   wide non-regression on the published metric.
+3. **SDF dense search** (candidate 3): the likely architectural end-state; its
+   scratch prototype belongs in verify-fleet as a report variant before any
+   production claim.

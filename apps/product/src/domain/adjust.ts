@@ -826,6 +826,83 @@ export function landmarkLabel(landmark: LandmarkView): string {
   return `${landmark.kind} — lever arm ${landmark.lever_arm_mm.toFixed(2)}mm`;
 }
 
+/** A ghost the scan panes draw where the CURRENT pose expects a placed part
+ * point — display-only, never read by any physics. */
+export interface GhostMarker {
+  readonly key: string;
+  readonly position: readonly [number, number, number];
+  readonly label: string;
+}
+
+const finiteTriple = (v: readonly number[] | null | undefined) =>
+  v != null && v.length === 3 && v.every((n) => Number.isFinite(n));
+
+/**
+ * AUTO-MARK'S GHOSTS (§10-AI, serving the fleet report's one seed-proof misfit:
+ * cap7030's unverified rotation — a matching problem, not a seat one). For every
+ * draft whose part half is placed and whose scan half is still owed, project the
+ * part point through the pose's own frame onto the scan panes, faint and
+ * question-marked: "the current pose claims this landmark is HERE". Clicking
+ * where the feature actually is IS the correction — the ghost-vs-click gap is
+ * the very rotation the fit measures, so the ghost may guide the eye and can
+ * never bias the physics (no solver reads it; the operator's click stands alone,
+ * pair-integrity as ever). No pose, no ghosts: a guess drawn on the glass would
+ * be an invented claim.
+ */
+export function ghostScanMarkers(
+  drafts: readonly PairDraft[],
+  pose: {
+    readonly origin: readonly number[];
+    readonly axis: readonly number[];
+    readonly x_axis: readonly number[];
+  } | null,
+): readonly GhostMarker[] {
+  if (
+    pose === null ||
+    !finiteTriple(pose.origin) ||
+    !finiteTriple(pose.axis) ||
+    !finiteTriple(pose.x_axis)
+  ) {
+    return [];
+  }
+  const [ox, oy, oz] = pose.origin as readonly [number, number, number];
+  const z = pose.axis as readonly [number, number, number];
+  const x = pose.x_axis as readonly [number, number, number];
+  const y: readonly [number, number, number] = [
+    z[1] * x[2] - z[2] * x[1],
+    z[2] * x[0] - z[0] * x[2],
+    z[0] * x[1] - z[1] * x[0],
+  ];
+  const toWorld = (p: readonly number[]): readonly [number, number, number] => [
+    ox + x[0] * p[0]! + y[0] * p[1]! + z[0] * p[2]!,
+    oy + x[1] * p[0]! + y[1] * p[1]! + z[1] * p[2]!,
+    oz + x[2] * p[0]! + y[2] * p[1]! + z[2] * p[2]!,
+  ];
+  const ghosts: GhostMarker[] = [];
+  drafts.forEach((draft, index) => {
+    const label = `${index + 1}`;
+    if (draft.partPoint !== null && draft.scanPoint === null) {
+      ghosts.push({
+        key: `${draft.id}-ghost`,
+        position: toWorld(draft.partPoint),
+        label: draft.partSpan ? `${label}a?` : `${label}?`,
+      });
+    }
+    if (
+      draft.partSpan &&
+      draft.partPointEnd !== null &&
+      draft.scanPointEnd === null
+    ) {
+      ghosts.push({
+        key: `${draft.id}-ghost-end`,
+        position: toWorld(draft.partPointEnd),
+        label: `${label}b?`,
+      });
+    }
+  });
+  return ghosts;
+}
+
 /** Which proposed landmark seeded this draft, in words — null for a draft auto-mark did
  * not create (the fit-by-points flow's own drafts carry no server identity to show, and
  * this must render nothing for them rather than guessing). */

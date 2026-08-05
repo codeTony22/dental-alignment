@@ -97,6 +97,7 @@ export type { RouteInputs, RouteTarget, StageSubject } from "./viewer/siteRoutin
 export {
   FEATURE_COLOR,
   FREE_POINT_COLOR,
+  GHOST_POINT_COLOR,
   PALETTE,
   ROLE_LABEL,
   featureHex,

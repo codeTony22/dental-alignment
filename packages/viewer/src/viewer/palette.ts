@@ -115,6 +115,10 @@ export function featureHex(kind: FeatureKind): string {
  * draw them).
  */
 export const FREE_POINT_COLOR = 0x40c4ff;
+/** The ghost of a pending mark — where the CURRENT pose claims a placed part
+ * point sits on the scan (display-only; §10-AI). Amber, the repo's own
+ * "a consequence to weigh" tone, and dimmer than a real mark. */
+export const GHOST_POINT_COLOR = 0xd9a441;
 
 /** CSS hex string for the free-point color — the pair list's swatch must match the sphere. */
 export function freePointHex(): string {
