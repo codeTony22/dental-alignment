@@ -127,6 +127,7 @@ import {
   type ViewPresetId,
   type WorkspaceStat,
 } from "../domain/declare";
+import { PANES_OPEN_LINKED } from "../domain/workspace";
 import { blockedReason, factsFromCaseSession } from "../domain/flow";
 import { SitePanesView, useSitePaneScene, type PaneId } from "./SitePanes";
 /* ONE toolbar for both stages, not two that drift — see WorkspaceToolbar's own note
@@ -487,7 +488,15 @@ function PairsList({
       <ul data-role="pair-list" className="adjust-pairs">
         {drafts.map((draft, index) => (
           <li key={draft.id} data-role="pair-row" data-span={draft.span}
-              data-slot={pairSlot(draft)} className="adjust-pairs__row">
+              data-slot={pairSlot(draft)}
+              /* A PLACED pair folds to one line (client 2026-08-04: "this also
+                 takes a lot of real estate") — the checklist teaches the OPEN
+                 draft; a completed one needs a receipt, its per-mark undos (the
+                 refusal flow names exactly one to re-place) and Remove. Same DOM,
+                 compact clothes: the collapse is the stylesheet's. */
+              className={`adjust-pairs__row${
+                pairSlot(draft) === "complete" ? " adjust-pairs__row--complete" : ""
+              }`}>
             {sourceLabelFor && sourceLabelFor(draft) !== null && (
               /* WHICH proposed landmark this draft came from (auto-mark only) — the
                  operator's answer to "why am I being asked for this one". */
@@ -913,21 +922,36 @@ export function AdjustStageView({
                  fix by clicking, and nothing here is accepted. The button ROUTES to
                  auto-mark; it never claims completing that tool will mark this flag
                  verified (see `unverifiedClockNotice`'s own doctrine). */
+              /* ONE LINE + the act; the full reading behind a fold (client
+                 2026-08-04: "This takes a lot of real estate"). The queue set the
+                 precedent — the row keeps the fact, the words move behind a door —
+                 and the sentences inside the fold are UNCHANGED, verbatim. */
               <div data-role="clock-unverified" role="status" className="adjust-clock-notice">
-                <p data-role="clock-unverified-facts" className="adjust-clock-notice__line">
-                  {clockNotice.facts}
-                </p>
-                <p data-role="clock-unverified-act" className="adjust-clock-notice__line">
-                  {clockNotice.act}
-                </p>
-                <button
-                  type="button"
-                  data-role="verify-rotation"
-                  className="button button--secondary button--small"
-                  onClick={() => onSelectTool(clockNotice.armTool)}
-                >
-                  Switch to auto-mark
-                </button>
+                <div className="adjust-clock-notice__row">
+                  <span data-role="clock-unverified-lead" className="adjust-clock-notice__lead">
+                    The rotation could not be verified automatically — auto-mark
+                    is the documented answer.
+                  </span>
+                  <button
+                    type="button"
+                    data-role="verify-rotation"
+                    className="button button--secondary button--small"
+                    onClick={() => onSelectTool(clockNotice.armTool)}
+                  >
+                    Switch to auto-mark
+                  </button>
+                </div>
+                <details data-role="clock-unverified-words" className="adjust-clock-notice__fold">
+                  <summary className="adjust-clock-notice__summary">
+                    why, and what auto-mark records
+                  </summary>
+                  <p data-role="clock-unverified-facts" className="adjust-clock-notice__line">
+                    {clockNotice.facts}
+                  </p>
+                  <p data-role="clock-unverified-act" className="adjust-clock-notice__line">
+                    {clockNotice.act}
+                  </p>
+                </details>
               </div>
             )}
 
@@ -1958,8 +1982,9 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
      adjustment views"). One number for the whole workspace, for the same reason the
      preset above is one: the panes are read side by side. */
   const [zoomLevel, setZoomLevel] = useState(0);
-  // the link toggle rides the toolbar now — same home as the zoom, same reason
-  const [linked, setLinked] = useState(false);
+  // the link toggle rides the toolbar now — same home as the zoom, same reason.
+  // Opens LINKED — the shared policy (domain/workspace, client 2026-08-04).
+  const [linked, setLinked] = useState(PANES_OPEN_LINKED);
   const handleToggleLinked = useCallback(() => setLinked((now) => !now), []);
   const handleZoom = useCallback((direction: 1 | -1) => {
     /* CLAMPED AT THE COUNTER, not only at the camera: an unbounded counter accepts

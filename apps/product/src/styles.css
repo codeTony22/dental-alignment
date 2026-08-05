@@ -6920,6 +6920,63 @@ button.package-files__link:hover {
   color: var(--color-accent-amber-dark, #8a5b00);
 }
 
+/* A PLACED pair folds to one line (client 2026-08-04): the open draft keeps the
+   teaching checklist; a completed one is a receipt with its undos. */
+.adjust-pairs__row--complete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 4px 8px;
+}
+
+.adjust-pairs__row--complete .adjust-pairs__slots {
+  display: inline-flex;
+  flex-direction: row;
+  gap: 10px;
+  margin: 0;
+}
+
+.adjust-pairs__row--complete .adjust-pairs__slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* the teaching line ("the feature on the part") belongs to the open draft — a
+   placed mark's receipt is the ✓, the surface name and its undo */
+.adjust-pairs__row--complete .adjust-pairs__slot-label {
+  display: none;
+}
+
+.adjust-pairs__row--complete [data-role="remove-pair"] {
+  margin-left: auto;
+}
+
+/* The clock notice, folded (client 2026-08-04): one line + the act; the verbatim
+   sentences live behind the disclosure. */
+.adjust-clock-notice__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.adjust-clock-notice__lead {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.adjust-clock-notice__fold {
+  margin-top: 4px;
+}
+
+.adjust-clock-notice__summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
 /* Adopting a detected cap (client 2026-08-04): the detector's facts, the
    operator's tooth number, one act. */
 .adopt-proposal {

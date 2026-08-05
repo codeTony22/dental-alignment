@@ -1189,6 +1189,42 @@ describe("the unverified clock's actionable surface", () => {
       expect(view({ tool, clockNotice: NOTICE })).toContain('data-role="clock-unverified"');
     }
   });
+
+  it("folds to one line — the verbatim sentences live behind the disclosure", () => {
+    // client 2026-08-04: "This takes a lot of real estate". The queue's own
+    // precedent: the row keeps the fact, the words move behind a door — and the
+    // sentences inside are UNCHANGED (the facts/act pins above still hold).
+    const html = view({ clockNotice: NOTICE });
+    expect(html).toContain('data-role="clock-unverified-lead"');
+    expect(html).toContain('data-role="clock-unverified-words"');
+    const fold = html.slice(html.indexOf('data-role="clock-unverified-words"'));
+    expect(fold).toContain(NOTICE.facts);
+    expect(fold).toContain(NOTICE.act);
+    // the act stays OUTSIDE the fold — folding the button would hide the answer
+    expect(
+      html
+        .slice(0, html.indexOf('data-role="clock-unverified-words"'))
+        .includes('data-role="verify-rotation"'),
+    ).toBe(true);
+  });
+});
+
+describe("a placed pair folds to one line (client 2026-08-04)", () => {
+  it("a complete draft wears the compact clothes; an open one keeps the checklist", () => {
+    const complete = withPick(
+      withPick(newPairDraft("p1", false), "part", [1, 0, 1]),
+      "scan",
+      [2, 0, 1],
+    );
+    const open = newPairDraft("p2", false);
+    const html = view({ tool: "fit-by-points", drafts: [complete, open] });
+    const rows = html.split('data-role="pair-row"');
+    expect(rows[1]).toContain("adjust-pairs__row--complete");
+    expect(rows[2]).not.toContain("adjust-pairs__row--complete");
+    // the per-mark undos survive the fold — the refusal flow names exactly one
+    // mark to re-place, and folding must not cost that exit
+    expect(rows[1]).toContain('data-role="remove-point"');
+  });
 });
 
 /** §10-AD's surfacing half: the queue row says the operator's measurements ride the

@@ -627,10 +627,10 @@ describe("the workspace toolbar over the panes", () => {
     expect(view()).not.toContain('data-role="pane-link"');
     const wired = view({ linked: false, onToggleLinked: () => undefined });
     expect(wired).toMatch(/data-role="pane-link"[^>]*aria-pressed="false"/);
-    expect(wired).toContain("⛓ link");
+    expect(wired).toContain("⛓ link panes");
     const on = view({ linked: true, onToggleLinked: () => undefined });
     expect(on).toMatch(/data-role="pane-link"[^>]*aria-pressed="true"/);
-    expect(on).toContain("⛓ linked");
+    expect(on).toContain("⛓ rotating together");
   });
 
   it("the named view presets render only where the stage can actually apply them", () => {

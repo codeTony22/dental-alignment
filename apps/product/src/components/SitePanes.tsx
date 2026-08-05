@@ -78,6 +78,7 @@ import {
   type ViewPresetId,
   variantMeshUrl,
 } from "../domain/declare";
+import { paneLinkLabel } from "../domain/workspace";
 
 /** The pane ids — pane 1/2/3 in the module doc's order. */
 export type PaneId = "library" | "scan" | "union";
@@ -922,7 +923,7 @@ export function SitePanesView({
                   : "Rotate all three panels together (same angles and zoom, each around its own content)"
               }
             >
-              {linked ? "⛓ views linked" : "⛓ link views"}
+              {paneLinkLabel(linked)}
             </button>
           )}
         </div>
@@ -1260,10 +1261,11 @@ export function useSitePaneScene(
     return c && c.length === 3 ? [c[0]!, c[1]!, c[2]!] : null;
   }, [site]);
 
-  // PANE 2's CAP-TIGHT BAND (§10-AE.2): derived from the served catalog, display
-  // only — the crop, the frame and the caption all read this ONE number so the
-  // pane can never claim a band it is not drawing.
-  const scanRadiusMm = scanPaneRadiusMm(detail);
+  // PANE 2's CAP-TIGHT BAND (§10-AE.2, keyed to the DECLARED cap since the client's
+  // 2026-08-04 second tightening): display only — the crop, the frame and the
+  // caption all read this ONE number so the pane can never claim a band it is not
+  // drawing.
+  const scanRadiusMm = scanPaneRadiusMm(detail, site?.declared_variant ?? null);
 
   const scanCrop = useMemo(() => {
     if (scanPositions === null || siteCenter === null) return null;

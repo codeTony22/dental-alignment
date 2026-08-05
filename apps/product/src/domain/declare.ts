@@ -360,31 +360,47 @@ export function shouldAutoPreview(args: {
 /** The standing display band (§10-K; packages/viewer meshCrop's own constant,
  * restated here as the fallback + ceiling so this module stays viewer-free). */
 const STANDING_BAND_MM = 11;
-const SCAN_PANE_MARGIN_MM = 3;
-const SCAN_PANE_FLOOR_MM = 6;
+// 1.5mm since the client's 2026-08-04 second tightening ("we are cropping a lot of
+// the gum rather than just working with the scanned cap") — was 3mm at §10-AE.2.
+const SCAN_PANE_MARGIN_MM = 1.5;
+const SCAN_PANE_FLOOR_MM = 5;
 
 /**
- * PANE 2's DISPLAY RADIUS (§10-AE.2, client: "just the healing cap and maybe a
- * little more"). Derived from the SERVED catalog — the largest rim diameter's
- * radius plus a 3 mm margin of surrounding anatomy — never below a workable 6 mm,
- * never wider than the standing 11 mm band, and exactly that band when the catalog
- * serves no dimensions (an honest fallback, not a guess). DISPLAY-ONLY: §10-I.3's
- * rule stands — no client bound ever reaches the aligner; a tighter pane improves
- * alignments only through the operator's mark placement.
+ * PANE 2's DISPLAY RADIUS (§10-AE.2, tightened twice on the client's own asks —
+ * "just the healing cap and maybe a little more", then 2026-08-04 "we are cropping
+ * a lot of the gum rather than just working with the scanned cap").
+ *
+ * Keyed to the DECLARED variant's own rim when the active site has one — the pane
+ * shows THIS cap, not the largest cap the catalog could serve — falling back to
+ * the served catalog's largest rim while nothing is declared (an honest bound, not
+ * a guess), and to the standing band when the catalog serves no dimensions at all.
+ * Margin 1.5 mm of surrounding anatomy; never below a workable 5 mm; never wider
+ * than the standing 11 mm band. DISPLAY-ONLY: §10-I.3's rule stands — no client
+ * bound ever reaches the aligner; a tighter pane improves alignments only through
+ * the operator's mark placement.
  */
-export function scanPaneRadiusMm(detail: CaseSessionDetail): number {
+export function scanPaneRadiusMm(
+  detail: CaseSessionDetail,
+  declaredVariant: string | null = null,
+): number {
   const diameters: number[] = [];
+  let declaredDia: number | null = null;
   for (const group of declarableGroups(detail)) {
     for (const row of group.variants ?? []) {
-      const dia = (row as Record<string, unknown>)["rim_diameter_mm"];
-      if (typeof dia === "number" && Number.isFinite(dia)) diameters.push(dia);
+      const record = row as Record<string, unknown>;
+      const dia = record["rim_diameter_mm"];
+      if (typeof dia !== "number" || !Number.isFinite(dia)) continue;
+      diameters.push(dia);
+      if (declaredVariant !== null && record["variant"] === declaredVariant) {
+        declaredDia = dia;
+      }
     }
   }
   if (diameters.length === 0) return STANDING_BAND_MM;
   // one decimal: the caption prints this number, and "within 7.085 mm" would wear
-  // a precision the 3 mm margin does not have
-  const derived =
-    Math.round((Math.max(...diameters) / 2 + SCAN_PANE_MARGIN_MM) * 10) / 10;
+  // a precision a 1.5 mm margin does not have
+  const dia = declaredDia ?? Math.max(...diameters);
+  const derived = Math.round((dia / 2 + SCAN_PANE_MARGIN_MM) * 10) / 10;
   return Math.min(STANDING_BAND_MM, Math.max(SCAN_PANE_FLOOR_MM, derived));
 }
 
@@ -832,11 +848,28 @@ export function attestationSentence(site: SiteView | null): string {
   );
 }
 
-/** The attestation button's label — an act's weight, not a checkbox's. */
-export function attestationAction(site: SiteView | null): string {
-  return site !== null && site.status === "ready"
-    ? "Undo this confirmation"
-    : "Confirm this site";
+/** The attestation button's label — an act's weight, not a checkbox's, and since
+ * the client's 2026-08-04 ruling ("we should have Align or Run Alignment") it
+ * NAMES THE RUN when this confirm is what releases it. Honesty bounds the words:
+ * the run auto-fires only when every site is ready AND the choices are complete,
+ * so on the last unconfirmed site of a run-ready case the button says "run the
+ * alignment", and otherwise it says how many sites stand before it — a per-site
+ * "Run Alignment" on a case that would run nothing is a promise the flow cannot
+ * keep. */
+export function attestationAction(
+  site: SiteView | null,
+  run: { readonly othersUnready: number; readonly choicesComplete: boolean } = {
+    othersUnready: 0,
+    choicesComplete: true,
+  },
+): string {
+  if (site !== null && site.status === "ready") return "Undo this confirmation";
+  if (!run.choicesComplete) return "Confirm this site";
+  if (run.othersUnready === 0) return "Confirm — run the alignment";
+  return (
+    `Confirm — ${run.othersUnready} site${run.othersUnready === 1 ? "" : "s"} ` +
+    "left before the alignment runs"
+  );
 }
 
 /** One line of Declare's move-forward summary: a site and what its tick stands on. */

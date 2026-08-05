@@ -553,12 +553,44 @@ describe("the attestation's sentence — what is actually being attested", () =>
   });
 
   it("the act's label says which way the act goes", () => {
-    expect(attestationAction(siteView({ status: "previewed" }))).toBe(
-      "Confirm this site",
-    );
     expect(attestationAction(siteView({ status: "ready" }))).toBe(
       "Undo this confirmation",
     );
+  });
+
+  it("the last confirm of a run-ready case NAMES THE RUN (client 2026-08-04)", () => {
+    // "we should have Align or Run Alignment" — honest exactly where the
+    // auto-fire makes it true: every other site ready, choices complete
+    expect(
+      attestationAction(siteView({ status: "previewed" }), {
+        othersUnready: 0,
+        choicesComplete: true,
+      }),
+    ).toBe("Confirm — run the alignment");
+  });
+
+  it("with sites still unconfirmed, the label counts them instead of promising a run", () => {
+    expect(
+      attestationAction(siteView({ status: "previewed" }), {
+        othersUnready: 2,
+        choicesComplete: true,
+      }),
+    ).toBe("Confirm — 2 sites left before the alignment runs");
+    expect(
+      attestationAction(siteView({ status: "previewed" }), {
+        othersUnready: 1,
+        choicesComplete: true,
+      }),
+    ).toBe("Confirm — 1 site left before the alignment runs");
+  });
+
+  it("incomplete choices keep the plain confirm — the run is not imminent", () => {
+    expect(
+      attestationAction(siteView({ status: "previewed" }), {
+        othersUnready: 0,
+        choicesComplete: false,
+      }),
+    ).toBe("Confirm this site");
   });
 });
 
@@ -1346,41 +1378,54 @@ describe("seatedReadWanted — the panes' fallback to the shipped fit", () => {
  * DISPLAY-ONLY — §10-I.3: no client bound ever reaches the aligner.
  */
 describe("scanPaneRadiusMm — the cap-tight display band", () => {
-  it("derives from the largest served rim diameter plus the margin", () => {
-    const detail = caseSessionDetail({
-      catalog: {
-        groups: [{
-          model: "conical-4x4",
-          variants: [
-            { id: "5020", label: "5020", rim_diameter_mm: 6.2, height_mm: 3.4 },
-            { id: "7030", label: "7030", rim_diameter_mm: 8.2, height_mm: 5.4 },
-          ],
-        }],
-        constructions: [],
-      },
-    });
-    expect(scanPaneRadiusMm(detail)).toBeCloseTo(7.1, 5);
+  const twoVariants = caseSessionDetail({
+    catalog: {
+      groups: [{
+        model: "conical-4x4",
+        variants: [
+          { id: "5020", variant: "5020", label: "5020",
+            rim_diameter_mm: 6.2, height_mm: 3.4 },
+          { id: "7030", variant: "7030", label: "7030",
+            rim_diameter_mm: 8.2, height_mm: 5.4 },
+        ],
+      }],
+      constructions: [],
+    },
+  });
+
+  it("keys to the DECLARED cap's own rim (client 2026-08-04, second tightening)", () => {
+    // 6.2/2 + 1.5 = 4.6 → floor 5: the pane shows THIS cap, not the largest
+    // cap the catalog could serve
+    expect(scanPaneRadiusMm(twoVariants, "5020")).toBe(5);
+    expect(scanPaneRadiusMm(twoVariants, "7030")).toBeCloseTo(5.6, 5);
+  });
+
+  it("bounds by the largest served rim while nothing is declared", () => {
+    // 8.2/2 + 1.5 = 5.6 — an honest bound, never a guess at the declaration
+    expect(scanPaneRadiusMm(twoVariants)).toBeCloseTo(5.6, 5);
+    // a declared variant the catalog does not carry falls back the same way
+    expect(scanPaneRadiusMm(twoVariants, "9999")).toBeCloseTo(5.6, 5);
   });
 
   it("falls back to the standing band when the catalog serves no dimensions", () => {
     expect(scanPaneRadiusMm(caseSessionDetail())).toBe(11);
   });
 
-  it("never narrows below 6 mm and never widens past the standing band", () => {
+  it("never narrows below 5 mm and never widens past the standing band", () => {
     const tiny = caseSessionDetail({
       catalog: {
         groups: [{ model: "conical-4x4",
-                   variants: [{ id: "x", label: "x", rim_diameter_mm: 3.0,
-                                height_mm: 2.0 }] }],
+                   variants: [{ id: "x", variant: "x", label: "x",
+                                rim_diameter_mm: 3.0, height_mm: 2.0 }] }],
         constructions: [],
       },
     });
-    expect(scanPaneRadiusMm(tiny)).toBe(6);
+    expect(scanPaneRadiusMm(tiny)).toBe(5);
     const huge = caseSessionDetail({
       catalog: {
         groups: [{ model: "conical-4x4",
-                   variants: [{ id: "x", label: "x", rim_diameter_mm: 30.0,
-                                height_mm: 9.0 }] }],
+                   variants: [{ id: "x", variant: "x", label: "x",
+                                rim_diameter_mm: 30.0, height_mm: 9.0 }] }],
         constructions: [],
       },
     });

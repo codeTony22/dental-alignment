@@ -59,6 +59,7 @@ import {
   type ViewPresetId,
   type WorkspaceStat,
 } from "../domain/declare";
+import { PANES_OPEN_LINKED, paneLinkLabel } from "../domain/workspace";
 import { canZoom, clampZoomLevel } from "viewer";
 import { captureChipLabel } from "../domain/intake";
 import { DeclarePanes } from "./DeclarePanes";
@@ -516,7 +517,7 @@ export function WorkspaceToolbar({
              effect the moment three panes are back on screen. */
           title="Rotate all three panels together (same angles and zoom, each around its own content)"
         >
-          {linked ? "⛓ linked" : "⛓ link"}
+          {paneLinkLabel(linked)}
         </button>
       )}
       <span data-role="alignment-strip" className="workspace-toolbar__metrics">
@@ -1006,8 +1007,9 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
      protects are, and `canZoom` stops the button before the counter runs away. */
   const [zoomLevel, setZoomLevel] = useState(0);
   /* THE LINK STATE, same home as the zoom for the same reason: the toolbar's toggle
-     and the panes' OrbitLinkGroup both read one value. */
-  const [linked, setLinked] = useState(false);
+     and the panes' OrbitLinkGroup both read one value. Opens LINKED — the shared
+     policy (domain/workspace, client 2026-08-04). */
+  const [linked, setLinked] = useState(PANES_OPEN_LINKED);
   const handleToggleLinked = useCallback(() => setLinked((now) => !now), []);
   const handleZoom = useCallback((direction: 1 | -1) => {
     /* CLAMPED AT THE COUNTER, not only at the camera: an unbounded counter accepts

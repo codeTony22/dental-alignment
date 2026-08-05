@@ -123,6 +123,14 @@ export interface DeclarePanesViewProps {
   readonly onResetView?: ((pane: PaneId) => void) | null;
   readonly scaleId?: DeviationScaleId;
   readonly onSelectScale?: (id: DeviationScaleId) => void;
+  /** What stands between THIS confirm and the run (client 2026-08-04: the button
+   * names the alignment where confirming is what releases it). The default mirrors
+   * attestationAction's own — run-ready — so static callers read the strongest
+   * honest label. */
+  readonly attestRun?: {
+    readonly othersUnready: number;
+    readonly choicesComplete: boolean;
+  };
 }
 
 /** Declare's whole pane surface: the shared three panes, with the attestation bar as
@@ -157,6 +165,7 @@ export function DeclarePanesView({
   onResetView = null,
   scaleId = "signed",
   onSelectScale,
+  attestRun = { othersUnready: 0, choicesComplete: true },
 }: DeclarePanesViewProps) {
   return (
     <SitePanesView
@@ -253,7 +262,7 @@ export function DeclarePanesView({
               title={tick.reason ?? attestationSentence(site)}
               onClick={() => onToggleReview(!tick.ticked)}
             >
-              {attestationAction(site)}
+              {attestationAction(site, attestRun)}
             </button>
           </div>
         </div>
@@ -497,6 +506,12 @@ export function DeclarePanes({
       seatedPhase={wantSeated ? (seatedSlot?.phase ?? "idle") : "idle"}
       seatedError={wantSeated ? (seatedSlot?.error ?? null) : null}
       tick={reviewTick(site)}
+      attestRun={{
+        othersUnready: detail.sites.filter(
+          (s) => s.status !== "ready" && s.tooth !== site?.tooth,
+        ).length,
+        choicesComplete: detail.choices.complete === true,
+      }}
       reviewSaving={reviewSaving}
       reviewError={reviewError}
       onToggleReview={handleToggleReview}

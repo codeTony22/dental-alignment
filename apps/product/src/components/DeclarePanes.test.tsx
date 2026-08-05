@@ -178,9 +178,9 @@ describe("the pane chrome the demo's same surface carries (parity fix, ledger ro
   it("the toolbar offers the link-orbits toggle, honest about its state", () => {
     const off = view({ linked: false, onToggleLinked: () => undefined });
     expect(off).toContain("verify-panels__toolbar");
-    expect(off).toMatch(/aria-pressed="false"[^>]*>[^<]*link views/);
+    expect(off).toMatch(/aria-pressed="false"[^>]*>[^<]*link panes/);
     const on = view({ linked: true, onToggleLinked: () => undefined });
-    expect(on).toMatch(/aria-pressed="true"[^>]*>[^<]*views linked/);
+    expect(on).toMatch(/aria-pressed="true"[^>]*>[^<]*rotating together/);
     expect(on).toContain("button--active");
   });
 
@@ -204,7 +204,7 @@ describe("the pane chrome the demo's same surface carries (parity fix, ledger ro
     expect(html).not.toContain('data-role="pane-scan"');
     expect(html).toContain("show all three");
     // linking needs more than one panel on screen — the toggle goes down, not away
-    expect(html).toMatch(/disabled[^>]*>[^<]*link views/);
+    expect(html).toMatch(/disabled[^>]*>[^<]*link panes/);
   });
 
   it("the union pane offers both scales; signed is the default and says so", () => {
@@ -241,7 +241,9 @@ describe("the attestation — a button-weight act over the panes it attests (AM-
     // better confirmed" — the bare checkbox is gone; the act states its subject
     const html = view();
     expect(html).toMatch(/data-role="review-tick"(?![^>]*disabled)/);
-    expect(html).toContain("Confirm this site");
+    // the static default is run-ready, so the act NAMES THE RUN (client
+    // 2026-08-04: "we should have Align or Run Alignment")
+    expect(html).toContain("Confirm — run the alignment");
     expect(html).toContain('data-role="attestation-sentence"');
     expect(html).toContain("tooth 19");
     expect(html).toContain("the declared cap 5020");
