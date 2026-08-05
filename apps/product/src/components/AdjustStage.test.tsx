@@ -1228,6 +1228,21 @@ describe("the ghost note (§10-AI) — the pose's claim, captioned honestly", ()
       'data-role="ghost-note"',
     );
   });
+
+  it("rides AUTO-MARK's body too — where matching a proposal is the whole job", () => {
+    const landmark: LandmarkView = {
+      id: "t1", kind: "trench", point: [1, 0, 1],
+      lever_arm_mm: 2.1, azimuth_deg: 40,
+    };
+    const html = view({
+      tool: "auto-mark",
+      autoMarkPhase: "ready",
+      autoMarkLandmarks: [landmark],
+      drafts: autoMarkDrafts([landmark]),
+      ghostsActive: true,
+    });
+    expect(html).toContain('data-role="ghost-note"');
+  });
 });
 
 describe("pairMarkers — every placed point is DRAWN (client 2026-08-04, twice)", () => {

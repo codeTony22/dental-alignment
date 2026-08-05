@@ -1234,6 +1234,18 @@ export function AdjustStageView({
                             {pairPrompt(openDraft)}
                           </p>
                         )}
+                        {ghostsActive && (
+                          /* the same honest caption fit-by-points carries — the
+                             ghost is the pose's CLAIM, and auto-mark is where it
+                             earns its keep (matching proposed landmarks was the
+                             part the operator could not see) */
+                          <p data-role="ghost-note" className="panel__hint">
+                            The faint amber marker shows where the current pose
+                            expects this point on the scan — click where you
+                            actually see the feature; the difference is the
+                            correction the fit measures.
+                          </p>
+                        )}
                       </>
                     )}
                     <PairsList
