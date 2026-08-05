@@ -62,6 +62,19 @@ export function resumeTarget(row: WorklistRow): string {
   return `/case/${row.id}/${furthestStage(factsFromWorklistRow(row))}`;
 }
 
+/** Where a landed UPLOAD goes (client 2026-08-04: "clicking on upload file should
+ * route you directly to the page of the case /case/").
+ *
+ * NO STAGE SEGMENT, deliberately, and it is not laziness: `resumeTarget` can name
+ * one because a worklist ROW carries the served facts that decide it. All an upload
+ * hands back is a case id, so naming a stage here would be this app GUESSING one —
+ * and `/case/:id` is already the route whose own guard resolves the furthest stage
+ * from the case's served facts (CaseShell's `resolveStagePath`). The id is encoded
+ * because it is a folder name the operator typed, not a slug this app minted. */
+export function uploadedCaseTarget(caseId: string): string {
+  return `/case/${encodeURIComponent(caseId)}`;
+}
+
 export function rollupLabel(sites: SiteRollup): string {
   return `${sites.declared} declared / ${sites.ready} ready / ${sites.flagged} flagged`;
 }

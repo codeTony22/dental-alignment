@@ -346,7 +346,21 @@ describe("fit by points", () => {
     const html = view({ tool: "fit-by-points" });
     expect(html).toContain('data-role="start-point-pair"');
     expect(html).toContain('data-role="start-span-pair"');
-    expect(html).toContain("Add a SPAN pair (both ends)");
+    expect(html).toContain("Span the SCAN");
+  });
+
+  it("every label says WHICH HALF its clicks land on (client 2026-08-04)", () => {
+    // the report: "add a span in both ends doesnt mark the library with 2 points
+    // (just one)". Correct behaviour — "both ends" meant both ends of the feature
+    // on the SCAN — but no label said which half it spanned, so the operator chose
+    // the wrong door. The counts must match `newPairDraft`'s own slots.
+    const html = view({ tool: "fit-by-points" });
+    expect(html).toContain("Point pair · 1 on the part, 1 on the scan");
+    expect(html).toContain("Span the SCAN · 1 on the part, 2 on the scan");
+    expect(html).toContain("Span BOTH · 2 on the part, 2 on the scan");
+    // the ambiguous words are gone, not merely supplemented
+    expect(html).not.toContain("(both ends)");
+    expect(html).not.toContain("(both halves)");
   });
 
   it("prompts for exactly the next click", () => {

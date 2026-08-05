@@ -260,14 +260,25 @@ describe("the scan-arrival panel", () => {
  * is the server's rule mirrored — the wire still refuses for itself.
  */
 describe("the scan drop zone", () => {
-  it("renders between the cards and the procedure note, offering the browse door", () => {
+  it("renders at the TOP — above the cards (client 2026-08-04)", () => {
+    // REVERSED from "below the work, not above it" on the client's own ruling.
+    // The act that STARTS a case now leads the page; the procedure note keeps
+    // the foot, because reading it is not what the morning opens this page for.
     const html = screenHtml({ kind: "ok", data: [worklistRow()] });
     const zoneAt = html.indexOf('data-role="scan-upload"');
     expect(zoneAt).toBeGreaterThanOrEqual(0);
+    expect(zoneAt).toBeLessThan(html.indexOf('data-role="worklist-row"'));
     expect(zoneAt).toBeLessThan(html.indexOf('data-role="scan-arrival"'));
     expect(html).toContain("Drop a scan file");
     expect(html).toContain("browse files");
     expect(html).toContain("one folder per case");
+  });
+
+  it("leads the page even with no cases at all", () => {
+    const html = screenHtml({ kind: "ok", data: [] });
+    expect(html.indexOf('data-role="scan-upload"')).toBeLessThan(
+      html.indexOf('data-role="worklist-empty"'),
+    );
   });
 
   it("stays out of the way while loading and when the BFF is unreachable", () => {
@@ -333,5 +344,16 @@ describe("the scan drop zone", () => {
     );
     expect(html).toContain('data-role="upload-done"');
     expect(html).toContain("Case costa-4471");
+  });
+
+  it("done: points nowhere on the page — the upload OPENS the case now", () => {
+    // the words said "on the worklist above" while the zone sat below it; with
+    // the zone leading the page and the upload routing into the case, any
+    // directional claim here is a claim about a page the operator has left
+    const html = renderToStaticMarkup(
+      <ScanDropZoneView phase={{ kind: "done", caseId: "costa-4471" }} />,
+    );
+    expect(html).not.toContain("above");
+    expect(html).not.toContain("below");
   });
 });

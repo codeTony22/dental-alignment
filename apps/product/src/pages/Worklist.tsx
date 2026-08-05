@@ -12,7 +12,7 @@
  * only NAME the order domain/worklist already computed — no re-sorting here.
  */
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { fetchWorklist, uploadScan, type FetchState } from "../api/client";
 import { ErrorBanner } from "../components/ErrorBanner";
 import {
@@ -26,6 +26,7 @@ import {
   SCAN_UPLOAD_NOTE,
   siteCountChip,
   suggestedUploadFolder,
+  uploadedCaseTarget,
   uploadNameUsable,
   teethLine,
   worklistBand,
@@ -206,8 +207,11 @@ export function ScanDropZoneView({
           </span>
         </span>
         {phase.kind === "done" && (
+          /* No direction: since the upload OPENS the case (client 2026-08-04) the
+             operator is normally already on it when this would render, and the
+             zone no longer sits under the list it used to point at. */
           <span data-role="upload-done" className="scan-upload__done">
-            Case {phase.caseId} is on the worklist above.
+            Case {phase.caseId} landed.
           </span>
         )}
         <button
@@ -407,6 +411,12 @@ export function WorklistScreen({
         Open a case from the worklist below, or drop a new scan. Detection proposes
         a variant per cap site; you declare the truth in Alignment.
       </p>
+      {/* THE ACT THAT STARTS A CASE LEADS THE PAGE (client 2026-08-04: "'drop a
+          scan file' should be at the top of the page"). This REVERSES the earlier
+          "below the work, not above it" placement on the client's own ruling; the
+          procedure note keeps the foot, because reading it is still not what the
+          morning opens this page for. */}
+      <ScanDropZone onUploaded={onUploaded} />
       {entries.length === 0 ? (
         <p data-role="worklist-empty" className="panel__copy">
           No cases yet — the case service found nothing to work on. New scans appear
@@ -437,10 +447,6 @@ export function WorklistScreen({
           </section>
         ))
       )}
-      {/* Below the work, not above it: the 20-scan morning opens this page to pick a
-          case, not to read a procedure. The drop zone rides between them — the comp's
-          position — and the procedure note now describes BOTH routes in. */}
-      <ScanDropZone onUploaded={onUploaded} />
       <ScanArrival />
     </section>
   );
@@ -450,9 +456,7 @@ export function WorklistPage() {
   const [state, setState] = useState<FetchState<readonly unknown[]>>({
     kind: "loading",
   });
-  // bumped by an upload: discovery is uncached server-side, so a refetch is the
-  // whole story — the new case appears through the same read as everything else
-  const [generation, setGeneration] = useState(0);
+  const navigate = useNavigate();
 
   useEffect(() => {
     let cancelled = false;
@@ -462,13 +466,17 @@ export function WorklistPage() {
     return () => {
       cancelled = true;
     };
-  }, [generation]);
+  }, []);
 
   return (
     <div className="page">
+      {/* AN UPLOAD OPENS ITS CASE (client 2026-08-04). This replaces a refetch of
+          the worklist the operator is leaving: coming back re-mounts this page and
+          re-reads it, and discovery is uncached server-side, so nothing needs to be
+          kept warm. The stage is the case shell's own to resolve. */}
       <WorklistScreen
         state={state}
-        onUploaded={() => setGeneration((current) => current + 1)}
+        onUploaded={(id) => navigate(uploadedCaseTarget(id))}
       />
     </div>
   );

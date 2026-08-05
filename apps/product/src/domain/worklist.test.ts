@@ -19,6 +19,7 @@ import {
   SCAN_ARRIVAL,
   SCAN_UPLOAD_NOTE,
   suggestedUploadFolder,
+  uploadedCaseTarget,
   uploadNameUsable,
   worklistBand,
   type WorklistEntry,
@@ -135,6 +136,22 @@ describe("resumeTarget — the row opens at the session's furthest stage", () =>
   it("...and resumes at Delivery once the choices are complete", () => {
     expect(resumeTarget({ ...flagged, choices_complete: true }))
       .toBe("/case/case-flagged/deliver");
+  });
+});
+
+/** WHERE AN UPLOAD LANDS (client 2026-08-04: "clicking on upload file should route
+ * you directly to the page of the case /case/"). */
+describe("uploadedCaseTarget", () => {
+  it("opens the case itself, naming no stage", () => {
+    expect(uploadedCaseTarget("costa-4471")).toBe("/case/costa-4471");
+  });
+
+  it("carries an id with characters a URL would otherwise eat", () => {
+    // the folder name IS the case id and the BFF's name rule allows dots — a
+    // raw interpolation would hand the router something it reads differently
+    expect(uploadedCaseTarget("doctor smith/x")).toBe(
+      "/case/doctor%20smith%2Fx",
+    );
   });
 });
 

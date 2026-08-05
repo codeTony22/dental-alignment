@@ -34,6 +34,7 @@ import {
   EMPTY_MARK,
   markOnArmMark,
   markOnArmPick,
+  openingSiteFor,
   pickSiteAt,
   remarkRetiresSomething,
   remarkWords,
@@ -903,6 +904,19 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
   const [activeTooth, setActiveTooth] = useState<number | null>(null);
   const [pickArmed, setPickArmed] = useState(false);
   const [pickMiss, setPickMiss] = useState<string | null>(null);
+
+  /* THE STAGE OPENS ON A SITE (client 2026-08-04). Until now it opened on none, and
+     since the re-mark control renders only for the ACTIVE site, the act was
+     unreachable without first clicking a row nothing asked the operator to click —
+     on a single-site case the page even said the site was "already the active one".
+     Adjust's queue has always opened on its first flagged site for the same reason.
+     Only the OPENING is defaulted: once a tooth is chosen (or cleared by a pick),
+     this leaves it alone. */
+  useEffect(() => {
+    if (activeTooth !== null) return;
+    const opening = openingSiteFor(detail.sites);
+    if (opening !== null) setActiveTooth(opening);
+  }, [activeTooth, detail.sites]);
 
   const handleSelectSite = useCallback((tooth: number) => {
     setActiveTooth(tooth);

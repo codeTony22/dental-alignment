@@ -20,6 +20,7 @@ import {
   shouldAutoDetect,
   siteCentre,
   detectorDisagreement,
+  openingSiteFor,
   sitePickerOffered,
   siteEvidence,
   type MarkDraft,
@@ -500,6 +501,34 @@ describe("detectorDisagreement — the centre on screen vs the one the detector 
       29,
     );
     expect(found!.mm).toBeCloseTo(1.74, 2);
+  });
+});
+
+/**
+ * WHICH SITE THE STAGE OPENS ON (client 2026-08-04, reported as "Intake needs the
+ * ability to re-center the cap that was selected … missing feature"). The act was
+ * built; it renders only for the ACTIVE site, and the stage opened with none —
+ * so the page offered no way in, and told a single-site case its site was "already
+ * the active one" while its only row read aria-pressed="false".
+ */
+describe("openingSiteFor — the stage opens on a site, not on nothing", () => {
+  const site = (tooth: number, centre: number[] | null) =>
+    siteView({ tooth, center: centre });
+
+  it("opens on the only site there is — where the re-mark control lives", () => {
+    expect(openingSiteFor([site(29, [1, 2, 3])])).toBe(29);
+  });
+
+  it("opens on the FIRST site carrying a centre, skipping one that has none", () => {
+    // selecting frames the scan on the site; a centreless site cannot be framed,
+    // so opening on it would put the stage in a state its own words call impossible
+    expect(openingSiteFor([site(4, null), site(13, [1, 2, 3]), site(19, [4, 5, 6])]))
+      .toBe(13);
+  });
+
+  it("opens on nothing when nothing has a centre — honest over a dead selection", () => {
+    expect(openingSiteFor([site(4, null), site(13, null)])).toBeNull();
+    expect(openingSiteFor([])).toBeNull();
   });
 });
 

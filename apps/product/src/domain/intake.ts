@@ -278,6 +278,26 @@ export function detectorDisagreement(
  * site without a usable centre, so a site with no centre is not a candidate however
  * it renders in the list.
  */
+/**
+ * WHICH SITE INTAKE OPENS ON (client 2026-08-04: "Intake needs the ability to
+ * re-center the cap that was selected" — reported as a missing feature).
+ *
+ * It was not missing: `RemarkSiteControl` renders only for the ACTIVE site, and the
+ * stage opened with NO site active, so the act existed and nothing on the page
+ * offered it. On a single-site case the page then said the site "is already the
+ * active one" while `aria-pressed` read false on its only row — the copy describing
+ * a state the stage had not entered.
+ *
+ * So the stage opens on a site, the same doctrine Adjust's queue uses (it opens on
+ * the first flagged site — the stage's reason for existing). The first site WITH A
+ * CENTRE, because framing is what selecting does and a centreless site cannot be
+ * framed; null when no site has one, which is honest rather than a selection that
+ * points nowhere.
+ */
+export function openingSiteFor(sites: readonly SiteView[]): number | null {
+  return sites.find((site) => siteCentre(site) !== null)?.tooth ?? null;
+}
+
 export function sitePickerOffered(
   sites: readonly SiteView[],
 ): { readonly offered: boolean; readonly why: string | null } {

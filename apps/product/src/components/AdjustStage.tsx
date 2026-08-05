@@ -1057,7 +1057,16 @@ export function AdjustStageView({
                         disabled={busy || openDraft !== null}
                         onClick={() => onStartPair(false)}
                       >
-                        Add a point pair
+                        {/* EACH LABEL SAYS WHERE ITS CLICKS GO (client 2026-08-04:
+                            "add a span in both ends doesnt mark the library with 2
+                            points (just one)"). It does not — "both ends" meant both
+                            ends of the feature ON THE SCAN, and the button that takes
+                            two library clicks is the third one. The behaviour was
+                            right and the labels did not say which half they spanned,
+                            so the operator picked the wrong door and read the result
+                            as a defect. The counts are the server's own shape
+                            (`newPairDraft`: a library span forces the scan span). */}
+                        Point pair · 1 on the part, 1 on the scan
                       </button>
                       <button
                         type="button"
@@ -1071,7 +1080,7 @@ export function AdjustStageView({
                         }
                         onClick={() => onStartPair(true)}
                       >
-                        Add a SPAN pair (both ends)
+                        Span the SCAN · 1 on the part, 2 on the scan
                       </button>
                       <button
                         type="button"
@@ -1086,7 +1095,7 @@ export function AdjustStageView({
                         }
                         onClick={() => onStartPair(true, true)}
                       >
-                        Add a LIBRARY SPAN pair (both halves)
+                        Span BOTH · 2 on the part, 2 on the scan
                       </button>
                     </div>
                     <PairsList
