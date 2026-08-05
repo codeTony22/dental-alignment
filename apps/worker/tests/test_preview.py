@@ -232,18 +232,12 @@ class TestMeasuredRimCentreAgreesWithAdjust:
         pose_world = np.asarray(ctx.record["pose_matrix"], float)
         adjust_side = canon_point_to_world(clicks.rim_centre_xy, sig.ztop, pose_world)
 
-        # the PREVIEW path: no SiteContext at all — rebuilt from the scan and the
-        # pose alone, exactly what a pre-run preview has
-        preview_side = measured_rim_centre_world(
-            ctx.scan_points, _scan_normals_for(case), pose_world, ctx.template)
+        # the PREVIEW path: no SiteContext at all — the pose and template alone,
+        # exactly what a pre-run preview has. Since §10-AJ both paths pivot on
+        # the TEMPLATE's rim centre (one centre for every angular read), so the
+        # agreement this class exists to hold is now equality by construction —
+        # kept as the pin that STAYS true if either side ever grows a second
+        # pivot again.
+        preview_side = measured_rim_centre_world(pose_world, ctx.template)
 
         assert preview_side == pytest.approx(adjust_side.tolist(), abs=1e-6)
-
-
-def _scan_normals_for(case: CaseRecord) -> np.ndarray:
-    """The same normals ``load_site`` reads (``_scan_mesh(case.scan).vertex_normals``)
-    — a tiny local import to avoid reaching into ``application.detection``'s private
-    ``_scan_mesh`` from the test module's top level for what is otherwise a one-line
-    need."""
-    from case_prep.application.detection import _scan_mesh
-    return np.asarray(_scan_mesh(case.scan).vertex_normals, float)

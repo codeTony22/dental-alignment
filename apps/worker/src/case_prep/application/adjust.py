@@ -718,13 +718,24 @@ class SiteClicks:
 
 
 def site_clicks(ctx: SiteContext, sig=None) -> SiteClicks:
-    sig = sig if sig is not None else template_signature(ctx.template)
-    t_now = ctx.pose_local
-    L = ctx.local_points
-    crop = L[np.linalg.norm(L[:, :2] - t_now[:2, 3], axis=1) < 8.0]
-    canon = (crop - t_now[:3, 3]) @ t_now[:3, :3]
-    return SiteClicks(context=ctx, rim_centre_xy=scan_rim_centre(canon, sig.ztop,
-                                                                sig.rmax))
+    """ONE PIVOT FOR EVERY ANGULAR READ (the −17.1° ghost probe, 2026-08-05).
+
+    The scan side used to measure click azimuths about the scan's MEASURED rim
+    centre while the part side measures feature azimuths about the TEMPLATE's own
+    rim centre — and the applied rotation pivots on the template frame. Two pivots
+    make the delta between a click and the feature it names carry pure PARALLAX,
+    scaled by (centre offset / lever arm): on 276794487 t3, with the measured
+    centre ~0.5mm off at a 1.64mm lever, pairing a landmark with its own projected
+    position asked for −17.1° when the honest answer is zero — and the operator's
+    one-point pair rotated +176° ("wrong alignment, even with the one point").
+    A click's azimuth is now measured about the SAME centre the feature azimuths,
+    the signature and the rotation are expressed in. The lever guards inherit the
+    same pivot, which also makes their own words true — "a mark names the part
+    AXIS" is now literally the distance from the part's axis convention. The
+    measured scan rim centre remains a MEASUREMENT (qc/clock instruments read it);
+    it is no longer an angle pivot."""
+    return SiteClicks(context=ctx,
+                      rim_centre_xy=template_rim_centre(ctx.template))
 
 
 # --- adoption: re-emit, re-read, record ---------------------------------------------------

@@ -1365,3 +1365,58 @@ class TestTheLandmarksTheSoftwareProposes:
 
     def test_z_rides_through_untouched(self):
         assert landmark_point(self._feature("f", 12.0, 2.0, z=-3.25), (0, 0))[2] == -3.25
+
+
+@warmed_only
+class TestAGhostPairIsANoOp:
+    """THE PIVOT PARALLAX (client 2026-08-05, 276794487 t3: one point pair rotated
+    +176° — 'wrong alignment, even with the one point'). The ghost probe reduced it:
+    pairing a landmark with ITS OWN position under the current pose answered −17.1°
+    when the only honest answer is ~0°, because the scan click's azimuth was
+    measured about the MEASURED scan rim centre while the part feature's azimuth is
+    measured about the TEMPLATE's — two pivots, and the delta between them is pure
+    parallax, scaled by (centre offset / lever arm). One pivot now serves every
+    angular read; this pin is the identity that keeps it that way."""
+
+    def test_pairing_a_landmark_with_its_own_ghost_rotates_nothing(self, tmp_path):
+        import shutil as _shutil
+
+        run_copy = tmp_path / WARMED_RUN.name
+        _shutil.copytree(WARMED_RUN, run_copy)
+        case = next(c for c in discover_cases(REAL) if c.id == WARMED_CASE)
+        rec = json.loads(
+            (run_copy / f"{WARMED_CASE}-{WARMED_TOOTH}-implant.json").read_text())
+        P = np.asarray(rec["pose_matrix"], float)
+        ctx = load_site(case, run_copy, WARMED_TOOTH)
+        lm = clock_landmarks(ctx.template)[0]
+        canonical = np.asarray(lm["point"], float)
+        ghost_world = P[:3, 3] + P[:3, :3] @ canonical
+        try:
+            outcome = align_to_correspondence(case, run_copy, WARMED_TOOTH, [
+                Correspondence(scan_point=[float(v) for v in ghost_world],
+                               part_point=[float(v) for v in canonical])])
+            delta = float(outcome.applied_delta_deg or 0.0)
+        except AlreadyOptimal:
+            delta = 0.0
+        assert abs(delta) < 1.0, (
+            f"a self-consistent pair asked for {delta:.2f}° — the two halves are "
+            f"measuring about different pivots again")
+
+    def test_every_angular_read_shares_the_template_pivot(self, tmp_path):
+        # the DIRECT pin: the scan-side pivot IS the part's own rim centre — the
+        # same centre the feature azimuths, the signature and the applied
+        # rotation are all expressed about. Two pivots means parallax: on
+        # 276794487 t3 (measured centre ~0.5mm off the template's at a 1.64mm
+        # lever) the ghost probe read −17.1° for a pair that asked for nothing.
+        import shutil as _shutil
+
+        from case_prep.application.adjust import site_clicks
+        from case_prep.domain.part_features import template_rim_centre
+
+        run_copy = tmp_path / WARMED_RUN.name
+        _shutil.copytree(WARMED_RUN, run_copy)
+        case = next(c for c in discover_cases(REAL) if c.id == WARMED_CASE)
+        ctx = load_site(case, run_copy, WARMED_TOOTH)
+        clicks = site_clicks(ctx)
+        np.testing.assert_allclose(
+            clicks.rim_centre_xy, template_rim_centre(ctx.template), atol=1e-9)

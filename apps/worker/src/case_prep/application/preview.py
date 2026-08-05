@@ -53,7 +53,7 @@ from case_prep.adapters.qc_render import (DEVIATION_CLAMP_MM, DEVIATION_COLORMAP
                                           site_deviation_stats, vertex_deviation)
 from case_prep.domain.clock_signature import (canon_point_to_world, scan_rim_centre,
                                               template_signature)
-from case_prep.domain.part_features import MIN_LEVER_ARM_MM
+from case_prep.domain.part_features import MIN_LEVER_ARM_MM, template_rim_centre
 from case_prep.pipeline.auto_flow import ConfirmedSite, _crowns_frame, run_auto_case
 from case_prep.pipeline.final_product import DEFAULT_GINGIVAL_OFFSET_MM
 
@@ -173,34 +173,25 @@ def deviation_payload(case_id: str, tooth: int, scan_pts: np.ndarray,
     return payload
 
 
-def measured_rim_centre_world(scan_pts: np.ndarray, scan_normals: np.ndarray,
-                              pose_world: np.ndarray,
+def measured_rim_centre_world(pose_world: np.ndarray,
                               template: trimesh.Trimesh) -> np.ndarray:
-    """THE MEASURED RIM CENTRE ``application.adjust.require_clock_lever`` guards
-    against (plan §10-F), in WORLD coordinates — read directly from a scan and a
-    world pose, because a PRE-RUN preview has no shipped record to build the cached
-    ``SiteContext`` ``adjust.site_clicks`` reads from.
+    """THE CLOCK-REFERENCE PIVOT ``application.adjust.require_clock_lever`` guards
+    against (plan §10-F), in WORLD coordinates — for a PRE-RUN preview that has no
+    shipped record to build the cached ``SiteContext`` ``adjust.site_clicks``
+    reads from.
 
-    Rebuilds the SAME crowns-local frame ``adjust.load_site`` builds
-    (``_crowns_frame`` is deterministic on the scan alone — no RNG, no iteration
-    order to disagree on) and reads the SAME 8mm local-xy crop
-    ``adjust.site_clicks`` selects before calling the one ``scan_rim_centre`` fit
-    both modules use — so a Declare preview and a shipped Adjust read the identical
-    point for the identical scan and pose. Cross-checked against ``adjust``'s own
-    cached-frame path on real fleet data — see test_preview.py; a synthetic-only
-    check could not have caught a frame mismatch that merely looks plausible."""
-    pts = np.asarray(scan_pts, float)
-    frame, origin, _axis = _crowns_frame(pts, scan_normals)
-    local = (pts - origin) @ frame
+    ONE PIVOT (§10-AJ, the −17.1° ghost probe): ``adjust.site_clicks`` now pivots
+    every angular read on the TEMPLATE's own rim centre — the same centre the
+    feature azimuths, the signature and the applied rotation are expressed about —
+    because measuring click azimuths about the scan's MEASURED rim centre carried
+    parallax into every pair delta. This function follows: it is the pivot the
+    lever guards read, and Declare's guard must agree with Adjust's on where a
+    mark sits relative to the bound (the cross-check in test_preview.py holds the
+    two paths identical on real fleet data). The scan's measured rim centre stays
+    a qc/clock MEASUREMENT elsewhere; it is no longer this reference."""
     pose = np.asarray(pose_world, float)
-    pose_local = np.eye(4)
-    pose_local[:3, :3] = frame.T @ pose[:3, :3]
-    pose_local[:3, 3] = frame.T @ (pose[:3, 3] - origin)
     sig = template_signature(template)
-    crop = local[np.linalg.norm(local[:, :2] - pose_local[:2, 3], axis=1) < 8.0]
-    canon = (crop - pose_local[:3, 3]) @ pose_local[:3, :3]
-    c0 = scan_rim_centre(canon, sig.ztop, sig.rmax)
-    return canon_point_to_world(c0, sig.ztop, pose)
+    return canon_point_to_world(template_rim_centre(template), sig.ztop, pose)
 
 
 def preview_site(case: CaseRecord, selection: PreviewSelection, tooth: int) -> dict:
@@ -288,7 +279,7 @@ def preview_site(case: CaseRecord, selection: PreviewSelection, tooth: int) -> d
     # ORIGIN — close to this point but not it (see ``measured_rim_centre_world``).
     payload["clock_reference"] = {
         "rim_centre": [round(float(v), 6) for v in measured_rim_centre_world(
-            scan_pts, np.asarray(scan.vertex_normals, float), pose_world, tmpl)],
+            pose_world, tmpl)],
         "min_lever_mm": MIN_LEVER_ARM_MM,
     }
     # The two numbers the operator judges a seat by, from the SAME row the results

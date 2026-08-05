@@ -1693,3 +1693,38 @@ NEXT, in the survey's own cheapest-diagnostics-first order, all gate-safe:
 3. **SDF dense search** (candidate 3): the likely architectural end-state; its
    scratch prototype belongs in verify-fleet as a report variant before any
    production claim.
+
+**AJ. THE PIVOT PARALLAX — a one-pair rotation of +176° reduced to a two-centre
+bug, fixed at the pivot (2026-08-05; the client: "wrong alignment, even with the
+one point", with screenshots).**
+
+THE REDUCTION, in one experiment: pair a part landmark with ITS OWN GHOST — the
+exact world position the current pose assigns it (the §10-AI ghost math, now an
+instrument). The only honest answer is ~0°; on 276794487 t3 the tool answered
+**−17.1°**. So the operator's +176° was substantially OUR defect, not their click.
+
+THE CAUSE, two pivots: the scan side measured every click azimuth about the scan's
+MEASURED rim centre (`scan_rim_centre`) while the part side measures feature
+azimuths about the TEMPLATE's own rim centre — and the applied rotation pivots on
+the template frame. The delta between a click and the feature it names therefore
+carried pure PARALLAX, scaled by (centre offset / lever arm): ~0.5mm of centre
+offset at a 1.64mm lever is 17°. The healthier the seat, the smaller the error —
+which is why cap7020's mark-trench read sensibly while 276794487 (measured centre
+offset) went wild, and why the defect survived every healthy-case test.
+
+THE FIX: `site_clicks` now pivots on `template_rim_centre` — ONE centre for every
+angular read: click azimuths, feature azimuths, span radiality, the lever guards
+and the applied rotation all share the template convention. The lever guard's own
+words become literally true ("a mark names the part AXIS"). The measured scan rim
+centre remains a MEASUREMENT for the qc/clock instruments; it is no longer an
+angle pivot. Pinned twice: the ghost-identity end-to-end (a self-consistent pair
+rotates nothing) and the pivot equality directly; re-proved on the offending
+case: −17.1° → **+0.0°**.
+
+NOTED WITH IT, separate items:
+- The case under test was declared on a SUPERSEDED part
+  (`superseded-2026-07-13--5030`, the archived shelf). Declaring an archived part
+  is currently a plain click behind the fold — it should at least carry a warning
+  naming why the shelf exists. Open.
+- `make verify-fleet` now also answers from the REPO ROOT (a passthrough
+  Makefile; it was tried from the root and apps/bff first).
