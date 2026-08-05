@@ -1626,21 +1626,24 @@ The disclosure sentence dropped its false provenance claim ("came with the case"
 wrong whenever the shown centre is the operator's re-mark, which siteCentre
 prefers).
 
+AMENDED same-day after variant F was measured (review item 4's ask): the operator's
+centre carried as a rim-less CENTER_MARK — auto_flow's mark branch WITH the
+calibrated `_mean_shift_top` — scores 0.3404/0.5416, LOSING to the bare-click seed
+that ships (E: 0.3053/0.4449); the synthesized pair (C: 0.3114) loses too. The
+measured ranking is E > C > F: the shipped seeding shape is the winner, the
+re-marked-RIM lever is DEMOTED (no measured gain to buy), and the mean-shift
+normalization demonstrably does not help an operator-placed centre on this case.
+
 STILL OPEN in this thread, dependency-ordered:
-1. **The re-marked RIM** — the strongest measured lever left. The bare-centre seed
-   (E, 0.3053) beats the splice, but a coherent re-marked PAIR (C) is the shape the
-   physics wants; the UI's re-mark collects one click and could collect the rim
-   with it. One tool, both marks, one measurement — the pair-integrity rule made
-   constructive.
-2. **The centre-vs-pair guard** — refuse the run when the seeding pair disagrees
-   with the shown centre by more than click noise (the served 0.61mm bound). One
-   restrictive-only guard; today the run proceeds silently.
-3. **The capture gate's rim_arc marginal is the probable ORIGIN of bad seeds**
-   (cap6020: 21-25% of the ring missing on the 12-o'clock side — the direction and
-   size of the 2.24mm offset match). The gate already says "rescan"; the demo
-   script should lean on it harder.
-4. **The standing fleet verification tool** (the automation ask): promote the
+1. **The standing fleet verification tool** (the automation ask): promote the
    centre-experiment-per-case shape (production pipeline + published DEV metric,
    scratch dirs, AM-1-safe) into `apps/worker` as a make target beside `rehearse`,
    so "run the alignments check across all cases" is one command, not an agent.
    The ICP sweep is NOT that tool (its real-data spread exceeds the effect).
+2. **The capture gate's rim_arc marginal is the probable ORIGIN of bad seeds**
+   (cap6020: 21-25% of the ring missing on the 12-o'clock side — the direction and
+   size of the 2.24mm offset match). The gate already says "rescan"; the demo
+   script should lean on it harder.
+3. **The centre-vs-pair guard** — reconsidered post-fix: with the splice gone, the
+   record's pair and centre travel together, so measure whether any fleet record
+   internally disagrees before building a guard for it.

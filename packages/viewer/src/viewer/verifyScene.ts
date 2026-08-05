@@ -39,10 +39,82 @@ const CAMERA_FOV_DEG = 45;
 
 /** The orbit state mirrored between panes: two spherical angles and a distance RELATIVE to each
  *  pane's own framing (so a 6mm part and a 20mm scan region stay equally filled). */
+/**
+ * A camera pose expressed in the pane's OWN FRAMED BASIS (client 2026-08-04:
+ * "does align all the panes in the same view and position of the camera").
+ *
+ * The previous shape mirrored WORLD spherical angles — only the target and the
+ * distance unit were pane-local — so panes whose content lives in different
+ * frames (the library part's canonical +z vs the scan's seated axis) could not
+ * agree by construction: the operator looked down the cap in pane 2 and pane 1
+ * mirrored to 177° off its OWN axis, upside down under a chip saying "rotating
+ * together". Basis-relative mirroring makes the link's claim literal: the same
+ * relative view of each pane's own content, absolutely, on every orbit.
+ */
 export interface VerifyOrbit {
-  readonly phi: number;
-  readonly theta: number;
-  readonly distanceScale: number;
+  /** target→camera offset in the pane's framed basis, in framing-distance units. */
+  readonly offset: readonly [number, number, number];
+  /** camera.up in the same basis. */
+  readonly up: readonly [number, number, number];
+}
+
+/** The pane's framed BASIS — columns right/up/back, back = the target→camera
+ * direction at framing. Pure and exported: the link math must be pinnable in a
+ * node test, because its failure mode (panes drifting apart while claiming to
+ * be linked) is invisible to every markup test. */
+export function basisFromDirectionUp(
+  direction: THREE.Vector3,
+  up: THREE.Vector3,
+): THREE.Matrix3 {
+  const back = direction.clone().normalize();
+  const projected = up.clone().projectOnPlane(back);
+  const upN =
+    projected.lengthSq() > 1e-12
+      ? projected.normalize()
+      : Math.abs(back.z) > 0.9
+        ? new THREE.Vector3(0, 1, 0)
+        : new THREE.Vector3(0, 0, 1).projectOnPlane(back).normalize();
+  const right = new THREE.Vector3().crossVectors(upN, back);
+  return new THREE.Matrix3().set(
+    right.x, upN.x, back.x,
+    right.y, upN.y, back.y,
+    right.z, upN.z, back.z,
+  );
+}
+
+/** This pane's camera pose → the shared basis-relative orbit. */
+export function orbitInBasis(
+  offsetWorld: THREE.Vector3,
+  upWorld: THREE.Vector3,
+  basis: THREE.Matrix3,
+  baseDistance: number,
+): VerifyOrbit {
+  const inverse = basis.clone().transpose(); // orthonormal: transpose = inverse
+  const unit = baseDistance > 0 ? baseDistance : 1;
+  const local = offsetWorld.clone().divideScalar(unit).applyMatrix3(inverse);
+  const upLocal = upWorld.clone().applyMatrix3(inverse);
+  return {
+    offset: [local.x, local.y, local.z],
+    up: [upLocal.x, upLocal.y, upLocal.z],
+  };
+}
+
+/** The shared orbit → THIS pane's world camera offset and up. The distance floor
+ * keeps the old contract: a mirrored orbit never parks a camera inside its
+ * subject. */
+export function orbitFromBasis(
+  orbit: VerifyOrbit,
+  basis: THREE.Matrix3,
+  baseDistance: number,
+): { readonly offset: THREE.Vector3; readonly up: THREE.Vector3 } {
+  const local = new THREE.Vector3(orbit.offset[0], orbit.offset[1], orbit.offset[2]);
+  const length = local.length();
+  if (length > 1e-9) local.multiplyScalar(Math.max(length, 0.05) / length);
+  else local.set(0, 0, 0.05);
+  const unit = baseDistance > 0 ? baseDistance : 1;
+  const offset = local.applyMatrix3(basis).multiplyScalar(unit);
+  const up = new THREE.Vector3(orbit.up[0], orbit.up[1], orbit.up[2]).applyMatrix3(basis);
+  return { offset, up };
 }
 
 /** One layer's geometry: a flat non-indexed position stream, or positions + faces + per-vertex
@@ -221,9 +293,14 @@ export class VerifyScene {
   private readonly resizeObserver: ResizeObserver;
   private animationHandle = 0;
   private disposed = false;
-  /** The distance the current framing chose — the unit `VerifyOrbit.distanceScale` is measured
+  /** The distance the current framing chose — the unit `VerifyOrbit.offset` is measured
    *  in, so a mirrored orbit means "the same relative zoom", not "the same millimetres". */
   private baseDistance = 1;
+  /** The framed basis the shared orbit is expressed in — set by every frameOn. */
+  private frameBasis = new THREE.Matrix3();
+  /** Shift+left-drag pans, exactly like the main stage — the panes' navigation
+   *  must feel like ONE app's (client 2026-08-04: "not like the main one"). */
+  private shiftPanActive = false;
   /** True while an externally-applied orbit is being written, so the resulting controls "change"
    *  event is not echoed back to the panes that sent it (which would ping-pong forever). */
   private applyingOrbit = false;
@@ -256,6 +333,12 @@ export class VerifyScene {
     this.controls.addEventListener("change", this.handleControlsChange);
     this.renderer.domElement.addEventListener("pointerdown", this.handlePointerDown);
     this.renderer.domElement.addEventListener("pointerup", this.handlePointerUp);
+    // the main stage's own mappings (client 2026-08-04: the pane navigation must
+    // feel like the workflow viewer's): shift+left-drag pans; right-drag pan and
+    // scroll zoom are OrbitControls defaults both viewers already share
+    window.addEventListener("keydown", this.handleShiftPanKeyDown);
+    window.addEventListener("keyup", this.handleShiftPanKeyUp);
+    window.addEventListener("blur", this.handleShiftPanWindowBlur);
 
     // Same lighting recipe as the main stage (client 2026-07-24: "the scan is a bit dark") so a
     // part looks the same here as it does on the workflow's viewer.
@@ -562,8 +645,17 @@ export class VerifyScene {
             ? new THREE.Vector3(0, 0, 1)
             : new THREE.Vector3(0, 1, 0);
       const up = seed.clone().projectOnPlane(direction);
-      this.camera.up.copy(up.lengthSq() > 1e-9 ? up.normalize() : new THREE.Vector3(0, 0, 1));
+      this.syncCameraUp(
+        up.lengthSq() > 1e-9 ? up.normalize() : new THREE.Vector3(0, 0, 1),
+      );
+    } else {
+      // no requested direction: keep the pane's standing up, re-synced so the
+      // drag frame below is coherent with it
+      this.syncCameraUp(this.camera.up.clone());
     }
+    // the basis the shared orbit is expressed in — EVERY framing resets it, so a
+    // linked orbit after any re-frame maps through the frame the pane now has
+    this.frameBasis = basisFromDirectionUp(direction, this.camera.up);
     this.camera.position.copy(target).addScaledVector(direction, distance);
     this.camera.near = Math.max(distance / 500, 0.05);
     this.camera.far = distance * 50;
@@ -593,30 +685,73 @@ export class VerifyScene {
   }
 
   getOrbit(): VerifyOrbit {
-    const offset = this.camera.position.clone().sub(this.controls.target);
-    const spherical = new THREE.Spherical().setFromVector3(offset);
-    return {
-      phi: spherical.phi,
-      theta: spherical.theta,
-      distanceScale: this.baseDistance > 0 ? spherical.radius / this.baseDistance : 1,
-    };
+    return orbitInBasis(
+      this.camera.position.clone().sub(this.controls.target),
+      this.camera.up,
+      this.frameBasis,
+      this.baseDistance,
+    );
   }
 
-  /** Mirror another pane's orbit onto this one, around THIS pane's own target and framing. */
+  /** Mirror another pane's orbit onto this one — the SAME pose in THIS pane's own
+   *  framed basis, absolutely (client 2026-08-04: the old world-angle mirror put
+   *  the library pane 177° off its own axis while the chip said "rotating
+   *  together"). Up mirrors with it: a rolled sibling and an unrolled pane are
+   *  not the same view. */
   applyOrbit(orbit: VerifyOrbit): void {
     this.assigningCamera(() => {
-      const spherical = new THREE.Spherical(
-        Math.max(orbit.distanceScale, 0.05) * this.baseDistance,
-        orbit.phi,
-        orbit.theta,
-      );
-      const offset = new THREE.Vector3().setFromSpherical(spherical);
-      this.camera.position.copy(this.controls.target).add(offset);
+      const pose = orbitFromBasis(orbit, this.frameBasis, this.baseDistance);
+      this.camera.position.copy(this.controls.target).add(pose.offset);
+      if (pose.up.lengthSq() > 1e-9) this.syncCameraUp(pose.up.normalize());
       // Same reason as frameOn: a mirrored orbit is an ASSIGNMENT of a camera position,
       // and this pane's own leftover momentum has no business being added to the pane it
       // is mirroring — that is how linked views drift apart while claiming to be linked.
       this.settleControls();
     });
+  }
+
+  /**
+   * Change the camera's up axis AND re-sync OrbitControls' internal up-quaternion —
+   * the main stage's own fix (sceneController.setCameraUp), ported: OrbitControls
+   * captures `camera.up` ONCE at construction and runs every drag in that frozen
+   * y-up frame, so a pane framed down an arbitrary seated axis dragged "weird" —
+   * horizontal drags tumbled and rolled the model (client 2026-08-04: "not like
+   * the main one that is more cohesive and natural"). Underscore-private but
+   * stable in three 0.185; degrades to the old behavior if renamed.
+   */
+  private syncCameraUp(up: THREE.Vector3): void {
+    this.camera.up.copy(up);
+    const internals = this.controls as unknown as {
+      _quat?: THREE.Quaternion;
+      _quatInverse?: THREE.Quaternion;
+    };
+    if (internals._quat && internals._quatInverse) {
+      internals._quat.setFromUnitVectors(up, new THREE.Vector3(0, 1, 0));
+      internals._quatInverse.copy(internals._quat).invert();
+    }
+  }
+
+  // --- Shift+left-drag pan (the main stage's own mapping, ported) --------------------
+
+  private readonly handleShiftPanKeyDown = (event: KeyboardEvent): void => {
+    if (event.key !== "Shift" || this.shiftPanActive) return;
+    this.shiftPanActive = true;
+    this.controls.mouseButtons.LEFT = THREE.MOUSE.PAN;
+  };
+
+  private readonly handleShiftPanKeyUp = (event: KeyboardEvent): void => {
+    if (event.key !== "Shift") return;
+    this.restoreLeftMouseButton();
+  };
+
+  private readonly handleShiftPanWindowBlur = (): void => {
+    // a window/tab switch while Shift is held never fires keyup — restore on blur
+    this.restoreLeftMouseButton();
+  };
+
+  private restoreLeftMouseButton(): void {
+    this.shiftPanActive = false;
+    this.controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
   }
 
   /**
@@ -697,6 +832,9 @@ export class VerifyScene {
     this.controls.removeEventListener("change", this.handleControlsChange);
     this.renderer.domElement.removeEventListener("pointerdown", this.handlePointerDown);
     this.renderer.domElement.removeEventListener("pointerup", this.handlePointerUp);
+    window.removeEventListener("keydown", this.handleShiftPanKeyDown);
+    window.removeEventListener("keyup", this.handleShiftPanKeyUp);
+    window.removeEventListener("blur", this.handleShiftPanWindowBlur);
     this.pickListener = null;
     this.controls.dispose();
     this.clearMarkers();
