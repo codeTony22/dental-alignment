@@ -42,7 +42,7 @@ import json
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import numpy as np
 import trimesh
@@ -80,6 +80,13 @@ class PreviewSelection:
     variant: str
     jaw: Optional[str] = None                # None = the case's own reading
     gingival_offset_mm: float = DEFAULT_GINGIVAL_OFFSET_MM
+    # THE OPERATOR'S RE-MARK (the 12° defect, 2026-08-04): until this field the
+    # preview ALWAYS seated from the curated record — a re-marked centre changed
+    # the panes' framing and never the previewed pose, so the operator corrected
+    # a centre and watched the same tilt come back. Same rule as the run: a
+    # re-marked centre seeds ALONE (the record's mark pair belongs to the
+    # record's own centre — pair integrity).
+    marked_center: Optional[Sequence[float]] = None
 
 
 def deviation_payload(case_id: str, tooth: int, scan_pts: np.ndarray,
@@ -210,20 +217,32 @@ def preview_site(case: CaseRecord, selection: PreviewSelection, tooth: int) -> d
     """
     site = next((s for s in case.suggested_sites
                  if int(s.get("tooth", -1)) == tooth), None)
-    if site is None or site.get("center") is None:
+    marked = selection.marked_center
+    centre = marked if marked is not None else (
+        site.get("center") if site is not None else None)
+    if centre is None:
         raise PreviewRefused(
             f"tooth {tooth} has no site centre on case {case.id!r} — nothing to seat "
             f"a preview on")
+    site = site or {}
+
+    # the run's own rule (see application/run.py, the 12° defect): a re-marked
+    # centre seeds ALONE — the record's pair belongs to the record's own centre.
+    # Built BEFORE the library/scan loads, run.py's own order: the seeding
+    # decision is cheap and the loads are the expensive part.
+    remarked = marked is not None
+    confirmed = ConfirmedSite(
+        tooth, tuple(float(c) for c in centre), selection.variant,
+        None if remarked else site.get("marked_points"),
+        None if remarked else site.get("center_mark"),
+        None if remarked else site.get("rim_mark"),
+        rim_points=None if remarked else site.get("rim_points"))
 
     library = _library_for(case.data_root, selection.model, [selection.variant])
     construction_file = require_construction(case.data_root,
                                              selection.construction_path)
     scan = _scan_mesh(case.scan)
     jaw = selection.jaw or case.jaw
-    confirmed = ConfirmedSite(
-        tooth, tuple(float(c) for c in site["center"]), selection.variant,
-        site.get("marked_points"), site.get("center_mark"), site.get("rim_mark"),
-        rim_points=site.get("rim_points"))
 
     # nothing is shipped from a preview: no bored product, no QC renders, no stability
     # bootstrap — this is a POSE, read once; the scratch dir dies with the call

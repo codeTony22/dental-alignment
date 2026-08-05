@@ -223,12 +223,23 @@ def run_case(case: CaseRecord, selection: RunSelection, out_dir: Path) -> dict:
                              f"— nothing to align")
         site = site or {}
         # marks pass through AS GIVEN (the re-click pair-integrity record: a mark is
-        # never re-centred), exactly as the preview passes them
+        # never re-centred) — and they pass WITH THE CENTRE THEY MEASURED. When the
+        # operator RE-MARKED, the record's center_mark/rim_mark belong to the
+        # record's own centre, and shipping them beside a different centre splices
+        # two measurements (measured 2026-08-04 on cap6020: the splice held DEV RMS
+        # at 0.4157 with the axis 12.2° off the seat the operator's bare centre
+        # produces at 0.3053 — the re-mark was decorative for the physics because
+        # auto_flow prefers center_mark). A re-marked site therefore seeds ALONE;
+        # an unmarked site keeps the record's pair, which BEATS a bare click when
+        # the centre is its own (0.4157 vs 0.4894, same case).
+        remarked = marked is not None
         confirmed.append(ConfirmedSite(
             tooth, tuple(float(c) for c in centre),
-            selection.variants[tooth], site.get("marked_points"),
-            site.get("center_mark"), site.get("rim_mark"),
-            rim_points=site.get("rim_points")))
+            selection.variants[tooth],
+            None if remarked else site.get("marked_points"),
+            None if remarked else site.get("center_mark"),
+            None if remarked else site.get("rim_mark"),
+            rim_points=None if remarked else site.get("rim_points")))
 
     library = _library_for(case.data_root, selection.model,
                            [v for v in selection.variants.values() if v])

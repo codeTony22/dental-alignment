@@ -249,6 +249,12 @@ export function detectorDisagreement(
   const site = detail.sites.find((s) => s.tooth === tooth);
   const shown = site ? siteCentre(site) : null;
   if (shown === null) return null;
+  // WHICH proposal may speak for this tooth (review 2026-08-04, blocking find):
+  // a bare global-minimum match picks a DIFFERENT cap on multi-cap scans —
+  // cap7020's "9.04mm disagreement" was its neighbour. A proposal counts only
+  // when the detector GUESSED this tooth, or when it sits within the pick
+  // radius — the same guard `adoptableProposals` applies. Beyond that radius,
+  // an unguessed proposal is some other cap, and silence is the honest reading.
   let best: { mm: number; detected: readonly number[] } | null = null;
   for (const proposal of detail.detection?.proposals ?? []) {
     const centre = asVec3(proposal.center);
@@ -258,6 +264,9 @@ export function detectorDisagreement(
       centre[1] - shown[1],
       centre[2] - shown[2],
     );
+    const speaksForTooth =
+      proposal.tooth_guess === tooth || mm <= SITE_PICK_RADIUS_MM;
+    if (!speaksForTooth) continue;
     if (best === null || mm < best.mm) best = { mm, detected: centre };
   }
   if (best === null || best.mm <= CENTRE_DISAGREEMENT_MM) return null;
@@ -468,7 +477,12 @@ export function remarkRetiresSomething(
   detail: CaseSessionDetail,
 ): boolean {
   const pastDeclared = site.status !== "detected" && site.status !== "declared";
-  return pastDeclared || detail.session.run_state !== "none";
+  // standing ADJUSTMENT EVIDENCE is retired by the route too (the pair-integrity
+  // rule: measurements made against the old centre fall with it) — and a site can
+  // hold evidence at `declared` with no run, after a boundary dropped the rung
+  // (review 2026-08-04 #5: both re-mark doors committed there with no consent)
+  const evidenceStanding = (site.alignment_evidence_count ?? 0) > 0;
+  return pastDeclared || evidenceStanding || detail.session.run_state !== "none";
 }
 
 /**
@@ -483,8 +497,9 @@ export function remarkRetiresSomething(
 export function remarkWords(tooth: number): string {
   return (
     `Re-marking tooth ${tooth}'s centre retires this site's preview and review, ` +
-    `the current run and anything signed over it — the run was cropped around ` +
-    `the centre you are about to move.`
+    `its adjustment measurements, the current run and anything signed over it — ` +
+    `the run was cropped around the centre you are about to move, and marks ` +
+    `measured against it fall with it.`
   );
 }
 

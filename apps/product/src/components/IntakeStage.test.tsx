@@ -127,6 +127,56 @@ describe("the site list with capture chips", () => {
     expect(html).not.toContain('data-role="adopt-proposal"');
   });
 
+  it("a centre disagreement offers the DETECTOR'S centre in one click, naming the distance", () => {
+    // the fleet table's first lever (2026-08-04): good cases agree 0.03-0.23mm,
+    // bad ones 2.2-9.0mm — and cap7020's curated seed BEATS its proposal, so the
+    // act is offered, never silently preferred
+    const html = view({
+      detail: caseSessionDetail({
+        sites: [siteView({ tooth: 29, center: [0, 0, 0] })],
+        detection: detectionView([
+          detectedProposal({ tooth_guess: 29, center: [2.24, 0, 0] }),
+        ]),
+      }),
+      activeTooth: 29,
+    });
+    expect(html).toContain('data-role="use-detector-centre"');
+    expect(html).toContain("Use the detector&#x27;s centre (2.24mm away)");
+  });
+
+  it("adopting through a retirement shows the re-mark's own consent words first", () => {
+    const html = view({
+      detail: caseSessionDetail({
+        sites: [siteView({ tooth: 29, center: [0, 0, 0], status: "previewed" })],
+        detection: detectionView([
+          detectedProposal({ tooth_guess: 29, center: [2.24, 0, 0] }),
+        ]),
+      }),
+      activeTooth: 29,
+      detectorConfirming: true,
+    });
+    expect(html).toContain('data-role="detector-centre-confirm"');
+    expect(html).toContain('data-role="detector-centre-go"');
+    expect(html).toContain('data-role="detector-centre-cancel"');
+    expect(html).not.toContain('data-role="use-detector-centre"');
+  });
+
+  it("a detector-centre refusal renders in the BFF's own words", () => {
+    const html = view({
+      detail: caseSessionDetail({
+        sites: [siteView({ tooth: 29, center: [0, 0, 0] })],
+        detection: detectionView([
+          detectedProposal({ tooth_guess: 29, center: [2.24, 0, 0] }),
+        ]),
+      }),
+      activeTooth: 29,
+      // a refusal the route can actually produce (finiteness is its one check)
+      detectorError: "center must be three finite numbers",
+    });
+    expect(html).toContain('data-role="detector-centre-error"');
+    expect(html).toContain("three finite numbers");
+  });
+
   it("an adopt refusal renders in the BFF's own words", () => {
     const html = view({
       detail: caseSessionDetail({

@@ -503,6 +503,27 @@ describe("detectorDisagreement — the centre on screen vs the one the detector 
     );
     expect(found!.mm).toBeCloseTo(1.74, 2);
   });
+
+  it("an UNGUESSED proposal beyond the pick radius is another cap — silence (review 2026-08-04)", () => {
+    // cap7020's real shape: the only proposal near enough to minimize distance
+    // belonged to a DIFFERENT cap 9mm away. The one-click adopt commits this
+    // point, so a global-minimum match would move the tooth onto its neighbour.
+    const other = {
+      sites: [siteView({ tooth: 3, center: [10, 0, 0] })],
+      detection: { proposals: [{ center: [19.04, 0, 0], tooth_guess: null }] },
+    } as never;
+    expect(detectorDisagreement(other, 3)).toBeNull();
+  });
+
+  it("a proposal GUESSED for this tooth may disagree by more than the radius", () => {
+    // the guess is the detector's own claim of identity — a large disagreement
+    // there is exactly the finding the disclosure exists to surface
+    const guessed = {
+      sites: [siteView({ tooth: 3, center: [10, 0, 0] })],
+      detection: { proposals: [{ center: [19.04, 0, 0], tooth_guess: 3 }] },
+    } as never;
+    expect(detectorDisagreement(guessed, 3)!.mm).toBeCloseTo(9.04, 2);
+  });
 });
 
 /**

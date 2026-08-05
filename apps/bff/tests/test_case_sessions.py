@@ -974,6 +974,31 @@ class TestPreview:
         assert selection.jaw == "upper"
         assert selection.gingival_offset_mm == 0.2
 
+    def test_a_re_marked_sites_preview_carries_the_operators_centre(
+            self, settings, monkeypatch):
+        """THE 12° DEFECT's preview half (measured 2026-08-04, cap6020): the
+        preview always seated from the curated record, so a re-marked centre moved
+        the panes' framing and never the previewed pose — the operator corrected a
+        centre and watched the same tilt come back. The selection now ships the
+        re-mark; the worker seeds it ALONE (pair integrity, pinned worker-side)."""
+        client, calls = self._client_with_stub(settings, monkeypatch)
+        declare_site(client)
+        assert client.put("/api/case-sessions/neodent-gm/sites/4/mark",
+                          json={"center": [9.0, 9.0, 9.0]}).status_code == 200
+        res = client.post("/api/case-sessions/neodent-gm/sites/4/preview")
+        assert res.status_code == 200, res.text
+        (_case_id, selection, _tooth), = calls
+        assert selection.marked_center == [9.0, 9.0, 9.0]
+
+    def test_an_unmarked_sites_preview_ships_no_marked_centre(
+            self, settings, monkeypatch):
+        client, calls = self._client_with_stub(settings, monkeypatch)
+        declare_site(client)
+        assert client.post(
+            "/api/case-sessions/neodent-gm/sites/4/preview").status_code == 200
+        (_case_id, selection, _tooth), = calls
+        assert selection.marked_center is None
+
     def test_a_case_without_a_construction_suggestion_still_refuses_naming_it(
             self, settings, monkeypatch):
         # the effective fallback is a suggestion, never a guess: a case whose

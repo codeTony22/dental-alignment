@@ -88,6 +88,68 @@ class TestRefusals:
         assert "unknown implant system" in str(exc.value)
 
 
+class TestARemarkedSitesPreview:
+    """THE 12° DEFECT's preview half (§10-AH, measured 2026-08-04): the preview had
+    NO marked-centre field at all, so a re-marked centre moved the panes' framing
+    and never the previewed pose. Same rule as the run, pinned the same way: a
+    re-marked centre seeds ALONE — the record's mark pair belongs to the record's
+    own centre (pair integrity) — and an unmarked site keeps its pair whole."""
+
+    def _spy_confirmed(self, monkeypatch):
+        import case_prep.application.preview as preview_module
+        seen = {}
+        original = preview_module.ConfirmedSite
+
+        def spy(tooth, center, variant, marked_points=None, center_mark=None,
+                rim_mark=None, rim_points=None, **kwargs):
+            seen[tooth] = dict(center=center, marked_points=marked_points,
+                               center_mark=center_mark, rim_mark=rim_mark,
+                               rim_points=rim_points)
+            return original(tooth, center, variant, marked_points, center_mark,
+                            rim_mark, rim_points=rim_points, **kwargs)
+
+        monkeypatch.setattr(preview_module, "ConfirmedSite", spy)
+        return seen
+
+    SITE = {"tooth": 4, "center": [9.0, 9.0, 9.0],
+            "center_mark": [9.1, 9.0, 9.0], "rim_mark": [11.0, 9.0, 9.0],
+            "marked_points": [[9.1, 9.0, 9.0]], "rim_points": [[11.0, 9.0, 9.0]]}
+
+    def test_a_marked_centre_seeds_alone_dropping_the_records_pair(
+            self, tmp_path, monkeypatch):
+        seen = self._spy_confirmed(monkeypatch)
+        case = _case(tmp_path, sites=[dict(self.SITE)])
+        with pytest.raises(Exception):
+            # fails later, on the meshes this synthetic case does not have —
+            # the seeding decision has already been captured by then
+            preview_site(case, _selection(marked_center=[1.0, 2.0, 3.0]), tooth=4)
+        assert seen[4]["center"] == (1.0, 2.0, 3.0)
+        assert seen[4]["center_mark"] is None
+        assert seen[4]["rim_mark"] is None
+        assert seen[4]["marked_points"] is None
+        assert seen[4]["rim_points"] is None
+
+    def test_without_a_mark_the_records_pair_ships_whole(self, tmp_path,
+                                                         monkeypatch):
+        seen = self._spy_confirmed(monkeypatch)
+        case = _case(tmp_path, sites=[dict(self.SITE)])
+        with pytest.raises(Exception):
+            preview_site(case, _selection(), tooth=4)
+        assert seen[4]["center"] == (9.0, 9.0, 9.0)
+        assert seen[4]["center_mark"] == [9.1, 9.0, 9.0]
+        assert seen[4]["rim_mark"] == [11.0, 9.0, 9.0]
+
+    def test_a_marked_centre_previews_a_tooth_the_case_never_suggested(
+            self, tmp_path, monkeypatch):
+        # the missed-cap lane: a session-only site has no case record at all
+        seen = self._spy_confirmed(monkeypatch)
+        case = _case(tmp_path)
+        with pytest.raises(Exception) as exc:
+            preview_site(case, _selection(marked_center=[1.0, 2.0, 3.0]), tooth=31)
+        assert "has no site centre" not in str(exc.value)
+        assert seen[31]["center"] == (1.0, 2.0, 3.0)
+
+
 @real_only
 @pytest.mark.slow  # parses the real scan + library and seats one site end to end
 class TestPreviewOnTheRealTree:

@@ -220,3 +220,72 @@ class TestASiteTheOperatorMarked:
             run_case(case, _selection(marked_centers={99: [1.0, 2.0, 3.0]}),
                      tmp_path / "run")
         assert "tooth 13 has no site centre" in str(exc.value)
+
+    def test_a_re_mark_drops_the_case_records_pair_with_the_centre_it_measured(
+            self, tmp_path):
+        """THE 12° DEFECT (measured 2026-08-04, cap6020): the mark won the CENTRE
+        while the record's center_mark/rim_mark still shipped — and the aligner
+        prefers the marks, so the re-mark was decorative for the physics and the
+        seat spliced two measurements 2.24mm apart. A centre mark and its rim mark
+        are ONE measurement (the re-click pair-integrity record): the record's pair
+        belongs to the record's centre, and an operator's re-mark ships ALONE.
+        Measured on the production pipeline: seeding from the operator's bare
+        centre took DEV RMS 0.4157 -> 0.3053 and moved the axis 12.2°."""
+        case = _case(tmp_path, sites=[{
+            "tooth": 13, "center": [9.0, 9.0, 9.0],
+            "center_mark": [9.1, 9.0, 9.0], "rim_mark": [11.0, 9.0, 9.0],
+            "marked_points": [[9.1, 9.0, 9.0]], "rim_points": [[11.0, 9.0, 9.0]],
+        }])
+        seen = {}
+        import case_prep.application.run as run_module
+        original = run_module.ConfirmedSite
+
+        def spy(tooth, center, variant, marked_points=None, center_mark=None,
+                rim_mark=None, rim_points=None, **kwargs):
+            seen[tooth] = dict(center=center, marked_points=marked_points,
+                               center_mark=center_mark, rim_mark=rim_mark,
+                               rim_points=rim_points)
+            return original(tooth, center, variant, marked_points, center_mark,
+                            rim_mark, rim_points=rim_points, **kwargs)
+
+        run_module.ConfirmedSite = spy
+        try:
+            with pytest.raises(Exception):
+                run_case(case, _selection(marked_centers={13: [1.0, 2.0, 3.0]}),
+                         tmp_path / "run")
+        finally:
+            run_module.ConfirmedSite = original
+        assert seen[13]["center"] == (1.0, 2.0, 3.0)
+        assert seen[13]["center_mark"] is None
+        assert seen[13]["rim_mark"] is None
+        assert seen[13]["marked_points"] is None
+        assert seen[13]["rim_points"] is None
+
+    def test_without_a_re_mark_the_records_pair_still_ships_whole(self, tmp_path):
+        # the pair path BEATS the bare click when the centre is good (measured:
+        # 0.4157 vs 0.4894 on cap6020's curated seed) — dropping it
+        # unconditionally would regress every well-seeded site
+        case = _case(tmp_path, sites=[{
+            "tooth": 13, "center": [9.0, 9.0, 9.0],
+            "center_mark": [9.1, 9.0, 9.0], "rim_mark": [11.0, 9.0, 9.0],
+        }])
+        seen = {}
+        import case_prep.application.run as run_module
+        original = run_module.ConfirmedSite
+
+        def spy(tooth, center, variant, marked_points=None, center_mark=None,
+                rim_mark=None, rim_points=None, **kwargs):
+            seen[tooth] = dict(center=center, center_mark=center_mark,
+                               rim_mark=rim_mark)
+            return original(tooth, center, variant, marked_points, center_mark,
+                            rim_mark, rim_points=rim_points, **kwargs)
+
+        run_module.ConfirmedSite = spy
+        try:
+            with pytest.raises(Exception):
+                run_case(case, _selection(), tmp_path / "run")
+        finally:
+            run_module.ConfirmedSite = original
+        assert seen[13]["center"] == (9.0, 9.0, 9.0)
+        assert seen[13]["center_mark"] == [9.1, 9.0, 9.0]
+        assert seen[13]["rim_mark"] == [11.0, 9.0, 9.0]

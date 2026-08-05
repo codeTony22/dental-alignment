@@ -1582,7 +1582,10 @@ def preview_site_action(case_id: str, tooth: int, request: Request) -> dict:
         return PreviewSelection(
             model=model, construction_path=effective.construction_path,
             variant=site.declared_variant, jaw=effective.jaw,
-            gingival_offset_mm=effective.gingival_offset_mm)
+            gingival_offset_mm=effective.gingival_offset_mm,
+            # the operator's re-mark reaches the PREVIEWED pose too (the 12°
+            # defect, 2026-08-04) — the worker seeds it alone, pair-integrity
+            marked_center=site.marked_center)
 
     selection = judge(store.load(case_id))
     try:

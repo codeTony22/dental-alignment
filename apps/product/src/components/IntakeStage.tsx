@@ -112,6 +112,14 @@ interface SiteListProps {
   readonly adoptSaving: boolean;
   readonly adoptError: string | null;
   readonly onAdopt: (center: readonly number[], tooth: number) => void;
+  /** Adopting the detector's centre for an EXISTING site (the fleet table's lever):
+   * the re-mark PUT with the detector's point, behind the same retirement consent. */
+  readonly detectorConfirming: boolean;
+  readonly detectorSaving: boolean;
+  readonly detectorError: string | null;
+  readonly onUseDetectorCentre: (tooth: number, point: readonly number[]) => void;
+  readonly onConfirmDetectorCentre: (tooth: number, point: readonly number[]) => void;
+  readonly onCancelDetectorCentre: () => void;
 }
 
 /** One adoptable detected cap: the detector's facts, the operator's tooth number,
@@ -301,6 +309,12 @@ function SiteList({
   adoptSaving,
   adoptError,
   onAdopt,
+  detectorConfirming,
+  detectorSaving,
+  detectorError,
+  onUseDetectorCentre,
+  onConfirmDetectorCentre,
+  onCancelDetectorCentre,
 }: SiteListProps) {
   const picker = sitePickerOffered(detail.sites);
   const adoptable = adoptableProposals(detail);
@@ -359,19 +373,81 @@ function SiteList({
           </p>
           {(() => {
             /* THE STALE CURATED CENTRE, SAID OUT LOUD (client 2026-08-01: "centre is
-               wrong from the beginning"). The centre on screen prefers the operator's
-               mark then the case's CURATED seed — the live detector's proposal is not
-               in that chain, and on the labelled arches that seed is a frozen copy of
-               an older proposal. This only DISCLOSES; the act it points at is the
-               re-mark control immediately below. */
+               wrong from the beginning") — and since 2026-08-04, ANSWERABLE IN ONE
+               CLICK. The fleet table put numbers on it: the cases the client calls
+               well-aligned carry centres agreeing with the live detector to
+               0.03-0.23mm; the ones they call wrong disagree by 2.2-9.0mm. The act
+               is the EXISTING re-mark PUT with the detector's own point — operator
+               consent stays (cap7020's curated seed BEATS its detector proposal, so
+               a silent preference would break the fleet's best case), and the same
+               retirement ceremony fires when a preview/review would fall. */
             const off = detectorDisagreement(detail, active.tooth);
             if (off === null) return null;
             return (
-              <p data-role="centre-disagreement" className="panel__hint">
-                The detector places this cap's centre {off.mm.toFixed(2)}mm from the
-                one shown, which came with the case rather than from this scan. If the
-                marker looks off the cap, re-mark it.
-              </p>
+              <div data-role="centre-disagreement" className="panel__hint">
+                {/* No provenance claim: the shown centre may be the case's seed OR
+                    the operator's own re-mark (which siteCentre prefers), and on
+                    cap6020 the re-mark measured BETTER than the detector — the
+                    sentence states the disagreement and leaves the verdict to the
+                    operator looking at the marker. */}
+                <p className="intake-centre__words">
+                  The detector reads this cap&rsquo;s centre {off.mm.toFixed(2)}mm
+                  from the centre shown. If the marker looks off the cap, adopt the
+                  detector&rsquo;s centre or re-mark it by hand.
+                </p>
+                {detectorConfirming ? (
+                  <div
+                    data-role="detector-centre-confirm"
+                    role="alert"
+                    className="switch-confirm"
+                  >
+                    <p className="switch-confirm__words">
+                      {remarkWords(active.tooth)}
+                    </p>
+                    <div className="switch-confirm__actions">
+                      <button
+                        type="button"
+                        data-role="detector-centre-go"
+                        className="button button--primary button--small"
+                        disabled={detectorSaving}
+                        onClick={() => onConfirmDetectorCentre(active.tooth, off.detected)}
+                      >
+                        Adopt the detector&rsquo;s centre
+                      </button>
+                      <button
+                        type="button"
+                        data-role="detector-centre-cancel"
+                        className="button button--secondary button--small"
+                        disabled={detectorSaving}
+                        onClick={onCancelDetectorCentre}
+                      >
+                        Keep the centre shown
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    data-role="use-detector-centre"
+                    className="button button--secondary button--small"
+                    disabled={detectorSaving}
+                    onClick={() => onUseDetectorCentre(active.tooth, off.detected)}
+                  >
+                    {detectorSaving
+                      ? "Adopting the detector's centre…"
+                      : `Use the detector's centre (${off.mm.toFixed(2)}mm away)`}
+                  </button>
+                )}
+                {detectorError !== null && (
+                  <span
+                    data-role="detector-centre-error"
+                    role="alert"
+                    className="panel__error"
+                  >
+                    {detectorError}
+                  </span>
+                )}
+              </div>
             );
           })()}
           <RemarkSiteControl
@@ -792,6 +868,13 @@ export interface IntakeStageViewProps {
   readonly adoptSaving?: boolean;
   readonly adoptError?: string | null;
   readonly onAdopt?: (center: readonly number[], tooth: number) => void;
+  /** Adopting the detector's centre for an existing site (the fleet table's lever). */
+  readonly detectorConfirming?: boolean;
+  readonly detectorSaving?: boolean;
+  readonly detectorError?: string | null;
+  readonly onUseDetectorCentre?: (tooth: number, point: readonly number[]) => void;
+  readonly onConfirmDetectorCentre?: (tooth: number, point: readonly number[]) => void;
+  readonly onCancelDetectorCentre?: () => void;
 }
 
 /** The stage's whole surface, pure payload → markup — statically testable. */
@@ -829,6 +912,12 @@ export function IntakeStageView({
   adoptSaving = false,
   adoptError = null,
   onAdopt = () => undefined,
+  detectorConfirming = false,
+  detectorSaving = false,
+  detectorError = null,
+  onUseDetectorCentre = () => undefined,
+  onConfirmDetectorCentre = () => undefined,
+  onCancelDetectorCentre = () => undefined,
 }: IntakeStageViewProps) {
   const facts = factsFromCaseSession(detail);
   const declareOpen = isReachable("declare", facts);
@@ -886,6 +975,12 @@ export function IntakeStageView({
             adoptSaving={adoptSaving}
             adoptError={adoptError}
             onAdopt={onAdopt}
+            detectorConfirming={detectorConfirming}
+            detectorSaving={detectorSaving}
+            detectorError={detectorError}
+            onUseDetectorCentre={onUseDetectorCentre}
+            onConfirmDetectorCentre={onConfirmDetectorCentre}
+            onCancelDetectorCentre={onCancelDetectorCentre}
           />
         </section>
       </div>
@@ -1012,10 +1107,14 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
     setPickArmed(false);
     setPickMiss(null);
     // a re-mark in flight is ABOUT the previously active site — a new selection
-    // makes its words (and any armed pick) stale, so it is discarded, not carried
+    // makes its words (and any armed pick) stale, so it is discarded, not carried.
+    // The detector-centre confirm falls with it (review 2026-08-04: it COMMITS a
+    // write, and its consent was judged for the previous tooth).
     setRemarkConfirming(false);
     setRemarkArmed(false);
     setRemarkError(null);
+    setDetectorConfirming(false);
+    setDetectorError(null);
   }, []);
 
   const handleArmPick = useCallback(() => {
@@ -1028,11 +1127,56 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
     setRemarkConfirming(false);
     setRemarkArmed(false);
     setRemarkError(null);
+    setDetectorConfirming(false);
+    setDetectorError(null);
   }, []);
 
   const handleCancelPick = useCallback(() => {
     setPickArmed(false);
     setPickMiss(null);
+  }, []);
+
+  /* ADOPTING THE DETECTOR'S CENTRE for an EXISTING site (the fleet table's first
+     lever, 2026-08-04): the same re-mark PUT the hand flow lands, with the
+     detector's own point — never a silent correction (cap7020's curated seed
+     BEATS its detector proposal; the operator adjudicates), and the same
+     retirement ceremony when a preview/review/run pointer would fall. */
+  const [detectorConfirming, setDetectorConfirming] = useState(false);
+  const [detectorSaving, setDetectorSaving] = useState(false);
+  const [detectorError, setDetectorError] = useState<string | null>(null);
+  const commitDetectorCentre = useCallback(
+    (tooth: number, point: readonly number[]) => {
+      setDetectorSaving(true);
+      setDetectorError(null);
+      void putRemarkedSite(caseId, tooth, point).then((result) => {
+        setDetectorSaving(false);
+        setDetectorConfirming(false);
+        if (result.kind === "ok") onDetail(result.data);
+        else setDetectorError(result.detail);
+      });
+    },
+    [caseId, onDetail],
+  );
+  const handleUseDetectorCentre = useCallback(
+    (tooth: number, point: readonly number[]) => {
+      // one point pick, one owner (review 2026-08-04 #9): adopting must disarm
+      // the scan-click doors, or a stray click re-marks over the adopted centre
+      setPickArmed(false);
+      setPickMiss(null);
+      setRemarkConfirming(false);
+      setRemarkArmed(false);
+      const site = detail.sites.find((s) => s.tooth === tooth);
+      if (site !== undefined && remarkRetiresSomething(site, detail)) {
+        setDetectorConfirming(true);
+      } else {
+        commitDetectorCentre(tooth, point);
+      }
+    },
+    [detail, commitDetectorCentre],
+  );
+  const handleCancelDetectorCentre = useCallback(() => {
+    setDetectorConfirming(false);
+    setDetectorError(null);
   }, []);
 
   /* ADOPTING A DETECTED CAP (client 2026-08-04, the uploaded-arch deadlock): the
@@ -1294,6 +1438,12 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
       adoptSaving={adoptSaving}
       adoptError={adoptError}
       onAdopt={handleAdopt}
+      detectorConfirming={detectorConfirming}
+      detectorSaving={detectorSaving}
+      detectorError={detectorError}
+      onUseDetectorCentre={handleUseDetectorCentre}
+      onConfirmDetectorCentre={commitDetectorCentre}
+      onCancelDetectorCentre={handleCancelDetectorCentre}
     />
   );
 }

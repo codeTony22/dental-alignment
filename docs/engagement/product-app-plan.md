@@ -1572,3 +1572,75 @@ report's rows, which the interactive tools never rewrite — so a re-emit after 
 adjustment carries correct poses and fresh deviation stats but PRE-adjustment
 clocking/nudge/best_fit/correspondence/rework on the served rows, and renders QC from
 the stale clocking. Its own slice; do not fold it into this one.
+
+**AH. THE ALIGNMENT REGRESSION THAT WASN'T, AND THE 12° DEFECT THAT WAS (2026-08-04;
+the client: "most cases are wrong ... run the verification and fix what is wrong").**
+
+THE VERIFICATION, run three ways before any fix:
+1. `make rehearse` — GREEN against baseline: every case lands DONE down the UI's own
+   path with only the KNOWN flags (the one new line is the uploaded arch honestly
+   reporting "no suggested selection"). The pipeline did not regress.
+2. The centre-provenance sweep (served facts only): the cases the client calls good
+   carry centres agreeing with the live detector to 0.03-0.23mm (cap6030 = 0.23, their
+   "this is good" case); the ones they call wrong disagree 2.2-9.0mm. cap7020's 9.04
+   is a matching artifact (nearest proposal is a DIFFERENT cap) — min-distance
+   matching lies on multi-cap scans; note for any future sweep.
+3. The alignment specialist's controlled experiment (production pipeline, scratch
+   dirs, calibrated instruments with their own error bars stated — the Plücker fit
+   was DISQUALIFIED for this question at 1.2-7.8° RMS on scan-like noise, and the
+   ICP sweep at 2.3-23.1° spread on real data; the published DEV RMS instrument
+   carried the finding instead).
+
+THE FINDING (cap6020 t29, every number from the production pipeline): the seat the
+product ships is 11.4-12.2° off the seat the SAME pipeline produces from the
+operator's own re-marked centre, and every published metric improves with it —
+DEV RMS 0.4157→0.3053, P90 0.6825→0.4449, fit.max 2.97→2.07, coverage 0.34→0.44,
+alignment_error 1.73→1.05. The curated-seed-is-stale hypothesis was REFUTED by the
+same experiment: curated and detector agree to 0.006mm on this case, and re-running
+from the detector's centre moves the axis 0.04° — a null lever.
+
+THE LOAD-BEARING DEFECT, two lanes:
+- run lane (application/run.py:218-231): `marked_centers` overrode the CENTRE while
+  the case record's `center_mark`/`rim_mark` still shipped — and auto_flow PREFERS
+  the marks (auto_flow.py:1749), so the operator's re-mark was decorative for the
+  physics, and the seat SPLICED two measurements 2.24mm apart. The re-click
+  pair-integrity record says a centre mark and its rim mark are ONE measurement;
+  this was the violation, at the source.
+- preview lane (application/preview.py): `PreviewSelection` had no marked-centre
+  field AT ALL — a re-marked centre moved the panes' framing and never the previewed
+  pose, so the operator corrected a centre and watched the same tilt come back.
+
+THE FIX (landed, TDD): a RE-MARKED site seeds ALONE — the record's pair belongs to
+the record's own centre and is dropped when the operator's mark wins; an UNMARKED
+site keeps the pair, which BEATS a bare click when the centre is its own (0.4157 vs
+0.4894, same case — dropping it unconditionally would have regressed every
+well-seeded site). `PreviewSelection.marked_center` added; the BFF ships it. PROVED
+through the product's own path on cap6020: preview 0.416→0.305, the fired run's row
+0.303/0.447, pane 2 face-on where the client screenshotted the tilted ellipse.
+
+ALSO LANDED with it: "Use the detector's centre" — one click beside Intake's
+disagreement disclosure, through the EXISTING re-mark PUT with the same retirement
+consent. It is an ADJUDICATION door, never a preference: cap7020's curated seed
+BEATS its detector proposal, so silence would have broken the fleet's best case.
+The disclosure sentence dropped its false provenance claim ("came with the case" —
+wrong whenever the shown centre is the operator's re-mark, which siteCentre
+prefers).
+
+STILL OPEN in this thread, dependency-ordered:
+1. **The re-marked RIM** — the strongest measured lever left. The bare-centre seed
+   (E, 0.3053) beats the splice, but a coherent re-marked PAIR (C) is the shape the
+   physics wants; the UI's re-mark collects one click and could collect the rim
+   with it. One tool, both marks, one measurement — the pair-integrity rule made
+   constructive.
+2. **The centre-vs-pair guard** — refuse the run when the seeding pair disagrees
+   with the shown centre by more than click noise (the served 0.61mm bound). One
+   restrictive-only guard; today the run proceeds silently.
+3. **The capture gate's rim_arc marginal is the probable ORIGIN of bad seeds**
+   (cap6020: 21-25% of the ring missing on the 12-o'clock side — the direction and
+   size of the 2.24mm offset match). The gate already says "rescan"; the demo
+   script should lean on it harder.
+4. **The standing fleet verification tool** (the automation ask): promote the
+   centre-experiment-per-case shape (production pipeline + published DEV metric,
+   scratch dirs, AM-1-safe) into `apps/worker` as a make target beside `rehearse`,
+   so "run the alignments check across all cases" is one command, not an agent.
+   The ICP sweep is NOT that tool (its real-data spread exceeds the effect).
