@@ -62,6 +62,17 @@ export function resumeTarget(row: WorklistRow): string {
   return `/case/${row.id}/${furthestStage(factsFromWorklistRow(row))}`;
 }
 
+/** The whole-worklist demo reset's consent words (client 2026-08-04: "In the home
+ * we need a button to reset all cases") — the visible-reset doctrine: the blast
+ * radius in words BEFORE the act, exactly like the system switch and the re-mark. */
+export function resetAllWords(count: number): string {
+  return (
+    `Resets all ${count} case${count === 1 ? "" : "s"} to fresh intake — every ` +
+    "declaration, run pointer and signature falls. The immutable run directories " +
+    "stay on disk as history."
+  );
+}
+
 /** Where a landed UPLOAD goes (client 2026-08-04: "clicking on upload file should
  * route you directly to the page of the case /case/").
  *

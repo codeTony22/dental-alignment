@@ -6920,6 +6920,15 @@ button.package-files__link:hover {
   color: var(--color-accent-amber-dark, #8a5b00);
 }
 
+/* The whole-list demo reset (client 2026-08-04): housekeeping at the foot. */
+.worklist__reset-all {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
 /* A PLACED pair folds to one line (client 2026-08-04): the open draft keeps the
    teaching checklist; a completed one is a receipt with its undos. */
 .adjust-pairs__row--complete {

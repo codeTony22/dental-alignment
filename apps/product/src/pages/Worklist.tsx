@@ -13,13 +13,19 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { fetchWorklist, uploadScan, type FetchState } from "../api/client";
+import {
+  fetchWorklist,
+  postCaseReset,
+  uploadScan,
+  type FetchState,
+} from "../api/client";
 import { ErrorBanner } from "../components/ErrorBanner";
 import {
   classifyWorklist,
   confirmChip,
   discoveryLine,
   orderWorklist,
+  resetAllWords,
   resumeTarget,
   runChip,
   SCAN_ARRIVAL,
@@ -351,6 +357,119 @@ function ScanDropZone({ onUploaded }: { readonly onUploaded: (id: string) => voi
   );
 }
 
+/** The whole-worklist demo reset's three faces — stated states, statically
+ * testable; the ACT is the container's sequential POSTs. */
+export interface ResetAllViewProps {
+  readonly phase:
+    | { readonly kind: "idle" }
+    | { readonly kind: "confirming" }
+    | { readonly kind: "working"; readonly done: number; readonly total: number }
+    | { readonly kind: "error"; readonly detail: string };
+  readonly count: number;
+  readonly onAsk?: () => void;
+  readonly onConfirm?: () => void;
+  readonly onCancel?: () => void;
+}
+
+export function ResetAllView({
+  phase,
+  count,
+  onAsk = () => undefined,
+  onConfirm = () => undefined,
+  onCancel = () => undefined,
+}: ResetAllViewProps) {
+  if (phase.kind === "working") {
+    return (
+      <div data-role="reset-all-working" className="busy-state" role="status">
+        <span className="busy-state__spinner" aria-hidden="true" />
+        <span>
+          Resetting case {phase.done + 1} of {phase.total}…
+        </span>
+      </div>
+    );
+  }
+  if (phase.kind === "confirming") {
+    return (
+      <div data-role="reset-all-confirm" role="alert" className="switch-confirm">
+        <p className="switch-confirm__words">{resetAllWords(count)}</p>
+        <div className="switch-confirm__actions">
+          <button
+            type="button"
+            data-role="reset-all-go"
+            className="button button--primary button--small"
+            onClick={onConfirm}
+          >
+            Reset all cases
+          </button>
+          <button
+            type="button"
+            data-role="reset-all-cancel"
+            className="button button--secondary button--small"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <>
+      <button
+        type="button"
+        data-role="reset-all-ask"
+        className="button button--ghost button--small"
+        onClick={onAsk}
+      >
+        Reset all cases (demo)
+      </button>
+      {phase.kind === "error" && (
+        <span data-role="reset-all-error" role="alert" className="panel__error">
+          {phase.detail}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** The container: consent first (the visible-reset doctrine), then one POST per
+ * case — the per-case reset's own endpoint, sequentially so a refusal names its
+ * case and stops rather than scattering. */
+function ResetAllControl({
+  caseIds,
+  onDone,
+}: {
+  readonly caseIds: readonly string[];
+  readonly onDone: () => void;
+}) {
+  const [phase, setPhase] = useState<ResetAllViewProps["phase"]>({ kind: "idle" });
+  const confirm = async () => {
+    for (let i = 0; i < caseIds.length; i += 1) {
+      setPhase({ kind: "working", done: i, total: caseIds.length });
+      const result = await postCaseReset(caseIds[i]!);
+      if (result.kind !== "ok") {
+        setPhase({
+          kind: "error",
+          detail: `case ${caseIds[i]}: ${result.detail}`,
+        });
+        onDone(); // whatever DID reset is the new truth — re-read it
+        return;
+      }
+    }
+    setPhase({ kind: "idle" });
+    onDone();
+  };
+  return (
+    <ResetAllView
+      phase={phase}
+      count={caseIds.length}
+      onAsk={() => setPhase({ kind: "confirming" })}
+      onConfirm={() => void confirm()}
+      onCancel={() => setPhase({ kind: "idle" })}
+    />
+  );
+}
+
 function ScanArrival() {
   return (
     <section data-role="scan-arrival" className="scan-arrival">
@@ -374,12 +493,16 @@ interface WorklistScreenProps {
   readonly state: FetchState<readonly unknown[]>;
   /** Fired when an upload lands, with the new case id — the page refetches. */
   readonly onUploaded?: (id: string) => void;
+  /** Fired when the demo reset finishes (or stops on a refusal) — the page
+   * refetches; whatever DID reset is the new truth. */
+  readonly onReset?: () => void;
 }
 
 /** The presentational screen — every branch is a stated one, testable statically. */
 export function WorklistScreen({
   state,
   onUploaded = () => undefined,
+  onReset = () => undefined,
 }: WorklistScreenProps) {
   if (state.kind === "loading") {
     return (
@@ -447,6 +570,20 @@ export function WorklistScreen({
           </section>
         ))
       )}
+      {entries.length > 0 && (
+        /* THE DEMO RESET, WHOLE-LIST (client 2026-08-04: "In the home we need a
+           button to reset all cases") — the per-case reset's own endpoint, once
+           per case, behind the same consent ceremony every reset here gets. At
+           the FOOT with the procedure note: it is housekeeping, not the work. */
+        <div data-role="reset-all" className="worklist__reset-all">
+          <ResetAllControl
+            caseIds={entries
+              .filter((entry) => entry.kind === "row")
+              .map((entry) => (entry as { row: { id: string } }).row.id)}
+            onDone={onReset}
+          />
+        </div>
+      )}
       <ScanArrival />
     </section>
   );
@@ -456,6 +593,8 @@ export function WorklistPage() {
   const [state, setState] = useState<FetchState<readonly unknown[]>>({
     kind: "loading",
   });
+  // bumped by the demo reset: whatever DID reset is the new truth — re-read it
+  const [generation, setGeneration] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -466,7 +605,7 @@ export function WorklistPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [generation]);
 
   return (
     <div className="page">
@@ -477,6 +616,7 @@ export function WorklistPage() {
       <WorklistScreen
         state={state}
         onUploaded={(id) => navigate(uploadedCaseTarget(id))}
+        onReset={() => setGeneration((current) => current + 1)}
       />
     </div>
   );

@@ -8,7 +8,12 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StaticRouter } from "react-router-dom";
 import { worklistErrorRow, worklistRow } from "../testing/fixtures";
-import { ScanDropZoneView, WorklistPage, WorklistScreen } from "./Worklist";
+import {
+  ResetAllView,
+  ScanDropZoneView,
+  WorklistPage,
+  WorklistScreen,
+} from "./Worklist";
 
 function screenHtml(state: Parameters<typeof WorklistScreen>[0]["state"]) {
   return renderToStaticMarkup(
@@ -250,6 +255,47 @@ describe("the scan-arrival panel", () => {
     expect(
       screenHtml({ kind: "error", detail: "the case service is unreachable" }),
     ).not.toContain('data-role="scan-arrival"');
+  });
+});
+
+/** THE WHOLE-LIST DEMO RESET (client 2026-08-04: "In the home we need a button to
+ * reset all cases") — the per-case reset's endpoint once per case, behind the same
+ * consent ceremony every reset here gets. */
+describe("the reset-all control", () => {
+  it("rides the screen's foot when cases exist, and not on an empty list", () => {
+    const html = screenHtml({ kind: "ok", data: [worklistRow()] });
+    expect(html).toContain('data-role="reset-all"');
+    expect(html).toContain("Reset all cases (demo)");
+    expect(screenHtml({ kind: "ok", data: [] })).not.toContain(
+      'data-role="reset-all"',
+    );
+  });
+
+  it("asks in words naming the blast radius BEFORE any POST", () => {
+    const html = renderToStaticMarkup(
+      <ResetAllView phase={{ kind: "confirming" }} count={9} />,
+    );
+    expect(html).toContain("Resets all 9 cases to fresh intake");
+    expect(html).toContain("signature falls");
+    expect(html).toContain("stay on disk as history");
+    expect(html).toContain('data-role="reset-all-go"');
+    expect(html).toContain('data-role="reset-all-cancel"');
+  });
+
+  it("working names its progress; a refusal renders verbatim with the ask again", () => {
+    const working = renderToStaticMarkup(
+      <ResetAllView phase={{ kind: "working", done: 2, total: 9 }} count={9} />,
+    );
+    expect(working).toContain("Resetting case 3 of 9");
+    const failed = renderToStaticMarkup(
+      <ResetAllView
+        phase={{ kind: "error", detail: "case x: the session is mid-write" }}
+        count={9}
+      />,
+    );
+    expect(failed).toContain('data-role="reset-all-error"');
+    expect(failed).toContain("mid-write");
+    expect(failed).toContain('data-role="reset-all-ask"');
   });
 });
 

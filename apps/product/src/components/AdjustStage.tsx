@@ -139,6 +139,59 @@ import { WorkspaceInsight } from "./WorkspaceInsight";
 /** What the surface is waiting on — named, so it never freezes silently. */
 export type ToolPhase = "idle" | "working";
 
+/**
+ * THE NUMBERED MARKS, drawn where they were placed — one entry per PLACED point,
+ * on the pane that took the click. Exported pure so the test can pin the one
+ * invariant that broke (client 2026-08-04, twice): a SPAN BOTH draft's second
+ * library click was recorded in the draft and NEVER DRAWN — this list carried
+ * partPoint, scanPoint and scanPointEnd, and not partPointEnd, so the operator
+ * watched their click "not take effect" while the checklist quietly ticked.
+ * Labels mirror the scan span's own convention: a spanned half reads "2a"/"2b",
+ * a single point reads "2".
+ */
+export function pairMarkers(
+  drafts: readonly PairDraft[],
+): Partial<Record<PaneId, readonly VerifyMarker[]>> {
+  const part: VerifyMarker[] = [];
+  const scan: VerifyMarker[] = [];
+  drafts.forEach((draft, index) => {
+    const label = `${index + 1}`;
+    if (draft.partPoint !== null) {
+      part.push({
+        key: `${draft.id}-part`,
+        position: draft.partPoint as [number, number, number],
+        color: FREE_POINT_COLOR,
+        label: draft.partSpan ? `${label}a` : label,
+      });
+    }
+    if (draft.partPointEnd !== null) {
+      part.push({
+        key: `${draft.id}-part-end`,
+        position: draft.partPointEnd as [number, number, number],
+        color: FREE_POINT_COLOR,
+        label: `${label}b`,
+      });
+    }
+    if (draft.scanPoint !== null) {
+      scan.push({
+        key: `${draft.id}-scan`,
+        position: draft.scanPoint as [number, number, number],
+        color: FREE_POINT_COLOR,
+        label: draft.span ? `${label}a` : label,
+      });
+    }
+    if (draft.scanPointEnd !== null) {
+      scan.push({
+        key: `${draft.id}-scan-end`,
+        position: draft.scanPointEnd as [number, number, number],
+        color: FREE_POINT_COLOR,
+        label: `${label}b`,
+      });
+    }
+  });
+  return { library: part, scan, union: scan };
+}
+
 /** PER-SITE RELIEF (§10-B/C): the site's own ask beside the case value, with the
  * served ceiling and the §10-AC disclosure. The draft is local; the ACT is the
  * apply, and the landed detail (a re-emit over a done run) replaces everything. */
@@ -1926,40 +1979,7 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   /** The numbered marks, drawn where they were placed. Memoized by content: the
    * viewer diffs markers by identity, so a fresh array per render would churn the
    * scene graph on every keystroke elsewhere. */
-  const markers = useMemo(() => {
-    const part: VerifyMarker[] = [];
-    const scan: VerifyMarker[] = [];
-    drafts.forEach((draft, index) => {
-      const label = `${index + 1}`;
-      if (draft.partPoint !== null) {
-        part.push({
-          key: `${draft.id}-part`,
-          position: draft.partPoint as [number, number, number],
-          color: FREE_POINT_COLOR,
-          label,
-        });
-      }
-      if (draft.scanPoint !== null) {
-        scan.push({
-          key: `${draft.id}-scan`,
-          position: draft.scanPoint as [number, number, number],
-          color: FREE_POINT_COLOR,
-          label: draft.span ? `${label}a` : label,
-        });
-      }
-      if (draft.scanPointEnd !== null) {
-        scan.push({
-          key: `${draft.id}-scan-end`,
-          position: draft.scanPointEnd as [number, number, number],
-          color: FREE_POINT_COLOR,
-          label: `${label}b`,
-        });
-      }
-    });
-    return { library: part, scan, union: scan } as Partial<
-      Record<PaneId, readonly VerifyMarker[]>
-    >;
-  }, [drafts]);
+  const markers = useMemo(() => pairMarkers(drafts), [drafts]);
 
   const pickHandlers = useMemo(
     () => ({

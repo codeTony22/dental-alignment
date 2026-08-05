@@ -1138,18 +1138,28 @@ export function useSitePaneScene(
   const linked = options.linked ?? internalLinked;
   const [maximizedId, setMaximizedId] = useState<PaneId | null>(null);
   const [scaleId, setScaleId] = useState<DeviationScaleId>("signed");
-  /* PER-PANE, deliberately: resetting the union's view must not yank the library pane's
-     orbit back with it. Each counter is its own re-frame request. */
+  /* PER-PANE while UNLINKED (resetting the union's view must not yank the library
+     pane's orbit back with it) — and ALL THREE while LINKED (client 2026-08-04:
+     "Back to the pane's own view doesn't move all 3 panes"). Linked panes are one
+     camera in three suits: the mirror works on orbit DELTAS, so resetting one pane
+     alone would desynchronize exactly the shared basis the link promises, and the
+     next drag would mirror from disagreeing starting points. */
   const [resetNonce, setResetNonce] = useState<Readonly<Record<PaneId, number>>>({
     library: 0,
     scan: 0,
     union: 0,
   });
+  const linkedRef = useRef(false);
   const onResetView = useCallback((pane: PaneId) => {
-    setResetNonce((now) => ({ ...now, [pane]: now[pane] + 1 }));
+    setResetNonce((now) =>
+      linkedRef.current
+        ? { library: now.library + 1, scan: now.scan + 1, union: now.union + 1 }
+        : { ...now, [pane]: now[pane] + 1 },
+    );
   }, []);
   useEffect(() => {
     linkGroupRef.current.setEnabled(linked);
+    linkedRef.current = linked;
   }, [linked]);
   const onToggleLinked = useCallback(() => setLinked((now) => !now), []);
   const onToggleMaximized = useCallback((pane: PaneId) => {

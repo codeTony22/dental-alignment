@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AdjustStageView } from "./AdjustStage";
+import { AdjustStageView, pairMarkers } from "./AdjustStage";
 import { WorkspaceInsight } from "./WorkspaceInsight";
 import {
   autoMarkDrafts,
@@ -1206,6 +1206,31 @@ describe("the unverified clock's actionable surface", () => {
         .slice(0, html.indexOf('data-role="clock-unverified-words"'))
         .includes('data-role="verify-rotation"'),
     ).toBe(true);
+  });
+});
+
+describe("pairMarkers — every placed point is DRAWN (client 2026-08-04, twice)", () => {
+  it("a SPAN BOTH draft draws two library markers, a/b like the scan's own", () => {
+    // the reported bug: the second library click was recorded and never drawn —
+    // the operator watched it "not take effect" while the checklist ticked
+    let draft = newPairDraft("s1", true, true);
+    draft = withPick(draft, "part", [1, 0, 1]);
+    draft = withPick(draft, "part", [2, 0, 1]);
+    draft = withPick(draft, "scan", [5, 0, 1]);
+    draft = withPick(draft, "scan", [6, 0, 1]);
+    const markers = pairMarkers([draft]);
+    expect(markers.library?.map((m) => m.label)).toEqual(["1a", "1b"]);
+    expect(markers.library?.[1]?.position).toEqual([2, 0, 1]);
+    expect(markers.scan?.map((m) => m.label)).toEqual(["1a", "1b"]);
+  });
+
+  it("a plain point pair keeps the bare number on both panes", () => {
+    let draft = newPairDraft("p1", false);
+    draft = withPick(draft, "part", [1, 0, 1]);
+    draft = withPick(draft, "scan", [5, 0, 1]);
+    const markers = pairMarkers([draft]);
+    expect(markers.library?.map((m) => m.label)).toEqual(["1"]);
+    expect(markers.scan?.map((m) => m.label)).toEqual(["1"]);
   });
 });
 
