@@ -1904,3 +1904,13 @@ yields to the dock ("more room" caps panes at 128px).
 7. Alignment stays as shipped: §10-AA's deliberate divergences (honest axis
    words over anatomical preset names, etc.) stand; the delta confirms the
    client changed nothing there.
+
+**§10-AN amendment (same day, measured):** decision 1's "one new served field"
+is WITHDRAWN. The comp's "rim reads X.XX" flag has no honest counterpart — its
+diamTrue is mock fiction, and our `suggested_diameter_mm` is a widen-the-band
+suggestion (2x the dial, capped), not a rim measurement. The honest widget: the
+track flag renders ONLY when the last best-fit response carried a suggestion
+(AlreadyOptimal or a refusal), labelled as the server's suggestion — never a
+standing "rim reads" claim. If the client wants a true measured matching-
+diameter reference, that is new physics (§10-L's own open measurement), not a
+serving change.
