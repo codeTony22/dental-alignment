@@ -26,6 +26,7 @@ import {
   indicesFrom,
   paneNotices,
   partCameraFrame,
+  poseHeldBy,
   positionsFrom,
   previewKeyFor,
   scanPaneRadiusMm,
@@ -792,6 +793,46 @@ describe("the preview firer — STALE-RESPONSE rejection", () => {
   });
 });
 
+/* THE HELD POSE (client 2026-08-05: "touching the variant tooth buttons put the
+ * middle panel camera to the back of the scan"). A variant click re-claims the
+ * slot, the payload vanishes for the recompute, and the camera fell back to the
+ * occlusal proxy — which on this case aims at the BACK. The proxy is the fallback
+ * for a site NEVER measured, not one being RE-measured: the slot carries the last
+ * measured pose across re-claims so the camera keeps the seated axis it earned. */
+describe("poseHeldBy — the measured axis survives a re-preview", () => {
+  it("a fresh slot holds nothing — before any measurement the proxy is the honest view", () => {
+    expect(poseHeldBy(undefined)).toBeNull();
+    expect(poseHeldBy(claimSlot({}, 19, "k1")[19])).toBeNull();
+  });
+
+  it("a ready slot answers with its own payload's pose", () => {
+    const payload = sitePreviewPayload();
+    let slots = claimSlot({}, 19, "k1");
+    slots = settleSlot(slots, 19, "k1", { kind: "ok", data: payload });
+    expect(poseHeldBy(slots[19])).toBe(payload.pose);
+  });
+
+  it("re-claiming over a ready slot carries its pose — the variant click keeps the camera", () => {
+    const payload = sitePreviewPayload();
+    let slots = claimSlot({}, 19, "k1");
+    slots = settleSlot(slots, 19, "k1", { kind: "ok", data: payload });
+    slots = claimSlot(slots, 19, "k2"); // the variant click re-asks
+    expect(slots[19]).toMatchObject({ key: "k2", state: "computing" });
+    expect(poseHeldBy(slots[19])).toEqual(payload.pose);
+  });
+
+  it("the hold survives chained re-claims and a failed settle alike", () => {
+    const payload = sitePreviewPayload();
+    let slots = claimSlot({}, 19, "k1");
+    slots = settleSlot(slots, 19, "k1", { kind: "ok", data: payload });
+    slots = claimSlot(slots, 19, "k2");
+    slots = claimSlot(slots, 19, "k3");
+    slots = settleSlot(slots, 19, "k3", { kind: "error", detail: "the seat refused" });
+    expect(slots[19]!.state).toBe("error");
+    expect(poseHeldBy(slots[19])).toEqual(payload.pose);
+  });
+});
+
 // --- the run's auto-fire (5c) --------------------------------------------------------
 
 describe("runKeyFor — the run's identity, from server facts only", () => {
@@ -899,13 +940,19 @@ describe("the variant DETECTION proposed for this site (gap variant-suggested-ba
     expect(cards.find((c) => c.id === "5020")?.suggested).toBe(false);
   });
 
-  it("the badge VANISHES once the operator declares — their act supersedes the proposal", () => {
+  it("the badge STAYS after the operator declares another part — the way back to the proposal (client 2026-08-05)", () => {
+    // reversed from "vanishes on declaration": exploring the shelf lost the
+    // recommendation ("we lost the suggested label"), and the SELECTED state
+    // already attributes the operator's act — the two marks answer different
+    // questions and may coexist.
     const site = siteView({
       tooth: 19,
       suggested_variant: "6030",
       declared_variant: "5020",
     });
-    expect(variantShelves(detail, site).current.every((c) => !c.suggested)).toBe(true);
+    const cards = variantShelves(detail, site).current;
+    expect(cards.find((c) => c.id === "6030")?.suggested).toBe(true);
+    expect(cards.find((c) => c.id === "5020")?.suggested).toBe(false);
   });
 
   it("no site, or a site the detector proposed nothing for, marks nothing", () => {

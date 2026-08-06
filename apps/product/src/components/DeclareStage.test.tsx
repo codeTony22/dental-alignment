@@ -237,7 +237,10 @@ describe("the variant chips — the active site declares from the catalog", () =
     expect(html.match(/data-role="variant-suggested"/g)).toHaveLength(1);
   });
 
-  it("the badge vanishes once that site is declared — the operator's act supersedes it", () => {
+  it("the badge SURVIVES declaration — the way back to the proposal (client 2026-08-05)", () => {
+    /* reversed from vanish-on-declaration: "we lost the suggested label" — the
+       SELECTED state already attributes the operator's act, and the badge keeps
+       attributing the detector's, so exploring the shelf never loses the way home. */
     const html = view({
       activeTooth: 30,
       detail: {
@@ -252,7 +255,9 @@ describe("the variant chips — the active site declares from the catalog", () =
         ],
       },
     });
-    expect(html).not.toContain('data-role="variant-suggested"');
+    expect(html).toMatch(
+      /data-role="variant-card"[^>]*data-variant="5020"[^>]*aria-pressed="true"[\s\S]*?data-role="variant-suggested"/,
+    );
   });
 });
 
@@ -475,6 +480,17 @@ describe("the DeclareStage container, statically (effects do not run)", () => {
     // default, the WebGL viewer unmounted until asked for. The panes get the pixels.
     expect(html).toContain('data-role="arch-open"');
     expect(html).toContain("Arch context");
+    // Condensed 2026-08-05 (client, live-testing: "condense this buttons in
+    // adjustments tab it takes a lot of space") — the visible label dropped
+    // "— the whole scan"; the full phrase survives as the button's `title` so
+    // the control's purpose is still one hover away, not lost.
+    const archButton = html.match(
+      /<button[^>]*data-role="arch-open"[^>]*>([^<]*)<\/button>/,
+    );
+    expect(archButton?.[1] ?? "").not.toContain("the whole scan");
+    expect(html).toMatch(
+      /data-role="arch-open"[^>]*title="Arch context — the whole scan"/,
+    );
     expect(html).not.toContain('data-role="arch-dialog"');
     expect(html).not.toContain('data-role="main-stage"');
     // §10-O.8 (2026-08-02): the arch dialog is wired to useDialogFocus exactly like
@@ -630,7 +646,14 @@ describe("the workspace toolbar over the panes", () => {
     expect(wired).toContain("⛓ link panes");
     const on = view({ linked: true, onToggleLinked: () => undefined });
     expect(on).toMatch(/data-role="pane-link"[^>]*aria-pressed="true"/);
-    expect(on).toContain("⛓ rotating together");
+    // Retargeted 2026-08-05 (client, live-testing: "condense this buttons in
+    // adjustments tab") — paneLinkLabel(true) shortened from "⛓ rotating
+    // together" to "⛓ linked"; the full sentence survives on the button's own
+    // `title`, asserted below.
+    expect(on).toContain("⛓ linked");
+    expect(on).toMatch(
+      /data-role="pane-link"[^>]*title="Rotate all three panels together \(same angles and zoom, each around its own content\)"/,
+    );
   });
 
   it("the named view presets render only where the stage can actually apply them", () => {

@@ -98,11 +98,14 @@ export interface VariantShelves {
  * `site` is optional only so a caller with no active site (an empty queue) still gets
  * a shelf; passing it is what lets the shelf mark the DETECTOR'S PROPOSAL (gap
  * `variant-suggested-badge`, design flow.dc.html:374-377 — the "sugg." pill). The
- * proposal is shown until the operator declares and not one render longer: once
- * `declared_variant` is set, their act is the answer and a second highlighted card
- * would only ask them to re-litigate a decision they already made. This is the same
- * attribution rule the SYSTEM card's "suggested" tag follows — a server fact, worn
- * only while the server is still the one supplying the value.
+ * badge STAYS after the operator declares (client 2026-08-05: "we lost the
+ * suggested label" — exploring the shelf lost the way back to the recommendation).
+ * The earlier vanish-on-declaration rule read a second mark as re-litigation, but
+ * the two marks answer different questions — SELECTED attributes the operator's
+ * act, "sugg." attributes the detector's — and only the pair lets the operator
+ * compare their choice against the proposal without undeclaring. The SYSTEM card's
+ * tag keeps the vanish rule: there the select shows one value, so a lingering tag
+ * would misattribute the operator's pick to the server.
  */
 export function variantShelves(
   detail: CaseSessionDetail,
@@ -110,8 +113,7 @@ export function variantShelves(
 ): VariantShelves {
   const effective = detail.system.effective_model;
   const group = declarableGroups(detail).find((g) => g.model === effective);
-  const proposed =
-    site !== null && site.declared_variant === null ? site.suggested_variant : null;
+  const proposed = site?.suggested_variant ?? null;
   const cards = (group?.variants ?? []).flatMap((row): VariantCard[] => {
     const id = row["id"];
     if (typeof id !== "string") return []; // no id = not declarable; drop, not lie
@@ -438,9 +440,21 @@ export interface PreviewSlot {
   readonly state: "computing" | "ready" | "error";
   readonly payload?: SitePreviewPayload;
   readonly error?: string;
+  /** THE HELD POSE (client 2026-08-05: "touching the variant tooth buttons put the
+   * middle panel camera to the back of the scan"): the last measured pose this slot
+   * served, carried across re-claims. The occlusal proxy is the fallback for a site
+   * NEVER measured — a site being RE-measured keeps the seated axis it earned. */
+  readonly heldPose?: PreviewPose;
 }
 
 export type PreviewSlots = Readonly<Record<number, PreviewSlot>>;
+
+/** The pose a slot can still aim a camera down: its own payload's, else the one
+ * held across a re-claim. The ONE reader — frame and axis label must both use it,
+ * or the label names an axis the camera is not on. */
+export function poseHeldBy(slot: PreviewSlot | undefined): PreviewPose | null {
+  return slot?.payload?.pose ?? slot?.heldPose ?? null;
+}
 
 /** Claiming is SYNCHRONOUS: the slot takes the key before any response can exist,
  * so ownership is decided at fire time, never at settle time. */
@@ -449,7 +463,14 @@ export function claimSlot(
   tooth: number,
   key: string,
 ): PreviewSlots {
-  return { ...prev, [tooth]: { key, state: "computing" } };
+  const held = poseHeldBy(prev[tooth]);
+  return {
+    ...prev,
+    [tooth]:
+      held !== null
+        ? { key, state: "computing", heldPose: held }
+        : { key, state: "computing" },
+  };
 }
 
 /**
@@ -469,7 +490,14 @@ export function settleSlot(
   if (result.kind === "ok") {
     return { ...prev, [tooth]: { key, state: "ready", payload: result.data } };
   }
-  return { ...prev, [tooth]: { key, state: "error", error: result.detail } };
+  const held = poseHeldBy(current);
+  return {
+    ...prev,
+    [tooth]:
+      held !== null
+        ? { key, state: "error", error: result.detail, heldPose: held }
+        : { key, state: "error", error: result.detail },
+  };
 }
 
 export type PostPreviewFn = (

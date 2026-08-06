@@ -4760,7 +4760,12 @@ button.package-files__link:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 9px;
+  /* Condensed 2026-08-05 (client, live-testing: "condense this buttons in
+     adjustments tab it takes a lot of space") — was `6px 9px`; the row-gap is
+     tightened further below (`.workspace-toolbar`) for the two-row case, and
+     the column-gap comes down with it so a single wide row costs less width
+     too. */
+  gap: 4px 8px;
   min-width: 0;
 }
 
@@ -4770,7 +4775,9 @@ button.package-files__link:hover {
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
-  padding: 4px 9px;
+  /* Condensed 2026-08-05: was `4px 9px` — the chip is a label, not a click
+     target, so it can run tighter than the buttons beside it. */
+  padding: 3px 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-bg);
@@ -4799,6 +4806,19 @@ button.package-files__link:hover {
   display: inline-flex;
   gap: 4px;
   flex: 0 0 auto;
+}
+
+/* Condensed 2026-08-05 (client, live-testing: "condense this buttons in
+   adjustments tab it takes a lot of space") — every button on this strip
+   (arch opener, view presets, zoom, pane link) is `.button--small`, whose 6px
+   top/bottom padding was set for stand-alone buttons, not a chrome row that
+   repeats on two stages. Longhand top/bottom only: it must not touch the
+   zoom buttons' own `padding-inline: 0` below. 5px keeps the row at ~31.5px
+   tall (13px text at 1.5 line-height + 10px padding + 2px border), clear of
+   the ~28px floor. */
+.workspace-toolbar .button--small {
+  padding-top: 5px;
+  padding-bottom: 5px;
 }
 
 .workspace-toolbar__zoom .button {
@@ -6071,9 +6091,14 @@ button.package-files__link:hover {
    and the pills small enough that the wide case actually happens. */
 
 .workspace-toolbar {
-  row-gap: 4px;
-  padding-top: 6px;
-  padding-bottom: 6px;
+  /* Condensed 2026-08-05 (client, live-testing: "condense this buttons in
+     adjustments tab it takes a lot of space which is unnecessary") — was
+     `row-gap: 4px; padding-top/bottom: 6px`. The controls and the alignment
+     strip still share one row wherever the width allows (see the comp-match
+     rule below); this only shrinks the band when they wrap. */
+  row-gap: 3px;
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 
 /* The stat pills are a READOUT, not controls — they can be quiet. Measured before/

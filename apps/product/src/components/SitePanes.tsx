@@ -1114,6 +1114,12 @@ export interface SitePaneSceneOptions {
    *  it is kin to — the hook takes the value and keeps only the OrbitLinkGroup
    *  plumbing. Omitted, the hook's own state stands (the older callers and tests). */
   readonly linked?: boolean;
+  /** THE HELD POSE (domain/declare.poseHeldBy — client 2026-08-05: "touching the
+   *  variant tooth buttons put the middle panel camera to the back of the scan").
+   *  While a re-preview computes, `payload` is null and panes 2/3 would demote to
+   *  the occlusal proxy; a caller that still holds the last measured pose passes it
+   *  here and the camera keeps the seated axis it earned. */
+  readonly heldPose?: PreviewPose | null;
 }
 
 export function useSitePaneScene(
@@ -1326,7 +1332,10 @@ export function useSitePaneScene(
     if (scanPositions === null) return null;
     return (computeAnatomyFrame(scanPositions)?.occlusal ?? null) as Vec3 | null;
   }, [scanPositions]);
-  const siteFrameBase = siteFrameFor(siteCenter, payload?.pose ?? null, occlusal,
+  /* ONE pose for frame AND axis label (the 1375 rule extended): the payload's own,
+     else the held one — never the proxy while a measured axis is still in hand. */
+  const posePresented = payload?.pose ?? options.heldPose ?? null;
+  const siteFrameBase = siteFrameFor(siteCenter, posePresented, occlusal,
                                      scanRadiusMm);
   const siteFraming = presetFraming(siteFrameBase, viewPreset);
   const siteFrame = siteFraming.frame;
@@ -1375,7 +1384,7 @@ export function useSitePaneScene(
   /* NAME THE DIRECTION THE PANE IS ACTUALLY ON. Under a preset that applied, that is
      the preset's own viewpoint; otherwise it is the pane's own axis. The two can never
      be sourced separately again — presetFraming returns them together. */
-  const siteAxis = siteFraming.presetLabel ?? siteAxisLabel(payload?.pose ?? null);
+  const siteAxis = siteFraming.presetLabel ?? siteAxisLabel(posePresented);
   const partAxis = partFraming.presetLabel ?? "the part's own axis";
   const footFor = (
     pane: PaneId,

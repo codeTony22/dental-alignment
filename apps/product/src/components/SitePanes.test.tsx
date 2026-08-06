@@ -13,8 +13,25 @@
  * AdjustStage alike, and a pane surface that only compiled for one of them would be a
  * regression in the very thing the extraction bought.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+
+/* VerifyViewer stamped as markup so the HELD-POSE wiring is render-pinned without
+   WebGL (the DeclarePanes.frames.test.tsx trick) — everything else stays real. */
+vi.mock("viewer", async (importOriginal) => {
+  const real = await importOriginal<typeof import("viewer")>();
+  const React = await import("react");
+  return {
+    ...real,
+    VerifyViewer: (props: { frame: unknown; ariaLabel: string }) =>
+      React.createElement("div", {
+        "data-role": "viewer-stub",
+        "aria-label": props.ariaLabel,
+        "data-frame": encodeURIComponent(JSON.stringify(props.frame ?? null)),
+      }),
+  };
+});
+
 import {
   PaneFoot,
   PANE_STAGE_CHROME_PX,
@@ -23,11 +40,13 @@ import {
   planPaneLayout,
   scanPaneCaption,
   siteAxisLabel,
+  useSitePaneScene,
   type SitePanesViewProps,
 } from "./SitePanes";
 import { armedViewerClassName } from "viewer";
 import { newPairDraft, paneArming, withPick } from "../domain/adjust";
-import { sitePreviewPayload } from "../testing/fixtures";
+import type { PreviewPose } from "../api/client";
+import { caseSessionDetail, sitePreviewPayload, siteView } from "../testing/fixtures";
 
 function view(overrides: Partial<SitePanesViewProps> = {}) {
   return renderToStaticMarkup(
@@ -506,5 +525,57 @@ describe("the pane that wants the click says so", () => {
   it("says nothing on any pane while nothing is armed", () => {
     const markup = view({ hints: paneArming(null, false).hints });
     expect(markup).not.toContain('data-role="pane-hint"');
+  });
+});
+
+/* THE HELD POSE reaches the camera (client 2026-08-05: "touching the variant tooth
+ * buttons put the middle panel camera to the back of the scan"). The slot-level rule
+ * is pinned in domain/declare.test.ts (poseHeldBy); what only a render can pin is
+ * that useSitePaneScene actually AIMS the camera down the held axis while the
+ * payload is out for recompute — the drop would demote panes 2/3 to the occlusal
+ * proxy, which is exactly the regression the client screenshotted. */
+describe("useSitePaneScene — the held pose keeps aiming panes 2/3", () => {
+  const detail = caseSessionDetail({
+    sites: [siteView({ tooth: 19, center: [1, 2, 3] })],
+  });
+
+  function frameOf(html: string, ariaLabel: string): unknown {
+    const match = html.match(
+      new RegExp(`aria-label="${ariaLabel}"[^>]*data-frame="([^"]*)"`),
+    );
+    expect(match, `a viewer slot labelled "${ariaLabel}"`).not.toBeNull();
+    return JSON.parse(decodeURIComponent(match![1]!));
+  }
+
+  function Probe({ heldPose }: { readonly heldPose?: PreviewPose | null }) {
+    const scene = useSitePaneScene(detail, detail.sites[0]!, null, { heldPose });
+    return (
+      <>
+        {scene.scanViewer}
+        {scene.unionViewer}
+      </>
+    );
+  }
+
+  it("no payload + a held pose: both panes still frame down the measured axis", () => {
+    const held: PreviewPose = { axis: [0, 0.6, 0.8], x_axis: [1, 0, 0], origin: [1, 2, 3] };
+    const html = renderToStaticMarkup(<Probe heldPose={held} />);
+    for (const label of [
+      "The scanned cap region",
+      "The scan and the previewed cap overlaid, coloured by deviation",
+    ]) {
+      expect(frameOf(html, label)).toEqual({
+        center: [1, 2, 3],
+        radiusMm: 11,
+        viewDirection: [0, 0.6, 0.8],
+        up: [1, 0, 0],
+      });
+    }
+  });
+
+  it("no payload and nothing held: the direction stays honestly null (no scan parsed, no proxy)", () => {
+    const html = renderToStaticMarkup(<Probe />);
+    const frame = frameOf(html, "The scanned cap region") as { viewDirection: unknown };
+    expect(frame.viewDirection).toBeNull();
   });
 });

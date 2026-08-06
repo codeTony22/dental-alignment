@@ -1728,3 +1728,59 @@ NOTED WITH IT, separate items:
   naming why the shelf exists. Open.
 - `make verify-fleet` now also answers from the REPO ROOT (a passthrough
   Makefile; it was tried from the root and apps/bff first).
+
+## §10-AK — the half-turn a midpoint could not arbitrate, and the live-testing batch (2026-08-05 evening)
+
+**THE DEFECT AFTER THE FIX.** With §10-AJ's one-pivot rule proven intact (ghost
+reads +0.0000° on the very pose), 276794487 t3 still folded a +174.7° from its one
+pair — 13 minutes AFTER the fix landed — and the published metric got WORSE for
+it: 0.3109 → 0.3407 RMS. The pair was a DIAMETER: endpoints at radii 2.40/1.18 on
+opposite sides of the axis, midpoint 0.057mm from the axis itself. A span's
+direction is half-turn ambiguous and `direction_delta` resolves the branch by the
+midpoint — but a midpoint ON the rotation axis is invariant under the very
+parameter it is deciding. It held 8.15% of the weight in the answer and 100% of
+the say in the branch, and the weighted RMS (0.222mm) discounted the 74.5°
+disagreement 11.3× — clean under every disagreement bound. The rim-centre lever
+guard could not see it: the rim centre sits 0.60mm off the axis, so the diameter's
+midpoint read 0.62mm about it and cleared `MIN_LEVER_ARM_MM` with 0.12mm to spare.
+
+**THE RULE (restrictive-only, per the no-regression constraint):**
+`require_span_off_axis` — a span whose midpoint sits within `MIN_LEVER_ARM_MM` of
+the part AXIS (canonical origin, the line the estimated rotation turns on) is
+REFUSED on either half at pair time, with the actionable sentence ("crosses the
+part's axis… span the feature along its own radius, or mark its two ends as two
+separate pairs"). After the standing rim-centre guard, so older sentences keep
+precedence. Never re-weighting: an observation may only arbitrate the ±180° branch
+if it carries enough weight to be judged by the agreement statistic that reports
+it. Pinned with the defect's own geometry (offset centre 0.62mm escape) plus the
+radial-trench control.
+
+**AND THE DIPOLE ITSELF IS NOT A CLOCK ERROR.** First azimuthal harmonic of the
+pane's own colouring: the dipole's WORLD direction stays put (bearing 55°–73°) at
+every clock angle — it rotates with nothing. It is tilt/seat, ~6.9° of top-face
+ramp on a seat graded low (coverage 29.9%, axis spread 8.8°, rim_agreement
+1.34mm); DEV's own clock optimum is −14° for 1.0% of RMS, inside a valley flat to
+±20°. No pair, correct or otherwise, removes what the operator is looking at —
+that site is a rescan/seat conversation. (Fleet note: `verify-fleet` reads the
+latest run's records, so its 0.3109 for this case predated the +174.7 nudge; a
+re-run today prints 0.3407 until the evidence is retired.)
+
+**THE LIVE-TESTING BATCH, same evening:**
+- *The held pose* (client: "touching the variant tooth buttons put the middle
+  panel camera to the back of the scan"): a variant click re-claims the preview
+  slot, the payload vanishes for the recompute, and panes 2/3 demoted to the
+  occlusal proxy. `PreviewSlot.heldPose` + `poseHeldBy` carry the last measured
+  pose across re-claims (and across the seated fallback's gate flip); frame and
+  axis label read the SAME `posePresented`. The proxy remains the fallback for
+  never-measured, not re-measured. Render-pinned via the stamped-viewer probe.
+- *The suggested badge survives declaration* (client: "we lost the suggested
+  label"): variantShelves' vanish-on-declaration rule reversed — SELECTED
+  attributes the operator's act, "sugg." the detector's; the system SELECT keeps
+  the vanish rule (one visible value would misattribute).
+- *Workspace toolbar condensed* (client: "it takes a lot of space") — in flight.
+- Recorded, not yet built: a variant round-trip (A→B→A) retires the run linkage
+  and the site's pair evidence (§10-AG working as designed) and the operator must
+  re-confirm at Alignment to land a new run — the client asked "when aligning
+  again do we have to go back to alignment?"; a one-click re-align from
+  Adjustment would need the attestation story resolved (the confirm tick attests
+  the live panes). Open, with the §10-AJ superseded-shelf warning.

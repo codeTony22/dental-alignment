@@ -13,7 +13,13 @@ describe("the pane link", () => {
   });
 
   it("the toggle says the state it is in and the act it offers", () => {
-    expect(paneLinkLabel(true)).toBe("⛓ rotating together");
+    // Condensed 2026-08-05 (client, live-testing: "condense this buttons in
+    // adjustments tab it takes a lot of space") — "rotating together" was the
+    // longest word on the toolbar's control row. The button's own `title` still
+    // carries the full sentence ("Rotate all three panels together (same angles
+    // and zoom, each around its own content)"), so the word dropped from the
+    // label is not lost, only moved off the row.
+    expect(paneLinkLabel(true)).toBe("⛓ linked");
     expect(paneLinkLabel(false)).toBe("⛓ link panes");
   });
 });

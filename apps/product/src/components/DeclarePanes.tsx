@@ -36,6 +36,7 @@ import {
   attestationSentence,
   createPreviewFirer,
   paneNotices,
+  poseHeldBy,
   previewKeyFor,
   reviewTick,
   seatedReadWanted,
@@ -425,6 +426,13 @@ export function DeclarePanes({
     viewPresetNonce,
     zoomLevel,
     linked,
+    // the held pose regardless of WHOSE key the slot wears, and from the seated
+    // MAP rather than the gated variable — a variant click on an adjusted site
+    // flips seatedReadWanted off in the same render, and the pose it measured must
+    // outlive that gate or the camera demotes to the proxy (the very bug)
+    heldPose:
+      poseHeldBy(slot) ??
+      (tooth !== null ? (seatedSlots[tooth]?.payload?.pose ?? null) : null),
   });
 
   /* Reported on the PRIMITIVES, not on the payload object: the payload is replaced

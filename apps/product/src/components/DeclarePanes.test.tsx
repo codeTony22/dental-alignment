@@ -180,7 +180,12 @@ describe("the pane chrome the demo's same surface carries (parity fix, ledger ro
     expect(off).toContain("verify-panels__toolbar");
     expect(off).toMatch(/aria-pressed="false"[^>]*>[^<]*link panes/);
     const on = view({ linked: true, onToggleLinked: () => undefined });
-    expect(on).toMatch(/aria-pressed="true"[^>]*>[^<]*rotating together/);
+    // Retargeted 2026-08-05 (client, live-testing: "condense this buttons in
+    // adjustments tab") — the shared paneLinkLabel(true) shortened from
+    // "⛓ rotating together" to "⛓ linked"; this strip only renders while a
+    // pane is maximized, but it imports the same domain word, so the pin
+    // follows workspace.test.ts's.
+    expect(on).toMatch(/aria-pressed="true"[^>]*>[^<]*linked/);
     expect(on).toContain("button--active");
   });
 

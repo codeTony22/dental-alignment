@@ -900,8 +900,13 @@ export function DeclareStageView({
             data-role="arch-open"
             className="button button--secondary button--small"
             onClick={() => setArchOpen(true)}
+            /* Condensed 2026-08-05 (client, live-testing: "condense this buttons
+               in adjustments tab it takes a lot of space") — the visible label
+               drops "— the whole scan"; the title keeps the full phrase so the
+               control's purpose is still one hover away. */
+            title="Arch context — the whole scan"
           >
-            ⊞ Arch context — the whole scan
+            ⊞ Arch context
           </button>
         </WorkspaceToolbar>
         {panesSlot}
