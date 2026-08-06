@@ -48,6 +48,7 @@ import {
   reconfirmControl,
   newPairDraft,
   pairSetWords,
+  pairStatusLine,
   observationWords,
   outcomeWords,
   pairBody,
@@ -990,6 +991,35 @@ describe("the pair set's own overview — the cap, before it is exceeded", () =>
     const words = pairSetWords(full);
     expect(words).toContain(`${MAX_PAIRS} of ${MAX_PAIRS} pairs complete`);
     expect(words).toContain("remove one before placing another");
+  });
+});
+
+/**
+ * ONE STATUS LINE (client live-testing 2026-08-06: "so much text ... lack of UI/UX
+ * design"). `pairStatusLine` is the single sentence that replaces the drawer's three
+ * overlapping ones (the hint bar, the count sentence, and the Apply placeholder) — this
+ * pins WHICH of the two source sentences wins in each state, never a third wording.
+ */
+describe("pairStatusLine — the ONE sentence that replaces three overlapping ones", () => {
+  it("with nothing placed, states the floor and the ceiling together", () => {
+    expect(pairStatusLine([], null)).toBe(pairSetWords([]));
+    expect(pairStatusLine([], null)).toContain("one complete pair is enough");
+  });
+
+  it("with an open draft, names the exact next click over the count", () => {
+    const draft = newPairDraft("p1", false);
+    expect(pairStatusLine([draft], draft)).toBe(pairPrompt(draft));
+    expect(pairStatusLine([draft], draft)).toContain("LIBRARY PART");
+  });
+
+  it("with every pair complete and none open, falls back to the count, not 'start a pair'", () => {
+    const complete = withPick(
+      withPick(newPairDraft("p1", false), "part", [1, 0, 1]),
+      "scan",
+      [5, 5, 5],
+    );
+    expect(pairStatusLine([complete], null)).toBe(pairSetWords([complete]));
+    expect(pairStatusLine([complete], null)).toContain("1 of");
   });
 });
 

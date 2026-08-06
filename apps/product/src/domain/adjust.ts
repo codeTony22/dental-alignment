@@ -735,6 +735,33 @@ export function pairSetWords(drafts: readonly PairDraft[]): string {
 }
 
 /**
+ * ONE STATUS LINE (client live-testing, 2026-08-06: "so much text ... lack of UI/UX
+ * design and disorganization"). The drawer stacked THREE sentences that all answer the
+ * same question — "what does this tool want from me right now" — at once: the hint bar
+ * (`pairPrompt` with no open draft, "Start a pair to place marks."), the count sentence
+ * (`pairSetWords`, "No pairs placed yet — 8 at most…"), and the Apply control's own
+ * blocked-reason placeholder ("Place at least one complete pair…"). None of the three
+ * is wrong; they overlap.
+ *
+ * NEITHER SENTENCE IS DELETED — this only picks ONE per state, the strongest for what
+ * the operator needs at that instant. An OPEN draft names the exact next click
+ * (`pairPrompt`, e.g. "Click the feature on the LIBRARY PART (pane 1)."): that is more
+ * actionable than a count. With no open draft — nothing half-placed, whether that is
+ * zero pairs or a set of complete ones — `pairSetWords` already states both the floor
+ * ("one complete pair is enough") and the ceiling ("8 at most") in the same breath,
+ * which is the pair-count honesty this app is pinned on keeping. The Apply control's
+ * OWN placeholder text is retired from view entirely (see AdjustStage's `PairsList`):
+ * its blocked reason rides in the button's `title`, the same convention the stage
+ * already uses for "Go to Deliver".
+ */
+export function pairStatusLine(
+  drafts: readonly PairDraft[],
+  openDraft: PairDraft | null,
+): string {
+  return openDraft !== null ? pairPrompt(openDraft) : pairSetWords(drafts);
+}
+
+/**
  * THE VACUOUS RMS, SAID BEFORE THE CLICK (defect cap6020-neodent-gm, 2026-08-01).
  *
  * A fit built from ONE observation is exactly determined for rotation: that single

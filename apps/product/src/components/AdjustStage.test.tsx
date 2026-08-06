@@ -346,19 +346,39 @@ describe("fit by points", () => {
     const html = view({ tool: "fit-by-points" });
     expect(html).toContain('data-role="start-point-pair"');
     expect(html).toContain('data-role="start-span-pair"');
-    expect(html).toContain("Span the SCAN");
+    // RETARGETED (client live-testing 2026-08-06: "so much text"): the visible
+    // label shrank to the tool's name; the wire's own casing ("the SCAN") no
+    // longer appears on the button face — see the title-attribute test below.
+    expect(html).toContain(">Span the scan<");
   });
 
-  it("every label says WHICH HALF its clicks land on (client 2026-08-04)", () => {
-    // the report: "add a span in both ends doesnt mark the library with 2 points
-    // (just one)". Correct behaviour — "both ends" meant both ends of the feature
-    // on the SCAN — but no label said which half it spanned, so the operator chose
-    // the wrong door. The counts must match `newPairDraft`'s own slots.
+  it("names the click-count breakdown in each button's TITLE, not its label " +
+     "(client 2026-08-04, retargeted 2026-08-06)", () => {
+    // The original defect: "add a span in both ends doesnt mark the library with 2
+    // points (just one)". Correct behaviour — "both ends" meant both ends of the
+    // feature on the SCAN — but no label said which half it spanned, so the
+    // operator chose the wrong door. The live-testing pass then flagged the FIX
+    // itself as part of "so much text": three buttons each carrying a full click
+    // breakdown on their face. The breakdown is not deleted — it moved to `title`,
+    // reachable on hover/focus — and the visible label is just the tool's name.
     const html = view({ tool: "fit-by-points" });
-    expect(html).toContain("Point pair · 1 on the part, 1 on the scan");
-    expect(html).toContain("Span the SCAN · 1 on the part, 2 on the scan");
-    expect(html).toContain("Span BOTH · 2 on the part, 2 on the scan");
-    // the ambiguous words are gone, not merely supplemented
+    expect(html).toContain(">Point pair<");
+    expect(html).toContain(">Span the scan<");
+    expect(html).toContain(">Span both<");
+    expect(html).toMatch(
+      /data-role="start-point-pair"[^>]*title="1 click on the library part, 1 on the scan\./,
+    );
+    expect(html).toMatch(
+      /data-role="start-span-pair"[^>]*title="1 click on the library part, 2 on the scan\./,
+    );
+    expect(html).toMatch(
+      /data-role="start-library-span-pair"[^>]*title="2 clicks on the library part, 2 on the scan\./,
+    );
+    // the visible labels carry no click-count any more — the whole point of the move
+    expect(html).not.toContain("Point pair ·");
+    expect(html).not.toContain("Span the SCAN ·");
+    expect(html).not.toContain("Span BOTH ·");
+    // the ambiguous words the original fix retired stay retired
     expect(html).not.toContain("(both ends)");
     expect(html).not.toContain("(both halves)");
   });
@@ -381,9 +401,16 @@ describe("fit by points", () => {
   });
 
   it("Apply states what is missing rather than going quietly dead", () => {
+    // RETARGETED (client live-testing 2026-08-06): the blocked control used to
+    // CARRY its reason as visible text — "a big greyed placeholder". The reason is
+    // not dropped: it rides `title` now, the same convention "Go to Deliver" uses
+    // when it is blocked — and the visible label stays "Apply the fit" either way.
     const html = view({ tool: "fit-by-points", drafts: [] });
     expect(html).toContain('aria-disabled="true"');
-    expect(html).toContain("Place at least one complete pair");
+    expect(html).toMatch(
+      /data-role="apply-pairs"[^>]*title="Place at least one complete pair/,
+    );
+    expect(html).toMatch(/data-role="apply-pairs"[^>]*>\s*Apply the fit\s*</);
   });
 
   it("Apply goes live once a pair is complete", () => {
@@ -441,8 +468,12 @@ describe("auto-mark — the software proposes the part half (client 2026-07-29)"
     expect(html).toContain('data-role="auto-mark-summary"');
     expect(html).toContain("2 landmarks proposed");
     expect(html).toContain("best lever arm first");
-    // the PART half is already filled server-side — the prompt asks for the SCAN half
-    expect(html).toContain('data-role="pair-prompt"');
+    // RETARGETED (client live-testing 2026-08-06): the standalone `pair-prompt`
+    // paragraph above the pair list retired into `PairsList`'s own ONE status
+    // line (`data-role="pair-status"`, `pairStatusLine`) — same words, one home.
+    // The PART half is already filled server-side, so the line asks for the SCAN
+    // half of the first (open) landmark.
+    expect(html).toContain('data-role="pair-status"');
     expect(html).toContain("Click the same spot on the SCAN");
   });
 
@@ -454,7 +485,10 @@ describe("auto-mark — the software proposes the part half (client 2026-07-29)"
       drafts: [],
     });
     expect(html).toContain("no rotation-defining landmarks to propose");
-    expect(html).not.toContain('data-role="pair-prompt"');
+    // RETARGETED: with nothing proposed there is no OPEN draft to name a next
+    // click for, so the status line falls back to the count sentence, never the
+    // scan-half prompt that only makes sense once a landmark exists to match.
+    expect(html).not.toContain("Click the same spot on the SCAN");
   });
 
   it("never offers the manual start-pair buttons — the pairs are the server's proposal", () => {
@@ -489,8 +523,11 @@ describe("auto-mark — the software proposes the part half (client 2026-07-29)"
       drafts: autoMarkDrafts(LANDMARKS),
     });
     expect(html).toContain('data-role="pair-list"');
-    expect(html).toContain('data-role="apply-pairs"');
-    expect(html).toContain("Place at least one complete pair");
+    // RETARGETED (client live-testing 2026-08-06): the reason now rides `title`,
+    // not the button's visible text — see "Apply states what is missing" above.
+    expect(html).toMatch(
+      /data-role="apply-pairs"[^>]*title="Place at least one complete pair/,
+    );
   });
 });
 
@@ -777,8 +814,12 @@ describe("the pair set: its ceiling, and starting over", () => {
   );
 
   it("names the 8-pair ceiling BEFORE it is exceeded", () => {
+    // RETARGETED (client live-testing 2026-08-06): the ceiling sentence now rides
+    // the drawer's ONE status line (`data-role="pair-status"`) rather than its own
+    // `pair-set` paragraph — merged with the hint bar and the Apply placeholder,
+    // which said overlapping things. The words themselves are unchanged.
     const html = view({ tool: "fit-by-points", drafts: [] });
-    expect(html).toContain('data-role="pair-set"');
+    expect(html).toContain('data-role="pair-status"');
     expect(html).toContain("8 at most");
   });
 
@@ -814,8 +855,11 @@ describe("the pair set: its ceiling, and starting over", () => {
     });
     expect(html).toContain('data-guard="refusal"');
     expect(html).toContain("screw access");
-    // and the control is INERT with the reason on it — not live into a 422
-    expect(html).toContain("Pair 1");
+    // and the control is INERT with the reason reachable on it — not live into a
+    // 422. RETARGETED (client live-testing 2026-08-06): the reason used to be the
+    // span's own visible text; it now rides `title`, naming which pair, same as
+    // before, on hover/focus rather than filling the button's face.
+    expect(html).toMatch(/data-role="apply-pairs"[^>]*title="Pair 1/);
   });
 
   it("keeps Apply live when the server's reference has not arrived", () => {
@@ -1413,9 +1457,20 @@ describe("the per-site relief control", () => {
   });
 
   it("over a done run, discloses the re-emit — never a full re-run", () => {
+    // RETARGETED (client live-testing 2026-08-06): the row used to stack TWO
+    // caption sentences under it — the served ceiling (kept, above, as its own
+    // line) and this re-emit disclosure. The disclosure now rides the Apply
+    // button's `title`, the same convention "Go to Deliver" and the pair Apply
+    // control both use when there is something to say about a click before it is
+    // made — never a second full-width sentence under the row.
     const html = view({ relief: RELIEF });
-    expect(html).toContain("re-emits the package from the run&#x27;s own poses");
+    expect(html).toMatch(
+      /data-role="site-relief-apply"[^>]*title="Applying re-emits the package from the run&#x27;s own poses/,
+    );
     expect(html).not.toContain("re-processes the case");
+    // no second caption paragraph — one line survives (the ceiling), not two
+    const relief = html.slice(html.indexOf('data-role="site-relief"'));
+    expect(relief.match(/site-relief__note/g)?.length).toBe(1);
   });
 
   it("an override names itself, and the refusal renders verbatim", () => {

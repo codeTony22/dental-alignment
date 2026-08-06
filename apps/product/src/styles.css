@@ -7050,13 +7050,20 @@ button.package-files__link:hover {
   width: 64px;
 }
 
-/* Per-site relief (§10-B/C): a quiet field among the site acts. */
+/* Per-site relief (§10-B/C): a quiet field among the site acts. Grouped off the acts
+   row above it with the SAME thin rule `.drawer-acts` uses to group off the tool body
+   (client live-testing 2026-08-06: the drawer read as one undifferentiated stack) —
+   CSS spacing, not new chrome; the drop/accept/re-read acts and this field are two
+   different questions ("what happens to this cap" vs "how it is cut") and now read
+   as two groups rather than one. */
 .site-relief {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
-  padding: 8px 0 0;
+  padding: 10px 0 0;
+  margin-top: 10px;
+  border-top: 1px solid var(--color-border);
 }
 
 .site-relief__label {

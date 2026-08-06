@@ -96,10 +96,9 @@ import {
   observationWords,
   outcomeWords,
   pairBody,
-  pairPrompt,
-  pairSetWords,
   pairSlot,
   pairSlots,
+  pairStatusLine,
   pairWords,
   queueSummary,
   reasonCountWords,
@@ -251,6 +250,13 @@ function SiteReliefControl({
         data-role="site-relief-apply"
         className="button button--secondary button--small"
         disabled={saving || !usable || parsed === siteValue}
+        /* THE SECOND CAPTION, ON THE CONTROL IT EXPLAINS (client live-testing
+           2026-08-06: two sentences stacked under one row read as clutter). The
+           ceiling below carries a SERVED bound and stays a visible line; this one
+           only discloses what "Apply" does (a re-emit over a done run, or a value
+           that rides the next one) — exactly the shape `title` already carries for
+           "Go to Deliver" elsewhere on this stage. */
+        title={siteReliefApplyNote(runDone)}
         onClick={() => onApply(parsed)}
       >
         {saving
@@ -264,7 +270,6 @@ function SiteReliefControl({
           {ceilingLine}
         </span>
       )}
-      <span className="site-relief__note">{siteReliefApplyNote(runDone)}</span>
       {error !== null && (
         <span data-role="site-relief-error" role="alert" className="panel__error">
           {error}
@@ -516,14 +521,20 @@ function PairsList({
   readonly sourceLabelFor?: (draft: PairDraft) => string | null;
 }) {
   const applyBlocked = applyBlockedReason(drafts, pose, clock);
+  const openDraft = drafts.find((d) => !isComplete(d)) ?? null;
   return (
     <>
-      {/* THE CEILING, BEFORE IT IS HIT (design review 2026-07-31): MAX_PAIRS used to
-          surface only through applyBlockedReason, which speaks once the cap is
-          already exceeded — the operator met the limit by being told to undo work
-          they had just finished. */}
-      <p data-role="pair-set" className="panel__hint">
-        {pairSetWords(drafts)}
+      {/* ONE STATUS LINE (client live-testing 2026-08-06: "so much text ... lack of
+          UI/UX design"). This used to be THREE sentences on screen at once — the hint
+          bar above this tool's body ("Start a pair to place marks."), this line
+          ("No pairs placed yet — 8 at most…"), and the Apply control's own blocked
+          placeholder ("Place at least one complete pair…") — all answering the same
+          question. `pairStatusLine` picks the ONE that matters right now: the exact
+          next click while a pair is open, otherwise the count-and-ceiling sentence
+          (which already carries the pair-count honesty this app is pinned on). Same
+          MAX_PAIRS-before-it's-hit doctrine as before (design review 2026-07-31). */}
+      <p data-role="pair-status" role="status" className="panel__hint">
+        {pairStatusLine(drafts, openDraft)}
       </p>
       {/* THE VACUOUS RMS, BEFORE THE CLICK (defect cap6020-neodent-gm, 2026-08-01).
           One pair fixes the rotation exactly, so the fit it produces has nothing to
@@ -646,12 +657,20 @@ function PairsList({
             Apply the fit
           </button>
         ) : (
+          /* THE REASON MOVES TO `title` (client live-testing 2026-08-06). The blocked
+             span used to CARRY its own reason as visible text — "a big greyed
+             placeholder" running the full sentence, sometimes two ("Pair 1: ..."). The
+             reason is not dropped: a per-pair guard already renders beside the pair it
+             names (`data-role="mark-guard"`), and the whole sentence is still here, in
+             `title` — the same convention "Go to Deliver" already uses on this stage
+             when it is blocked. */
           <span
             data-role="apply-pairs"
             aria-disabled="true"
+            title={applyBlocked}
             className="button button--secondary button--blocked"
           >
-            {applyBlocked}
+            Apply the fit
           </span>
         )}
         {drafts.length > 0 && (
@@ -746,7 +765,6 @@ export function AdjustStageView({
   const active = entries.find((e) => e.tooth === activeTooth) ?? null;
   const busy = phase === "working";
   const openDraft = drafts.find((d) => !isComplete(d)) ?? null;
-  const toolInfo = ADJUST_TOOLS.find((t) => t.id === tool)!;
   const reworkNote = lastOutcome !== null ? reworkWords(lastOutcome) : null;
   /* THE RE-CONFIRMATION IS THE SITE'S STATE, NOT THE LAST CLICK'S (design review
      2026-07-31). It used to render only inside the outcome block, and every route
@@ -1013,7 +1031,12 @@ export function AdjustStageView({
             )}
 
             <ToolTabs tool={tool} onSelectTool={onSelectTool} />
-            <p data-role="tool-oneliner" className="panel__hint">{toolInfo.oneLiner}</p>
+            {/* THE STANDING EXPLAINER PARAGRAPH RETIRES HERE (client live-testing
+                2026-08-06: "so much text ... lack of UI/UX design"). It repeated,
+                below the tabs, the SAME sentence each tab already carries as its own
+                `title` (see `ToolTabs`) — nothing here was reachable only through the
+                paragraph. Progressive disclosure, not deletion: the words are the
+                active tab's own tooltip / accessible title, one hop away, not gone. */}
 
             {active === null ? (
               <p data-role="tool-blocked" className="panel__hint">
@@ -1127,9 +1150,11 @@ export function AdjustStageView({
 
                 {tool === "fit-by-points" && (
                   <>
-                    <p data-role="pair-prompt" className="adjust-tool__readout">
-                      {pairPrompt(openDraft)}
-                    </p>
+                    {/* THE STANDALONE HINT RETIRES HERE (client live-testing
+                        2026-08-06): its sentence — "what does this tool want next" —
+                        is now the ONE status line `PairsList` renders beside the
+                        pair list itself (`pairStatusLine`), not a second copy above
+                        the buttons. */}
                     {ghostsActive && (
                       /* the ghost's honest caption: it is the current pose's
                          CLAIM, and the difference from where the operator
@@ -1142,23 +1167,26 @@ export function AdjustStageView({
                       </p>
                     )}
                     <div className="adjust-tool__row">
+                      {/* EACH BUTTON SAYS WHERE ITS CLICKS GO — in its `title` now,
+                          not its visible label (client 2026-08-04, then retargeted
+                          2026-08-06 by the live-testing complaint about the drawer's
+                          own volume of text: "add a span in both ends doesnt mark the
+                          library with 2 points (just one)"). It did not — "both ends"
+                          meant both ends of the feature ON THE SCAN, and the button
+                          that takes two library clicks is the third one. The counts
+                          are still stated, verbatim, on hover/focus; only the LABEL
+                          shrank to the tool's name. The counts are the server's own
+                          shape (`newPairDraft`: a library span forces the scan
+                          span). */}
                       <button
                         type="button"
                         data-role="start-point-pair"
                         className="button button--secondary button--small"
                         disabled={busy || openDraft !== null}
+                        title="1 click on the library part, 1 on the scan."
                         onClick={() => onStartPair(false)}
                       >
-                        {/* EACH LABEL SAYS WHERE ITS CLICKS GO (client 2026-08-04:
-                            "add a span in both ends doesnt mark the library with 2
-                            points (just one)"). It does not — "both ends" meant both
-                            ends of the feature ON THE SCAN, and the button that takes
-                            two library clicks is the third one. The behaviour was
-                            right and the labels did not say which half they spanned,
-                            so the operator picked the wrong door and read the result
-                            as a defect. The counts are the server's own shape
-                            (`newPairDraft`: a library span forces the scan span). */}
-                        Point pair · 1 on the part, 1 on the scan
+                        Point pair
                       </button>
                       <button
                         type="button"
@@ -1166,13 +1194,14 @@ export function AdjustStageView({
                         className="button button--secondary button--small"
                         disabled={busy || openDraft !== null}
                         title={
-                          "Two clicks spanning one feature — both ends of the trench, or " +
-                          "across a hole. The midpoint averages the click noise; the " +
-                          "direction is a second reading the server judges on its own."
+                          "1 click on the library part, 2 on the scan. Two clicks spanning " +
+                          "one feature — both ends of the trench, or across a hole. The " +
+                          "midpoint averages the click noise; the direction is a second " +
+                          "reading the server judges on its own."
                         }
                         onClick={() => onStartPair(true)}
                       >
-                        Span the SCAN · 1 on the part, 2 on the scan
+                        Span the scan
                       </button>
                       <button
                         type="button"
@@ -1180,14 +1209,14 @@ export function AdjustStageView({
                         className="button button--secondary button--small"
                         disabled={busy || openDraft !== null}
                         title={
-                          "Span the SAME feature on both halves — two clicks on the " +
-                          "library part, two on the scan. The part's bearing stops being " +
-                          "assumed radial and becomes measured, which makes a chord " +
-                          "across a feature a reading the server can use instead of drop."
+                          "2 clicks on the library part, 2 on the scan. Span the SAME " +
+                          "feature on both halves. The part's bearing stops being assumed " +
+                          "radial and becomes measured, which makes a chord across a " +
+                          "feature a reading the server can use instead of drop."
                         }
                         onClick={() => onStartPair(true, true)}
                       >
-                        Span BOTH · 2 on the part, 2 on the scan
+                        Span both
                       </button>
                     </div>
                     <PairsList
@@ -1229,11 +1258,9 @@ export function AdjustStageView({
                         <p data-role="auto-mark-summary" className="panel__hint">
                           {autoMarkSummary(autoMarkLandmarks)}
                         </p>
-                        {autoMarkLandmarks.length > 0 && (
-                          <p data-role="pair-prompt" className="adjust-tool__readout">
-                            {pairPrompt(openDraft)}
-                          </p>
-                        )}
+                        {/* the next-click prompt retires here too — it is
+                            `PairsList`'s one status line now (see the fit-by-points
+                            body's own note above) */}
                         {ghostsActive && (
                           /* the same honest caption fit-by-points carries — the
                              ghost is the pose's CLAIM, and auto-mark is where it
