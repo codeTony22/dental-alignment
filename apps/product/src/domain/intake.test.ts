@@ -9,10 +9,13 @@ import {
   ceilingReadouts,
   choicesUpdateFrom,
   constructionOptions,
+  defaultToothForMark,
   detectionMarkers,
   EMPTY_MARK,
   markOnArmMark,
   markOnArmPick,
+  markOnPlace,
+  markPlacedWords,
   pickSiteAt,
   remarkRetiresSomething,
   remarkWords,
@@ -713,6 +716,7 @@ describe("the two doors onto the stage's ONE point pick (audit 2026-07-31)", () 
     armed: false,
     pending: [1, 2, 3],
     tooth: "14",
+    source: null,
     error: null,
   };
 
@@ -733,7 +737,13 @@ describe("the two doors onto the stage's ONE point pick (audit 2026-07-31)", () 
   });
 
   it("discarding is the only thing that empties the draft", () => {
-    expect(EMPTY_MARK).toEqual({ armed: false, pending: null, tooth: "", error: null });
+    expect(EMPTY_MARK).toEqual({
+      armed: false,
+      pending: null,
+      tooth: "",
+      source: null,
+      error: null,
+    });
   });
 });
 
@@ -833,5 +843,108 @@ describe("turnaroundPillLabel — the served unit, formatted and nothing more", 
     });
     expect(label).not.toContain("24 h");
     expect(label).not.toContain("h ·");
+  });
+});
+
+/* THE MARK NAMES ITS OWN TOOTH (client 2026-08-06, the arch upload case: "the tool
+ * needs to let me mark it without asking me for which tooth"). The question stays
+ * answerable — the input remains editable — but it stops BLOCKING: the placed mark
+ * pre-fills the best available label. Provenance is honest: a covering detector
+ * guess is the detector's; a free label says it is one, because on an upload with
+ * no anchors any number is bookkeeping, not anatomy. */
+describe("defaultToothForMark — the pre-filled label, provenance named", () => {
+  const CENTER = [10, 0, 0] as const;
+
+  it("a covering proposal's tooth guess wins, named as the detector's", () => {
+    const d = defaultToothForMark({
+      sites: [siteView({ tooth: 3 })],
+      proposals: [detectedProposal({ tooth_guess: 12, center: [12, 0, 0] })],
+      center: CENTER,
+      jaw: "upper",
+    });
+    expect(d).toEqual({ tooth: 12, source: "detector" });
+  });
+
+  it("a proposal beyond the pick radius is another cap — its guess does not speak", () => {
+    const d = defaultToothForMark({
+      sites: [],
+      proposals: [detectedProposal({ tooth_guess: 12, center: [19, 0, 0] })],
+      center: CENTER,
+      jaw: "upper",
+    });
+    expect(d).toEqual({ tooth: 1, source: "free-label" });
+  });
+
+  it("a guess already sitting on a site cannot be handed out twice", () => {
+    const d = defaultToothForMark({
+      sites: [siteView({ tooth: 12 })],
+      proposals: [detectedProposal({ tooth_guess: 12, center: [12, 0, 0] })],
+      center: CENTER,
+      jaw: "upper",
+    });
+    expect(d).toEqual({ tooth: 1, source: "free-label" });
+  });
+
+  it("the free label is the jaw's next unoccupied number — upper counts 1-16, lower 17-32", () => {
+    const upper = defaultToothForMark({
+      sites: [siteView({ tooth: 1 }), siteView({ tooth: 2 })],
+      proposals: [],
+      center: CENTER,
+      jaw: "upper",
+    });
+    expect(upper).toEqual({ tooth: 3, source: "free-label" });
+    const lower = defaultToothForMark({
+      sites: [],
+      proposals: [],
+      center: CENTER,
+      jaw: "lower",
+    });
+    expect(lower).toEqual({ tooth: 17, source: "free-label" });
+  });
+
+  it("an unknown jaw still offers a label from the whole range; a full jaw offers none", () => {
+    expect(
+      defaultToothForMark({ sites: [], proposals: [], center: CENTER, jaw: null }),
+    ).toEqual({ tooth: 1, source: "free-label" });
+    const all = Array.from({ length: 16 }, (_, i) => siteView({ tooth: i + 1 }));
+    expect(
+      defaultToothForMark({ sites: all, proposals: [], center: CENTER, jaw: "upper" }),
+    ).toBeNull();
+  });
+});
+
+describe("markOnPlace — placing the centre fills the label without clobbering a typed one", () => {
+  it("pre-fills an empty tooth and disarms", () => {
+    const placed = markOnPlace(
+      { ...EMPTY_MARK, armed: true },
+      [1, 2, 3],
+      { tooth: 12, source: "detector" },
+    );
+    expect(placed.pending).toEqual([1, 2, 3]);
+    expect(placed.armed).toBe(false);
+    expect(placed.tooth).toBe("12");
+  });
+
+  it("a tooth the operator already typed stands — their word beats the default", () => {
+    const placed = markOnPlace(
+      { ...EMPTY_MARK, armed: true, tooth: "9" },
+      [1, 2, 3],
+      { tooth: 12, source: "detector" },
+    );
+    expect(placed.tooth).toBe("9");
+  });
+
+  it("no default leaves the question as it was", () => {
+    const placed = markOnPlace({ ...EMPTY_MARK, armed: true }, [1, 2, 3], null);
+    expect(placed.tooth).toBe("");
+  });
+});
+
+describe("markPlacedWords — the prompt says where the label came from", () => {
+  it("names the detector, the free label, or asks as before", () => {
+    expect(markPlacedWords("detector")).toContain("detector");
+    expect(markPlacedWords("free-label")).toContain("free");
+    expect(markPlacedWords("free-label")).toContain("edit");
+    expect(markPlacedWords(null)).toBe("Centre placed. Which tooth is it?");
   });
 });

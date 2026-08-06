@@ -31,10 +31,13 @@ import {
   constructionOptions,
   turnaroundPillLabel,
   detectionMarkers,
+  defaultToothForMark,
   EMPTY_MARK,
   markOnArmMark,
   adoptableProposals,
   markOnArmPick,
+  markOnPlace,
+  markPlacedWords,
   openingSiteFor,
   pickSiteAt,
   remarkRetiresSomething,
@@ -127,16 +130,20 @@ interface SiteListProps {
  * site at `detected`, same ladder as every other) replaces everything. */
 function AdoptProposalControl({
   proposal,
+  defaultTooth,
   saving,
   error,
   onAdopt,
 }: {
   readonly proposal: AdoptableProposal;
+  /** The pre-filled label (client 2026-08-06, same rule as the missed-cap mark:
+   *  domain/intake.defaultToothForMark) — adopting is one click, the field edits. */
+  readonly defaultTooth?: number | null;
   readonly saving: boolean;
   readonly error: string | null;
   readonly onAdopt: (center: readonly number[], tooth: number) => void;
 }) {
-  const [tooth, setTooth] = useState("");
+  const [tooth, setTooth] = useState(defaultTooth != null ? String(defaultTooth) : "");
   const parsed = Number(tooth);
   const usable = tooth.trim() !== "" && Number.isInteger(parsed) && parsed > 0;
   return (
@@ -519,6 +526,14 @@ function SiteList({
             <AdoptProposalControl
               key={proposal.index}
               proposal={proposal}
+              defaultTooth={
+                defaultToothForMark({
+                  sites: detail.sites,
+                  proposals: [],
+                  center: proposal.center,
+                  jaw: detail.choices.effective_jaw.value ?? null,
+                })?.tooth ?? null
+              }
               saving={adoptSaving}
               error={adoptError}
               onAdopt={onAdopt}
@@ -722,6 +737,8 @@ export interface MarkMissedCapProps {
   readonly onCancel: () => void;
   readonly onTooth: (tooth: string) => void;
   readonly tooth: string;
+  /** Where the pre-filled tooth came from — the prompt names it (markPlacedWords). */
+  readonly source?: "detector" | "free-label" | null;
   readonly onSubmit: () => void;
 }
 
@@ -748,6 +765,7 @@ export function MarkMissedCap({
   onCancel,
   onTooth,
   tooth,
+  source = null,
   onSubmit,
 }: MarkMissedCapProps) {
   return (
@@ -785,7 +803,7 @@ export function MarkMissedCap({
       ) : (
         <>
           <p data-role="mark-placed" className="panel__hint">
-            Centre placed. Which tooth is it?
+            {markPlacedWords(source)}
           </p>
           <label className="decode-offset">
             <input
@@ -840,6 +858,7 @@ export interface IntakeStageViewProps {
   readonly markArmed?: boolean;
   readonly markPending?: readonly number[] | null;
   readonly markTooth?: string;
+  readonly markSource?: "detector" | "free-label" | null;
   readonly markSaving?: boolean;
   readonly markError?: string | null;
   readonly onArmMark?: () => void;
@@ -888,6 +907,7 @@ export function IntakeStageView({
   markArmed = false,
   markPending = null,
   markTooth = "",
+  markSource = null,
   markSaving = false,
   markError = null,
   onArmMark = () => undefined,
@@ -1016,6 +1036,7 @@ export function IntakeStageView({
           onCancel={onCancelMark}
           onTooth={onMarkTooth}
           tooth={markTooth}
+          source={markSource}
           onSubmit={onSubmitMark}
         />
         <ChoicesPanel
@@ -1074,10 +1095,21 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
 
   const resetMark = useCallback(() => setMark(EMPTY_MARK), []);
 
-  const handleMarkPlaced = useCallback((point: readonly [number, number, number]) => {
-    // the click is spent; naming the tooth comes next
-    setMark((prev) => ({ ...prev, armed: false, pending: [...point] }));
-  }, []);
+  const handleMarkPlaced = useCallback(
+    (point: readonly [number, number, number]) => {
+      // the click is spent — and the label fills itself (client 2026-08-06: "let me
+      // mark it without asking me for which tooth"): the covering proposal's guess
+      // when one speaks, else the jaw's next free number, provenance named.
+      const fallback = defaultToothForMark({
+        sites: detail.sites,
+        proposals: detail.detection?.proposals ?? [],
+        center: point,
+        jaw: detail.choices.effective_jaw.value ?? null,
+      });
+      setMark((prev) => markOnPlace(prev, point, fallback));
+    },
+    [detail],
+  );
 
   /* PICKING A SITE (client 2026-07-31). Purely a VIEW act — which site the stage
      frames and which row reads as chosen. Nothing here is persisted and nothing here
@@ -1406,6 +1438,7 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
       markArmed={mark.armed}
       markPending={mark.pending}
       markTooth={mark.tooth}
+      markSource={mark.source}
       markSaving={markSaving}
       markError={mark.error}
       onArmMark={() => {

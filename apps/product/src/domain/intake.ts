@@ -416,6 +416,9 @@ export interface MarkDraft {
   /** a centre placed and awaiting its tooth; a mark is only a site once named */
   readonly pending: readonly number[] | null;
   readonly tooth: string;
+  /** where the pre-filled tooth came from (markOnPlace) — null when the operator
+   *  typed their own, so the prompt never claims a provenance it does not have */
+  readonly source: "detector" | "free-label" | null;
   /** the BFF's own refusal, verbatim */
   readonly error: string | null;
 }
@@ -424,6 +427,7 @@ export const EMPTY_MARK: MarkDraft = {
   armed: false,
   pending: null,
   tooth: "",
+  source: null,
   error: null,
 };
 
@@ -443,6 +447,81 @@ export const EMPTY_MARK: MarkDraft = {
  */
 export function markOnArmPick(mark: MarkDraft): MarkDraft {
   return mark.armed ? { ...mark, armed: false } : mark;
+}
+
+/* THE MARK NAMES ITS OWN TOOTH (client 2026-08-06, the arch upload case: "the tool
+ * needs to let me mark it without asking me for which tooth"). A tooth number is
+ * the site's IDENTITY — routes, session keys and run records all hang off it — so
+ * a mark cannot ship without one. What CAN go is the blocking question: the placed
+ * mark pre-fills the best label available and "Add this site" works immediately,
+ * with the field still editable. Provenance stays honest: a covering detector
+ * guess is the detector's (the adopt door's own rule — guessed or within the pick
+ * radius, nothing farther may speak); with no anchors — the upload case — the
+ * label is the jaw's next free number and SAYS it is bookkeeping, because a
+ * mirror-ambiguous anatomical guess dressed as a chart number would be an
+ * invented fact. */
+export interface MarkToothDefault {
+  readonly tooth: number;
+  readonly source: "detector" | "free-label";
+}
+
+export function defaultToothForMark(args: {
+  readonly sites: readonly SiteView[];
+  readonly proposals: readonly DetectedProposalView[];
+  readonly center: readonly number[];
+  readonly jaw: string | null;
+}): MarkToothDefault | null {
+  const taken = new Set(args.sites.map((s) => s.tooth));
+  const c = args.center;
+  for (const p of args.proposals) {
+    if (p.tooth_guess === null || taken.has(p.tooth_guess)) continue;
+    const mm = Math.hypot(
+      (p.center[0] ?? 0) - (c[0] ?? 0),
+      (p.center[1] ?? 0) - (c[1] ?? 0),
+      (p.center[2] ?? 0) - (c[2] ?? 0),
+    );
+    if (mm <= SITE_PICK_RADIUS_MM) {
+      return { tooth: p.tooth_guess, source: "detector" };
+    }
+  }
+  const range =
+    args.jaw === "upper"
+      ? { from: 1, to: 16 }
+      : args.jaw === "lower"
+        ? { from: 17, to: 32 }
+        : { from: 1, to: 32 };
+  for (let tooth = range.from; tooth <= range.to; tooth += 1) {
+    if (!taken.has(tooth)) return { tooth, source: "free-label" };
+  }
+  return null;
+}
+
+/** Placing the centre: the click is spent, the label fills — unless the operator
+ * already typed one, whose word beats any default. */
+export function markOnPlace(
+  mark: MarkDraft,
+  point: readonly number[],
+  fallback: MarkToothDefault | null,
+): MarkDraft {
+  const fills = mark.tooth.trim() === "" && fallback !== null;
+  return {
+    ...mark,
+    armed: false,
+    pending: [...point],
+    tooth: fills ? String(fallback!.tooth) : mark.tooth,
+    source: fills ? fallback!.source : mark.source,
+  };
+}
+
+/** The placed prompt, provenance named — never a question the input already answers. */
+export function markPlacedWords(source: MarkToothDefault["source"] | null): string {
+  if (source === "detector") {
+    return "Centre placed — the detector reads this as the tooth below; edit it if that's wrong.";
+  }
+  if (source === "free-label") {
+    return "Centre placed — a free tooth label is filled in; edit it if the chart needs the true number.";
+  }
+  return "Centre placed. Which tooth is it?";
 }
 
 /** Arming the mark: a stale refusal from the last attempt is not about this one. */

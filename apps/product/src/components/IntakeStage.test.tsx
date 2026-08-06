@@ -111,8 +111,12 @@ describe("the site list with capture chips", () => {
     expect(html).toContain('data-role="adopt-proposal"');
     expect(html).toContain("recess void 0.47 · rim 5.70mm below cusps");
     expect(html).toContain('data-role="adopt-tooth"');
-    // an empty tooth number disarms the act — the operator names the tooth
-    expect(html).toMatch(/data-role="adopt-go"[^>]*disabled/);
+    /* PRE-FILLED, ONE CLICK (client 2026-08-06: "let me mark it without asking me
+       for which tooth" — the adopt door follows the missed-cap mark's rule): the
+       label defaults to the jaw's next free number and the act is live at once.
+       The field stays editable — the operator's word still beats the default. */
+    expect(html).toMatch(/data-role="adopt-tooth"[^>]*value="\d+"/);
+    expect(html).not.toMatch(/data-role="adopt-go"[^>]*disabled/);
   });
 
   it("a proposal already carried by a site offers no adoption — no duplicate door", () => {
