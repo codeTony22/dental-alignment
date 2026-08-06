@@ -42,6 +42,7 @@ import {
   activeSiteFrom,
   alignmentStats,
   attestationSummary,
+  declareCautionWords,
   declareQueueSummary,
   declaredLabel,
   siteIdentity,
@@ -387,6 +388,13 @@ export interface WorkspaceToolbarProps {
   /** A stage's own control that belongs on this strip (Declare's arch opener) — so
    *  the stage keeps ONE row of chrome above the panes rather than two. */
   readonly children?: ReactNode;
+  /** BESIDE THE STATUS CHIP (§10-AN slice C): Declare's amber caution indicator —
+   *  "reworked since the run" and rescan-grade capture notices, moved off the row
+   *  into a modal this chip opens (client 2026-08-06: "any warnings ... need to come
+   *  in as modals"). Sits right after `toolbar-status`, which is the "site's status"
+   *  the task names as the chip's anchor. Omitted, nothing renders here — Adjust's
+   *  own caution chip lives in the dock header instead (a different set of facts). */
+  readonly cautionSlot?: ReactNode;
   /** The strip's LAST item, after the metrics — the comp ends its toolbar with
    *  "▸ budget & log", and ours ends with the insight popover for the same reason:
    *  the readouts finish the row, and the control that expands them sits with them. */
@@ -405,6 +413,16 @@ const ZOOM_ACTS = [
   readonly label: string;
   readonly title: string;
 }[];
+
+/** The comp's four toolbar chips (§10-AN slice C): VARIANT, DEV RMS, ROTATION,
+ *  PAIRS — `alignmentStats` also publishes DEV P90, which stays off the strip (still
+ *  in the Numbers & log panel) so the row matches the comp's own four, not five. */
+const STRIP_STAT_IDS: ReadonlySet<string> = new Set([
+  "variant",
+  "dev-rms",
+  "rotation",
+  "pairs",
+]);
 
 /**
  * THE WORKSPACE TOOLBAR — the identity anchor the pane-dominant layout cost us.
@@ -438,6 +456,7 @@ export function WorkspaceToolbar({
   linked = false,
   onToggleLinked,
   children,
+  cautionSlot = null,
   endSlot,
 }: WorkspaceToolbarProps) {
   const identity = siteIdentity(tooth, systemModel);
@@ -529,13 +548,19 @@ export function WorkspaceToolbar({
         >
           {status ?? "no site selected"}
         </span>
-        {/* ONE ROW ONLY (client 2026-08-06: "we can only allow one row so we can
-            make the panels bigger … why do we need this DEV RMS"): the strip keeps
-            the site's IDENTITY — the variant — and the four measured figures moved
-            into the Numbers & log panel (WorkspaceInsight.AlignmentSection), every
-            honesty suffix intact. The title carries the full id for the day the
-            superseded name ellipsizes. */}
-        {stats.filter((stat) => stat.id === "variant").map((stat) => (
+        {cautionSlot}
+        {/* THE FOUR CHIPS ARE BACK (§10-AN slice C, client 2026-08-06 comp read
+            directly: "match the designs" — VARIANT, DEV RMS (our honest label, never
+            the comp's client-computed "MAX DEV"), ROTATION, PAIRS). The 2026-08-06
+            one-row ruling that had trimmed this to VARIANT alone stands for the ROW
+            SHAPE (nowrap, one line — the panes still get the space back), not for the
+            figures: the client's later design supersedes their earlier removal. The
+            same four still appear in the Numbers & log panel too (WorkspaceInsight);
+            this is a second location for the same served facts, not a second source
+            of them. The title carries the full value for the day one ellipsizes. */}
+        {stats
+          .filter((stat) => STRIP_STAT_IDS.has(stat.id))
+          .map((stat) => (
           <span
             key={stat.id}
             data-role="alignment-stat"
@@ -603,6 +628,14 @@ export interface DeclareStageViewProps {
   /** The three live panes + the review tick (5b) — the container passes the
    * DeclarePanes container; View tests may omit it (the panes have their own). */
   readonly panesSlot?: ReactNode;
+  /** THE CAUTION MODAL (§10-AN slice C — the switch-confirm/reasons-dialog precedent:
+   *  a data-driven dialog is a PROP, not view-local state, so a static render can pin
+   *  it open). Held by the container like `pendingSwitch`; the View only asks "is it
+   *  open" and calls back to close it. Optional with an inert default: static callers
+   *  predate it. */
+  readonly cautionsOpen?: boolean;
+  readonly onOpenCautions?: () => void;
+  readonly onCloseCautions?: () => void;
 }
 
 /** The stage's whole surface, pure payload → markup — statically testable. */
@@ -634,6 +667,9 @@ export function DeclareStageView({
   onToggleLinked,
   previewFigures = null,
   panesSlot,
+  cautionsOpen = false,
+  onOpenCautions = () => undefined,
+  onCloseCautions = () => undefined,
 }: DeclareStageViewProps) {
   const facts = factsFromCaseSession(detail);
   const active = activeSiteFrom(detail.sites, activeTooth);
@@ -646,6 +682,12 @@ export function DeclareStageView({
   // Focus moves in, is trapped, and comes back on close (§10-O.8) — see useDialogFocus.
   const archDialogRef = useRef<HTMLElement | null>(null);
   useDialogFocus(archOpen, archDialogRef);
+  // THE CAUTION MODAL (§10-AN slice C): "reworked since the run" + a rescan-grade
+  // capture verdict, moved off the row into ONE dialog an amber chip opens.
+  useDialogEscape(cautionsOpen, onCloseCautions);
+  const cautionsDialogRef = useRef<HTMLElement | null>(null);
+  useDialogFocus(cautionsOpen, cautionsDialogRef);
+  const cautionWords = declareCautionWords(active, runRows);
   // Per-SITE shelves: the detector's proposal is a fact about the active site, so the
   // same catalog marks a different card as the operator moves down the queue.
   const shelves = variantShelves(detail, active);
@@ -893,6 +935,22 @@ export function DeclareStageView({
           onZoom={onZoom}
           linked={linked}
           onToggleLinked={onToggleLinked}
+          cautionSlot={
+            cautionWords.length > 0 ? (
+              /* THE CAUTION CHIP (§10-AN slice C): "reworked since the run" +
+                 a rescan-grade capture verdict, moved off the row (the demo's own
+                 shortening precedent, applied a second time — see domain/adjust's
+                 pairCautions doc). Renders ONLY where there is something to say. */
+              <button
+                type="button"
+                data-role="declare-caution-chip"
+                className="chip chip--exception caution-chip"
+                onClick={onOpenCautions}
+              >
+                ⚠ {cautionWords.length === 1 ? "1 caution" : `${cautionWords.length} cautions`}
+              </button>
+            ) : null
+          }
           /* THE PROVENANCE POPOVER ends the strip (comp: its toolbar closes on
              "▸ budget & log"). `detail` is the refresh key: CaseShell replaces it
              wholesale only when an act lands, so an open popover re-asks exactly
@@ -987,6 +1045,58 @@ export function DeclareStageView({
           </section>
         </div>
       )}
+      {/* THE CAUTION MODAL (§10-AN slice C, client 2026-08-06: "any warnings or
+          things of the sort need to come in as modals"). Same decode-dialog chrome
+          as every other dialog on this surface — scrim, role="dialog", escape +
+          focus trap — listing the sentences VERBATIM, in the same words
+          `siteStateSentence`/`worstRescanMessage` already speak elsewhere. */}
+      {cautionsOpen && (
+        <div
+          data-role="declare-cautions-backdrop"
+          className="decode-dialog-backdrop"
+          onClick={onCloseCautions}
+        >
+          <section
+            ref={cautionsDialogRef}
+            data-role="declare-cautions-dialog"
+            className="decode-dialog decode-dialog--narrow"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="declare-cautions-heading"
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="decode-dialog__header">
+              <div>
+                <h2 id="declare-cautions-heading" className="decode-dialog__title">
+                  Tooth {active?.tooth ?? "—"} — cautions
+                </h2>
+                <p className="decode-dialog__subject">
+                  The server's own words. Nothing here is a summary of them.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-role="declare-cautions-close"
+                data-autofocus=""
+                className="button button--ghost button--small"
+                onClick={onCloseCautions}
+              >
+                Close
+              </button>
+            </header>
+            <div className="decode-dialog__body">
+              <ul data-role="declare-caution-list" className="adjust-queue__reasons">
+                {cautionWords.map((words) => (
+                  <li key={words} className="adjust-queue__reason">
+                    {words}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -1028,6 +1138,9 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
      policy (domain/workspace, client 2026-08-04). */
   const [linked, setLinked] = useState(PANES_OPEN_LINKED);
   const handleToggleLinked = useCallback(() => setLinked((now) => !now), []);
+  // THE CAUTION MODAL (§10-AN slice C) — held here like `pendingSwitch`, so the View
+  // stays "pure props → markup" and a static render can pin it open via a prop.
+  const [cautionsOpen, setCautionsOpen] = useState(false);
   const handleZoom = useCallback((direction: 1 | -1) => {
     /* CLAMPED AT THE COUNTER, not only at the camera: an unbounded counter accepts
        presses the camera cannot answer, and the operator then presses the other way
@@ -1222,6 +1335,9 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
       onZoom={handleZoom}
       linked={linked}
       onToggleLinked={handleToggleLinked}
+      cautionsOpen={cautionsOpen}
+      onOpenCautions={() => setCautionsOpen(true)}
+      onCloseCautions={() => setCautionsOpen(false)}
       panesSlot={
         <DeclarePanes
           detail={detail}

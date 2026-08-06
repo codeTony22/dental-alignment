@@ -46,6 +46,7 @@ import {
   needsReconfirmStatus,
   outcomeMovedTheRow,
   paneArming,
+  pairCautions,
   reconfirmControl,
   newPairDraft,
   pairSetWords,
@@ -930,6 +931,97 @@ describe("markLeverGuard — the server's own quantity, so the client may refuse
     // approximation may warn but must never block a correction the server would take
     const guard = markLeverGuard(span([2, 0, 0], [-2, 0, 0]), pose, null);
     expect(guard?.kind).toBe("caution");
+  });
+});
+
+/**
+ * §10-AN slice C: the ONE list the dock header's caution chip opens. This collects
+ * exactly what used to render inline — `crossCheckCaution`'s lead (+ its fold) and
+ * each pair's `markLeverGuard` message — nothing more, nothing paraphrased.
+ */
+describe("pairCautions — the caution chip's ONE list, collected verbatim", () => {
+  const pose = { origin: [0, 0, 0], axis: [0, 0, 1] };
+  const clock = { rim_centre: [1, 0, 0], min_lever_mm: 0.5 };
+  const point = (id: string, p: number[]) => {
+    let d = newPairDraft(id, false);
+    d = withPick(d, "part", [5, 0, 0]);
+    return withPick(d, "scan", p);
+  };
+  const span = (id: string, a: number[], b: number[]) => {
+    let d = newPairDraft(id, true);
+    d = withPick(d, "part", [5, 0, 0]);
+    d = withPick(d, "scan", a);
+    return withPick(d, "scan", b);
+  };
+
+  it("is empty with nothing placed, or nothing to caution about", () => {
+    expect(pairCautions([], pose, clock)).toEqual([]);
+    // out on the coded band — markLeverGuard is silent, and two clean pairs
+    // never trip crossCheckCaution
+    const clean = point("p1", [4, 0, 0]);
+    const second = point("p2", [4.2, 0, 0]);
+    expect(pairCautions([clean, second], pose, clock)).toEqual([]);
+  });
+
+  it("carries the one-pair cross-check advisory's lead sentence, verbatim", () => {
+    const only = point("p1", [4, 0, 0]);
+    const cautions = pairCautions([only], pose, clock);
+    expect(cautions).toHaveLength(1);
+    expect(cautions[0]!.message).toBe(crossCheckCaution([only]));
+  });
+
+  it("adds the span's own fold as a SECOND entry, not merged into the first", () => {
+    const only = span("s1", [4, 0, 0], [4.2, 0.2, 0]);
+    const cautions = pairCautions([only], pose, clock);
+    const detail = crossCheckCautionDetail([only]);
+    expect(detail).not.toBeNull();
+    expect(cautions.map((c) => c.message)).toEqual([
+      crossCheckCaution([only]),
+      detail,
+    ]);
+  });
+
+  it("names WHICH pair a screw-access guard belongs to, by its position in the set", () => {
+    const clean = point("p1", [4, 0, 0]);
+    const onAccess = point("p2", [1, 0, 0]);
+    const cautions = pairCautions([clean, onAccess], pose, clock);
+    // two complete pairs never trip the cross-check advisory; only the guard shows
+    expect(cautions).toHaveLength(1);
+    expect(cautions[0]!.message).toMatch(/^Pair 2: /);
+    expect(cautions[0]!.message).toContain(markLeverGuard(onAccess, pose, clock)!.message);
+  });
+
+  it("collects a REFUSAL-kind guard too — the modal is where the operator reads it in full", () => {
+    // §10-AN slice C: `markLeverGuard`'s `refusal` kind ALSO blocks Apply
+    // (`applyBlockedReason` names it there, terse, on the button's `title`) — it
+    // still belongs in this list, which is where the full sentence lives now.
+    // A SECOND clean pair keeps `crossCheckCaution` quiet (it fires only at
+    // exactly one complete draft), isolating the guard on its own.
+    const clean = point("p1", [4, 0, 0]);
+    const sure = point("p2", [1, 0, 0]);
+    const guard = markLeverGuard(sure, pose, clock);
+    expect(guard?.kind).toBe("refusal");
+    const cautions = pairCautions([clean, sure], pose, clock);
+    expect(cautions).toEqual([{ id: "mark-guard-p2", message: `Pair 2: ${guard!.message}` }]);
+  });
+
+  it("collects a CAUTION-kind guard the same way, when the server's reference has not arrived", () => {
+    const clean = point("p1", [4, 0, 0]);
+    const approx = span("s2", [2, 0, 0], [-2, 0, 0]);
+    const guard = markLeverGuard(approx, pose, null);
+    expect(guard?.kind).toBe("caution");
+    const cautions = pairCautions([clean, approx], pose, null);
+    expect(cautions).toEqual([{ id: "mark-guard-s2", message: `Pair 2: ${guard!.message}` }]);
+  });
+
+  it("gives every entry a stable id, so a React list key never collides", () => {
+    // BOTH on the access — two refusal-kind guards, two distinct ids
+    const a = point("p1", [1, 0, 0]);
+    const b = point("p2", [1.1, 0, 0]);
+    const cautions = pairCautions([a, b], pose, clock);
+    expect(cautions).toHaveLength(2);
+    const ids = cautions.map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
 

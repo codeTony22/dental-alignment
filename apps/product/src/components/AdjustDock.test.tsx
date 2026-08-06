@@ -75,6 +75,11 @@ function view(overrides: Partial<AdjustDockProps> = {}) {
       dropSaving={false}
       dropError={null}
       relief={null}
+      dockTall={false}
+      onToggleDockTall={() => undefined}
+      cautionsOpen={false}
+      onOpenCautions={() => undefined}
+      onCloseCautions={() => undefined}
       {...overrides}
     />,
   );
@@ -170,12 +175,62 @@ describe("the header — title + live readout, honest absence with no served shi
   });
 });
 
-describe("the 'more room' toggle (§10-AN — pane-grid coupling deliberately not wired)", () => {
+describe("the 'more room' toggle — lifted to a prop (§10-AN slice C, the pane-grid coupling now wired one level up)", () => {
   it("renders the toggle, unpressed by default", () => {
     const html = view();
     expect(html).toContain('data-role="dock-more-room"');
     expect(html).toContain('aria-pressed="false"');
     expect(html).toContain("more room");
+  });
+
+  it("RETARGETED: reads `dockTall` from a prop, not local state — AdjustStageView owns it now", () => {
+    // the pane grid needs the SAME value (comp-delta's paneGridStyle), so it can no
+    // longer be private to this component; see AdjustDockProps' own note.
+    const html = view({ dockTall: true });
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain("less room");
+  });
+});
+
+describe("the pair-caution chip and its modal (§10-AN slice C, client 2026-08-06)", () => {
+  const complete = withPick(
+    withPick(newPairDraft("p1", false), "part", [4, 0, 0]),
+    "scan",
+    [4, 0, 0],
+  );
+
+  it("renders no chip with nothing to caution about", () => {
+    const html = view({ tool: "fit-by-points", drafts: [] });
+    expect(html).not.toContain('data-role="pair-caution-chip"');
+  });
+
+  it("renders the chip, counting the cautions, when one exists", () => {
+    const html = view({ tool: "fit-by-points", drafts: [complete] });
+    expect(html).toMatch(/data-role="pair-caution-chip"[^>]*>⚠ 1 caution</);
+    // the modal itself stays closed until asked for
+    expect(html).not.toContain('data-role="pair-cautions-dialog"');
+  });
+
+  it("opens on the `cautionsOpen` prop — the switch-confirm/reasons-dialog precedent — and lists the words verbatim", () => {
+    const html = view({ tool: "fit-by-points", drafts: [complete], cautionsOpen: true });
+    expect(html).toContain('data-role="pair-cautions-dialog"');
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain("no agreement number");
+  });
+});
+
+describe("the tool-refusal modal — opens on a NEW refusal, no effect required (§10-AN slice C)", () => {
+  it("renders no modal with no refusal", () => {
+    const html = view({ refusal: null });
+    expect(html).not.toContain('data-role="tool-refusal-dialog"');
+  });
+
+  it("a refusal opens the modal, alongside the persistent inline region", () => {
+    const html = view({ refusal: "the rim cannot hold this rotation still" });
+    expect(html).toContain('data-role="tool-refusal"'); // the inline record stays
+    expect(html).toContain('data-role="tool-refusal-dialog"');
+    expect(html).toContain('role="alertdialog"');
+    expect(html).toContain("the rim cannot hold this rotation still");
   });
 });
 

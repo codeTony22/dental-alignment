@@ -27,6 +27,8 @@
  * the specific claims that were dropped or reworded, and why.
  */
 import { useEffect, useRef, useState } from "react";
+import { useDialogEscape } from "./useDialogEscape";
+import { useDialogFocus } from "./useDialogFocus";
 import type {
   AdjustOutcomeView,
   LandmarkView,
@@ -49,8 +51,6 @@ import {
   bestFitFlagWords,
   bestFitToolStateWords,
   clampDiameterMm,
-  crossCheckCaution,
-  crossCheckCautionDetail,
   diameterBandWords,
   dockToolGood,
   dropLabel,
@@ -58,9 +58,9 @@ import {
   evidenceReceiptsTitle,
   flaggedExceptionWords,
   isComplete,
-  markLeverGuard,
   observationWords,
   outcomeWords,
+  pairCautions,
   pairCountHeaderWords,
   pairIdsFromSlot,
   pairSlot,
@@ -223,28 +223,11 @@ function PairsList({
       <p data-role="pair-status" role="status" className="panel__hint">
         {pairStatusLine(drafts, openDraft)}
       </p>
-      {crossCheckCaution(drafts) !== null && (() => {
-        const lead = crossCheckCaution(drafts)!;
-        const detail = crossCheckCautionDetail(drafts);
-        return (
-          <div
-            data-role="cross-check-caution"
-            role="status"
-            className="adjust-pairs__caution adjust-pairs__caution--set"
-          >
-            <p className="adjust-pairs__caution-lead">{lead}</p>
-            {detail !== null && (
-              <details data-role="cross-check-caution-fold"
-                        className="adjust-pairs__caution-fold">
-                <summary className="adjust-pairs__caution-summary">
-                  why a span can be one observation
-                </summary>
-                <p className="adjust-pairs__caution-line">{detail}</p>
-              </details>
-            )}
-          </div>
-        );
-      })()}
+      {/* THE CROSS-CHECK ADVISORY AND THE SCREW-ACCESS SENTENCE MOVED (§10-AN
+          slice C) — off this row and into the dock header's caution chip + modal
+          (`pairCautions`, domain/adjust.ts), which lists both VERBATIM. Nothing here
+          computes the caution any more; `applyBlockedReason` below still reads
+          `markLeverGuard` to decide whether Apply is blocked, unchanged. */}
       <ul data-role="pair-list" className="adjust-pairs">
         {drafts.map((draft, index) => (
           <li key={draft.id} data-role="pair-row" data-span={draft.span}
@@ -297,20 +280,6 @@ function PairsList({
                 </li>
               ))}
             </ol>
-            {(() => {
-              const guard = markLeverGuard(draft, pose, clock);
-              if (guard === null) return null;
-              return (
-                <p
-                  data-role="mark-guard"
-                  data-guard={guard.kind}
-                  role={guard.kind === "refusal" ? "alert" : "status"}
-                  className="adjust-pairs__caution"
-                >
-                  {guard.message}
-                </p>
-              );
-            })()}
             <button
               type="button"
               data-role="remove-pair"
@@ -1057,6 +1026,27 @@ export interface AdjustDockProps {
     readonly error: string | null;
     readonly onApply: (value: number | null) => void;
   } | null;
+
+  /**
+   * THE DOCK-HEIGHT TOGGLE, LIFTED (§10-AN slice C). "more room" used to be state
+   * this component kept to itself — but the comp's own `dockTall` ALSO caps the pane
+   * grid (comp-delta's `paneGridStyle`), and the pane grid lives one level up in
+   * AdjustStageView. Controlled from there now (mirroring the switch-confirm/
+   * reasons-dialog precedent: a data-driven toggle is a prop, not local state, so the
+   * one value drives both the dock's own max-height AND the pane grid's).
+   */
+  readonly dockTall: boolean;
+  readonly onToggleDockTall: () => void;
+
+  /**
+   * THE PAIR-CAUTION MODAL (§10-AN slice C, client 2026-08-06: "any warnings ...
+   * need to come in as modals"). Also lifted, for the same testability reason —
+   * a static render can pin the dialog open via this prop, exactly like
+   * `reasonsFor`/`pendingSwitch` elsewhere on this app.
+   */
+  readonly cautionsOpen: boolean;
+  readonly onOpenCautions: () => void;
+  readonly onCloseCautions: () => void;
 }
 
 export function AdjustDock({
@@ -1105,15 +1095,35 @@ export function AdjustDock({
   dropSaving,
   dropError,
   relief,
+  dockTall,
+  onToggleDockTall,
+  cautionsOpen,
+  onOpenCautions,
+  onCloseCautions,
 }: AdjustDockProps) {
-  // §10-AN: "more room" is LOCAL to the dock — the pane-grid coupling the comp's own
-  // `dockTall` also drives (a shrinking minHeight/maxHeight on the pane grid) is
-  // deliberately NOT wired here. SitePanes' grid already measures its own container
-  // and a hand-tuned second coupling is exactly the class of overlap that produced
-  // the Cancel/Process collision this codebase's own doctrine warns against; the
-  // dock growing taller on a short viewport is a real trade-off, stated here rather
-  // than hidden inside a "fixed".
-  const [dockTall, setDockTall] = useState(false);
+  // §10-AN slice C: "more room" is now LIFTED (AdjustDockProps' own doc explains
+  // why) — the pane-grid coupling the comp's own `dockTall` also drives is wired at
+  // AdjustStageView, where the pane grid lives. This file only reads the value.
+  const cautions = pairCautions(drafts, pose, clock);
+  // Escape closes the pair-caution dialog; focus moves in, is trapped, and comes
+  // back on close (§10-O.8) — see useDialogFocus.
+  useDialogEscape(cautionsOpen, onCloseCautions);
+  const cautionsDialogRef = useRef<HTMLElement | null>(null);
+  useDialogFocus(cautionsOpen, cautionsDialogRef);
+
+  // THE TOOL-REFUSAL MODAL (§10-AN slice C). `dismissedRefusal` is the LAST refusal
+  // text the operator closed; the modal is open whenever the CURRENT refusal differs
+  // from it — which is true the instant a NEW refusal lands (no effect needed: this
+  // is a plain render-time comparison, so a static render pins the dialog open just
+  // by setting `refusal`, the switch-confirm/reasons-dialog precedent applied to a
+  // value this component already owns rather than one lifted for the purpose). The
+  // inline `tool-refusal` region below stays too (§10-AN's own ask: "keep the inline
+  // region as the persistent record") — closing the modal never removes it.
+  const [dismissedRefusal, setDismissedRefusal] = useState<string | null>(null);
+  const refusalModalOpen = refusal !== null && refusal !== dismissedRefusal;
+  useDialogEscape(refusalModalOpen, () => setDismissedRefusal(refusal));
+  const refusalDialogRef = useRef<HTMLElement | null>(null);
+  useDialogFocus(refusalModalOpen, refusalDialogRef);
 
   const notchShiftDeg =
     typeof lastOutcome?.clocking?.["notch_shift_deg"] === "number"
@@ -1191,12 +1201,28 @@ export function AdjustDock({
             {stateWords}
           </span>
         </div>
+        {cautions.length > 0 && (
+          /* THE CAUTION CHIP (§10-AN slice C, client 2026-08-06: "any warnings or
+             things of the sort need to come in as modals"). Replaces the inline
+             cross-check advisory and the per-pair screw-access sentence, which
+             together were the exact "lot of yellow text" the 2026-08-06 shortening
+             had already trimmed once — this trims the CONTROL ROW, not the words:
+             every sentence still renders, verbatim, in the dialog below. */
+          <button
+            type="button"
+            data-role="pair-caution-chip"
+            className="chip chip--exception caution-chip"
+            onClick={onOpenCautions}
+          >
+            ⚠ {cautions.length === 1 ? "1 caution" : `${cautions.length} cautions`}
+          </button>
+        )}
         <button
           type="button"
           data-role="dock-more-room"
           aria-pressed={dockTall}
           className="adjust-dock__more"
-          onClick={() => setDockTall((now) => !now)}
+          onClick={onToggleDockTall}
         >
           {dockTall ? "less room" : "more room"}
         </button>
@@ -1511,6 +1537,105 @@ export function AdjustDock({
               {dropError}
             </span>
           )}
+        </div>
+      )}
+      {/* THE PAIR-CAUTION MODAL (§10-AN slice C). Same decode-dialog chrome as every
+          other dialog this app has — scrim, role="dialog", escape + focus trap —
+          listing `pairCautions`' sentences VERBATIM, nothing folded or shortened. */}
+      {cautionsOpen && (
+        <div
+          data-role="pair-cautions-backdrop"
+          className="decode-dialog-backdrop"
+          onClick={onCloseCautions}
+        >
+          <section
+            ref={cautionsDialogRef}
+            data-role="pair-cautions-dialog"
+            className="decode-dialog decode-dialog--narrow"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pair-cautions-heading"
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="decode-dialog__header">
+              <div>
+                <h2 id="pair-cautions-heading" className="decode-dialog__title">
+                  {cautions.length === 1 ? "1 caution" : `${cautions.length} cautions`}
+                </h2>
+                <p className="decode-dialog__subject">
+                  The server's own words. Nothing here is a summary of them.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-role="pair-cautions-close"
+                data-autofocus=""
+                className="button button--ghost button--small"
+                onClick={onCloseCautions}
+              >
+                Close
+              </button>
+            </header>
+            <div className="decode-dialog__body">
+              <ul data-role="pair-caution-list" className="adjust-queue__reasons">
+                {cautions.map((caution) => (
+                  <li key={caution.id} className="adjust-queue__reason">
+                    {caution.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        </div>
+      )}
+      {/* THE TOOL-REFUSAL MODAL (§10-AN slice C, client 2026-08-06: "any warnings or
+          things of the sort need to come in as modals"). role="alertdialog": unlike
+          the caution chip above, a refusal was not asked for — it is the answer to
+          the act the operator just took, so it opens itself. The inline
+          `tool-refusal` region above stays as the persistent record; dismissing this
+          only closes the modal. */}
+      {refusalModalOpen && (
+        <div
+          data-role="tool-refusal-backdrop"
+          className="decode-dialog-backdrop"
+          onClick={() => setDismissedRefusal(refusal)}
+        >
+          <section
+            ref={refusalDialogRef}
+            data-role="tool-refusal-dialog"
+            className="decode-dialog decode-dialog--narrow"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="tool-refusal-heading"
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="decode-dialog__header">
+              <div>
+                <h2 id="tool-refusal-heading" className="decode-dialog__title">
+                  The adjustment was refused.
+                </h2>
+              </div>
+              <button
+                type="button"
+                data-role="tool-refusal-close"
+                data-autofocus=""
+                className="button button--ghost button--small"
+                onClick={() => setDismissedRefusal(refusal)}
+              >
+                Close
+              </button>
+            </header>
+            <div className="decode-dialog__body">
+              <p className="run-refusal__detail">{refusal}</p>
+              <p className="run-refusal__next">
+                Nothing changed — the fit on screen is the one that passed the gates.
+                Your marks are still placed: undo just the one the message names and
+                re-place it, rather than starting the pair again.
+              </p>
+            </div>
+          </section>
         </div>
       )}
     </div>

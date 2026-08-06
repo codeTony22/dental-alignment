@@ -1526,6 +1526,55 @@ export function markLeverGuard(
   };
 }
 
+/** One caution, ready for the ONE list §10-AN slice C's amber chip opens — a stable id
+ *  for React's key, the VERBATIM sentence, and nothing else: this module states the
+ *  words, the dock only lists them. */
+export interface PairCaution {
+  readonly id: string;
+  readonly message: string;
+}
+
+/**
+ * THE PAIR CAUTIONS, COLLECTED (§10-AN slice C, client 2026-08-06: "much longer and
+ * wider panels ... any warnings or things of the sort need to come in as modals").
+ *
+ * Two standing surfaces used to sit inline under the pair list — `crossCheckCaution`'s
+ * lead sentence (plus its `crossCheckCautionDetail` fold) and, per placed pair,
+ * `markLeverGuard`'s screw-access sentence — and together they were the exact "lot of
+ * yellow text" the 2026-08-06 shortening already cut once. This collects the SAME
+ * sentences, verbatim and unshortened, for the chip's modal rather than the glass: a
+ * modal has the room a control row does not, so nothing here paraphrases what those two
+ * functions already say.
+ *
+ * `markLeverGuard`'s `refusal` kind ALSO blocks the Apply button (`applyBlockedReason`
+ * names it there too, for the control it disables) — it still belongs in this list
+ * because the modal is where the operator reads the reason in full; the button's own
+ * `title` stays the terse pointer to it.
+ */
+export function pairCautions(
+  drafts: readonly PairDraft[],
+  pose: { readonly origin: readonly number[]; readonly axis: readonly number[] } | null,
+  clock: ClockReferenceLike | null,
+): readonly PairCaution[] {
+  const out: PairCaution[] = [];
+  const lead = crossCheckCaution(drafts);
+  if (lead !== null) {
+    out.push({ id: "cross-check", message: lead });
+    const detail = crossCheckCautionDetail(drafts);
+    if (detail !== null) out.push({ id: "cross-check-detail", message: detail });
+  }
+  drafts.forEach((draft, index) => {
+    const guard = markLeverGuard(draft, pose, clock);
+    if (guard !== null) {
+      out.push({
+        id: `mark-guard-${draft.id}`,
+        message: `Pair ${index + 1}: ${guard.message}`,
+      });
+    }
+  });
+  return out;
+}
+
 // --- re-preview: a re-READ, without applying a tool (gap
 // `re-preview-a-site-without-applying-a-tool`, 2026-07-31) ---------------------------
 //

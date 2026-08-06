@@ -20,6 +20,7 @@ import type {
   SitePreviewPayload,
   SiteView,
 } from "../api/client";
+import { worstRescanMessage } from "./intake";
 
 export interface SystemCard {
   readonly model: string;
@@ -280,6 +281,29 @@ export function siteStateSentence(
       // a rung this app has not met yet is still a fact the operator must see
       return site.status;
   }
+}
+
+/**
+ * DECLARE'S CAUTIONS, COLLECTED (§10-AN slice C, client 2026-08-06: "any warnings or
+ * things of the sort need to come in as modals"). Two standing sentences used to live
+ * on the row alone — the "reworked since the run" clause `siteStateSentence` already
+ * speaks, and the capture gate's rescan-grade detail (`worstRescanMessage`, read off
+ * the SAME `site.capture` the queue's chip already summarizes) — and this collects
+ * them, VERBATIM, for the caution chip's modal rather than growing a second inline
+ * band beside the status chip. Empty for a site with neither: the chip renders only
+ * where this returns something.
+ */
+export function declareCautionWords(
+  site: SiteView | null,
+  rows: ReadonlyArray<Record<string, unknown>> = [],
+): readonly string[] {
+  if (site === null) return [];
+  const out: string[] = [];
+  if (site.status === "adjusted") out.push(siteStateSentence(site, rows));
+  if (site.capture !== null && site.capture.verdict === "rescan") {
+    out.push(worstRescanMessage(site.capture));
+  }
+  return out;
 }
 
 // --- the three panes' rules (plan §7 slice 5b; reference semantics: the demo's -------

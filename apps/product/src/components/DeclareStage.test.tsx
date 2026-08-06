@@ -534,6 +534,54 @@ describe("the DeclareStage container, statically (effects do not run)", () => {
 });
 
 /**
+ * THE CAUTION CHIP AND ITS MODAL (§10-AN slice C, client 2026-08-06: "any warnings
+ * or things of the sort need to come in as modals"). Beside `toolbar-status` — the
+ * task's own anchor — never a standing amber band on the row again.
+ */
+describe("the caution chip and its modal", () => {
+  it("renders beside the status chip when the active site's capture is rescan-grade", () => {
+    // tooth 19, the default active site, is fixture-seeded rescan-grade
+    const html = view();
+    const status = html.indexOf('data-role="toolbar-status"');
+    const chip = html.indexOf('data-role="declare-caution-chip"');
+    expect(chip).toBeGreaterThan(-1);
+    expect(chip).toBeGreaterThan(status);
+    expect(html).toMatch(/data-role="declare-caution-chip"[^>]*>⚠ 1 caution</);
+    // closed by default — the modal is not on the page uninvited
+    expect(html).not.toContain('data-role="declare-cautions-dialog"');
+  });
+
+  it("renders no chip for a clean, unreworked site with a passing capture", () => {
+    // tooth 30 has no capture at all ("not assessed") and status "detected"
+    expect(view({ activeTooth: 30 })).not.toContain('data-role="declare-caution-chip"');
+  });
+
+  it("counts BOTH cautions when a site is reworked AND rescan-grade", () => {
+    const reworked = {
+      ...detail,
+      sites: [
+        siteView({
+          tooth: 19,
+          status: "adjusted",
+          declared_variant: "5020",
+          capture: rescanAssessment("Only 31% of the rim arc is captured."),
+        }),
+        siteView({ tooth: 30 }),
+      ],
+    };
+    const html = view({ detail: reworked });
+    expect(html).toMatch(/data-role="declare-caution-chip"[^>]*>⚠ 2 cautions</);
+  });
+
+  it("opens on the `cautionsOpen` prop — the switch-confirm/reasons-dialog precedent — and lists the words verbatim", () => {
+    const html = view({ cautionsOpen: true });
+    expect(html).toContain('data-role="declare-cautions-dialog"');
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain("Only 31% of the rim arc is captured.");
+  });
+});
+
+/**
  * THE WORKSPACE TOOLBAR (gaps `workspace-toolbar-site-chip`, `alignment-metrics-strip`,
  * `named-view-presets`). The panes were deliberately made to dominate this stage
  * (client 2026-07-27), and what that cost was the site's own identity: the tooth
@@ -557,11 +605,15 @@ describe("the workspace toolbar over the panes", () => {
     );
   });
 
-  it("the strip keeps ONE row: status and variant only — the figures moved into Numbers & log (client 2026-08-06)", () => {
-    /* was: "the ALIGNMENT strip carries variant, both published deviations,
-       rotation, pairs". The client chose pane height over the on-strip figures;
-       alignmentStats (domain-pinned) still computes every figure with its honesty
-       suffixes, and WorkspaceInsight.test.tsx pins their new home. */
+  it("the strip carries VARIANT, DEV RMS, ROTATION and PAIRS — the comp's four chips restored (§10-AN slice C)", () => {
+    /* RETARGETED (§10-AN slice C, client 2026-08-06 comp read directly: "match the
+       designs"). was: "the ALIGNMENT strip carries variant only — status and
+       variant, the figures moved into Numbers & log". The 2026-08-06 ruling this
+       pinned traded the figures for pane HEIGHT, not for their being on screen at
+       all — the client's later design puts four back on one nowrap row (still one
+       line) and this supersedes that removal. DEV P90 stays off the strip (still
+       in Numbers & log) — alignmentStats (domain-pinned) computes every figure
+       with its honesty suffixes regardless of which ones this strip shows. */
     const html = view({
       activeTooth: 19,
       runRows: [
@@ -575,11 +627,13 @@ describe("the workspace toolbar over the panes", () => {
       ],
     });
     expect(html).toContain('data-role="alignment-strip"');
-    expect(html).toMatch(/data-stat="variant"/);
-    expect(html).not.toMatch(/data-stat="dev-rms"/);
+    for (const id of ["variant", "dev-rms", "rotation", "pairs"]) {
+      expect(html).toMatch(new RegExp(`data-stat="${id}"`));
+    }
+    expect(html).toContain("0.041 mm");
+    expect(html).toContain("-1.4°");
+    expect(html).toContain("3 / 8");
     expect(html).not.toMatch(/data-stat="dev-p90"/);
-    expect(html).not.toMatch(/data-stat="rotation"/);
-    expect(html).not.toMatch(/data-stat="pairs"/);
   });
 
   it("the strip states no tolerance and no pass/fail — those are server-derived", () => {
@@ -714,15 +768,15 @@ describe("the workspace toolbar over the panes", () => {
 /**
  * THE STRIP AND THE PANE UNDER IT MUST NOT DISAGREE (design review 2026-07-31).
  *
- * The strip's numeric cells moved into Numbers & log (client 2026-08-06, the
- * one-row direction); every honesty rule those cells carried — "no run yet" over a
- * dash, the (preview)/(run) source label, the unverified and unchecked suffixes —
- * is pinned at the source (domain alignmentStats) and at the new home
- * (WorkspaceInsight.test.tsx). What this stage still owes is that no numeric cell
- * quietly returns to the strip and re-opens the two-row fight.
+ * RETARGETED (§10-AN slice C): the strip's numeric cells are BACK (the comp's four
+ * chips, restored) — this describe block used to pin their absence. What survives
+ * unchanged is every honesty rule those cells carry — "no run yet" over a dash, the
+ * (preview)/(run) source label — pinned at the source (domain alignmentStats) and
+ * at their OTHER home (WorkspaceInsight.test.tsx, unaffected by this stage's own
+ * strip: the same served facts, two locations, never two sources of them).
  */
-describe("the strip after the figures moved out", () => {
-  it("renders no numeric cell even with a preview's figures in hand", () => {
+describe("the strip reads a PREVIEW's figures honestly, before any run", () => {
+  it("labels the preview source rather than borrowing the run's plain figure", () => {
     const html = view({
       activeTooth: 19,
       previewFigures: {
@@ -732,7 +786,8 @@ describe("the strip after the figures moved out", () => {
         source: "preview",
       },
     });
-    expect(html).not.toMatch(/data-stat="dev-rms"/);
-    expect(html).not.toContain("0.086 mm");
+    expect(html).toMatch(/data-stat="dev-rms"/);
+    expect(html).toContain("0.086 mm");
+    expect(html).toContain("DEV RMS (preview)");
   });
 });

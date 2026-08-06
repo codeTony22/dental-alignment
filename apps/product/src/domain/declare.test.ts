@@ -8,9 +8,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ApiResult, SitePreviewPayload } from "../api/client";
 import {
+  captureAssessment,
   caseSessionDetail,
   catalogEntry,
   catalogGroup,
+  rescanAssessment,
   runnableDetail,
   sitePreviewPayload,
   siteView,
@@ -21,6 +23,7 @@ import {
   createPreviewFirer,
   declareQueueSummary,
   declaredLabel,
+  declareCautionWords,
   siteStateSentence,
   dimsLabel,
   indicesFrom,
@@ -1087,6 +1090,59 @@ describe("siteStateSentence — the row's state in words, and the RUN's own numb
       expect(words.toLowerCase()).not.toContain("in tolerance");
       expect(words.toLowerCase()).not.toContain("pass");
     }
+  });
+});
+
+/**
+ * §10-AN slice C: the caution CHIP's own list — "reworked since the run" (the SAME
+ * sentence `siteStateSentence` already speaks) plus a rescan-grade capture verdict
+ * (the SAME sentence the worker wrote, off `site.capture`). Collected, never
+ * paraphrased, and empty wherever there is nothing to say.
+ */
+describe("declareCautionWords — the caution chip's list, off the SAME facts the row already reads", () => {
+  const rows = [{ tooth: 19, deviation_rms_mm: 0.041 }];
+
+  it("is empty with no site selected", () => {
+    expect(declareCautionWords(null, rows)).toEqual([]);
+  });
+
+  it("is empty for a clean, unreworked site", () => {
+    expect(declareCautionWords(siteView({ tooth: 19, status: "ready" }), rows)).toEqual([]);
+  });
+
+  it("carries the EXACT reworked-since-the-run sentence siteStateSentence speaks", () => {
+    const site = siteView({ tooth: 19, status: "adjusted" });
+    const words = declareCautionWords(site, rows);
+    expect(words).toEqual([siteStateSentence(site, rows)]);
+    expect(words[0]).toContain("Reworked since the run");
+  });
+
+  it("carries the worker's own rescan sentence, verbatim off site.capture", () => {
+    const message = "Only 41% of the rim arc is captured — below the rescan threshold.";
+    const site = siteView({ tooth: 19, status: "detected", capture: rescanAssessment(message) });
+    expect(declareCautionWords(site, rows)).toEqual([message]);
+  });
+
+  it("carries BOTH when a site is reworked AND its capture is rescan-grade", () => {
+    const message = "Only 41% of the rim arc is captured — below the rescan threshold.";
+    const site = siteView({
+      tooth: 19,
+      status: "adjusted",
+      capture: rescanAssessment(message),
+    });
+    expect(declareCautionWords(site, rows)).toEqual([
+      siteStateSentence(site, rows),
+      message,
+    ]);
+  });
+
+  it("never speaks for a passing or marginal capture — only rescan-grade", () => {
+    const pass = siteView({
+      tooth: 19,
+      status: "detected",
+      capture: captureAssessment({ verdict: "marginal" }),
+    });
+    expect(declareCautionWords(pass, rows)).toEqual([]);
   });
 });
 

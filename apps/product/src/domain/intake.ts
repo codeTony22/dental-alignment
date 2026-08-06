@@ -41,7 +41,10 @@ export interface RescanNotice {
   readonly message: string;
 }
 
-function worstRescanMessage(capture: CaptureAssessmentView): string {
+/** Exported (§10-AN slice C) so Declare's own caution modal can quote the SAME
+ *  sentence for a site whose capture verdict is rescan-grade, rather than growing a
+ *  second copy of "which check failed worst" on the other stage. */
+export function worstRescanMessage(capture: CaptureAssessmentView): string {
   const failing = capture.checks.find((c) => c.verdict === RESCAN);
   return failing?.message ?? "Capture quality is below the rescan threshold.";
 }

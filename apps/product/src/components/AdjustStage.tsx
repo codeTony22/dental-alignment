@@ -333,6 +333,19 @@ export interface AdjustStageViewProps {
    * predate it.
    */
   readonly clockNotice?: UnverifiedClockNotice | null;
+  /**
+   * THE DOCK-HEIGHT TOGGLE, LIFTED (§10-AN slice C — see AdjustDockProps' own note).
+   * The pane grid reads the SAME value to cap itself when the dock grows tall, so it
+   * has to live above both. Optional with an inert default: static callers predate
+   * it.
+   */
+  readonly dockTall?: boolean;
+  readonly onToggleDockTall?: () => void;
+  /** THE PAIR-CAUTION MODAL, lifted for the same reason (AdjustDockProps' note).
+   *  Optional with an inert default: static callers predate it. */
+  readonly cautionsOpen?: boolean;
+  readonly onOpenCautions?: () => void;
+  readonly onCloseCautions?: () => void;
 }
 
 
@@ -404,6 +417,11 @@ export function AdjustStageView({
   rePreviewPhase = "idle",
   rePreviewError = null,
   clockNotice = null,
+  dockTall = false,
+  onToggleDockTall = () => undefined,
+  cautionsOpen = false,
+  onOpenCautions = () => undefined,
+  onCloseCautions = () => undefined,
 }: AdjustStageViewProps) {
   const active = entries.find((e) => e.tooth === activeTooth) ?? null;
   const busy = phase === "working";
@@ -591,7 +609,18 @@ export function AdjustStageView({
           toolbox heading ("Tools — tooth N") and the queue rows, both inside the
           scroll box, and the alignment facts were each locked in one tool's TAB.
           Same strip, same rules, same server facts. */}
-      <div className="workbench__stage workbench__stage--split">
+      {/* THE PANE-GRID/DOCK COUPLING (§10-AN slice C, comp-delta's `paneGridStyle`,
+          wired now that `dockTall` is lifted): `--adjust` scopes the coupling to
+          THIS stage only (Declare's own bottom band already caps itself, and reads
+          `min-height: 0` here — see styles.css), `--dock-tall` caps the panes at
+          96–128px so "more room" can grow the dock to min(560px,70vh) without the
+          flex column starving it. The comp's own trade-off, stated in styles.css
+          rather than hidden inside a fixed number. */}
+      <div
+        className={`workbench__stage workbench__stage--split workbench__stage--adjust${
+          dockTall ? " workbench__stage--dock-tall" : ""
+        }`}
+      >
         <WorkspaceToolbar
           tooth={activeTooth}
           systemModel={systemModel}
@@ -704,6 +733,11 @@ export function AdjustStageView({
               dropSaving={dropSaving}
               dropError={dropError}
               relief={relief}
+              dockTall={dockTall}
+              onToggleDockTall={onToggleDockTall}
+              cautionsOpen={cautionsOpen}
+              onOpenCautions={onOpenCautions}
+              onCloseCautions={onCloseCautions}
             />
           </section>
         </div>
@@ -800,6 +834,13 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   const [seatedError, setSeatedError] = useState<string | null>(null);
   const [diameterMm, setDiameterMm] = useState(DEFAULT_DIAMETER_MM);
   const [trenchArmed, setTrenchArmed] = useState(false);
+  // §10-AN slice C: the dock-height toggle, lifted so the pane grid can cap itself
+  // by the same value — see AdjustDockProps' own note.
+  const [dockTall, setDockTall] = useState(false);
+  const handleToggleDockTall = useCallback(() => setDockTall((now) => !now), []);
+  // §10-AN slice C: the pair-caution modal, lifted for the same testability reason
+  // as `reasonsFor` below.
+  const [cautionsOpen, setCautionsOpen] = useState(false);
   // AUTO-MARK (client 2026-07-29, item 3) keeps its OWN draft set, separate from
   // fit-by-points' hand-built one: switching tabs must never silently discard a pair
   // the operator is mid-way through building by hand, and the two mean different
@@ -961,6 +1002,9 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
     setRefusal(null);
     setPass(null);
     setLastOutcome(null);
+    // A caution dialog open for the PREVIOUS site's pairs describes marks that no
+    // longer apply — closed on the same switch that clears the drafts themselves.
+    setCautionsOpen(false);
     // A newer site supersedes the re-read's words — they described the PREVIOUS
     // site's row, and rendering them under a different tooth would misattribute the
     // fact. The ref invalidates any response still in flight for the site just left,
@@ -1413,6 +1457,11 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       }
       onApplyPairs={handleApplyPairs}
       onClearPairs={handleClearPairs}
+      dockTall={dockTall}
+      onToggleDockTall={handleToggleDockTall}
+      cautionsOpen={cautionsOpen}
+      onOpenCautions={() => setCautionsOpen(true)}
+      onCloseCautions={() => setCautionsOpen(false)}
       panes={panes}
       activeStatus={activeSite?.status ?? null}
       onReconfirm={handleReconfirm}

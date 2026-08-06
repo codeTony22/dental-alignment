@@ -826,40 +826,51 @@ describe("the pair set: its ceiling, and starting over", () => {
   /* THE VACUOUS RMS, BEFORE THE CLICK (defect cap6020-neodent-gm, 2026-08-01). The
      operator applied one pair, the cap turned −50.9°, and the outcome said "marks
      agree to 0.000mm RMS" — a residual that is zero by construction. The caution
-     rides in the pair set, beside a LIVE Apply: the act stays possible. */
+     used to ride inline, beside a LIVE Apply; the act stays possible. RETARGETED
+     (§10-AN slice C, client 2026-08-06: "any warnings ... need to come in as
+     modals") — it is now the dock header's caution chip + the modal it opens
+     (`cautionsOpen` pinned via props, the switch-confirm/reasons-dialog precedent),
+     never a second refusal-shaped surface. */
   it("cautions the one-pair fit beside the Apply that will run it", () => {
-    const html = view({ tool: "fit-by-points", drafts: [complete] });
-    expect(html).toContain('data-role="cross-check-caution"');
-    expect(html).toContain("no agreement number");
+    const closed = view({ tool: "fit-by-points", drafts: [complete] });
+    expect(closed).toMatch(/data-role="pair-caution-chip"[^>]*>⚠ 1 caution/);
+    const open = view({ tool: "fit-by-points", drafts: [complete], cautionsOpen: true });
+    expect(open).toContain('data-role="pair-caution-list"');
+    expect(open).toContain("no agreement number");
     // and the control is still live — this is disclosure, not a refusal
-    expect(html).toContain('data-role="apply-pairs"');
-    expect(html).toContain("Apply the fit");
+    expect(open).toContain('data-role="apply-pairs"');
+    expect(open).toContain("Apply the fit");
   });
 
   /* THE PRE-REFUSAL'S WIRING (review 2026-08-01). The BFF passthrough is pinned by
      tests because dropping it would silence the guard with nothing failing — and the
      same argument applies one layer up: without this test, deleting
      `clock={payload?.clock_reference ?? null}` or either `clock={clock}` prop leaves
-     the whole product suite green and the operator back on the 422. */
+     the whole product suite green and the operator back on the 422. RETARGETED
+     (§10-AN slice C): the per-pair `mark-guard` paragraph is gone; the same
+     sentence now lists in the caution modal, named "Pair 1" exactly as the
+     blocked Apply button's own `title` names it. */
   it("refuses a mark on the screw access locally, and makes Apply say so", () => {
     const onAccess = withPick(
       withPick(newPairDraft("p1", false), "part", [2, 0, 1]),
       "scan",
       [5.1, 5, 5],
     );
-    const html = view({
-      tool: "fit-by-points",
+    const props = {
+      tool: "fit-by-points" as const,
       drafts: [onAccess],
       pose: { origin: [5, 5, 5], axis: [0, 0, 1] },
       clock: { rim_centre: [5, 5, 5], min_lever_mm: 0.5 },
-    });
-    expect(html).toContain('data-guard="refusal"');
-    expect(html).toContain("screw access");
+    };
+    const open = view({ ...props, cautionsOpen: true });
+    expect(open).toContain('data-role="pair-caution-list"');
+    expect(open).toContain("Pair 1: This mark sits");
+    expect(open).toContain("screw access");
     // and the control is INERT with the reason reachable on it — not live into a
     // 422. RETARGETED (client live-testing 2026-08-06): the reason used to be the
     // span's own visible text; it now rides `title`, naming which pair, same as
     // before, on hover/focus rather than filling the button's face.
-    expect(html).toMatch(/data-role="apply-pairs"[^>]*title="Pair 1/);
+    expect(view(props)).toMatch(/data-role="apply-pairs"[^>]*title="Pair 1/);
   });
 
   it("keeps Apply live when the server's reference has not arrived", () => {
@@ -875,8 +886,11 @@ describe("the pair set: its ceiling, and starting over", () => {
       drafts: [onAccess],
       pose: { origin: [5, 5, 5], axis: [0, 0, 1] },
       clock: null,
+      cautionsOpen: true,
     });
-    expect(html).not.toContain('data-guard="refusal"');
+    // RETARGETED (§10-AN slice C): the caution still exists (the chip and the modal
+    // both name it) — what must never happen is the Apply control going inert.
+    expect(html).toContain('data-role="pair-caution-list"');
     expect(html).toContain("Apply the fit");
   });
 
@@ -886,8 +900,10 @@ describe("the pair set: its ceiling, and starting over", () => {
       "scan",
       [6, 5, 5],
     );
+    // RETARGETED (§10-AN slice C): the chip itself is the tell now — it renders
+    // only where `pairCautions` has something to say.
     expect(view({ tool: "fit-by-points", drafts: [complete, second] })).not.toContain(
-      'data-role="cross-check-caution"',
+      'data-role="pair-caution-chip"',
     );
   });
 
@@ -901,7 +917,8 @@ describe("the pair set: its ceiling, and starting over", () => {
       autoMarkLandmarks: landmarks,
       drafts: [withPick(autoMarkDrafts(landmarks)[0]!, "scan", [5, 5, 5])],
     });
-    expect(html).toContain('data-role="cross-check-caution"');
+    // RETARGETED (§10-AN slice C): same chip, same mechanic, for auto-mark's pairs.
+    expect(html).toMatch(/data-role="pair-caution-chip"[^>]*>⚠ 1 caution/);
   });
 
   it("offers one bulk clear once anything is placed", () => {
@@ -976,25 +993,34 @@ describe("the workspace toolbar over the panes", () => {
     );
   });
 
-  it("the strip renders only the VARIANT pill — the figures live in Numbers & log (client 2026-08-06)", () => {
-    /* was: "the deviation is on screen while a rotation tool is selected" — the
-       2026-07-31 gap fix that put the figures ON the strip. The client explicitly
-       traded that standing readout for pane height ("we can only allow one row …
-       why do we need this DEV RMS"); the figures kept every honesty suffix and
-       moved one click away (WorkspaceInsight's Alignment section, pinned there).
-       Reversal is one filter change in WorkspaceToolbar. */
+  it("the strip carries VARIANT, DEV RMS, ROTATION and PAIRS — the comp's four chips restored (§10-AN slice C)", () => {
+    /* RETARGETED (§10-AN slice C, client 2026-08-06 comp read directly: "match the
+       designs"). The 2026-08-06 ruling this test used to pin ("we can only allow
+       one row … why do we need this DEV RMS") traded the figures for pane height —
+       but the ROW SHAPE was the ask, not the absence of the figures: the client's
+       later design puts all four back on one nowrap row (still one line; the panes
+       keep the space) and this supersedes the earlier removal. DEV P90 stays off
+       the strip (still in Numbers & log) — the comp shows four chips, not five. */
     const html = view({
       tool: "rotation",
       stats: [
         { id: "variant", label: "VARIANT", value: "5020" },
         { id: "dev-rms", label: "DEV RMS", value: "0.041 mm" },
+        { id: "dev-p90", label: "DEV P90", value: "0.077 mm" },
+        { id: "rotation", label: "ROTATION", value: "+3.2°" },
         { id: "pairs", label: "PAIRS", value: "3 / 8" },
       ],
     });
     expect(html).toContain('data-role="alignment-strip"');
-    expect(html).toMatch(/data-stat="variant"/);
-    expect(html).not.toContain("0.041 mm");
-    expect(html).not.toContain("3 / 8");
+    for (const id of ["variant", "dev-rms", "rotation", "pairs"]) {
+      expect(html).toMatch(new RegExp(`data-stat="${id}"`));
+    }
+    expect(html).toContain("0.041 mm");
+    expect(html).toContain("+3.2°");
+    expect(html).toContain("3 / 8");
+    // DEV P90 is published to Numbers & log, never the strip
+    expect(html).not.toMatch(/data-stat="dev-p90"/);
+    expect(html).not.toContain("0.077 mm");
   });
 
   it("with no site selected the chip says so rather than going blank", () => {

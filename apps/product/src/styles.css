@@ -121,7 +121,17 @@ a:hover {
 .app-shell {
   display: flex;
   flex-direction: column;
+  /* §10-AN slice C (client 2026-08-06 comp read directly: "there is no scrolling up
+     and down on the designs"). `100dvh`, with `100vh` as the fallback for a browser
+     that does not know it: `dvh` tracks the ACTUAL visible viewport (mobile browser
+     chrome that shows/hides on scroll shrinks it), where `vh` is the LARGEST the
+     viewport could be — on a browser that is not full-screen, `100vh` can exceed
+     the visible area by exactly the height of the chrome that comes and goes,
+     which is a page that scrolls by a few dozen pixels even though nothing on it
+     changed. The rule this shell exists to keep ("the page itself never scrolls")
+     only holds if the unit matches the space that is actually there. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   /* THE CLIP ONLY BINDS IF THE SHELL IS A CONTAINING BLOCK (verifier, 2026-07-26). `overflow:
      hidden` does NOT clip an absolutely-positioned descendant whose containing block is an
@@ -436,6 +446,16 @@ a:hover {
   background: var(--chip-exception-bg);
   color: var(--chip-exception-fg);
   border-color: var(--chip-exception-line);
+}
+
+/* A CHIP THAT IS ALSO A BUTTON (§10-AN slice C: the pair-caution / declare-caution
+   indicators, the amber "⚠ N caution(s)" chips that open a modal). `.chip` alone
+   styles a `<span>`'s look; a `<button>` wearing it needs the two resets a browser
+   does not give an inline-flex button for free — a pointing cursor, and the page's
+   own font rather than the UA's button face. */
+.caution-chip {
+  cursor: pointer;
+  font: inherit;
 }
 
 .chip--gate,
@@ -2925,6 +2945,7 @@ button.package-files__link:hover {
   .app-shell {
     height: auto;
     min-height: 100vh;
+    min-height: 100dvh;
     overflow: visible;
   }
 
@@ -5641,7 +5662,11 @@ button.package-files__link:hover {
    Scoped to `--split`, which is exactly the two workspace stages: Intake, the library
    and Delivery are document pages and keep the standing two-column grid. */
 .workbench:has(.workbench__stage--split) {
-  grid-template-columns: minmax(0, 176px) minmax(0, 1fr);
+  /* §10-AN slice C: 168px exactly, matching the comp's own left-rail width (comp
+     spec §5: "grid-template-columns: minmax(0,168px) minmax(0,1fr)") — this rule
+     had drifted to 176px even though the paragraph above it already describes the
+     168px experiment; the number now matches the words. */
+  grid-template-columns: minmax(0, 168px) minmax(0, 1fr);
   gap: 0;
   padding: 0;
 }
@@ -5817,10 +5842,18 @@ button.package-files__link:hover {
    with are inside the region copied from the frozen demo, and overriding beats
    diverging the copy. */
 
-.workspace-drawer--declare {
-  /* one row of selects never needs the drawer's scroll allowance */
-  overflow-y: visible;
-}
+/* §10-AN slice C REVERSES THIS (client 2026-08-06: "there is no scrolling up and
+   down on the designs" — a page that never scrolls must hold at EVERY catalog
+   size, not just the one this override was tuned against). It used to read
+   `overflow-y: visible` on the argument that "one row of selects never needs the
+   drawer's scroll allowance" — true for a six-variant shelf, false the day a
+   system's catalog grows past what one row holds: `overflow: visible` does not
+   clip, so the drawer would simply push past its own box, and on a shell that is
+   `100dvh; overflow: hidden` that push has nowhere to go but underneath the
+   panes. The base `.workspace-drawer` rule (`max-height: min(238px, 27vh);
+   overflow-y: auto`) already states the comp's OWN bound (spec §4: "Band: flex 0
+   1 auto, max-height min(238px, 27vh), overflow-y auto") — this selector now
+   states nothing, so that bound applies unmodified. */
 
 .declare-controls {
   display: flex;
@@ -6202,8 +6235,21 @@ button.package-files__link:hover {
    beside a pane region that GROWS (`flex: 1 1 auto`), so the panes swallowed the free
    height and the drawer was shrunk into a scroll even on a tall window — measured at
    1512x950: panes 479px, drawer 239px showing 297px of tools. Shrink 0 reverses the
-   order of yielding, which is the order the client asked for. */
-.workspace-drawer {
+   order of yielding, which is the order the client asked for.
+
+   §10-AN slice C SCOPES THIS DOWN TO ADJUST (client 2026-08-06, the comp read
+   directly: "match the designs ... there is no scrolling up and down"). The raised
+   460px/46vh ceiling was reasoned about ADJUST's tooling ("the stage also carried
+   three rows of chrome") — but `.adjust-dock` (§10-AN's own instrument dock) now
+   owns Adjust's height entirely (`max-height: min(324px,42vh)` / tall
+   `min(560px,70vh)`, `.workspace-drawer--dock`'s `max-height: none` already
+   neutralizes this rule for it) and never reads this number. Left unscoped, this
+   rule was landing on DECLARE's system/variant band instead — which never asked
+   for the raise, and the comp's own bound for it is smaller (spec §4: "max-height
+   min(238px, 27vh)"). `--dock` here is belt-and-braces (the `--dock` selector
+   below already wins); the meaningful change is that `--declare` no longer
+   inherits a ceiling reasoned about a different stage's tooling. */
+.workspace-drawer--dock {
   flex: 0 0 auto;
   max-height: min(460px, 46vh);
 }
@@ -6213,6 +6259,29 @@ button.package-files__link:hover {
      safe, because the grid scrolls inside itself (§10-P.2) and each pane holds the
      220px floor below which it shows no geometry at all. */
   min-height: 220px;
+}
+
+/* §10-AN slice C: THE PANE-GRID/DOCK COUPLING (comp-delta's `paneGridStyle`, wired
+   now that `dockTall` is lifted to AdjustStageView — see AdjustDockProps' own
+   note). Scoped to `--adjust` (Declare's own `--split` stage keeps the 220px floor
+   above, unmodified, per `stage !== 'adjust' ? 0 : …` in the comp's own source
+   comment — Declare's bottom band caps ITSELF, so the panes need no separate
+   ceiling from the dock).
+
+   Two rules, not one, because the floor and the ceiling answer different
+   questions: compact keeps the panes usable while the dock is at its default
+   height; tall RELEASES the pixels "more room" asked for, and a floor alone does
+   nothing here — the pane never sat on the 220px floor to begin with, so lowering
+   it changes nothing until something also stops the panes from taking the space
+   back (comp-delta's own comment: "lowering the floor alone does nothing, because
+   the pane never sits on it"). */
+.workbench__stage--adjust .verify-panels {
+  min-height: 160px;
+}
+
+.workbench__stage--adjust.workbench__stage--dock-tall .verify-panels {
+  min-height: 96px;
+  max-height: 128px;
 }
 
 /* ---- The selects read as controls, not as bare browser widgets ------------------
