@@ -82,6 +82,7 @@ import {
   autoMarkSourceLabel,
   autoMarkSummary,
   crossCheckCaution,
+  crossCheckCautionDetail,
   diameterBandWords,
   dropLabel,
   siteReliefApplyNote,
@@ -542,16 +543,38 @@ function PairsList({
           0.000mm RMS". It rides in the SET, above the Apply control it is about, and
           it changes no control: the worker deliberately allows one correspondence,
           and a single pair is the documented answer where the automatic reader has
-          no evidence at all. */}
-      {crossCheckCaution(drafts) !== null && (
-        <p
-          data-role="cross-check-caution"
-          role="status"
-          className="adjust-pairs__caution adjust-pairs__caution--set"
-        >
-          {crossCheckCaution(drafts)}
-        </p>
-      )}
+          no evidence at all.
+
+          ONE LINE + the qualifier behind a fold (client live-testing 2026-08-06: "a
+          lot of yellow text" — this caution and `markLeverGuard`'s screw-access
+          refusal were stacking to ~8 lines of amber under one span). The lead
+          sentence is the ONLY thing that must reach the operator before the click;
+          the radial/chord condition that decides whether a span counts as one
+          observation or two is unchanged, verbatim, just behind `<details>` now —
+          the same "row keeps the fact, the words move behind a door" precedent the
+          unverified-clock notice set below. */}
+      {crossCheckCaution(drafts) !== null && (() => {
+        const lead = crossCheckCaution(drafts)!;
+        const detail = crossCheckCautionDetail(drafts);
+        return (
+          <div
+            data-role="cross-check-caution"
+            role="status"
+            className="adjust-pairs__caution adjust-pairs__caution--set"
+          >
+            <p className="adjust-pairs__caution-lead">{lead}</p>
+            {detail !== null && (
+              <details data-role="cross-check-caution-fold"
+                        className="adjust-pairs__caution-fold">
+                <summary className="adjust-pairs__caution-summary">
+                  why a span can be one observation
+                </summary>
+                <p className="adjust-pairs__caution-line">{detail}</p>
+              </details>
+            )}
+          </div>
+        );
+      })()}
       <ul data-role="pair-list" className="adjust-pairs">
         {drafts.map((draft, index) => (
           <li key={draft.id} data-role="pair-row" data-span={draft.span}

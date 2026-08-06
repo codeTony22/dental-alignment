@@ -1784,3 +1784,39 @@ re-run today prints 0.3407 until the evidence is retired.)
   again do we have to go back to alignment?"; a one-click re-align from
   Adjustment would need the attestation story resolved (the confirm tick attests
   the live panes). Open, with the §10-AJ superseded-shelf warning.
+
+## §10-AL — the second live-testing batch (2026-08-06, late)
+
+- **The mark names its own tooth** (client: "let me mark it without asking me for
+  which tooth", the arch upload). `defaultToothForMark`: a covering proposal's
+  guess (the adopt door's radius rule), else the jaw's next free number —
+  provenance NAMED, because on an anchorless upload any number is bookkeeping and
+  a mirror-ambiguous anatomical guess dressed as a chart number would be an
+  invented fact. Both doors (missed-cap mark, adopt row) are one click; the field
+  keeps the last word. An arch-position→universal-number estimator was considered
+  and rejected for now: the arch's mirror ambiguity cannot be resolved from
+  geometry alone, and a confidently-mirrored tooth number on a bill is worse than
+  a labelled free label.
+- **The pair advisories condensed** (client: "a lot of yellow text"): client-
+  composed words shortened at the source with their claims kept; SERVED sentences
+  stay verbatim and only their presentation tightens.
+- **RECORDED, NOT BUILT — the demo's rim border-points tool** (client: "we lost
+  the tool we had in the demo where we made points around the border of the
+  healing cap in the scan"). The demo let the operator click points around a
+  cap's rim; the fit fed the rim diameter (variant identification) and the
+  centre. The product's re-mark door takes ONE centre click today. Restoring it
+  needs: viewer multi-point picking on the scan pane, session storage for
+  rim_points beside marked_center, a BFF route, and the worker's existing
+  site_capture_inputs already reads rim_points/rim_mark — the worker half is
+  live. NOTE the §10-AH measurement before building the ADJUST-side variant: every
+  pair-shaped re-mark seeding (centre+rim) LOST to the bare click on the DEV
+  metric — the border points' value is the RIM DIAMETER read at intake, not a
+  better seat seed. Scope it as an intake capture aid.
+- **cap7020 / cap7030 at Declare, read against the fleet check**: 7020 — the
+  detector finds no caps on that scan; the site stands on the operator's intake
+  mark and the preview seats within the pick radius of that mark, so a mark off
+  the cap lands the seat off (the re-mark door is the lever; the fleet check
+  found no better seed for its landed run, 0.3202 RMS). 7030 — the fleet's worst
+  (0.427/0.728), rim read 0.80mm: the rim itself is ambiguous on this capture;
+  standing leaning is a RESCAN for that die, with auto-mark + ghosts serving the
+  rotation after a run and the §10-AK guard refusing the diameter trap.

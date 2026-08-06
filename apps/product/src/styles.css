@@ -3497,13 +3497,19 @@ button.package-files__link:hover {
 
 /* The pre-flight span caution: amber, like every other "look at this before you
    commit" on this surface — never the refusal red, because nothing has been refused
-   and the operator may still be right. */
+   and the operator may still be right.
+
+   TIGHTENED (client live-testing 2026-08-06: "a lot of yellow text on the span the
+   scan tool"). This class also carries `markLeverGuard`'s server-derived refusal —
+   its WORDS are fixed (the guard is announced AS the server's own verdict; see the
+   comment beside its render), so only PRESENTATION moved here: a smaller, denser
+   note reads as a compact flag rather than a wall, with no word of it touched. */
 .adjust-pairs__caution {
   grid-column: 1 / -1;
-  margin: 6px 0 0;
-  padding: 6px 8px;
-  font-size: 12px;
-  line-height: 1.4;
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.3;
   color: var(--color-amber);
   background: var(--color-amber-bg);
   border-left: 3px solid var(--color-amber-border);
@@ -5387,8 +5393,30 @@ button.package-files__link:hover {
    NOT inside an `.adjust-pairs__row` grid the way the span caution is. */
 .adjust-pairs__caution--set {
   grid-column: auto;
-  margin: 8px 0 4px;
+  margin: 6px 0 4px;
   max-width: 52ch;
+}
+
+.adjust-pairs__caution-lead {
+  margin: 0;
+}
+
+/* The span's radial/chord qualifier, folded (client live-testing 2026-08-06 — same
+   "row keeps the fact, the words move behind a door" precedent as
+   `.adjust-clock-notice__fold`). Unchanged claim, just not forced on the first read. */
+.adjust-pairs__caution-fold {
+  margin-top: 4px;
+}
+
+.adjust-pairs__caution-summary {
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--color-amber);
+  opacity: 0.85;
+}
+
+.adjust-pairs__caution-line {
+  margin: 4px 0 0;
 }
 
 /* The same fact on Deliver's assurance row. Amber rather than the quiet provenance

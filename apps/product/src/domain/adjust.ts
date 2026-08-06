@@ -776,33 +776,45 @@ export function pairStatusLine(
  * documented answer where the automatic reader has no evidence at all, and removing the
  * capability is not the fix. So this returns words and touches no control.
  *
- * IT PREDICTS NO VERDICT. Whether the fit really lands on one observation is the
- * server's to say — a two-point SPAN emits its direction only where the server reads it
- * as radial, and a chord across the feature contributes its midpoint alone. So the span
- * branch states the CONDITION rather than either answer, and the fact that decides it
- * arrives afterwards on `AdjustOutcomeView.cross_checked`, derived server-side.
+ * SHORTENED TO THE ACTIONABLE HALF (client live-testing 2026-08-06: "a lot of yellow
+ * text on the span the scan tool" — this caution, stacked on `markLeverGuard`'s
+ * screw-access refusal, ran to ~8 lines of amber under one pair). Every claim this
+ * used to spell out is still true and still said — just not all on the operator's
+ * first read: this returns the ONE sentence that matters before the click ("nothing
+ * cross-checks this yet"), and the physics condition that decides whether a span even
+ * counts as two observations moves to `crossCheckCautionDetail`, for a fold.
  */
 export function crossCheckCaution(drafts: readonly PairDraft[]): string | null {
   const complete = drafts.filter(isComplete);
   if (complete.length !== 1) return null;
   const only = complete[0]!;
-  if (only.span) {
-    return (
-      "One pair only. This span counts as two observations only where the server " +
-      "reads it as radial; a chord across the feature contributes its midpoint " +
-      "alone, and then this fit stands on a single observation — the rotation is " +
-      "fixed exactly, nothing disagrees with it, and no agreement number exists. " +
-      "That is a legitimate fit where the automatic reader has no evidence. Place a " +
-      "second pair if you want the rotation cross-checked."
-    );
-  }
+  return only.span
+    ? "One pair — nothing cross-checks the rotation. Add a second pair to check it."
+    : "One pair, one observation, no agreement number: legitimate, but add a " +
+        "second pair to cross-check it.";
+}
+
+/**
+ * THE CHORD/RADIAL QUALIFIER, FOLDED (client live-testing 2026-08-06, same defect as
+ * `crossCheckCaution` above). A two-point SPAN emits its direction only where the
+ * server reads it as radial; a chord across the feature contributes its midpoint
+ * alone — so whether the fit really lands on one observation is the server's to say,
+ * not this app's, and the fact that decides it arrives afterwards on
+ * `AdjustOutcomeView.cross_checked`. That nuance is unchanged from before the rewrite;
+ * it just no longer sits on the operator's first read. Null for a POINT pair, which
+ * carries no such ambiguity to explain, and null wherever `crossCheckCaution` is.
+ */
+export function crossCheckCautionDetail(drafts: readonly PairDraft[]): string | null {
+  const complete = drafts.filter(isComplete);
+  if (complete.length !== 1) return null;
+  const only = complete[0]!;
+  if (!only.span) return null;
   return (
-    "One pair only — one observation. It fixes the rotation exactly, so there is " +
-    "nothing to cross-check it against and the fit reports no agreement number: if " +
-    "this mark is on the wrong feature, the cap turns by whatever it says and no " +
-    "number here can tell. That is a legitimate fit where the automatic reader has " +
-    "no evidence. Place a second pair elsewhere on the cap to get a residual you " +
-    "can read."
+    "A span counts as two observations only where the server reads it as radial; a " +
+    "chord across the feature contributes its midpoint alone, and then this fit " +
+    "stands on a single observation — the rotation is fixed exactly, nothing " +
+    "disagrees with it, and no agreement number exists. That is a legitimate fit " +
+    "where the automatic reader has no evidence."
   );
 }
 

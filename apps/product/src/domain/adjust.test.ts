@@ -32,6 +32,7 @@ import {
   autoMarkSourceLabel,
   autoMarkSummary,
   crossCheckCaution,
+  crossCheckCautionDetail,
   diameterBandWords,
   dropLabel,
   dropNote,
@@ -1071,13 +1072,31 @@ describe("the one-pair caution, before the fit is applied", () => {
     expect(words).not.toBeNull();
   });
 
-  it("a lone SPAN is cautioned in the conditional the physics actually has", () => {
-    // a span emits its direction ONLY where the server reads it as radial; a chord
-    // across the feature contributes its midpoint alone. This app may not decide
-    // which — so it states the condition rather than either answer.
+  it("a lone SPAN leads with the actionable half; the radial/chord condition folds", () => {
+    // RETARGETED (client live-testing 2026-08-06: "a lot of yellow text on the span
+    // the scan tool" — this caution and `markLeverGuard`'s screw-access refusal were
+    // stacking to ~8 lines of amber under one pair). The physics condition — a span
+    // emits its direction ONLY where the server reads it as radial; a chord across
+    // the feature contributes its midpoint alone — is unchanged, just no longer
+    // forced onto the always-visible sentence: `crossCheckCaution` now states only
+    // what the operator does next, and `crossCheckCautionDetail` carries the
+    // qualifier for a fold (AdjustStage renders it behind a `<details>`).
     const words = crossCheckCaution([completeSpan("a")])!;
-    expect(words).toContain("radial");
+    expect(words).not.toContain("radial");
     expect(words).not.toContain("one observation.");
+    expect(words.toLowerCase()).toContain("second pair");
+
+    const detail = crossCheckCautionDetail([completeSpan("a")])!;
+    expect(detail).toContain("radial");
+  });
+
+  it("the fold is silent for a POINT pair — no chord/radial ambiguity to explain", () => {
+    expect(crossCheckCautionDetail([complete("a")])).toBeNull();
+  });
+
+  it("both halves are silent once a second pair stands, or nothing is placed", () => {
+    expect(crossCheckCautionDetail([complete("a"), complete("b")])).toBeNull();
+    expect(crossCheckCautionDetail([])).toBeNull();
   });
 });
 
