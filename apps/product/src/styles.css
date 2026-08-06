@@ -7116,3 +7116,546 @@ button.package-files__link:hover {
   color: var(--color-text-muted);
   text-wrap: pretty;
 }
+
+/* ====================================================================================
+   §10-AN — THE INSTRUMENT DOCK (2026-08-06). The client's new comp turns Adjust's text
+   drawer into a fixed header (glyph rail + tool title/readout + a dock-height toggle),
+   ONE scrollable tool body, and a fixed acts footer — replacing `.adjust-tools` and
+   the old `.workspace-drawer`'s own scroll/height rules FOR ADJUST ONLY (scoped by the
+   `--dock` modifier below; Declare's two-panel use of `.workspace-drawer` is
+   untouched).
+
+   PALETTE: the comp's green family (#12994a / #0a6d2e) IS this stylesheet's own
+   `--color-accent-green` / `--color-accent-green-dark` — reused, not re-declared (the
+   copy-debt ledger's row 9 is the worked example for this). The comp's amber/red
+   handle bands (#e4b23c / #e2604a) map onto the existing `--color-amber` /
+   `--color-danger` tokens, which already carry that exact job (a warn band, a danger
+   band) elsewhere in this file — no new colour tokens for a job this file already
+   names. Nothing here colour-grades against an invented tolerance (see
+   `domain/adjust.scatterFillFraction`'s own doctrine) — the scatter meter's fill is
+   ONE neutral colour, never banded.
+   ==================================================================================== */
+
+.workspace-drawer--dock {
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+}
+
+.workspace-drawer--dock .panel {
+  padding: 0;
+}
+
+.adjust-dock {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(324px, 42vh);
+  background: var(--color-bg);
+  border-top: 1px solid var(--color-border);
+}
+
+.adjust-dock--tall {
+  max-height: min(560px, 70vh);
+}
+
+.adjust-dock__header {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 8px;
+  padding: 7px 14px;
+  border-bottom: 1px solid #eef1ef;
+}
+
+.adjust-dock__rail {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.adjust-dock__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.adjust-dock__chip--good {
+  border-color: var(--color-accent-green);
+  color: var(--color-accent-green-dark);
+}
+
+.adjust-dock__chip--active {
+  background: var(--color-accent-green);
+  border-color: var(--color-accent-green);
+  color: #ffffff;
+}
+
+.adjust-dock__title {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 130px;
+  gap: 1px;
+}
+
+.adjust-dock__tool-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.adjust-dock__tool-state {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adjust-dock__tool-state--good {
+  color: var(--color-accent-green-dark);
+}
+
+.adjust-dock__more {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.adjust-dock__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 9px 14px 11px;
+}
+
+/* The footer keeps `.drawer-acts`'s own row layout; this only drops the border/margin
+   it added for the OLD scrolling drawer — the dock's own header already draws the
+   dividing line the footer used to need on its own top edge. */
+.adjust-dock__footer {
+  border-top: 1px solid #e6eae7;
+  margin-top: 0;
+  padding: 9px 14px 11px;
+}
+
+.adjust-dock__widget,
+.adjust-tool__widget {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 14px;
+}
+
+.adjust-dock__col {
+  display: flex;
+  flex: 1 1 190px;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+/* ---- rotation: the ±45° scrubber gauge ------------------------------------------- */
+
+.adjust-dock__gauge {
+  position: relative;
+  flex: 1 1 240px;
+  min-width: 0;
+  height: 44px;
+  touch-action: none;
+}
+
+.adjust-dock__gauge-track {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  top: 24px;
+  height: 7px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #eef1ef, #e3e8e4);
+  border: 1px solid #e0e5e2;
+}
+
+.adjust-dock__gauge-tick {
+  position: absolute;
+  top: 33px;
+  width: 1.5px;
+  height: 5px;
+  margin-left: -0.75px;
+  background: #c9d2cc;
+}
+
+.adjust-dock__gauge-tick--major {
+  height: 8px;
+}
+
+.adjust-dock__gauge-tick-label {
+  position: absolute;
+  top: 32px;
+  transform: translateX(-50%);
+  padding-top: 9px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #8d968f;
+}
+
+.adjust-dock__gauge-trench {
+  position: absolute;
+  top: 20px;
+  width: 3px;
+  height: 15px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--color-accent-green);
+}
+
+.adjust-dock__gauge-trench-label {
+  position: absolute;
+  top: 1px;
+  transform: translateX(-50%);
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--color-accent-green-dark);
+  background: #eafaf0;
+  border: 1px solid #bfe6cd;
+}
+
+/* The native range input IS the interactive gauge (keyboard + pointer, for free) —
+   stretched over the decorative track above and made invisible, so the drawn layers
+   are what the operator sees while the browser's own drag/keyboard handling does the
+   work `pointerdown`/`pointermove` would otherwise have to reimplement. */
+.adjust-dock__gauge-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: ew-resize;
+}
+
+.adjust-dock__gauge-handle {
+  position: absolute;
+  top: 15px;
+  width: 44px;
+  transform: translateX(-50%);
+  padding: 3px 0;
+  border-radius: 7px;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+}
+
+.adjust-dock__gauge-handle--on {
+  background: var(--color-accent-green);
+}
+
+.adjust-dock__gauge-handle--near {
+  background: var(--color-amber);
+}
+
+.adjust-dock__gauge-handle--off {
+  background: var(--color-danger);
+}
+
+/* UNKNOWN IS NOT BAD: with no clocking read served, red would claim "far off the
+   trench" about a distance nobody measured — the handle goes neutral and the
+   readout already says "the trench has not been read yet" (§10-AN). */
+.adjust-dock__gauge-handle--unknown {
+  background: var(--color-text-muted);
+}
+
+/* ---- mark trench: the 92px ring --------------------------------------------------- */
+
+.adjust-dock__ring {
+  position: relative;
+  flex: 0 0 auto;
+  width: 92px;
+  height: 92px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.adjust-dock__ring:disabled {
+  cursor: not-allowed;
+}
+
+.adjust-dock__ring-band {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 12px solid #e8ecea;
+  background: #f7f9f8;
+}
+
+.adjust-dock__ring-tick {
+  position: absolute;
+  left: 50%;
+  bottom: 50%;
+  width: 1.5px;
+  height: 46px;
+  margin-left: -0.75px;
+  transform-origin: 50% 100%;
+  background: linear-gradient(#cdd6d0 0 6px, transparent 0);
+}
+
+.adjust-dock__ring-notch {
+  position: absolute;
+  left: 50%;
+  bottom: 50%;
+  width: 7px;
+  height: 46px;
+  margin-left: -3.5px;
+  transform-origin: 50% 100%;
+  border-radius: 3px;
+  background: linear-gradient(#9aa8a0 0 14px, transparent 0);
+}
+
+.adjust-dock__ring-disc {
+  position: absolute;
+  inset: 24px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, #e2d7ab 0%, #c9bd7f 74%);
+  border: 1.5px solid #a99b5f;
+}
+
+/* The code mark sits at the ring's own top (12 o'clock) — a FIXED reference, not a
+   moving needle: this ring reads one served RESIDUAL (`notch_shift_deg`), never an
+   absolute clock position, so only the trench notch's own bearing (relative to this
+   fixed mark) is honest to draw. */
+.adjust-dock__ring-code {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 50%;
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+.adjust-dock__ring-code--on {
+  background: var(--color-accent-green);
+}
+
+.adjust-dock__ring-code--near {
+  background: var(--color-amber);
+}
+
+.adjust-dock__ring-code--off,
+.adjust-dock__ring-code--unknown {
+  background: var(--color-danger);
+}
+
+/* ---- best fit: the diameter slider ------------------------------------------------ */
+
+.adjust-dock__dial-col {
+  position: relative;
+  flex: 1 1 230px;
+  min-width: 0;
+  padding-top: 17px;
+}
+
+.adjust-dock__flag {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-accent-green);
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.adjust-dock__slider {
+  display: block;
+  width: 100%;
+  height: 20px;
+  accent-color: var(--color-accent-green);
+  cursor: pointer;
+}
+
+.adjust-dock__slider-ticks {
+  position: relative;
+  display: block;
+  height: 8px;
+}
+
+.adjust-dock__slider-tick {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 5px;
+  background: #cdd6d0;
+}
+
+.adjust-dock__slider-tick--major {
+  height: 8px;
+}
+
+.adjust-dock__scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9.5px;
+  color: var(--color-text-muted);
+}
+
+/* ---- fit by points: the eight-slot strip ------------------------------------------ */
+
+.adjust-dock__slots {
+  display: flex;
+  flex: 1 1 250px;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.adjust-dock__slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.adjust-dock__slot--placed {
+  background: var(--color-accent-green);
+  border: 1px solid var(--color-accent-green);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.adjust-dock__slot--next {
+  background: #fffaf0;
+  border: 1px solid var(--color-amber-border);
+  color: var(--color-amber);
+  cursor: not-allowed;
+}
+
+.adjust-dock__slot--locked {
+  background: #fbfcfb;
+  border: 1px solid #e6eae7;
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.adjust-dock__slot--spare {
+  opacity: 0.45;
+}
+
+.adjust-dock__scatter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.adjust-dock__scatter-label {
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.adjust-dock__scatter-track {
+  flex: 1 1 70px;
+  min-width: 50px;
+  height: 6px;
+  border-radius: 99px;
+  background: #eceeec;
+  overflow: hidden;
+}
+
+/* ONE neutral fill, never banded — this meter reads a served number against a fixed
+   DISPLAY ceiling, not a tolerance (see `domain/adjust.scatterFillFraction`); a
+   green/amber/red fill here would assert a pass/fail line this app has no case
+   tolerance to draw. */
+.adjust-dock__scatter-fill {
+  display: block;
+  height: 100%;
+  background: var(--color-accent-green);
+}
+
+.adjust-dock__scatter-value {
+  font-size: 10.5px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* ---- auto-mark: the proposal map --------------------------------------------------- */
+
+.adjust-dock__map {
+  position: relative;
+  flex: 0 0 auto;
+  width: 84px;
+  height: 84px;
+}
+
+.adjust-dock__map-disc {
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 30%, #f4f1e4 0%, #e0d4a8 76%);
+  border: 1.5px solid #a99b5f;
+}
+
+.adjust-dock__dot {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 21px;
+  height: 21px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.adjust-dock__dot--matched {
+  background: var(--color-accent-green);
+  border: 2px solid var(--color-accent-green);
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+}
+
+.adjust-dock__dot--live {
+  background: var(--color-amber);
+  border: 2px solid var(--color-amber);
+  color: #ffffff;
+  box-shadow: 0 0 0 4px rgba(214, 150, 22, 0.22);
+}
+
+.adjust-dock__dot--queued {
+  background: #ffffff;
+  border: 2px solid #b9c2bb;
+  color: var(--color-text-muted);
+}

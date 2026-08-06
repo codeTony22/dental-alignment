@@ -1113,8 +1113,9 @@ describe("dropping a cap", () => {
  * `re-preview-a-site-without-applying-a-tool`, 2026-07-31). An applied tool already
  * updates the panes (`AdjustResultView.pane_payload`, replaced verbatim); this
  * control's whole job is the read WITHOUT a tool — after a rework elsewhere, or a
- * stale row. Placed above `ToolTabs` (see AdjustStage.tsx's own comment on the
- * choice): it is not any one correction tool's act, so it must stay visible
+ * stale row. RETARGETED (§10-AN, 2026-08-06): it now lives in the instrument dock's
+ * own FIXED FOOTER (`AdjustDock.tsx`, `data-role="drawer-acts"`) rather than above
+ * the tool tabs — it is not any one correction tool's act, so it must stay reachable
  * whichever tab is open, the same reasoning the clock-unverified notice below shares.
  */
 describe("re-reading a site's numbers, without applying a tool", () => {

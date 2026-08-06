@@ -71,6 +71,30 @@ import {
   type AdjustQueueEntry,
   acceptExceptionOffer,
   exceptionDraftWords,
+  ADJUST_DOCK_TOOLS,
+  ROTATION_GAUGE_MIN_DEG,
+  ROTATION_GAUGE_MAX_DEG,
+  clampGaugeDeg,
+  clampDiameterMm,
+  pairIdsFromSlot,
+  rotationGaugeFraction,
+  rotationOffTrenchDeg,
+  rotationTrenchTickDeg,
+  trenchBand,
+  rotationToolStateWords,
+  trenchToolStateWords,
+  trenchRingHint,
+  bestFitToolStateWords,
+  bestFitFlagPositionPct,
+  bestFitFlagWords,
+  pairCountHeaderWords,
+  autoMarkToolStateWords,
+  dockToolGood,
+  pairSlotStrip,
+  scatterWords,
+  scatterFillFraction,
+  autoMarkDotPositions,
+  autoMarkDotState,
 } from "./adjust";
 import { rePreviewView, siteView } from "../testing/fixtures";
 
@@ -1609,5 +1633,433 @@ describe("the run's re-apply receipts", () => {
     expect(adjustUnionCaption(payload, null, 0)).toContain(
       "no operator adjustment on this site yet",
     );
+  });
+});
+
+// =====================================================================================
+// §10-AN — the instrument dock's pure rules (2026-08-06). Node-only, no rendering: the
+// gauge/ring/slider/strip/map are all deterministic functions of a served value and a
+// local UI number, pinned here before AdjustDock.tsx exists to consume them.
+// =====================================================================================
+
+describe("the rotation gauge's position mapping (§10-AN)", () => {
+  it("clamps a candidate step to the gauge's own travel, mirroring MAX_STEP_DEG", () => {
+    expect(ROTATION_GAUGE_MIN_DEG).toBe(-45);
+    expect(ROTATION_GAUGE_MAX_DEG).toBe(45);
+    expect(clampGaugeDeg(90)).toBe(45);
+    expect(clampGaugeDeg(-90)).toBe(-45);
+    expect(clampGaugeDeg(12)).toBe(12);
+  });
+
+  it("one fraction for the whole gauge: 0 at the minimum, 1 at the maximum, 0.5 at rest", () => {
+    expect(rotationGaugeFraction(-45)).toBe(0);
+    expect(rotationGaugeFraction(45)).toBe(1);
+    expect(rotationGaugeFraction(0)).toBe(0.5);
+  });
+
+  it("clamps the fraction rather than escaping the track", () => {
+    expect(rotationGaugeFraction(999)).toBe(1);
+    expect(rotationGaugeFraction(-999)).toBe(0);
+  });
+});
+
+describe("the rotation off-trench arithmetic (§10-AN)", () => {
+  it("at rest (pending 0) the residual IS the served shift", () => {
+    expect(rotationOffTrenchDeg(0, 4.2)).toBeCloseTo(4.2);
+    expect(rotationOffTrenchDeg(0, -1.8)).toBeCloseTo(-1.8);
+  });
+
+  it("a pending step already headed toward the trench shrinks the residual", () => {
+    expect(rotationOffTrenchDeg(4, 4.2)).toBeCloseTo(0.2);
+  });
+
+  it("null propagates — nothing to be off FROM with no served shift", () => {
+    expect(rotationOffTrenchDeg(5, null)).toBeNull();
+  });
+
+  it("the trench tick sits at the served shift itself (the handle's rest is 0)", () => {
+    expect(rotationTrenchTickDeg(7.5)).toBe(7.5);
+    expect(rotationTrenchTickDeg(null)).toBeNull();
+  });
+});
+
+describe("trenchBand — display grading of a served value, never a verdict (§10-AN)", () => {
+  it("unknown with nothing served — no tick, no colour, no claim", () => {
+    expect(trenchBand(null)).toBe("unknown");
+  });
+
+  it("bands at exactly the thresholds the comp itself used (decision 3: acceptable)", () => {
+    expect(trenchBand(6)).toBe("on");
+    expect(trenchBand(-6)).toBe("on");
+    expect(trenchBand(6.1)).toBe("near");
+    expect(trenchBand(15)).toBe("near");
+    expect(trenchBand(15.1)).toBe("off");
+  });
+});
+
+describe("the rotation and mark-trench header readouts (§10-AN)", () => {
+  it("signs the pending step and states the distance to the trench", () => {
+    expect(rotationToolStateWords(5, 1.2)).toBe("+5° · 1.2° off the trench");
+    expect(rotationToolStateWords(-3, -0.4)).toBe("-3° · 0.4° off the trench");
+    expect(rotationToolStateWords(0, null)).toBe(
+      "0° · the trench has not been read yet",
+    );
+  });
+
+  it("mark trench states arrival or the honest absence, never a signed pending step", () => {
+    expect(trenchToolStateWords(2)).toBe("on the trench");
+    expect(trenchToolStateWords(-40)).toBe("40.0° to go");
+    expect(trenchToolStateWords(null)).toBe("the trench has not been read yet");
+  });
+
+  it("the ring's hint names the one honest action — snapping onto the served shift", () => {
+    expect(trenchRingHint(null)).toContain("nothing to click onto");
+    expect(trenchRingHint(3)).toContain("already sits in the trench");
+    expect(trenchRingHint(20)).toContain("Click the ring");
+  });
+});
+
+describe("the best-fit dial's header readout and flag (§10-AN amendment)", () => {
+  it("states the dialed value alone with no served suggestion", () => {
+    expect(bestFitToolStateWords(0.3, null)).toBe("Ø0.30 mm");
+  });
+
+  it("adds the server's own suggestion, never a standing rim measurement", () => {
+    const words = bestFitToolStateWords(0.3, 0.6);
+    expect(words).toBe("Ø0.30 mm · server suggests Ø0.60 mm");
+    expect(words).not.toContain("rim reads");
+  });
+
+  it("positions the flag along the dial's own band", () => {
+    expect(bestFitFlagPositionPct(MIN_DIAMETER_MM)).toBe(0);
+    expect(bestFitFlagPositionPct(MAX_DIAMETER_MM)).toBe(100);
+    // 0.30 is 12.82% of the 0.05..2.00 band, mirroring the comp's own worked example
+    expect(bestFitFlagPositionPct(0.3)).toBeCloseTo(12.82, 1);
+  });
+
+  it("clamps a suggestion outside the dial's own band rather than escaping it", () => {
+    expect(bestFitFlagPositionPct(5)).toBe(100);
+    expect(bestFitFlagPositionPct(-1)).toBe(0);
+  });
+
+  it("the flag's words are a suggestion, verbatim never a measurement claim", () => {
+    expect(bestFitFlagWords(0.6)).toBe("server suggests Ø0.60");
+  });
+});
+
+describe("pairCountHeaderWords and autoMarkToolStateWords (§10-AN)", () => {
+  it("counts complete pairs against the ceiling", () => {
+    expect(pairCountHeaderWords([])).toBe("0 of 8 pairs placed");
+    const complete = withPick(
+      withPick(newPairDraft("p1", false), "part", [1, 0, 1]),
+      "scan",
+      [5, 5, 5],
+    );
+    expect(pairCountHeaderWords([complete])).toBe("1 of 8 pairs placed");
+  });
+
+  it("auto-mark counts against the SERVED total, not a fixed four", () => {
+    const landmarks: LandmarkView[] = [
+      { id: "a", kind: "notch", point: [1, 0, 0], lever_arm_mm: 1, azimuth_deg: 0 },
+      { id: "b", kind: "notch", point: [0, 1, 0], lever_arm_mm: 1, azimuth_deg: 90 },
+      { id: "c", kind: "notch", point: [-1, 0, 0], lever_arm_mm: 1, azimuth_deg: 180 },
+    ];
+    expect(autoMarkToolStateWords([], landmarks)).toBe("0 of 3 points matched");
+    const drafts = autoMarkDrafts(landmarks);
+    const matched = withPick(drafts[0]!, "scan", [9, 9, 9]);
+    expect(autoMarkToolStateWords([matched, drafts[1]!, drafts[2]!], landmarks)).toBe(
+      "1 of 3 points matched",
+    );
+  });
+
+  it("singular is grammatical at exactly one proposed point", () => {
+    const one: LandmarkView[] = [
+      { id: "a", kind: "notch", point: [1, 0, 0], lever_arm_mm: 1, azimuth_deg: 0 },
+    ];
+    expect(autoMarkToolStateWords([], one)).toBe("0 of 1 point matched");
+  });
+});
+
+describe("dockToolGood — the rail's ring, structural facts only (§10-AN)", () => {
+  const complete = withPick(
+    withPick(newPairDraft("p1", false), "part", [1, 0, 1]),
+    "scan",
+    [5, 5, 5],
+  );
+
+  it("rotation and mark-trench read the SAME band", () => {
+    expect(
+      dockToolGood("rotation", {
+        offDeg: 3,
+        bestFitPass: false,
+        drafts: [],
+        landmarksCount: 0,
+      }),
+    ).toBe(true);
+    expect(
+      dockToolGood("mark-trench", {
+        offDeg: 30,
+        bestFitPass: false,
+        drafts: [],
+        landmarksCount: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it("best-fit reads the already-optimal pass, never a diameter comparison", () => {
+    expect(
+      dockToolGood("best-fit", {
+        offDeg: null,
+        bestFitPass: true,
+        drafts: [],
+        landmarksCount: 0,
+      }),
+    ).toBe(true);
+    expect(
+      dockToolGood("best-fit", {
+        offDeg: null,
+        bestFitPass: false,
+        drafts: [],
+        landmarksCount: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it("fit-by-points reads whether anything is actually complete", () => {
+    expect(
+      dockToolGood("fit-by-points", {
+        offDeg: null,
+        bestFitPass: false,
+        drafts: [newPairDraft("open", false)],
+        landmarksCount: 0,
+      }),
+    ).toBe(false);
+    expect(
+      dockToolGood("fit-by-points", {
+        offDeg: null,
+        bestFitPass: false,
+        drafts: [complete],
+        landmarksCount: 0,
+      }),
+    ).toBe(true);
+  });
+
+  it("auto-mark reads matched-against-proposed, not a fixed four", () => {
+    expect(
+      dockToolGood("auto-mark", {
+        offDeg: null,
+        bestFitPass: false,
+        drafts: [complete],
+        landmarksCount: 2,
+      }),
+    ).toBe(false);
+    expect(
+      dockToolGood("auto-mark", {
+        offDeg: null,
+        bestFitPass: false,
+        drafts: [complete],
+        landmarksCount: 1,
+      }),
+    ).toBe(true);
+    // no landmarks proposed at all is never "good" — there is nothing matched yet
+    expect(
+      dockToolGood("auto-mark", {
+        offDeg: null,
+        bestFitPass: false,
+        drafts: [],
+        landmarksCount: 0,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("ADJUST_DOCK_TOOLS — the rail's glyphs and tooltips (§10-AN)", () => {
+  it("orders the five tools the way the comp's own rail does", () => {
+    expect(ADJUST_DOCK_TOOLS.map((t) => t.id)).toEqual([
+      "rotation",
+      "mark-trench",
+      "best-fit",
+      "fit-by-points",
+      "auto-mark",
+    ]);
+  });
+
+  it("carries the comp's glyphs verbatim", () => {
+    expect(ADJUST_DOCK_TOOLS.map((t) => t.glyph)).toEqual([
+      "⟳",
+      "◎",
+      "⌀",
+      "✛",
+      "⁘",
+    ]);
+  });
+
+  it("ports rotation and mark-trench's own tooltips UNCHANGED", () => {
+    const rotation = ADJUST_DOCK_TOOLS.find((t) => t.id === "rotation")!;
+    expect(rotation.tooltip).toContain(
+      "The green tick is where the scanned trench sits",
+    );
+    const trench = ADJUST_DOCK_TOOLS.find((t) => t.id === "mark-trench")!;
+    expect(trench.tooltip).toContain("One click does what stepping the dial does by hand");
+  });
+
+  it("best-fit's tooltip drops the withdrawn rim-reads claim (§10-AN amendment)", () => {
+    const bestFit = ADJUST_DOCK_TOOLS.find((t) => t.id === "best-fit")!;
+    expect(bestFit.tooltip).not.toContain("what the scanned rim actually reads");
+    expect(bestFit.tooltip).toContain("never a standing measurement");
+  });
+
+  it("fit-by-points' tooltip drops the comp's own unverified pair-count physics", () => {
+    const points = ADJUST_DOCK_TOOLS.find((t) => t.id === "fit-by-points")!;
+    expect(points.tooltip).not.toContain("the first four do the work");
+  });
+
+  it("auto-mark's tooltip does not claim a fixed count of four", () => {
+    const auto = ADJUST_DOCK_TOOLS.find((t) => t.id === "auto-mark")!;
+    expect(auto.tooltip).not.toContain("four points");
+  });
+});
+
+describe("clampDiameterMm — the ∓0.05 chips' own arithmetic (§10-AN)", () => {
+  it("rounds off floating-point drift", () => {
+    expect(clampDiameterMm(0.3 - 0.05)).toBe(0.25);
+    expect(clampDiameterMm(0.25 + 0.05)).toBe(0.3);
+  });
+
+  it("clamps to the dial's own band", () => {
+    expect(clampDiameterMm(-1)).toBe(MIN_DIAMETER_MM);
+    expect(clampDiameterMm(99)).toBe(MAX_DIAMETER_MM);
+  });
+});
+
+describe("pairIdsFromSlot — what a placed-slot click must drop (§10-AN)", () => {
+  it("drops the pair at that slot and every one after it, never before", () => {
+    const drafts = [
+      newPairDraft("p1", false),
+      newPairDraft("p2", false),
+      newPairDraft("p3", false),
+    ];
+    expect(pairIdsFromSlot(drafts, 2)).toEqual(["p2", "p3"]);
+    expect(pairIdsFromSlot(drafts, 1)).toEqual(["p1", "p2", "p3"]);
+    expect(pairIdsFromSlot(drafts, 3)).toEqual(["p3"]);
+  });
+
+  it("an index past the end drops nothing", () => {
+    expect(pairIdsFromSlot([newPairDraft("p1", false)], 5)).toEqual([]);
+  });
+});
+
+describe("pairSlotStrip — eight slots, one PairDraft each (§10-AN)", () => {
+  const complete = withPick(
+    withPick(newPairDraft("p1", false), "part", [1, 0, 1]),
+    "scan",
+    [5, 5, 5],
+  );
+
+  it("empty drafts: slot 1 is next, the rest locked, none spare-flagged wrongly", () => {
+    const strip = pairSlotStrip([]);
+    expect(strip).toHaveLength(8);
+    expect(strip[0]).toMatchObject({ index: 1, state: "next", spare: false });
+    expect(strip[1]).toMatchObject({ index: 2, state: "locked", spare: false });
+    expect(strip[4]).toMatchObject({ index: 5, state: "locked", spare: true });
+  });
+
+  it("placed pairs fill from the front; the slot after them is next", () => {
+    const strip = pairSlotStrip([complete, complete]);
+    expect(strip[0]!.state).toBe("placed");
+    expect(strip[1]!.state).toBe("placed");
+    expect(strip[2]!.state).toBe("next");
+    expect(strip[3]!.state).toBe("locked");
+  });
+
+  it("an OPEN (incomplete) draft does not count as placed — it is not yet a pair", () => {
+    const open = newPairDraft("open", false);
+    const strip = pairSlotStrip([complete, open]);
+    expect(strip[0]!.state).toBe("placed");
+    // the open draft occupies no slot of its own on the strip — the count is of
+    // COMPLETE pairs, so slot 2 is still "next"
+    expect(strip[1]!.state).toBe("next");
+  });
+
+  it("a placed spare (beyond the fourth) says so in its title", () => {
+    const five = [complete, complete, complete, complete, complete];
+    const strip = pairSlotStrip(five);
+    expect(strip[4]!.spare).toBe(true);
+    expect(strip[4]!.title).toContain("spare");
+    expect(strip[4]!.title).toContain("click to drop it and every pair after it");
+  });
+
+  it("a locked slot's title says pairs are placed in order — no invented per-slot act", () => {
+    const strip = pairSlotStrip([]);
+    expect(strip[1]!.title).toBe("pairs are placed in order");
+  });
+});
+
+describe("the scatter meter — a served number only, never a tolerance band (§10-AN)", () => {
+  it("absent with no served residual", () => {
+    expect(scatterWords(null)).toBeNull();
+    expect(scatterFillFraction(null)).toBeNull();
+  });
+
+  it("renders the served RMS verbatim, to two places", () => {
+    expect(scatterWords(0.0512)).toBe("0.05 mm");
+  });
+
+  it("the fill fraction is bounded 0..1 against a fixed DISPLAY ceiling, not a tolerance", () => {
+    expect(scatterFillFraction(0)).toBe(0);
+    expect(scatterFillFraction(0.5)).toBe(0.5);
+    expect(scatterFillFraction(10)).toBe(1);
+  });
+});
+
+describe("autoMarkDotPositions — placed by served bearing alone (§10-AN)", () => {
+  it("places a dot at 0° azimuth at the top of the disc", () => {
+    const [dot] = autoMarkDotPositions([
+      { id: "a", kind: "notch", point: [0, 0, 0], lever_arm_mm: 1, azimuth_deg: 0 },
+    ]);
+    expect(dot!.leftPct).toBeCloseTo(50, 1);
+    expect(dot!.topPct).toBeLessThan(50); // toward the top edge
+  });
+
+  it("places a dot at 90° azimuth to the right of centre", () => {
+    const [dot] = autoMarkDotPositions([
+      { id: "a", kind: "notch", point: [0, 0, 0], lever_arm_mm: 1, azimuth_deg: 90 },
+    ]);
+    expect(dot!.leftPct).toBeGreaterThan(50);
+    expect(dot!.topPct).toBeCloseTo(50, 1);
+  });
+
+  it("one dot per landmark, in the served order", () => {
+    const landmarks: LandmarkView[] = [
+      { id: "a", kind: "notch", point: [0, 0, 0], lever_arm_mm: 1, azimuth_deg: 0 },
+      { id: "b", kind: "notch", point: [0, 0, 0], lever_arm_mm: 1, azimuth_deg: 180 },
+    ];
+    expect(autoMarkDotPositions(landmarks).map((d) => d.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("autoMarkDotState — read off the SAME drafts the pair list renders (§10-AN)", () => {
+  const landmarks: LandmarkView[] = [
+    { id: "a", kind: "notch", point: [1, 0, 0], lever_arm_mm: 1, azimuth_deg: 0 },
+    { id: "b", kind: "notch", point: [0, 1, 0], lever_arm_mm: 1, azimuth_deg: 90 },
+    { id: "c", kind: "notch", point: [-1, 0, 0], lever_arm_mm: 1, azimuth_deg: 180 },
+  ];
+
+  it("a matched draft (scan half placed) reads matched", () => {
+    const drafts = autoMarkDrafts(landmarks);
+    const matched = withPick(drafts[0]!, "scan", [9, 9, 9]);
+    expect(autoMarkDotState([matched, drafts[1]!, drafts[2]!], 0)).toBe("matched");
+  });
+
+  it("the first still-open draft reads live; the rest read queued", () => {
+    const drafts = autoMarkDrafts(landmarks);
+    const matched = withPick(drafts[0]!, "scan", [9, 9, 9]);
+    const set = [matched, drafts[1]!, drafts[2]!];
+    expect(autoMarkDotState(set, 1)).toBe("live");
+    expect(autoMarkDotState(set, 2)).toBe("queued");
+  });
+
+  it("an index past the drafts we have reads queued rather than throwing", () => {
+    expect(autoMarkDotState([], 3)).toBe("queued");
   });
 });

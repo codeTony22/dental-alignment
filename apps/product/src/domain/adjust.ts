@@ -1694,3 +1694,399 @@ export function siteReliefCeilingLine(
   return `ceiling ${row.max_safe_mm.toFixed(2)}mm for ${variant} — a larger ask ` +
     "is cut at the ceiling";
 }
+
+// =====================================================================================
+// §10-AN — the instrument dock (2026-08-06): the tool drawer's pure rules. The comp's
+// own numbers are MOCK PHYSICS (a `dev = 0.02 + rotErr/90*0.34 + …` formula fabricated
+// for its demo data) and NONE of that formula ships (decision 1). Every function below
+// reads exactly ONE served fact — `clocking.notch_shift_deg`, the best-fit refusal's
+// `suggested_diameter_mm`, a draft's own local state, or a served landmark's own
+// `azimuth_deg` — and does arithmetic ONLY over what a slider or a ring honestly needs
+// to draw itself (a position, a colour band, a distance-to-target). Nothing here
+// invents a measurement or asserts a verdict; the gate words stay the server's.
+// =====================================================================================
+
+/** The rotation gauge's travel, mirroring `MAX_STEP_DEG` — the dial can propose no
+ *  step the server would refuse, so its own bound is the server's bound, not a new
+ *  one invented for the widget. */
+export const ROTATION_GAUGE_MIN_DEG = -MAX_STEP_DEG;
+export const ROTATION_GAUGE_MAX_DEG = MAX_STEP_DEG;
+
+/** Clamp a candidate step to the gauge's own travel — the same bound `postRotation`
+ *  enforces server-side, mirrored so the dial can never propose what it would refuse. */
+export function clampGaugeDeg(deg: number): number {
+  return Math.min(ROTATION_GAUGE_MAX_DEG, Math.max(ROTATION_GAUGE_MIN_DEG, deg));
+}
+
+/**
+ * ONE MAPPING FOR THE WHOLE GAUGE (comp's own doctrine, ported honestly): the track,
+ * the tick marks, the trench target and the handle all read the SAME fraction of the
+ * travel, so a value that says "here" places every layer at the same "here". Returns
+ * 0 at the minimum, 1 at the maximum, clamped — the component turns this into a CSS
+ * `calc()` against the handle's own width, never a computation this module opines on.
+ */
+export function rotationGaugeFraction(deg: number): number {
+  return (
+    (clampGaugeDeg(deg) - ROTATION_GAUGE_MIN_DEG) /
+    (ROTATION_GAUGE_MAX_DEG - ROTATION_GAUGE_MIN_DEG)
+  );
+}
+
+/**
+ * THE RESIDUAL THAT WOULD REMAIN if `pendingDeg` were committed now — pure arithmetic
+ * over one served scalar (`notchShiftDeg`, the CCW rotation the worker's own clock
+ * signature says would ADD to land the coded feature on the trench) and one local UI
+ * value (the handle's own candidate position, never sent until the operator commits
+ * it). Null propagates: with no served shift there is nothing to be off FROM, and the
+ * caller must render the honest absence, never a fabricated zero.
+ */
+export function rotationOffTrenchDeg(
+  pendingDeg: number,
+  notchShiftDeg: number | null,
+): number | null {
+  return notchShiftDeg === null ? null : notchShiftDeg - pendingDeg;
+}
+
+/** The ∓0.05 chips' own arithmetic: clamp to the dial's own band and round to the
+ *  input's own step precision, so repeated nudging cannot drift on floating point. */
+export function clampDiameterMm(mm: number): number {
+  const clamped = Math.min(MAX_DIAMETER_MM, Math.max(MIN_DIAMETER_MM, mm));
+  return Math.round(clamped * 100) / 100;
+}
+
+/** The trench tick's OWN position on the gauge — where the handle would have to sit to
+ *  zero the residual. The handle's resting value is 0 by construction (it reads a
+ *  PENDING step, reset after every commit — see AdjustDock), so "the handle's current
+ *  position plus the shift" (the plan's own formula) reduces to the shift itself. */
+export function rotationTrenchTickDeg(notchShiftDeg: number | null): number | null {
+  return notchShiftDeg;
+}
+
+export type TrenchBand = "on" | "near" | "off" | "unknown";
+
+/** DISPLAY GRADING of a served value (decision 3: acceptable) — never a verdict this
+ *  app asserts, only a colour bucket for a number the server already measured. */
+export function trenchBand(offDeg: number | null): TrenchBand {
+  if (offDeg === null) return "unknown";
+  const abs = Math.abs(offDeg);
+  if (abs <= 6) return "on";
+  if (abs <= 15) return "near";
+  return "off";
+}
+
+/** The rotation gauge's own header readout: the pending step, signed, beside the
+ *  distance still owed to the trench — or the honest absence when the shift has not
+ *  been read. */
+export function rotationToolStateWords(
+  pendingDeg: number,
+  offDeg: number | null,
+): string {
+  const signed = `${pendingDeg > 0 ? "+" : ""}${pendingDeg}°`;
+  return offDeg === null
+    ? `${signed} · the trench has not been read yet`
+    : `${signed} · ${Math.abs(offDeg).toFixed(1)}° off the trench`;
+}
+
+/** Mark trench's own header readout — the same threshold `trenchBand` uses, in words
+ *  rather than a colour, for the tool whose whole job IS landing inside it. */
+export function trenchToolStateWords(offDeg: number | null): string {
+  if (offDeg === null) return "the trench has not been read yet";
+  const abs = Math.abs(offDeg);
+  return abs <= 6 ? "on the trench" : `${abs.toFixed(1)}° to go`;
+}
+
+/** The ring's own hint sentence — ADAPTED from the comp (its own click-anywhere-turns-
+ *  the-cap behaviour needs an absolute clock reading this app is never served; ours
+ *  offers only the one honest action, snapping onto the served shift). */
+export function trenchRingHint(offDeg: number | null): string {
+  if (offDeg === null) {
+    return "The trench has not been read from the scan yet — there is nothing to click onto.";
+  }
+  return Math.abs(offDeg) <= 6
+    ? "The cap's code feature already sits in the trench."
+    : "The grey groove is the trench read off the scan. Click the ring and the cap " +
+        "turns its code feature onto it.";
+}
+
+/** The best-fit dial's header readout — the dialed value, plus the server's own
+ *  suggestion where the last check carried one (§10-AN amendment: never a standing
+ *  "rim reads" claim, only what the last response actually said). */
+export function bestFitToolStateWords(
+  diameterMm: number,
+  suggestedDiameterMm: number | null,
+): string {
+  const dialed = `Ø${diameterMm.toFixed(2)} mm`;
+  return suggestedDiameterMm === null
+    ? dialed
+    : `${dialed} · server suggests Ø${suggestedDiameterMm.toFixed(2)} mm`;
+}
+
+/** Where the "server suggests" flag sits along the slider, as a percentage of its
+ *  travel — the same band `MIN_DIAMETER_MM`..`MAX_DIAMETER_MM` the input itself uses. */
+export function bestFitFlagPositionPct(suggestedDiameterMm: number): number {
+  const clamped = Math.min(
+    MAX_DIAMETER_MM,
+    Math.max(MIN_DIAMETER_MM, suggestedDiameterMm),
+  );
+  return (
+    ((clamped - MIN_DIAMETER_MM) / (MAX_DIAMETER_MM - MIN_DIAMETER_MM)) * 100
+  );
+}
+
+/** THE FLAG'S OWN WORDS (§10-AN amendment) — a suggestion, never a measurement. The
+ *  withdrawn "rim reads X.XX" wording never appears; this is what replaced it. */
+export function bestFitFlagWords(suggestedDiameterMm: number): string {
+  return `server suggests Ø${suggestedDiameterMm.toFixed(2)}`;
+}
+
+/** The fit-by-points / auto-mark header readout — a count against the ceiling, in the
+ *  header's own one-line shape (the tool body still carries `pairStatusLine`'s fuller
+ *  sentence; this is the same fact, compressed for the title row). */
+export function pairCountHeaderWords(drafts: readonly PairDraft[]): string {
+  const complete = drafts.filter(isComplete).length;
+  return `${complete} of ${MAX_PAIRS} pairs placed`;
+}
+
+/** Auto-mark's own header readout — matched count against the server's own proposal
+ *  total, never a fixed "4" the way the comp's demo data happened to be shaped. */
+export function autoMarkToolStateWords(
+  drafts: readonly PairDraft[],
+  landmarks: readonly LandmarkView[],
+): string {
+  const matched = drafts.filter(isComplete).length;
+  const total = landmarks.length;
+  return `${matched} of ${total} point${total === 1 ? "" : "s"} matched`;
+}
+
+/** The rail's per-tool "good" ring — a STRUCTURAL fact (an offset inside a band, an
+ *  already-optimal result, a pair actually complete), never a server verdict computed
+ *  here. Grouped in one function so the five predicates cannot drift from each other. */
+export function dockToolGood(
+  id: AdjustToolId,
+  ctx: {
+    readonly offDeg: number | null;
+    readonly bestFitPass: boolean;
+    readonly drafts: readonly PairDraft[];
+    readonly landmarksCount: number;
+  },
+): boolean {
+  switch (id) {
+    case "rotation":
+    case "mark-trench":
+      return trenchBand(ctx.offDeg) === "on";
+    case "best-fit":
+      return ctx.bestFitPass;
+    case "fit-by-points":
+      return ctx.drafts.some(isComplete);
+    case "auto-mark":
+      return (
+        ctx.landmarksCount > 0 &&
+        ctx.drafts.filter(isComplete).length >= ctx.landmarksCount
+      );
+  }
+}
+
+/** The rail's five tools, glyph + tooltip — the ORDER and the glyphs are the client's
+ * new comp, read verbatim (§10-AN, "the spec's verbatim tooltips"). Three of five
+ * tooltips port UNCHANGED; two do not, and both departures are load-bearing, not
+ * cosmetic:
+ *
+ * - BEST FIT's own line reads, in the comp, "the flag above the dial is what the
+ *   scanned rim actually reads" — the exact standing-measurement claim the §10-AN
+ *   AMENDMENT withdraws (this app has no rim measurement to show; the flag is a
+ *   suggestion, only ever present after a specific server response). Ported with that
+ *   clause replaced by what the flag actually is.
+ * - FIT BY POINTS' own line reads "the first four do the work" — the comp's mock
+ *   scatter formula (`scatter0 * (1 - min(pairs,4)/4)`) made pairs 5-8 literally inert;
+ *   nothing in this product's own wire says our server treats a fifth pair specially,
+ *   and `crossCheckCaution` above documents the opposite (every additional observation
+ *   is more cross-check). Ported with that clause dropped rather than repeated as fact.
+ *   AUTO-MARK's own line says "four points" — true of the comp's fixture, not of this
+ *   product (`clock_landmarks` proposes however many the declared part's own coded
+ *   features support); worded to the served count instead.
+ */
+export interface AdjustDockToolInfo {
+  readonly id: AdjustToolId;
+  readonly glyph: string;
+  readonly label: string;
+  readonly tooltip: string;
+}
+
+export const ADJUST_DOCK_TOOLS: readonly AdjustDockToolInfo[] = [
+  {
+    id: "rotation",
+    glyph: "⟳",
+    label: "Rotation",
+    tooltip:
+      "Rotation — Drag the handle along the track, or step it, to turn the cap " +
+      "about its own axis. The green tick is where the scanned trench sits — land " +
+      "on it and rotation stops costing you deviation.",
+  },
+  {
+    id: "mark-trench",
+    glyph: "◎",
+    label: "Mark trench",
+    tooltip:
+      "Mark trench — Click the coded trench on the ring and the cap turns so its " +
+      "nearest code feature lands there. One click does what stepping the dial " +
+      "does by hand.",
+  },
+  {
+    id: "best-fit",
+    glyph: "⌀",
+    label: "Best fit",
+    tooltip:
+      "Best fit — Re-run the pipeline's own refinement at a matching diameter you " +
+      "choose. The flag above the dial appears only when the last check suggested " +
+      "a wider search — never a standing measurement.",
+  },
+  {
+    id: "fit-by-points",
+    glyph: "✛",
+    label: "Fit by points",
+    tooltip:
+      "Fit by points — Mark a spot on the library part, then the same spot on the " +
+      "scan. Each closed pair is a fresh observation the server can cross-check " +
+      "the fit against.",
+  },
+  {
+    id: "auto-mark",
+    glyph: "⁘",
+    label: "Auto-mark",
+    tooltip:
+      "Auto-mark — The software proposes this part's own rotation-defining points. " +
+      "Confirm each on the scan, in order, and it fits to all of them at once.",
+  },
+];
+
+// --- fit by points: the eight-slot pair strip ------------------------------------------
+
+export type PairSlotStripState = "placed" | "next" | "locked";
+
+export interface PairSlotStripEntry {
+  /** 1-based, matching the slot's own numbered label. */
+  readonly index: number;
+  readonly state: PairSlotStripState;
+  /** Beyond the fourth slot — MAX_PAIRS allows eight, drawn at lower opacity so a
+   *  full set still reads as "plenty", never as a ceiling that was quietly lowered. */
+  readonly spare: boolean;
+  readonly title: string;
+}
+
+/**
+ * THE EIGHT SLOTS AS OUR OWN PAIR MODEL SEES THEM: one slot per `PairDraft` — a point
+ * OR a span, each still exactly ONE numbered pair — never one slot per MARK (the
+ * marks within a pair are `pairSlots`/`pairSlot`, a different enumeration this reuses
+ * unchanged for the list beneath). `complete` counts finished drafts; the slot right
+ * after them is "next" whether that means starting a fresh pair or finishing one
+ * already open — the strip does not attempt to start a pair itself (see AdjustDock's
+ * own note on why "place the next pair for me" has no equivalent act here).
+ */
+export function pairSlotStrip(
+  drafts: readonly PairDraft[],
+): readonly PairSlotStripEntry[] {
+  const complete = drafts.filter(isComplete).length;
+  const entries: PairSlotStripEntry[] = [];
+  for (let index = 1; index <= MAX_PAIRS; index += 1) {
+    const spare = index > 4;
+    const state: PairSlotStripState =
+      index <= complete ? "placed" : index === complete + 1 ? "next" : "locked";
+    const title =
+      state === "placed"
+        ? `pair ${index} placed${spare ? " (spare)" : ""} — click to drop it and ` +
+          "every pair after it"
+        : state === "next"
+          ? `pair ${index} is next — start it with one of the buttons below`
+          : "pairs are placed in order";
+    entries.push({ index, state, spare, title });
+  }
+  return entries;
+}
+
+/** Every draft's id from the given 1-based slot index to the end — what clicking a
+ *  PLACED slot must drop: that pair and everything after it (the comp's own rule,
+ *  ported onto our draft ids so the caller can reuse `onRemovePair` per id rather
+ *  than this module inventing a bulk-remove act that does not exist on the wire —
+ *  removal is already a local draft edit, never a server call). */
+export function pairIdsFromSlot(
+  drafts: readonly PairDraft[],
+  index: number,
+): readonly string[] {
+  return drafts.slice(index - 1).map((d) => d.id);
+}
+
+/** THE SCATTER METER'S OWN NUMBER — the served residual RMS, verbatim, or absent when
+ *  the last outcome carries none (a tool other than fit-by-points/auto-mark, or one
+ *  observation with nothing to agree with itself; see `AdjustOutcomeView.cross_checked`
+ *  and `crossCheckCaution`, unaffected by this — this renders a NUMBER, not a verdict). */
+export function scatterWords(residualRmsMm: number | null): string | null {
+  return residualRmsMm === null ? null : `${residualRmsMm.toFixed(2)} mm`;
+}
+
+/**
+ * THE METER'S FILL, against a FIXED DISPLAY CEILING — never a tolerance. This product
+ * has no single case tolerance to colour-grade against (`deliver.ts`'s own standing
+ * doctrine: "there is no single case tolerance in this product"), so the fill is
+ * scaled against a constant chosen only to give the bar somewhere to go, and the
+ * caller must render it in ONE neutral colour, never green/amber/red — a banded meter
+ * would assert a pass/fail line this app does not have the authority to draw.
+ */
+const SCATTER_DISPLAY_CEILING_MM = 1.0;
+
+export function scatterFillFraction(residualRmsMm: number | null): number | null {
+  if (residualRmsMm === null) return null;
+  return Math.min(1, Math.max(0, residualRmsMm / SCATTER_DISPLAY_CEILING_MM));
+}
+
+// --- auto-mark: the proposal map, positioned by the served bearing alone --------------
+
+export interface AutoMarkDotPosition {
+  readonly id: string;
+  /** 0..100, within the map's own square — CSS positions off these directly. */
+  readonly leftPct: number;
+  readonly topPct: number;
+}
+
+/**
+ * THE MAP'S DOTS, PLACED BY BEARING ALONE. `LandmarkView.azimuth_deg` is a served
+ * fact (the feature's own clock bearing about the part's canonical axis); a full
+ * projection of its 3-D point onto this flat 84px glyph would need the SAME viewing
+ * frame the panes use, which this small widget does not carry and should not invent.
+ * Bearing-only is the honest fallback the task itself names: every dot sits at a
+ * fixed radius from the disc's centre, at its own served angle — nothing here reads
+ * lever arm or depth, so two landmarks at the same bearing and different radii would
+ * draw on top of each other. That is a known, accepted flattening, not a silent one.
+ */
+export function autoMarkDotPositions(
+  landmarks: readonly LandmarkView[],
+): readonly AutoMarkDotPosition[] {
+  const SIZE = 84;
+  const RADIUS = 25;
+  const CENTER = SIZE / 2;
+  return landmarks.map((landmark) => {
+    const rad = (landmark.azimuth_deg * Math.PI) / 180;
+    const x = CENTER + RADIUS * Math.sin(rad);
+    const y = CENTER - RADIUS * Math.cos(rad);
+    return {
+      id: landmark.id,
+      leftPct: (x / SIZE) * 100,
+      topPct: (y / SIZE) * 100,
+    };
+  });
+}
+
+export type AutoMarkDotState = "matched" | "live" | "queued";
+
+/** One dot's own state, read off the SAME drafts the pair list already renders — a
+ *  draft matched (scan half placed) is "matched", the first still-open one is "live"
+ *  (the next click the operator owes), the rest are "queued". */
+export function autoMarkDotState(
+  drafts: readonly PairDraft[],
+  index: number,
+): AutoMarkDotState {
+  const draft = drafts[index];
+  if (draft === undefined) return "queued";
+  if (isComplete(draft)) return "matched";
+  const openIndex = drafts.findIndex((d) => !isComplete(d));
+  return index === openIndex ? "live" : "queued";
+}

@@ -58,59 +58,28 @@ import {
   type SiteView,
 } from "../api/client";
 import {
-  ADJUST_TOOLS,
-  acceptExceptionOffer,
   evidenceReceiptLine,
   evidenceReceipts,
-  evidenceReceiptsTitle,
   evidenceRideWords,
   ghostScanMarkers,
-  receiptKindWords,
-  receiptOutcomeWords,
   receiptsCarriedByReemit,
   exceptionDraftWords,
   DEFAULT_DIAMETER_MM,
-  MAX_DIAMETER_MM,
-  MIN_DIAMETER_MM,
-  ROTATION_STEPS,
   adjustPaneNotices,
   adjustQueue,
   adjustUnionCaption,
   alreadyOptimalFrom,
-  applyBlockedReason,
   autoMarkDrafts,
-  autoMarkSourceLabel,
-  autoMarkSummary,
-  crossCheckCaution,
-  crossCheckCautionDetail,
-  diameterBandWords,
-  dropLabel,
-  siteReliefApplyNote,
   siteReliefCeilingLine,
-  dropNote,
   droppedRowWords,
-  flaggedExceptionWords,
   isComplete,
   newPairDraft,
   outcomeMovedTheRow,
   paneArming,
-  observationWords,
-  outcomeWords,
   pairBody,
-  pairSlot,
-  pairSlots,
-  pairStatusLine,
-  pairWords,
   queueSummary,
   reasonCountWords,
-  reconfirmControl,
-  rePreviewButtonLabel,
-  rePreviewRows,
-  rePreviewWords,
-  reworkWords,
-  staleMetricsPhrase,
   unverifiedClockNotice,
-  markLeverGuard,
   type ClockReferenceLike,
   withPick,
   type AdjustQueueEntry,
@@ -131,6 +100,7 @@ import {
 import { PANES_OPEN_LINKED } from "../domain/workspace";
 import { blockedReason, factsFromCaseSession } from "../domain/flow";
 import { SitePanesView, useSitePaneScene, type PaneId } from "./SitePanes";
+import { AdjustDock } from "./AdjustDock";
 /* ONE toolbar for both stages, not two that drift — see WorkspaceToolbar's own note
    on why it is exported from Declare rather than sitting in its own module. */
 import { clampZoomLevel } from "viewer";
@@ -191,93 +161,6 @@ export function pairMarkers(
     }
   });
   return { library: part, scan, union: scan };
-}
-
-/** PER-SITE RELIEF (§10-B/C): the site's own ask beside the case value, with the
- * served ceiling and the §10-AC disclosure. The draft is local; the ACT is the
- * apply, and the landed detail (a re-emit over a done run) replaces everything. */
-function SiteReliefControl({
-  siteValue,
-  caseValue,
-  ceilingLine,
-  runDone,
-  saving,
-  error,
-  onApply,
-}: {
-  readonly siteValue: number | null;
-  readonly caseValue: number | null;
-  readonly ceilingLine: string | null;
-  readonly runDone: boolean;
-  readonly saving: boolean;
-  readonly error: string | null;
-  readonly onApply: (value: number | null) => void;
-}) {
-  const [draft, setDraft] = useState<string>(
-    siteValue !== null ? String(siteValue) : "",
-  );
-  useEffect(() => {
-    setDraft(siteValue !== null ? String(siteValue) : "");
-  }, [siteValue]);
-  const parsed = draft.trim() === "" ? null : Number(draft);
-  const usable = parsed === null || (Number.isFinite(parsed) && parsed >= 0);
-  return (
-    <div data-role="site-relief" className="site-relief">
-      <span className="site-relief__label">
-        Relief — this site
-        <span className="site-relief__case">
-          {siteValue !== null
-            ? ` (case ${caseValue ?? "—"}mm, overridden)`
-            : ` (case ${caseValue ?? "—"}mm stands)`}
-        </span>
-      </span>
-      <label className="site-relief__field">
-        <input
-          data-role="site-relief-input"
-          className="decode-offset__input"
-          type="number"
-          min={0}
-          max={1}
-          step={0.05}
-          value={draft}
-          disabled={saving}
-          placeholder={caseValue !== null ? String(caseValue) : ""}
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <span className="decode-offset__unit">mm</span>
-      </label>
-      <button
-        type="button"
-        data-role="site-relief-apply"
-        className="button button--secondary button--small"
-        disabled={saving || !usable || parsed === siteValue}
-        /* THE SECOND CAPTION, ON THE CONTROL IT EXPLAINS (client live-testing
-           2026-08-06: two sentences stacked under one row read as clutter). The
-           ceiling below carries a SERVED bound and stays a visible line; this one
-           only discloses what "Apply" does (a re-emit over a done run, or a value
-           that rides the next one) — exactly the shape `title` already carries for
-           "Go to Deliver" elsewhere on this stage. */
-        title={siteReliefApplyNote(runDone)}
-        onClick={() => onApply(parsed)}
-      >
-        {saving
-          ? "Applying…"
-          : parsed === null && siteValue !== null
-            ? "Clear the override"
-            : "Apply to this site"}
-      </button>
-      {ceilingLine !== null && (
-        <span data-role="site-relief-ceiling" className="site-relief__note">
-          {ceilingLine}
-        </span>
-      )}
-      {error !== null && (
-        <span data-role="site-relief-error" role="alert" className="panel__error">
-          {error}
-        </span>
-      )}
-    </div>
-  );
 }
 
 export interface AdjustStageViewProps {
@@ -452,269 +335,6 @@ export interface AdjustStageViewProps {
   readonly clockNotice?: UnverifiedClockNotice | null;
 }
 
-function ToolTabs({
-  tool,
-  onSelectTool,
-}: {
-  readonly tool: AdjustToolId;
-  readonly onSelectTool: (t: AdjustToolId) => void;
-}) {
-  return (
-    <div data-role="tool-tabs" role="tablist" aria-label="Correction tools"
-         className="adjust-tools">
-      {ADJUST_TOOLS.map((info) => (
-        <button
-          key={info.id}
-          type="button"
-          role="tab"
-          data-role="tool-tab"
-          data-tool={info.id}
-          aria-selected={tool === info.id}
-          title={info.oneLiner}
-          className={`adjust-tools__tab${
-            tool === info.id ? " adjust-tools__tab--active" : ""
-          }`}
-          onClick={() => onSelectTool(info.id)}
-        >
-          {info.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/**
- * THE PAIR LIST AND ITS APPLY CONTROL — the drafts a correspondence tool is building,
- * each broken into the marks it is made of, plus the one Apply act both tools share.
- *
- * Extracted (client 2026-07-29, item 3 / auto-mark) so fit-by-points and auto-mark
- * render the SAME pair mechanic rather than two copies that could drift: a pair is a
- * pair whether the operator started it by hand or the worker proposed its part half.
- * `sourceLabelFor` is the one thing that differs — auto-mark names WHICH landmark
- * seeded a draft (kind, lever arm), fit-by-points has no server identity to show and
- * passes nothing.
- */
-function PairsList({
-  drafts,
-  busy,
-  pose,
-  onRemovePair,
-  onRemovePoint,
-  onApplyPairs,
-  onClearPairs,
-  clearLabel,
-  sourceLabelFor,
-  clock,
-}: {
-  readonly drafts: readonly PairDraft[];
-  readonly busy: boolean;
-  readonly pose: { readonly origin: readonly number[]; readonly axis: readonly number[] } | null;
-  /** The server's measured rim centre + bound; absent degrades the guard to a
-   *  caution rather than to a wrong refusal (`markLeverGuard`). */
-  readonly clock: ClockReferenceLike | null;
-  readonly onRemovePair: (id: string) => void;
-  readonly onRemovePoint: (id: string, slot: PairSlot) => void;
-  readonly onApplyPairs: () => void;
-  readonly onClearPairs: () => void;
-  /** What starting over MEANS for this tool — "clear" where the operator built the
-   *  set by hand, "start over" where the server proposed it and re-proposes it. */
-  readonly clearLabel: string;
-  readonly sourceLabelFor?: (draft: PairDraft) => string | null;
-}) {
-  const applyBlocked = applyBlockedReason(drafts, pose, clock);
-  const openDraft = drafts.find((d) => !isComplete(d)) ?? null;
-  return (
-    <>
-      {/* ONE STATUS LINE (client live-testing 2026-08-06: "so much text ... lack of
-          UI/UX design"). This used to be THREE sentences on screen at once — the hint
-          bar above this tool's body ("Start a pair to place marks."), this line
-          ("No pairs placed yet — 8 at most…"), and the Apply control's own blocked
-          placeholder ("Place at least one complete pair…") — all answering the same
-          question. `pairStatusLine` picks the ONE that matters right now: the exact
-          next click while a pair is open, otherwise the count-and-ceiling sentence
-          (which already carries the pair-count honesty this app is pinned on). Same
-          MAX_PAIRS-before-it's-hit doctrine as before (design review 2026-07-31). */}
-      <p data-role="pair-status" role="status" className="panel__hint">
-        {pairStatusLine(drafts, openDraft)}
-      </p>
-      {/* THE VACUOUS RMS, BEFORE THE CLICK (defect cap6020-neodent-gm, 2026-08-01).
-          One pair fixes the rotation exactly, so the fit it produces has nothing to
-          cross-check it — and the outcome used to report that as "marks agree to
-          0.000mm RMS". It rides in the SET, above the Apply control it is about, and
-          it changes no control: the worker deliberately allows one correspondence,
-          and a single pair is the documented answer where the automatic reader has
-          no evidence at all.
-
-          ONE LINE + the qualifier behind a fold (client live-testing 2026-08-06: "a
-          lot of yellow text" — this caution and `markLeverGuard`'s screw-access
-          refusal were stacking to ~8 lines of amber under one span). The lead
-          sentence is the ONLY thing that must reach the operator before the click;
-          the radial/chord condition that decides whether a span counts as one
-          observation or two is unchanged, verbatim, just behind `<details>` now —
-          the same "row keeps the fact, the words move behind a door" precedent the
-          unverified-clock notice set below. */}
-      {crossCheckCaution(drafts) !== null && (() => {
-        const lead = crossCheckCaution(drafts)!;
-        const detail = crossCheckCautionDetail(drafts);
-        return (
-          <div
-            data-role="cross-check-caution"
-            role="status"
-            className="adjust-pairs__caution adjust-pairs__caution--set"
-          >
-            <p className="adjust-pairs__caution-lead">{lead}</p>
-            {detail !== null && (
-              <details data-role="cross-check-caution-fold"
-                        className="adjust-pairs__caution-fold">
-                <summary className="adjust-pairs__caution-summary">
-                  why a span can be one observation
-                </summary>
-                <p className="adjust-pairs__caution-line">{detail}</p>
-              </details>
-            )}
-          </div>
-        );
-      })()}
-      <ul data-role="pair-list" className="adjust-pairs">
-        {drafts.map((draft, index) => (
-          <li key={draft.id} data-role="pair-row" data-span={draft.span}
-              data-slot={pairSlot(draft)}
-              /* A PLACED pair folds to one line (client 2026-08-04: "this also
-                 takes a lot of real estate") — the checklist teaches the OPEN
-                 draft; a completed one needs a receipt, its per-mark undos (the
-                 refusal flow names exactly one to re-place) and Remove. Same DOM,
-                 compact clothes: the collapse is the stylesheet's. */
-              className={`adjust-pairs__row${
-                pairSlot(draft) === "complete" ? " adjust-pairs__row--complete" : ""
-              }`}>
-            {sourceLabelFor && sourceLabelFor(draft) !== null && (
-              /* WHICH proposed landmark this draft came from (auto-mark only) — the
-                 operator's answer to "why am I being asked for this one". */
-              <span data-role="pair-source" className="adjust-pairs__source">
-                {sourceLabelFor(draft)}
-              </span>
-            )}
-            <span className="adjust-pairs__words">
-              {pairWords(draft, index)}
-            </span>
-            {/* THE MARKS THIS PAIR IS MADE OF, named with their surface — so "two
-                points" is something the operator can SEE before starting, not
-                something they infer from one prompt at a time (client 2026-07-29). */}
-            <ol data-role="pair-slots" className="adjust-pairs__slots">
-              {pairSlots(draft).map((slot) => (
-                <li
-                  key={slot.key}
-                  data-role="pair-slot"
-                  data-slot={slot.key}
-                  data-placed={slot.placed}
-                  data-active={slot.active}
-                  className={`adjust-pairs__slot${
-                    slot.placed ? " adjust-pairs__slot--placed" : ""
-                  }${slot.active ? " adjust-pairs__slot--active" : ""}`}
-                >
-                  <span aria-hidden="true" className="adjust-pairs__slot-mark">
-                    {slot.placed ? "✓" : slot.active ? "→" : "○"}
-                  </span>
-                  <span className="adjust-pairs__slot-where">
-                    {slot.where}
-                    {slot.placed && (
-                      /* Per-MARK removal: losing the whole pair because the second
-                         click landed wrong was the only exit before 2026-07-29. */
-                      <button
-                        type="button"
-                        data-role="remove-point"
-                        data-pair={draft.id}
-                        data-slot={slot.key}
-                        className="adjust-pairs__slot-clear"
-                        aria-label={`Remove this mark on ${slot.where}`}
-                        title="Remove just this mark"
-                        disabled={busy}
-                        onClick={() => onRemovePoint(draft.id, slot.key)}
-                      >
-                        undo
-                      </button>
-                    )}
-                  </span>
-                  <span className="adjust-pairs__slot-label">{slot.label}</span>
-                </li>
-              ))}
-            </ol>
-            {(() => {
-              const guard = markLeverGuard(draft, pose, clock);
-              if (guard === null) return null;
-              // a REFUSAL is the server's own verdict and is announced as one; a
-              // caution is this app's approximation and stays a status line
-              return (
-                <p
-                  data-role="mark-guard"
-                  data-guard={guard.kind}
-                  role={guard.kind === "refusal" ? "alert" : "status"}
-                  className="adjust-pairs__caution"
-                >
-                  {guard.message}
-                </p>
-              );
-            })()}
-            <button
-              type="button"
-              data-role="remove-pair"
-              data-pair={draft.id}
-              className="button button--ghost button--small"
-              disabled={busy}
-              onClick={() => onRemovePair(draft.id)}
-            >
-              Remove
-            </button>
-          </li>
-        ))}
-      </ul>
-      <div className="adjust-tool__row">
-        {applyBlocked === null ? (
-          <button
-            type="button"
-            data-role="apply-pairs"
-            className="button button--primary button--small"
-            disabled={busy}
-            onClick={onApplyPairs}
-          >
-            Apply the fit
-          </button>
-        ) : (
-          /* THE REASON MOVES TO `title` (client live-testing 2026-08-06). The blocked
-             span used to CARRY its own reason as visible text — "a big greyed
-             placeholder" running the full sentence, sometimes two ("Pair 1: ..."). The
-             reason is not dropped: a per-pair guard already renders beside the pair it
-             names (`data-role="mark-guard"`), and the whole sentence is still here, in
-             `title` — the same convention "Go to Deliver" already uses on this stage
-             when it is blocked. */
-          <span
-            data-role="apply-pairs"
-            aria-disabled="true"
-            title={applyBlocked}
-            className="button button--secondary button--blocked"
-          >
-            Apply the fit
-          </span>
-        )}
-        {drafts.length > 0 && (
-          /* ONE way to start over. Per-pair and per-mark removal already exist; what
-             did not was an exit from a set built wrong from the first click, which
-             cost eight removals. It clears only THIS tool's set — the container keeps
-             fit-by-points' hand-built pairs and auto-mark's proposal apart on purpose. */
-          <button
-            type="button"
-            data-role="clear-pairs"
-            className="button button--ghost button--small"
-            disabled={busy}
-            onClick={onClearPairs}
-          >
-            {clearLabel}
-          </button>
-        )}
-      </div>
-    </>
-  );
-}
 
 /** The stage's whole surface, pure props → markup — statically testable. */
 export function AdjustStageView({
@@ -787,21 +407,6 @@ export function AdjustStageView({
 }: AdjustStageViewProps) {
   const active = entries.find((e) => e.tooth === activeTooth) ?? null;
   const busy = phase === "working";
-  const openDraft = drafts.find((d) => !isComplete(d)) ?? null;
-  const reworkNote = lastOutcome !== null ? reworkWords(lastOutcome) : null;
-  /* THE RE-CONFIRMATION IS THE SITE'S STATE, NOT THE LAST CLICK'S (design review
-     2026-07-31). It used to render only inside the outcome block, and every route
-     into an `adjusted` site that was not "a tool just applied" — a queue click, a
-     reload — cleared `lastOutcome` and took the only control with it. Declare's tick
-     refuses a site it never previewed and Deliver refuses the case as "still
-     unresolved", so that site was a dead end. The RUNG decides whether the act
-     exists; `lastOutcome` decides only whether the outcome detail renders beside it. */
-  /* THE RUNG DECIDES THAT THE ACT EXISTS; THE PANES DECIDE THAT IT MAY BE PERFORMED
-     (design review 2026-07-31). Rendering off the rung alone let an operator sign "I
-     confirmed this fit over the panes" while pane 3 said the fit could not be read. */
-  const reconfirm = reconfirmControl(activeStatus, seatedPhase, seatedPayloadPresent);
-  const reconfirmOffered = reconfirm.offered;
-  const exceptionWords = flaggedExceptionWords(activeStatus);
   // Escape closes the gate-reasons dialog.
   useDialogEscape(reasonsFor !== null, onCloseReasons);
   // Focus moves in, is trapped, and comes back on close (§10-O.8) — see useDialogFocus.
@@ -1002,7 +607,7 @@ export function AdjustStageView({
           endSlot={insightSlot}
         />
         {panes}
-        <div className="workspace-drawer">
+        <div className="workspace-drawer workspace-drawer--dock">
           <section data-role="adjust-toolbox" aria-label="Correction tools"
                    className="panel">
             {/* THE PANEL OPENS ON ITS TABS (comp, read directly 2026-08-02): no
@@ -1053,599 +658,53 @@ export function AdjustStageView({
               </div>
             )}
 
-            <ToolTabs tool={tool} onSelectTool={onSelectTool} />
-            {/* THE STANDING EXPLAINER PARAGRAPH RETIRES HERE (client live-testing
-                2026-08-06: "so much text ... lack of UI/UX design"). It repeated,
-                below the tabs, the SAME sentence each tab already carries as its own
-                `title` (see `ToolTabs`) — nothing here was reachable only through the
-                paragraph. Progressive disclosure, not deletion: the words are the
-                active tab's own tooltip / accessible title, one hop away, not gone. */}
-
-            {active === null ? (
-              <p data-role="tool-blocked" className="panel__hint">
-                Pick a site in the queue — the tools act on one site's fit.
-              </p>
-            ) : (
-              <div data-role="tool-body" data-tool={tool} className="adjust-tool">
-                {tool === "rotation" && (
-                  <>
-                    <p data-role="rotation-residual" className="adjust-tool__readout">
-                      {rotationReadout(lastOutcome, cumulativeDeg)}
-                    </p>
-                    <div className="adjust-tool__row">
-                      {ROTATION_STEPS.map((step) => (
-                        <button
-                          key={step}
-                          type="button"
-                          data-role="rotation-step"
-                          data-step={step}
-                          className="button button--secondary button--small"
-                          disabled={busy}
-                          onClick={() => onRotate(step)}
-                        >
-                          {step > 0 ? `+${step}°` : `${step}°`}
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        data-role="rotation-reset"
-                        className="button button--ghost button--small"
-                        disabled={busy}
-                        onClick={onResetRotation}
-                      >
-                        Reset to the certified pose
-                      </button>
-                    </div>
-                  </>
-                )}
-
-                {tool === "best-fit" && (
-                  <>
-                    <label className="adjust-tool__field" htmlFor="matching-diameter">
-                      Matching diameter (mm)
-                      <input
-                        id="matching-diameter"
-                        data-role="diameter-input"
-                        type="number"
-                        min={MIN_DIAMETER_MM}
-                        max={MAX_DIAMETER_MM}
-                        step={0.05}
-                        value={diameterMm}
-                        disabled={busy}
-                        onChange={(e) => onChangeDiameter(Number(e.target.value))}
-                      />
-                    </label>
-                    {/* THE BAND, VISIBLE (design review 2026-07-31): it lived only in the
-                        input's min/max, so the ceiling was learned by typing past it. */}
-                    <p data-role="diameter-band" className="panel__hint">
-                      {diameterBandWords()}
-                    </p>
-                    <div className="adjust-tool__row">
-                      <button
-                        type="button"
-                        data-role="diameter-reset"
-                        className="button button--ghost button--small"
-                        disabled={busy}
-                        onClick={() => onChangeDiameter(DEFAULT_DIAMETER_MM)}
-                      >
-                        Reset to Ø{DEFAULT_DIAMETER_MM.toFixed(2)} mm
-                      </button>
-                      <button
-                        type="button"
-                        data-role="best-fit-measure"
-                        className="button button--ghost button--small"
-                        disabled={busy}
-                        onClick={() => onBestFit(false)}
-                      >
-                        Measure only
-                      </button>
-                      <button
-                        type="button"
-                        data-role="best-fit-apply"
-                        className="button button--primary button--small"
-                        disabled={busy}
-                        onClick={() => onBestFit(true)}
-                      >
-                        Apply best fit
-                      </button>
-                    </div>
-                  </>
-                )}
-
-                {tool === "mark-trench" && (
-                  <div className="adjust-tool__row">
-                    <button
-                      type="button"
-                      data-role="arm-trench"
-                      aria-pressed={trenchArmed}
-                      className={`button button--small ${
-                        trenchArmed ? "button--primary" : "button--secondary"
-                      }`}
-                      disabled={busy}
-                      onClick={onArmTrench}
-                    >
-                      {trenchArmed
-                        ? "Armed — click the trench on the scan"
-                        : "Mark the trench on the scan"}
-                    </button>
-                  </div>
-                )}
-
-                {tool === "fit-by-points" && (
-                  <>
-                    {/* THE STANDALONE HINT RETIRES HERE (client live-testing
-                        2026-08-06): its sentence — "what does this tool want next" —
-                        is now the ONE status line `PairsList` renders beside the
-                        pair list itself (`pairStatusLine`), not a second copy above
-                        the buttons. */}
-                    {ghostsActive && (
-                      /* the ghost's honest caption: it is the current pose's
-                         CLAIM, and the difference from where the operator
-                         actually sees the feature is the correction itself */
-                      <p data-role="ghost-note" className="panel__hint">
-                        The faint amber marker shows where the current pose
-                        expects this point on the scan — click where you
-                        actually see the feature; the difference is the
-                        correction the fit measures.
-                      </p>
-                    )}
-                    <div className="adjust-tool__row">
-                      {/* EACH BUTTON SAYS WHERE ITS CLICKS GO — in its `title` now,
-                          not its visible label (client 2026-08-04, then retargeted
-                          2026-08-06 by the live-testing complaint about the drawer's
-                          own volume of text: "add a span in both ends doesnt mark the
-                          library with 2 points (just one)"). It did not — "both ends"
-                          meant both ends of the feature ON THE SCAN, and the button
-                          that takes two library clicks is the third one. The counts
-                          are still stated, verbatim, on hover/focus; only the LABEL
-                          shrank to the tool's name. The counts are the server's own
-                          shape (`newPairDraft`: a library span forces the scan
-                          span). */}
-                      <button
-                        type="button"
-                        data-role="start-point-pair"
-                        className="button button--secondary button--small"
-                        disabled={busy || openDraft !== null}
-                        title="1 click on the library part, 1 on the scan."
-                        onClick={() => onStartPair(false)}
-                      >
-                        Point pair
-                      </button>
-                      <button
-                        type="button"
-                        data-role="start-span-pair"
-                        className="button button--secondary button--small"
-                        disabled={busy || openDraft !== null}
-                        title={
-                          "1 click on the library part, 2 on the scan. Two clicks spanning " +
-                          "one feature — both ends of the trench, or across a hole. The " +
-                          "midpoint averages the click noise; the direction is a second " +
-                          "reading the server judges on its own."
-                        }
-                        onClick={() => onStartPair(true)}
-                      >
-                        Span the scan
-                      </button>
-                      <button
-                        type="button"
-                        data-role="start-library-span-pair"
-                        className="button button--secondary button--small"
-                        disabled={busy || openDraft !== null}
-                        title={
-                          "2 clicks on the library part, 2 on the scan. Span the SAME " +
-                          "feature on both halves. The part's bearing stops being assumed " +
-                          "radial and becomes measured, which makes a chord across a " +
-                          "feature a reading the server can use instead of drop."
-                        }
-                        onClick={() => onStartPair(true, true)}
-                      >
-                        Span both
-                      </button>
-                    </div>
-                    <PairsList
-                      drafts={drafts}
-                      busy={busy}
-                      pose={pose}
-                      clock={clock}
-                      onRemovePair={onRemovePair}
-                      onRemovePoint={onRemovePoint}
-                      onApplyPairs={onApplyPairs}
-                      onClearPairs={onClearPairs}
-                      clearLabel="Clear all pairs"
-                    />
-                  </>
-                )}
-
-                {tool === "auto-mark" && (
-                  /* AUTO-MARK (client 2026-07-29, item 3): "another tool where we
-                     automatically mark the points in the library and the client has to
-                     match the same points on the scan." The container has already turned
-                     each proposed landmark into a draft with its PART half filled
-                     (`autoMarkDrafts`), so `drafts` here is the SAME shape fit-by-points
-                     builds by hand — the whole tool reuses `PairsList` unchanged. The
-                     only thing added below is what a hand-built pair has no server
-                     identity for: which landmark this is, and how many are left. */
-                  <>
-                    {autoMarkPhase === "loading" && (
-                      <p data-role="auto-mark-loading" className="adjust-tool__readout">
-                        Reading the library's proposed landmarks…
-                      </p>
-                    )}
-                    {autoMarkPhase === "error" && (
-                      <p data-role="auto-mark-error" role="alert" className="panel__error">
-                        {autoMarkError}
-                      </p>
-                    )}
-                    {autoMarkPhase === "ready" && (
-                      <>
-                        <p data-role="auto-mark-summary" className="panel__hint">
-                          {autoMarkSummary(autoMarkLandmarks)}
-                        </p>
-                        {/* the next-click prompt retires here too — it is
-                            `PairsList`'s one status line now (see the fit-by-points
-                            body's own note above) */}
-                        {ghostsActive && (
-                          /* the same honest caption fit-by-points carries — the
-                             ghost is the pose's CLAIM, and auto-mark is where it
-                             earns its keep (matching proposed landmarks was the
-                             part the operator could not see) */
-                          <p data-role="ghost-note" className="panel__hint">
-                            The faint amber marker shows where the current pose
-                            expects this point on the scan — click where you
-                            actually see the feature; the difference is the
-                            correction the fit measures.
-                          </p>
-                        )}
-                      </>
-                    )}
-                    <PairsList
-                      drafts={drafts}
-                      busy={busy}
-                      pose={pose}
-                      clock={clock}
-                      onRemovePair={onRemovePair}
-                      onRemovePoint={onRemovePoint}
-                      onApplyPairs={onApplyPairs}
-                      onClearPairs={onClearPairs}
-                      /* not "clear": the proposal is the SERVER'S, and clearing it would
-                         leave the tool with nothing to match. The container re-seeds the
-                         same landmarks — a fresh round, not an empty one. */
-                      clearLabel="Start the matching over"
-                      sourceLabelFor={(draft) => autoMarkSourceLabel(draft, autoMarkLandmarks)}
-                    />
-                  </>
-                )}
-              </div>
-            )}
-
-            {busy && (
-              <div data-role="tool-busy" className="busy-state" role="status">
-                <span className="busy-state__spinner" aria-hidden="true" />
-                <span>
-                  Judging the proposal — the same gates that judged the automation…
-                </span>
-              </div>
-            )}
-
-            {/* THE PASS THAT WEARS A REFUSAL'S STATUS — rendered green, with the widen.
-                (client ask 2026-07-26; the demo shipped this in the refusal's tone and
-                had to take it back.) */}
-            {pass !== null && (
-              <div data-role="best-fit-pass" className="adjust-pass" role="status">
-                <strong className="adjust-pass__title">Nothing to correct.</strong>
-                <p className="adjust-pass__detail">{pass.message}</p>
-                {pass.canWiden && (
-                  <button
-                    type="button"
-                    data-role="widen-search"
-                    className="button button--ghost button--small"
-                    disabled={busy}
-                    onClick={() => {
-                      onChangeDiameter(pass.suggestedDiameterMm);
-                      onBestFit(false);
-                    }}
-                  >
-                    Widen to Ø{pass.suggestedDiameterMm.toFixed(2)} mm and look again
-                  </button>
-                )}
-              </div>
-            )}
-
-            {refusal !== null && (
-              <div data-role="tool-refusal" role="alert" className="run-refusal">
-                <strong className="run-refusal__title">The adjustment was refused.</strong>
-                <p className="run-refusal__detail">{refusal}</p>
-                <p className="run-refusal__next">
-                  Nothing changed — the fit on screen is the one that passed the gates.
-                  Your marks are still placed: undo just the one the message names and
-                  re-place it, rather than starting the pair again.
-                </p>
-              </div>
-            )}
-
-            {lastOutcome !== null && refusal === null && pass === null && (
-              <div data-role="tool-outcome" className="adjust-outcome" role="status">
-                <p className="adjust-outcome__detail">{outcomeWords(lastOutcome)}</p>
-                {lastOutcome.pairs.length > 0 && (
-                  <ul data-role="observation-list" className="adjust-outcome__pairs">
-                    {lastOutcome.pairs.map((row, i) => (
-                      <li key={i} className="adjust-outcome__pair">
-                        {observationWords(row)}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {lastOutcome.applied && activeStatus !== null && !reconfirmOffered && (
-                  /* THE ACT SURVIVES ITS OWN EFFECT (client 2026-07-29: "confirm this
-                     fit over the panes does not work"). It did work — POST /review
-                     returned 200 and moved the rung adjusted->ready — but the control
-                     was rendered only while the site NEEDED re-confirming, so a
-                     successful click deleted the button and said nothing. A silent
-                     success is indistinguishable from a dead button. The outcome now
-                     stands in its place. */
-                  <p data-role="reconfirm-done" className="adjust-outcome__confirmed">
-                    Confirmed. This site is ready again, and the confirmation now
-                    describes the fit on screen.
-                  </p>
-                )}
-                {reworkNote !== null && (
-                  <p data-role="rework-note" className="adjust-outcome__note">
-                    {reworkNote}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {reconfirmOffered && (
-              /* THE RE-CONFIRMATION, WITH ITS CONTROL (client 2026-07-29: "We need to be
-                 allowed to confirm again in the Adjust step") — now rendered off the
-                 SITE'S RUNG rather than off the last tool call (see `reconfirmOffered`
-                 above). The note used to stand alone, which made it an instruction with
-                 nowhere to carry it out; then it stood inside the outcome, which made it
-                 an instruction that vanished the moment the operator clicked away. The
-                 act belongs where the fit was changed, over the same panes that show it,
-                 for as long as the site is on the rung that asks for it. */
-              <div data-role="reconfirm" className="adjust-reconfirm">
-                <p data-role="reconfirm-note" className="adjust-outcome__note">
-                  This site's fit moved, so its earlier confirmation no longer
-                  describes it — confirm it again over the panes on the right.
-                </p>
-                <button
-                  type="button"
-                  data-role="reconfirm-tick"
-                  className="button button--primary"
-                  disabled={reconfirmSaving || !reconfirm.enabled}
-                  title={reconfirm.reason ?? undefined}
-                  onClick={onReconfirm}
-                >
-                  {reconfirmSaving
-                    ? "Recording the confirmation…"
-                    : "Confirm this fit over the panes"}
-                </button>
-                {reconfirm.reason !== null && (
-                  /* The honest reason beside the inert control — Declare's tick has
-                     carried one since 5b, and this is the same act. */
-                  <p data-role="reconfirm-blocked" className="adjust-outcome__note">
-                    {reconfirm.reason}
-                  </p>
-                )}
-                {reconfirmError !== null && (
-                  <span
-                    data-role="reconfirm-error"
-                    role="alert"
-                    className="panel__error"
-                  >
-                    {reconfirmError}
-                  </span>
-                )}
-              </div>
-            )}
-
-            {exceptionWords !== null && (
-              /* THE OTHER WAY OUT, POINTED AT — no control (design's "accept as flagged
-                 exception", template 1348). The act is Deliver's per-row acknowledgment
-                 (AM-12) and stays there: it is made against the evidence being signed,
-                 row by row, and an acknowledgment recorded here would outlive the very
-                 fit it acknowledged the moment a later tool moved it. */
-              <p data-role="flagged-exception" className="adjust-exception">
-                {exceptionWords}
-              </p>
-            )}
-
-            {active !== null && active.receipts.length > 0 && (
-              /* §10-AD's ANSWER half (audit 2026-08-04): what the standing run
-                 DID with each persisted measurement — the server's own outcome
-                 word and sentence, verbatim. `already-optimal` is a PASS by
-                 meaning (the fresh automation already stands where the evidence
-                 would put it) and must never wear the refusal tone. Deliberately
-                 NOT gated on `dropped` like the queue line: the queue row is the
-                 ASK and a dropped cap stops asking, but these receipts are facts
-                 about the standing run, and dropping changes what ships, never
-                 what was measured. */
-              <div data-role="evidence-receipts" className="adjust-receipts">
-                <h4 className="adjust-receipts__title">
-                  {evidenceReceiptsTitle(receiptsCarried)}
-                </h4>
-                <ul className="adjust-receipts__list">
-                  {active.receipts.map((receipt, index) => (
-                    <li
-                      key={`${receipt.kind}-${receipt.appliedAt ?? index}`}
-                      data-role="evidence-receipt"
-                      data-outcome={receipt.outcome}
-                      className="adjust-receipts__item"
-                    >
-                      <strong className="adjust-receipts__verdict">
-                        {receiptKindWords(receipt.kind)} —{" "}
-                        {receiptOutcomeWords(receipt.outcome)}.
-                      </strong>{" "}
-                      {receipt.detail}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {active !== null && (
-              <div data-role="drawer-acts" className="drawer-acts">
-                {/* RE-PREVIEW (gap `re-preview-a-site-without-applying-a-tool`,
-                    2026-07-31). The server route is body-less by design — everything
-                    it reads is already in the run directory — and an applied tool
-                    already refreshes the panes; this is the read WITHOUT one. In
-                    child position a bare comment RENDERS — it leaked onto the page
-                    once (caught by screenshot), hence the braces. */}
-              <div className="adjust-reread">
-                <button
-                  type="button"
-                  data-role="re-preview"
-                  /* the acts row's PRIMARY, comp-toned — the comp fills its re-preview
-                     green (its label promises an outcome; ours promises only a read,
-                     so the tone ports and the words do not) */
-                  className="button button--primary button--small"
-                  /* `seatedPhase === "loading"` guards a narrow race: the initial
-                     GET .../seated for a freshly-selected site is still in flight, and
-                     its response replaces `payload` unconditionally when it lands
-                     (the container's own fetch effect). A re-read that resolves FIRST
-                     would then be clobbered by the stale seated read landing after
-                     it. Once that fetch has settled either way (ready or error) the
-                     effect never refires for this site, so the race is gone and a
-                     failed local read is exactly one case this control exists to
-                     recover — it stays live there on purpose. */
-                  disabled={busy || rePreviewPhase === "working" || seatedPhase === "loading"}
-                  onClick={onRePreview}
-                >
-                  {rePreviewPhase === "working"
-                    ? "Re-reading this site's numbers…"
-                    : rePreviewButtonLabel()}
-                </button>
-                {rePreviewError !== null ? (
-                  <div data-role="re-preview-error" role="alert" className="run-refusal">
-                    <strong className="run-refusal__title">
-                      The re-read did not reach an outcome.
-                    </strong>
-                    <p className="run-refusal__detail">{rePreviewError}</p>
-                  </div>
-                ) : (
-                  rePreviewResult !== null && (
-                    <div
-                      data-role="re-preview-result"
-                      role="status"
-                      className="adjust-outcome"
-                    >
-                      <p className="adjust-outcome__detail">
-                        {rePreviewWords(rePreviewResult)}
-                      </p>
-                      {rePreviewRows(rePreviewResult).length > 0 && (
-                        <ul data-role="re-preview-rows" className="adjust-outcome__pairs">
-                          {rePreviewRows(rePreviewResult).map((row) => (
-                            <li
-                              key={row.key}
-                              data-role="re-preview-row"
-                              data-metric={row.key}
-                              className="adjust-outcome__pair"
-                            >
-                              {row.label}: {row.previous ?? "—"} → {row.rederived ?? "—"}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {staleMetricsPhrase(rePreviewResult.stale_metrics) !== null && (
-                        <p data-role="re-preview-stale" className="adjust-outcome__note">
-                          Still carries {staleMetricsPhrase(rePreviewResult.stale_metrics)}{" "}
-                          from before this read — a re-read cannot derive it; only a
-                          full run can.
-                        </p>
-                      )}
-                    </div>
-                  )
-                )}
-              </div>
-              {acceptExceptionOffer(active) !== null && (
-                /* THE AMBER MIDDLE ACT, the comp's own order (client 2026-08-02:
-                   "Replace it to match the designs"). What it records is a DRAFT that
-                   pre-fills the row at Deliver — the confirmation there signs, row by
-                   row (AM-12), and the words on both faces of this control say so. */
-                <button
-                  type="button"
-                  data-role="accept-exception"
-                  aria-pressed={active!.exceptionAcknowledged}
-                  className="button button--amber button--small"
-                  disabled={acknowledgeSaving}
-                  title={acceptExceptionOffer(active)!.title}
-                  onClick={() =>
-                    onAcknowledgeException(active!.tooth, !active!.exceptionAcknowledged)
-                  }
-                >
-                  {acknowledgeSaving
-                    ? "Recording the draft…"
-                    : acceptExceptionOffer(active)!.label}
-                </button>
-              )}
-              <button
-                type="button"
-                data-role="drop-site"
-                data-dropped={active.dropped}
-                className={`button button--small ${
-                  active.dropped ? "button--secondary" : "button--ghost"
-                }`}
-                disabled={dropSaving}
-                title={dropNote(active.dropped)}
-                onClick={() => onDrop(active.tooth, !active.dropped)}
-              >
-                {dropSaving ? "Recording the decision…" : dropLabel(active.dropped)}
-              </button>
-              </div>
-            )}
-            {active !== null && relief !== null && (
-              <SiteReliefControl
-                siteValue={relief.siteValue}
-                caseValue={relief.caseValue}
-                ceilingLine={relief.ceilingLine}
-                runDone={relief.runDone}
-                saving={relief.saving}
-                error={relief.error}
-                onApply={relief.onApply}
-              />
-            )}
-            {active !== null && (
-              /* DROP THIS CAP — DON'T RELEASE OR BILL IT (design dropSite 1345-1354,
-                 its sticky footer's third control, template 471).
-
-                 THE ACT ALREADY EXISTED AND ONLY DELIVER COULD REACH IT: the
-                 confirmation's per-site disposition (release | withhold). This is that
-                 same act, reachable from the stage where the decision is actually
-                 taken — a per-site withhold INTENT that pre-fills the confirmation.
-                 Deliberately NOT a second exclusion concept: two overlapping ways to
-                 take a site out of a case would be two gates to keep in step.
-
-                 THE WORDS ARE NOT THE DESIGN'S. Its label says "don't align or bill
-                 it"; post-run the alignment has already happened and this act leaves
-                 the pipeline alone, so `dropLabel`/`dropNote` state only the half that
-                 is true. Nothing here is a verdict, a price or a gate — the note says
-                 in the open that Deliver's confirmation is what signs it. */
-              <div data-role="drop" className="adjust-drop">
-                {/* THE NOTE SURVIVES WHERE IT SAYS SOMETHING NEW. Not dropped, it
-                    restated its own button ("holds it back from the release and the
-                    bill") and rides in `title` instead. DROPPED, it carries a
-                    consequence the label cannot — the hold is a DRAFT until the
-                    confirmation at Deliver signs it, and bringing the cap back before
-                    then puts it straight in — so it stays on the page. */}
-                {active.dropped && (
-                  <p data-role="drop-note" className="adjust-drop__note">
-                    {dropNote(active.dropped)}
-                  </p>
-                )}
-                {acknowledgeError !== null && (
-                  <span data-role="acknowledge-error" role="alert" className="panel__error">
-                    {acknowledgeError}
-                  </span>
-                )}
-                {dropError !== null && (
-                  <span data-role="drop-error" role="alert" className="panel__error">
-                    {dropError}
-                  </span>
-                )}
-              </div>
-            )}
+            <AdjustDock
+              tool={tool}
+              onSelectTool={onSelectTool}
+              active={active}
+              busy={busy}
+              cumulativeDeg={cumulativeDeg}
+              onRotate={onRotate}
+              onResetRotation={onResetRotation}
+              trenchArmed={trenchArmed}
+              onArmTrench={onArmTrench}
+              diameterMm={diameterMm}
+              onChangeDiameter={onChangeDiameter}
+              onBestFit={onBestFit}
+              pass={pass}
+              drafts={drafts}
+              pose={pose}
+              clock={clock}
+              onStartPair={onStartPair}
+              onRemovePair={onRemovePair}
+              onRemovePoint={onRemovePoint}
+              onApplyPairs={onApplyPairs}
+              onClearPairs={onClearPairs}
+              ghostsActive={ghostsActive}
+              autoMarkLandmarks={autoMarkLandmarks}
+              autoMarkPhase={autoMarkPhase}
+              autoMarkError={autoMarkError}
+              refusal={refusal}
+              lastOutcome={lastOutcome}
+              activeStatus={activeStatus}
+              onReconfirm={onReconfirm}
+              reconfirmSaving={reconfirmSaving}
+              reconfirmError={reconfirmError}
+              seatedPhase={seatedPhase}
+              seatedPayloadPresent={seatedPayloadPresent}
+              receiptsCarried={receiptsCarried}
+              onRePreview={onRePreview}
+              rePreviewResult={rePreviewResult}
+              rePreviewWorking={rePreviewPhase === "working"}
+              rePreviewError={rePreviewError}
+              onAcknowledgeException={onAcknowledgeException}
+              acknowledgeSaving={acknowledgeSaving}
+              acknowledgeError={acknowledgeError}
+              onDrop={onDrop}
+              dropSaving={dropSaving}
+              dropError={dropError}
+              relief={relief}
+            />
           </section>
         </div>
       </div>
@@ -1712,24 +771,6 @@ export function AdjustStageView({
       )}
     </div>
   );
-}
-
-/** The rotation dial's read-out: the coded-cutout residual the operator is steering
- * toward, plus where the cumulative rotation stands. Server numbers only. */
-function rotationReadout(
-  outcome: AdjustOutcomeView | null,
-  cumulativeDeg: number | null,
-): string {
-  const shift = outcome?.clocking?.["notch_shift_deg"];
-  const residual =
-    typeof shift === "number"
-      ? `coded-cutout residual ${shift.toFixed(1)}°`
-      : "coded-cutout residual not read yet";
-  const cumulative =
-    cumulativeDeg !== null
-      ? `cumulative ${cumulativeDeg > 0 ? "+" : ""}${cumulativeDeg.toFixed(1)}°`
-      : "no operator rotation on this site";
-  return `${residual} · ${cumulative}`;
 }
 
 export interface AdjustStageProps {
