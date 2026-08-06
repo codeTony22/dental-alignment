@@ -1852,3 +1852,55 @@ scan bytes are never rewritten. Also noted: the per-site lateral offsets the
 operator sees ("the x axis") are centre/seed errors in the site plane —
 measured all week, invariant to the global frame — a different problem this
 direction does not touch.
+
+## §10-AN — the new comp: the Adjustment instrument dock (2026-08-06)
+
+The client's updated design bundle (new standalone, 265KB) was diffed against
+the §10-AA comp by decoding both payloads: **Intake, Alignment, Construction
+library and Delivery are byte-identical** — the whole redesign is Adjustment.
+The extracted specs (exact styles, verbatim copy, behavior) live in the session
+scratchpad (`comp-adjust.json`, `comp-align.json`, `comp-delta.json`); the comp
+sources stay in `.claude/worktrees/comp/` (gitignored).
+
+**What the design says.** The text drawer becomes an INSTRUMENT DOCK: a fixed
+header (five 30px glyph tool chips ⟳ ◎ ⌀ ✛ ⁘ with tooltip explainers, the
+active tool's title + live readout, a terms chip, a `report` popover, a
+more-room toggle), ONE scrollable tool body holding the active tool's widget,
+and a fixed acts footer. The five widgets are direct manipulation with the
+MEASURED REFERENCE drawn on the control: a ±45° rotation scrubber with a green
+"trench" tick and a colour-graded handle; a clickable 92px trench ring (grey
+groove = trench, green mark = code feature); a diameter slider wearing a
+"rim reads X.XX" flag at the measured value; eight clickable pair slots with a
+scatter meter; an 84px auto-mark map of the four proposed points. Pane grid
+yields to the dock ("more room" caps panes at 128px).
+
+**Decisions (standing doctrine applied):**
+1. The comp's deviation numbers are MOCK physics (`dev = 0.02 + rotErr/90*0.34
+   + …`). None of that formula ships. Every drawn number maps to a served
+   fact: "N° off the trench" = `clocking.notch_shift_deg`; the trench tick =
+   handle + shift; pair scatter = the served residual RMS; auto-mark points =
+   the served proposals. ONE new served field is needed: the measured rim
+   read for the diameter flag (today `suggested_diameter_mm` rides only the
+   refusal) — a read-only addition to the adjust payload.
+2. The scrubber/dial/ring COMMIT on release/click as server acts (the comp's
+   own model); panes render only the server's response; refusals stay the
+   server's sentences verbatim. No local physics preview.
+3. The colour bands (≤6° green, ≤15° amber) are DISPLAY grading of served
+   values — acceptable; the mock's tolerance-cost claims ("worth X mm of the
+   deviation budget") are NOT ported (dead bindings in the comp itself; its
+   own extraction flags them "do not build").
+4. TERMS/CONFIRMATION placement: the comp accepts terms from Adjustment (rail
+   button + dock chip + relabeled continue). Our flow gates terms at Delivery
+   (§10-AA standing refusal, unchanged in the comp's Delivery). We match the
+   dock/rail VISUALS but the acts keep their server-derived homes; the chip
+   deep-links to the report/confirmation surface instead of accepting in
+   place. Recorded as an open client question, third time asked.
+5. The comp's `effVerdict` chip ("re-preview will pass" / "re-preview will
+   flag this site") predicts a verdict client-side — refused as a PROMISE
+   (standing no-outcome-promises rule); the served preview verdicts may fill
+   this chip only from a server response.
+6. The pane-sizing fixes (floors → scale-down) are the comp correcting ITS
+   OWN cropping bug; our viewer measures its container already — audit only.
+7. Alignment stays as shipped: §10-AA's deliberate divergences (honest axis
+   words over anatomical preset names, etc.) stand; the delta confirms the
+   client changed nothing there.
