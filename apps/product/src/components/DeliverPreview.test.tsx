@@ -22,21 +22,21 @@ const TABS: readonly PreviewTab[] = [
     label: "1 · Healing-cap alignment",
     filename: "case-a-arch-with-healingcaps.stl",
     tooth: null,
-    role: "cap",
+    layers: [{ filename: "case-a-arch-with-healingcaps.stl", role: "arch" }],
   },
   {
     key: "construction-in-arch",
     label: "2 · Construction in arch",
     filename: "case-a-arch-with-constructions.stl",
     tooth: null,
-    role: "construction",
+    layers: [{ filename: "case-a-arch-with-constructions.stl", role: "arch" }],
   },
   {
     key: "construction-tooth-19",
     label: "3 · Construction alone — tooth 19",
     filename: "case-a-19-prosthesis_cad.stl",
     tooth: 19,
-    role: "construction",
+    layers: [{ filename: "case-a-19-prosthesis_cad.stl", role: "construction" }],
   },
 ];
 

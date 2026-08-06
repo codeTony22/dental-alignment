@@ -303,3 +303,37 @@ describe("the case log — served order, verbatim words, honest emptiness", () =
     expect(untouched).not.toContain("Showing the last");
   });
 });
+
+/* THE STRIP'S FIGURES, IN THEIR NEW HOME (client 2026-08-06: "we can only allow one
+ * row so we can make the panels bigger … why do we need this DEV RMS"). The toolbar
+ * keeps status + variant; the measured figures render here, first section, with the
+ * honesty suffixes alignmentStats gives them — moving surfaces must not shed words. */
+describe("the Alignment section — the toolbar's former figures", () => {
+  const stats = [
+    { id: "variant", label: "VARIANT", value: "superseded-2026-07-13--6030" },
+    { id: "dev-rms", label: "DEV RMS (run)", value: "0.253 mm" },
+    { id: "rotation", label: "ROTATION", value: "+21.7° · unverified" },
+    { id: "pairs", label: "PAIRS", value: "1 / 8 · unchecked" },
+  ];
+
+  it("renders every stat with its label, value and honesty suffix, while open", () => {
+    const html = view({ open: true, stats });
+    expect(html).toContain('data-role="insight-alignment"');
+    expect(html).toContain("DEV RMS (run)");
+    expect(html).toContain("0.253 mm");
+    expect(html).toContain("+21.7° · unverified");
+    expect(html).toContain("1 / 8 · unchecked");
+  });
+
+  it("renders before the acceptance numbers — figures first, verdicts after", () => {
+    const html = view({ open: true, stats });
+    expect(html.indexOf('data-role="insight-alignment"')).toBeLessThan(
+      html.indexOf('data-role="insight-acceptance"'),
+    );
+  });
+
+  it("with no stats the section is absent entirely — never an empty heading", () => {
+    expect(view({ open: true, stats: [] })).not.toContain('data-role="insight-alignment"');
+    expect(view({ open: true })).not.toContain('data-role="insight-alignment"');
+  });
+});

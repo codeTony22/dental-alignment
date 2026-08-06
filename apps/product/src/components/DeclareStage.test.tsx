@@ -557,7 +557,11 @@ describe("the workspace toolbar over the panes", () => {
     );
   });
 
-  it("the ALIGNMENT strip carries variant, both published deviations, rotation, pairs", () => {
+  it("the strip keeps ONE row: status and variant only — the figures moved into Numbers & log (client 2026-08-06)", () => {
+    /* was: "the ALIGNMENT strip carries variant, both published deviations,
+       rotation, pairs". The client chose pane height over the on-strip figures;
+       alignmentStats (domain-pinned) still computes every figure with its honesty
+       suffixes, and WorkspaceInsight.test.tsx pins their new home. */
     const html = view({
       activeTooth: 19,
       runRows: [
@@ -571,17 +575,11 @@ describe("the workspace toolbar over the panes", () => {
       ],
     });
     expect(html).toContain('data-role="alignment-strip"');
-    expect(html).toContain("ALIGNMENT");
-    expect(html).toContain("0.041 mm");
-    expect(html).toContain("0.087 mm");
-    expect(html).toContain("-1.4°");
-    expect(html).toContain("3 / 8");
-  });
-
-  it("PAIRS is a dash while the server carries no correspondence for the site", () => {
-    const html = view({ activeTooth: 19, runRows: [{ tooth: 19 }] });
-    expect(html).toMatch(/data-stat="pairs"[\s\S]{0,200}?—<\/span>/);
-    expect(html).not.toContain("0 / 8");
+    expect(html).toMatch(/data-stat="variant"/);
+    expect(html).not.toMatch(/data-stat="dev-rms"/);
+    expect(html).not.toMatch(/data-stat="dev-p90"/);
+    expect(html).not.toMatch(/data-stat="rotation"/);
+    expect(html).not.toMatch(/data-stat="pairs"/);
   });
 
   it("the strip states no tolerance and no pass/fail — those are server-derived", () => {
@@ -716,14 +714,15 @@ describe("the workspace toolbar over the panes", () => {
 /**
  * THE STRIP AND THE PANE UNDER IT MUST NOT DISAGREE (design review 2026-07-31).
  *
- * On Declare before the run, every numeric cell of the strip labelled ALIGNMENT read
- * "—" while the union pane below published the SAME site's RMS and p90 from
- * `payload.stats`. A dash in a deviation column reads as a measured zero — which is
- * precisely why the queue rows in the same commit say "no run has measured this fit
- * yet" instead of one.
+ * The strip's numeric cells moved into Numbers & log (client 2026-08-06, the
+ * one-row direction); every honesty rule those cells carried — "no run yet" over a
+ * dash, the (preview)/(run) source label, the unverified and unchecked suffixes —
+ * is pinned at the source (domain alignmentStats) and at the new home
+ * (WorkspaceInsight.test.tsx). What this stage still owes is that no numeric cell
+ * quietly returns to the strip and re-opens the two-row fight.
  */
-describe("the ALIGNMENT strip before any run", () => {
-  it("says NO RUN YET rather than a dash, and names whose figures it is showing", () => {
+describe("the strip after the figures moved out", () => {
+  it("renders no numeric cell even with a preview's figures in hand", () => {
     const html = view({
       activeTooth: 19,
       previewFigures: {
@@ -733,15 +732,7 @@ describe("the ALIGNMENT strip before any run", () => {
         source: "preview",
       },
     });
-    expect(html).toContain("0.086 mm");
-    expect(html).toContain("0.142 mm");
-    expect(html).toContain("DEV RMS (preview)");
-    // the preview measures no clocking residual and places no pairs
-    expect(html).toMatch(/data-stat="rotation"[\s\S]{0,200}?no run yet</);
-  });
-
-  it("with neither a run nor a preview it states the absence, not a number", () => {
-    const html = view({ activeTooth: 19 });
-    expect(html).toMatch(/data-stat="dev-rms"[\s\S]{0,200}?no run yet</);
+    expect(html).not.toMatch(/data-stat="dev-rms"/);
+    expect(html).not.toContain("0.086 mm");
   });
 });

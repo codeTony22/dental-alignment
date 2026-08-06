@@ -529,11 +529,18 @@ export function WorkspaceToolbar({
         >
           {status ?? "no site selected"}
         </span>
-        {stats.map((stat) => (
+        {/* ONE ROW ONLY (client 2026-08-06: "we can only allow one row so we can
+            make the panels bigger … why do we need this DEV RMS"): the strip keeps
+            the site's IDENTITY — the variant — and the four measured figures moved
+            into the Numbers & log panel (WorkspaceInsight.AlignmentSection), every
+            honesty suffix intact. The title carries the full id for the day the
+            superseded name ellipsizes. */}
+        {stats.filter((stat) => stat.id === "variant").map((stat) => (
           <span
             key={stat.id}
             data-role="alignment-stat"
             data-stat={stat.id}
+            title={stat.value}
             className="workspace-toolbar__stat"
           >
             <span className="workspace-toolbar__stat-key">{stat.label}</span>
@@ -642,6 +649,14 @@ export function DeclareStageView({
   // Per-SITE shelves: the detector's proposal is a fact about the active site, so the
   // same catalog marks a different card as the operator moves down the queue.
   const shelves = variantShelves(detail, active);
+  // ONE computation feeds two homes: the strip's variant pill and the Numbers & log
+  // panel's Alignment section (the one-row direction, 2026-08-06).
+  const declareToolbarStats = alignmentStats(
+    runRows,
+    active?.tooth ?? null,
+    active?.declared_variant ?? null,
+    previewFigures,
+  );
   // THE FORK'S ONE PRECONDITION: a done run whose verdicts cover every site (the
   // BFF's own 422 for the decision route). Adjust's reachability is deliberately NOT
   // the gate — a refused run opens Adjust while offering nothing to decide about.
@@ -870,12 +885,7 @@ export function DeclareStageView({
           tooth={active?.tooth ?? null}
           systemModel={detail.system.effective_model}
           status={active?.status ?? null}
-          stats={alignmentStats(
-            runRows,
-            active?.tooth ?? null,
-            active?.declared_variant ?? null,
-            previewFigures,
-          )}
+          stats={declareToolbarStats}
           viewPreset={viewPreset}
           onSelectView={onSelectView}
           viewPresetsAvailable={viewPresetsAvailable}
@@ -886,12 +896,14 @@ export function DeclareStageView({
           /* THE PROVENANCE POPOVER ends the strip (comp: its toolbar closes on
              "▸ budget & log"). `detail` is the refresh key: CaseShell replaces it
              wholesale only when an act lands, so an open popover re-asks exactly
-             when there is something new. */
+             when there is something new. The SAME stats feed its Alignment
+             section — the strip's former figures, one click away (2026-08-06). */
           endSlot={
             <WorkspaceInsight
               caseId={detail.case.id}
               tooth={active?.tooth ?? null}
               refreshKey={detail}
+              stats={declareToolbarStats}
             />
           }
         >

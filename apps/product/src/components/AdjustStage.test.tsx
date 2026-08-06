@@ -932,19 +932,25 @@ describe("the workspace toolbar over the panes", () => {
     );
   });
 
-  it("the deviation is on screen while a rotation tool is selected", () => {
-    // the whole gap: the deviation lived in the union pane's FOLDED legend, so the
-    // operator steering the clock could not see what they were steering toward
+  it("the strip renders only the VARIANT pill — the figures live in Numbers & log (client 2026-08-06)", () => {
+    /* was: "the deviation is on screen while a rotation tool is selected" — the
+       2026-07-31 gap fix that put the figures ON the strip. The client explicitly
+       traded that standing readout for pane height ("we can only allow one row …
+       why do we need this DEV RMS"); the figures kept every honesty suffix and
+       moved one click away (WorkspaceInsight's Alignment section, pinned there).
+       Reversal is one filter change in WorkspaceToolbar. */
     const html = view({
       tool: "rotation",
       stats: [
+        { id: "variant", label: "VARIANT", value: "5020" },
         { id: "dev-rms", label: "DEV RMS", value: "0.041 mm" },
         { id: "pairs", label: "PAIRS", value: "3 / 8" },
       ],
     });
     expect(html).toContain('data-role="alignment-strip"');
-    expect(html).toContain("0.041 mm");
-    expect(html).toContain("3 / 8");
+    expect(html).toMatch(/data-stat="variant"/);
+    expect(html).not.toContain("0.041 mm");
+    expect(html).not.toContain("3 / 8");
   });
 
   it("with no site selected the chip says so rather than going blank", () => {

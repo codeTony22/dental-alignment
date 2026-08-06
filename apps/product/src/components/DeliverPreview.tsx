@@ -130,23 +130,32 @@ export function DeliverPreview({ caseId, tabs }: DeliverPreviewProps) {
 
   const active = tabs.find((tab) => tab.key === activeKey) ?? null;
 
-  const [positions, setPositions] = useState<Float32Array | null>(null);
+  // ALL of the active tab's layers, or none: the scene is arch + parts composed
+  // (client 2026-08-06: "only the healing cap is green"), and a half-loaded scene —
+  // green caps floating with no arch, or an arch missing its caps — would misstate
+  // the very alignment this preview exists to show.
+  const [meshes, setMeshes] = useState<readonly Float32Array[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const layerKey = active?.layers.map((layer) => layer.filename).join("|") ?? "";
   useEffect(() => {
     if (active === null) {
-      setPositions(null);
+      setMeshes(null);
       setError(null);
       return undefined;
     }
     let cancelled = false;
-    setPositions(null);
+    setMeshes(null);
     setError(null);
     setBusy(true);
-    loadStlPositions(previewMeshUrl(caseId, active.filename))
+    Promise.all(
+      active.layers.map((layer) =>
+        loadStlPositions(previewMeshUrl(caseId, layer.filename)),
+      ),
+    )
       .then((loaded) => {
-        if (!cancelled) setPositions(loaded);
+        if (!cancelled) setMeshes(loaded);
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -159,13 +168,23 @@ export function DeliverPreview({ caseId, tabs }: DeliverPreviewProps) {
     return () => {
       cancelled = true;
     };
-    // active is read only by its stable filename — the effect re-fires on a genuine
-    // tab change, not on a fresh (but equal) tabs array from an unrelated re-render
+    // keyed on the layer FILENAMES — the effect re-fires on a genuine tab change,
+    // not on a fresh (but equal) tabs array from an unrelated re-render
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId, active?.filename]);
+  }, [caseId, layerKey]);
 
-  const geometry: VerifyLayerGeometry | null =
-    positions !== null && active !== null ? { positions, color: PALETTE[active.role] } : null;
+  const layers =
+    active !== null && meshes !== null
+      ? active.layers.map((layer, index) => ({
+          id: `${layer.role}-${index}`,
+          geometry: {
+            positions: meshes[index]!,
+            color: PALETTE[layer.role],
+          } satisfies VerifyLayerGeometry,
+          visible: true,
+          opacity: 1,
+        }))
+      : [{ id: "preview", geometry: null, visible: true, opacity: 1 }];
 
   return (
     <DeliverPreviewView
@@ -176,7 +195,7 @@ export function DeliverPreview({ caseId, tabs }: DeliverPreviewProps) {
       error={error}
       viewerSlot={
         <VerifyViewer
-          layers={[{ id: "preview", geometry, visible: true, opacity: 1 }]}
+          layers={layers}
           frame={null}
           ariaLabel={active !== null ? `Preview: ${active.label}` : "No preview selected"}
         />

@@ -43,7 +43,7 @@ import {
   staleSummaryWords,
   thresholdWords,
 } from "../domain/provenance";
-import { recordedAtWords } from "../domain/declare";
+import { recordedAtWords, type WorkspaceStat } from "../domain/declare";
 import { useDialogEscape } from "./useDialogEscape";
 
 /** One measured metric row: the label the catalog gave it, its band chip, the
@@ -96,6 +96,37 @@ function AcceptanceMissingRow({ metricKey }: { readonly metricKey: string }) {
         not measured
       </span>
     </li>
+  );
+}
+
+/** THE STRIP'S FIGURES, RE-HOMED (client 2026-08-06: "we can only allow one row so
+ * we can make the panels bigger … why do we need this DEV RMS"). The toolbar keeps
+ * only the status chip and the variant; the four measured figures — with every
+ * honesty suffix alignmentStats gives them ("· unverified", "· unchecked") — live
+ * here, one click away, instead of a second toolbar row. */
+function AlignmentSection({ stats }: { readonly stats: readonly WorkspaceStat[] }) {
+  if (stats.length === 0) return null;
+  return (
+    <section
+      data-role="insight-alignment"
+      aria-label="This site's alignment figures"
+      className="workspace-insight__section"
+    >
+      <h4 className="workspace-insight__heading">Alignment</h4>
+      <ul data-role="alignment-figures" className="workspace-insight__list">
+        {stats.map((stat) => (
+          <li
+            key={stat.id}
+            data-role="insight-stat"
+            data-stat={stat.id}
+            className="workspace-insight__row"
+          >
+            <span className="workspace-insight__row-label">{stat.label}</span>{" "}
+            <span className="assurance-num">{stat.value}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -274,6 +305,9 @@ export interface WorkspaceInsightViewProps {
    *  the log below still reads — the case log is not scoped to one tooth. */
   readonly acceptance: FetchState<SiteAcceptanceView> | null;
   readonly activity: FetchState<CaseActivityView>;
+  /** The toolbar strip's former figures (domain/declare.alignmentStats) — rendered
+   *  as this panel's first section since the one-row direction (2026-08-06). */
+  readonly stats?: readonly WorkspaceStat[];
 }
 
 const PANEL_ID = "workspace-insight-panel";
@@ -290,6 +324,7 @@ export function WorkspaceInsightView({
   onToggle,
   acceptance,
   activity,
+  stats = [],
 }: WorkspaceInsightViewProps): ReactNode {
   const wrapRef = useRef<HTMLSpanElement | null>(null);
   // Escape closes it — the one dialog-adjacent behaviour this disclosure still wants;
@@ -343,6 +378,7 @@ export function WorkspaceInsightView({
           >
             Close
           </button>
+          <AlignmentSection stats={stats} />
           <AcceptanceSection tooth={tooth} acceptance={acceptance} />
           <ActivitySection activity={activity} />
         </section>
@@ -361,10 +397,12 @@ export interface WorkspaceInsightProps {
    *  is the honest key — see the effect below for why this is the ONE signal, never
    *  a poll and never a client-side append (the comp's `pushLog` array, forbidden). */
   readonly refreshKey?: unknown;
+  /** See WorkspaceInsightViewProps.stats — passed through untouched. */
+  readonly stats?: readonly WorkspaceStat[];
 }
 
 /** The container: owns open/closed state and fetches both views on open. */
-export function WorkspaceInsight({ caseId, tooth, refreshKey }: WorkspaceInsightProps) {
+export function WorkspaceInsight({ caseId, tooth, refreshKey, stats }: WorkspaceInsightProps) {
   const [open, setOpen] = useState(false);
   const [acceptance, setAcceptance] = useState<FetchState<SiteAcceptanceView> | null>(null);
   const [activity, setActivity] = useState<FetchState<CaseActivityView>>({ kind: "loading" });
@@ -417,6 +455,7 @@ export function WorkspaceInsight({ caseId, tooth, refreshKey }: WorkspaceInsight
       onToggle={handleToggle}
       acceptance={acceptance}
       activity={activity}
+      stats={stats}
     />
   );
 }

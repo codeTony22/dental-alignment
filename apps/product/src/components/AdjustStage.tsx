@@ -2088,6 +2088,10 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   // down the jaw's occlusal proxy with no clock reference, so buccal/mesial would be a
   // guessed angle wearing an anatomical name — the toolbar greys them instead.
   const viewPresetsAvailable = payload?.pose != null;
+  // ONE computation feeds two homes: the strip's variant pill and the Numbers & log
+  // panel's Alignment section (the one-row direction, 2026-08-06).
+  const adjustToolbarStats = alignmentStats(
+    rows, activeTooth, activeSite?.declared_variant ?? null);
 
   const notices = adjustPaneNotices({
     site: activeEntry,
@@ -2356,14 +2360,20 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
          describe one site two ways. PAIRS reads the row's `correspondence` block and
          renders a dash where the server wrote none (never an invented 0 / 8). */
       systemModel={detail.system.effective_model}
-      stats={alignmentStats(rows, activeTooth, activeSite?.declared_variant ?? null)}
+      stats={adjustToolbarStats}
       onBack={() => navigate(`/case/${caseId}/declare`)}
       onForward={() => navigate(`/case/${caseId}/deliver`)}
       /* THE PROVENANCE POPOVER: assembled here, not in the View, because it needs
          this stage's caseId — same reasoning as `panes` above. `detail` is the
-         refresh key: it is only replaced wholesale when an act actually lands. */
+         refresh key: it is only replaced wholesale when an act actually lands.
+         The SAME stats feed its Alignment section (one-row direction, 2026-08-06). */
       insightSlot={
-        <WorkspaceInsight caseId={caseId} tooth={activeTooth} refreshKey={detail} />
+        <WorkspaceInsight
+          caseId={caseId}
+          tooth={activeTooth}
+          refreshKey={detail}
+          stats={adjustToolbarStats}
+        />
       }
     />
   );

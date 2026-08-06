@@ -5957,8 +5957,12 @@ button.package-files__link:hover {
   right: 0;
   z-index: 20;
   width: min(400px, 88vw);
-  max-height: 60vh;
+  /* was 60vh — a panel whose last visible row is sliced mid-line reads as "a modal
+     cut off" (client 2026-08-06), not as scrollable; nearly the full viewport under
+     the toolbar leaves the cut for genuinely long content only */
+  max-height: calc(100vh - 150px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -6087,14 +6091,28 @@ button.package-files__link:hover {
    and the pills small enough that the wide case actually happens. */
 
 .workspace-toolbar {
-  /* Condensed 2026-08-05 (client, live-testing: "condense this buttons in
-     adjustments tab it takes a lot of space which is unnecessary") — was
-     `row-gap: 4px; padding-top/bottom: 6px`. The controls and the alignment
-     strip still share one row wherever the width allows (see the comp-match
-     rule below); this only shrinks the band when they wrap. */
+  /* ONE ROW, PERIOD (client 2026-08-06: "we can only allow one row so we can make
+     the panels bigger") — the figures moved into Numbers & log, the variant pill
+     ellipsizes below, and nothing here is allowed to wrap. NO overflow rule: the
+     insight panel is an absolutely positioned child and an overflow here would
+     guillotine it (the POSITIONED-NOT-CLIPPED note above). */
+  flex-wrap: nowrap;
   row-gap: 3px;
   padding-top: 4px;
   padding-bottom: 4px;
+}
+
+/* The one pill left on the strip is the site's IDENTITY; a superseded id is long,
+   so the pill may shrink and its value ellipsize — the full id rides the pill's
+   title and the Numbers & log panel. */
+.workspace-toolbar__stat {
+  min-width: 0;
+}
+
+.workspace-toolbar__stat-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The stat pills are a READOUT, not controls — they can be quiet. Measured before/

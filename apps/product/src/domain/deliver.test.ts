@@ -1440,22 +1440,64 @@ describe("previewTabs — the demo's three tabs, matched onto the run's own pack
       "construction-tooth-30",
       "construction-tooth-19",
     ]);
+    // no capless base in this package → the merged mesh renders ALONE, painted as
+    // the scan material it mostly is (client 2026-08-06: "why is the scan green?")
     expect(tabs[0]).toEqual({
       key: "alignment",
       label: "1 · Healing-cap alignment",
       filename: "case-a-arch-with-healingcaps.stl",
       tooth: null,
-      role: "cap",
+      layers: [{ filename: "case-a-arch-with-healingcaps.stl", role: "arch" }],
     });
     expect(tabs[1]!.label).toBe("2 · Construction in arch");
-    expect(tabs[1]!.role).toBe("construction");
+    expect(tabs[1]!.layers).toEqual([
+      { filename: "case-a-arch-with-constructions.stl", role: "arch" },
+    ]);
     expect(tabs[2]).toEqual({
       key: "construction-tooth-30",
       label: "3 · Construction alone — tooth 30",
       filename: "case-a-30-prosthesis_cad.stl",
       tooth: 30,
-      role: "construction",
+      layers: [{ filename: "case-a-30-prosthesis_cad.stl", role: "construction" }],
     });
+  });
+
+  it("with the package's own pieces the arch tabs COMPOSE: tan arch base, green caps, steel constructions", () => {
+    /* THE COLOUR COMPLAINT (client 2026-08-06): the merged arch mesh rendered one
+       colour — the whole scan wore the cap's green. The emit already writes the
+       pieces (arch-capless + per-tooth healingcap-aligned / posed -scanbody-*), so
+       the tabs compose them: the arch in the scan material, only the parts tinted. */
+    const tabs = previewTabs(
+      [
+        "case-a-arch-with-healingcaps.stl",
+        "case-a-arch-capless.stl",
+        "case-a-19-healingcap-aligned.stl",
+        "case-a-30-healingcap-aligned.stl",
+        "case-a-arch-with-constructions.stl",
+        "case-a-19-scanbody-dess.stl",
+        "case-a-19-prosthesis_cad.stl",
+      ],
+      [30, 19],
+    );
+    expect(tabs.find((t) => t.key === "alignment")!.layers).toEqual([
+      { filename: "case-a-arch-capless.stl", role: "arch" },
+      { filename: "case-a-30-healingcap-aligned.stl", role: "cap" },
+      { filename: "case-a-19-healingcap-aligned.stl", role: "cap" },
+    ]);
+    expect(tabs.find((t) => t.key === "construction-in-arch")!.layers).toEqual([
+      { filename: "case-a-arch-capless.stl", role: "arch" },
+      { filename: "case-a-19-scanbody-dess.stl", role: "construction" },
+    ]);
+  });
+
+  it("a capless base with no per-part mesh stays merged — never a bare arch posing as the composite", () => {
+    const tabs = previewTabs(
+      ["case-a-arch-with-healingcaps.stl", "case-a-arch-capless.stl"],
+      [19],
+    );
+    expect(tabs[0]!.layers).toEqual([
+      { filename: "case-a-arch-with-healingcaps.stl", role: "arch" },
+    ]);
   });
 
   it("a tab whose file the package does not name is simply absent — no placeholder", () => {
@@ -1466,9 +1508,25 @@ describe("previewTabs — the demo's three tabs, matched onto the run's own pack
         label: "1 · Healing-cap alignment",
         filename: "case-a-arch-with-healingcaps.stl",
         tooth: null,
-        role: "cap",
+        layers: [{ filename: "case-a-arch-with-healingcaps.stl", role: "arch" }],
       },
     ]);
+  });
+
+  it("the cap and posed-construction matches are tooth-anchored — 19's files never speak for 9", () => {
+    const tabs = previewTabs(
+      [
+        "case-a-arch-with-healingcaps.stl",
+        "case-a-arch-capless.stl",
+        "case-a-19-healingcap-aligned.stl",
+        "case-a-arch-with-constructions.stl",
+        "case-a-19-scanbody-dess.stl",
+      ],
+      [9],
+    );
+    // tooth 9 has neither file: both arch tabs fall back to their merged mesh
+    expect(tabs.find((t) => t.key === "alignment")!.layers).toHaveLength(1);
+    expect(tabs.find((t) => t.key === "construction-in-arch")!.layers).toHaveLength(1);
   });
 
   it("an empty package is zero tabs, never an error", () => {
@@ -1565,7 +1623,11 @@ describe("the library page's own preview tab", () => {
     const tab = libraryPreviewTab(FILES);
     expect(tab).not.toBeNull();
     expect(tab!.filename).toBe("case-arch-with-constructions.stl");
-    expect(tab!.role).toBe("construction");
+    // no capless base in this package, so the merged mesh renders alone, painted as
+    // the scan material it mostly is (the 2026-08-06 colour rule)
+    expect(tab!.layers).toEqual([
+      { filename: "case-arch-with-constructions.stl", role: "arch" },
+    ]);
   });
 
   it("takes ONLY the unified view — not the cap arch, not a per-site part", () => {

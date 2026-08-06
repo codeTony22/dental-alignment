@@ -1301,28 +1301,47 @@ export function constructionChangeWords(
 // the artifacts" — the demo's three labelled tabs) --------------------------------------
 //
 // The demo composited these client-side from raw scan + per-part STLs
-// (apps/web/src/components/ViewerControls.tsx). This product's worker now bakes each
-// of the three views as ONE pre-composited mesh instead (auto_flow.py: `arch-with-
-// healingcaps.stl`, `arch-with-constructions.stl`, `{tooth}-prosthesis_cad.stl`), so
-// a tab here is a single filename MATCH, never a client-built composite.
+// (apps/web/src/components/ViewerControls.tsx). This product's worker bakes merged
+// meshes (auto_flow.py: `arch-with-healingcaps.stl`, `arch-with-constructions.stl`)
+// AND the pieces they were merged from (`arch-capless.stl`, `{tooth}-healingcap-
+// aligned.stl`, `{tooth}-scanbody-<vendor>.stl`). A merged mesh is ONE colour, which
+// painted the whole scan green (client 2026-08-06) — so a tab's scene LAYERS the
+// pieces when the package carries them, each tinted its own role, and falls back to
+// the merged mesh in the arch material when it does not (an older run). Every layer
+// is still a filename MATCH against the worker's own export names — nothing here
+// invents geometry or re-parses a name for attribution.
 
-/** The tinting role a tab's single mesh renders with — the viewer package's own
+/** The tinting role a preview layer renders with — the viewer package's own
  *  PartRole values, carried by NAME rather than imported: this module stays
  *  framework-free (no dependency on the three.js-backed viewer package), and the
  *  caller indexes its own palette with the string. */
-export type PreviewMeshRole = "cap" | "construction";
+export type PreviewMeshRole = "arch" | "cap" | "construction";
+
+/** One mesh of a tab's scene, with the role that colours it. */
+export interface PreviewLayer {
+  readonly filename: string;
+  readonly role: PreviewMeshRole;
+}
 
 export interface PreviewTab {
   readonly key: string;
   readonly label: string;
+  /** The tab's PRIMARY file — its identity for keying and for single-mesh
+   *  consumers; always layers[0]'s file for a merged tab. */
   readonly filename: string;
   readonly tooth: number | null;
-  readonly role: PreviewMeshRole;
+  /** THE SCENE (client 2026-08-06: "why is the scan green? … only the healing cap
+   *  is green"): the arch tabs compose the package's own pieces — the capless arch
+   *  in the scan material with each posed part tinted its role — and fall back to
+   *  the merged mesh painted as the arch it mostly is when the pieces are absent
+   *  (an older run). */
+  readonly layers: readonly PreviewLayer[];
 }
 
 const ALIGNMENT_SUFFIX = "-arch-with-healingcaps.stl";
 const CONSTRUCTION_ARCH_SUFFIX = "-arch-with-constructions.stl";
 const CONSTRUCTION_SUFFIX = "-prosthesis_cad.stl";
+const CAPLESS_SUFFIX = "-arch-capless.stl";
 
 /**
  * THE THREE TABS, MATCHED BY SUFFIX, NEVER CONSTRUCTED: each candidate is the
@@ -1344,24 +1363,49 @@ export function previewTabs(
   teeth: readonly number[],
 ): readonly PreviewTab[] {
   const tabs: PreviewTab[] = [];
+  // the composite base both arch tabs share — the scan with clean holes where the
+  // parts sit, so the part layers never fight the triangles underneath them
+  const capless = packageFiles.find((f) => f.endsWith(CAPLESS_SUFFIX));
+  const composed = (
+    merged: string,
+    parts: readonly string[],
+    role: PreviewMeshRole,
+  ): readonly PreviewLayer[] =>
+    capless !== undefined && parts.length > 0
+      ? [{ filename: capless, role: "arch" as const },
+         ...parts.map((filename) => ({ filename, role }))]
+      : [{ filename: merged, role: "arch" as const }];
   const alignment = packageFiles.find((f) => f.endsWith(ALIGNMENT_SUFFIX));
   if (alignment !== undefined) {
+    const caps = teeth.flatMap((tooth) => {
+      const file = packageFiles.find((f) =>
+        f.endsWith(`-${tooth}-healingcap-aligned.stl`));
+      return file === undefined ? [] : [file];
+    });
     tabs.push({
       key: "alignment",
       label: "1 · Healing-cap alignment",
       filename: alignment,
       tooth: null,
-      role: "cap",
+      layers: composed(alignment, caps, "cap"),
     });
   }
   const archConstruction = packageFiles.find((f) => f.endsWith(CONSTRUCTION_ARCH_SUFFIX));
   if (archConstruction !== undefined) {
+    // the posed construction's tail carries the vendor (`-{tooth}-scanbody-<vendor>
+    // .stl`, emit.py's own naming), so the tooth anchors an INFIX here — the same
+    // membership discipline, hyphen-bounded so 19 never speaks for 9
+    const constructions = teeth.flatMap((tooth) => {
+      const file = packageFiles.find((f) =>
+        f.includes(`-${tooth}-scanbody-`) && f.endsWith(".stl"));
+      return file === undefined ? [] : [file];
+    });
     tabs.push({
       key: "construction-in-arch",
       label: "2 · Construction in arch",
       filename: archConstruction,
       tooth: null,
-      role: "construction",
+      layers: composed(archConstruction, constructions, "construction"),
     });
   }
   for (const tooth of teeth) {
@@ -1372,7 +1416,7 @@ export function previewTabs(
       label: `3 · Construction alone — tooth ${tooth}`,
       filename: file,
       tooth,
-      role: "construction",
+      layers: [{ filename: file, role: "construction" }],
     });
   }
   return tabs;
