@@ -1820,3 +1820,35 @@ re-run today prints 0.3407 until the evidence is retired.)
   (0.427/0.728), rim read 0.80mm: the rim itself is ambiguous on this capture;
   standing leaning is a RESCAN for that die, with auto-mark + ghosts serving the
   rotation after a run and the §10-AK guard refusing the diameter trap.
+
+## §10-AM — the z-axis direction, measured before built (2026-08-06)
+
+Client: uploads should be positioned with the arch's occlusal side on the z
+axis, sign by jaw (maxila/mandibula), "and things should align."
+
+MEASURED across the fleet (scratch axis_check.py, crown_up_axis vs each landed
+run's seated cap axis):
+- Every scan ALREADY follows the convention: crown-up is within 1-16 deg of
+  world z on all 10 scans, and the jaw fixes the sign exactly as the client
+  describes — all four upper scans read crowns-up ~ -z, all lower scans ~ +z.
+- The pipeline never relied on it (it estimates), and the estimate is healthy:
+  seated cap axes sit 6.2-21.7 deg off the estimated crown-up on every landed
+  site — no flips, nothing near 90 deg. Forcing orientation would fix nothing
+  the seats currently get wrong, and re-orienting scan bytes would break the
+  manifest's "exported unmodified" promise plus every landed pose.
+- THE ONE REAL CATCH, on the very case that started this: the arch upload
+  (297589851-arch-with-healingcaps) reads crowns-up ~ +z — the LOWER-jaw
+  signature on this fleet — while its case says jaw=upper, because an upload's
+  jaw comes from a FILENAME heuristic that defaulted. The declared jaw is
+  almost certainly wrong, and the client's own rule applied naively (trust the
+  declared jaw, force the axis) would have INVERTED a correct estimate.
+
+DECIDED SHAPE (not yet built): the convention becomes a CROSS-CHECK, never a
+transform — (1) at intake, derive the SUGGESTED jaw from the geometry's
+crown-up sign (server-derived suggestion; the operator's chip confirms or
+overrides, exactly like every other suggestion); (2) when the declared jaw
+disagrees with the geometry, an advisory sentence with a one-click fix; (3)
+scan bytes are never rewritten. Also noted: the per-site lateral offsets the
+operator sees ("the x axis") are centre/seed errors in the site plane —
+measured all week, invariant to the global frame — a different problem this
+direction does not touch.
