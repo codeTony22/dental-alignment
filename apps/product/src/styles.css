@@ -4832,12 +4832,13 @@ button.package-files__link:hover {
 /* THE READOUT sits at the far end: the identity and the stage's own controls read
    left-to-right once, the numbers are what the eye returns to between clicks. */
 .workspace-toolbar__metrics {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 6px;
-  margin-left: auto;
-  min-width: 0;
+  /* ONE ROW, UNIFIED (client 2026-08-06: "I thought we were gonna unified this in
+     one row"). The strip was one atomic flex item pushed right by margin-left:auto —
+     whenever the long superseded variant id made it not fit beside the controls, the
+     WHOLE strip dropped to a second row, indented by the leftover auto margin. As
+     `contents`, the pills flow in the toolbar's own row after the controls and wrap
+     PER PILL only when the window truly runs out — a flow, never a forced band. */
+  display: contents;
 }
 
 .workspace-toolbar__metrics-label {
@@ -4881,13 +4882,8 @@ button.package-files__link:hover {
   padding: 2px 8px;
 }
 
-/* Narrow: let the readout wrap onto its own line rather than squeezing the figures —
-   the identity chip keeps the first line to itself. */
-@media (max-width: 1100px) {
-  .workspace-toolbar__metrics {
-    margin-left: 0;
-  }
-}
+/* (The old narrow-width margin reset died with the strip's auto margin — pills now
+   wrap individually under the toolbar's own flow.) */
 
 /* ===== pane-geom ===== */
 /* ---- THE PANE FOOTER BAND (gap pane-footer-scale-bar-and-axis-label, 2026-07-31) ------
@@ -6111,10 +6107,6 @@ button.package-files__link:hover {
 
 .workspace-toolbar__stat-key {
   font-size: 9px;
-}
-
-.workspace-toolbar__metrics {
-  gap: 4px;
 }
 
 .workspace-toolbar__metrics-label {
