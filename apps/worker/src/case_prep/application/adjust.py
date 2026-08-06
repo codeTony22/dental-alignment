@@ -288,6 +288,34 @@ def span_readings(a_xy: Sequence[float], b_xy: Sequence[float],
     )
 
 
+def require_span_off_axis(mid_xy: Sequence[float], label: str, half: str) -> None:
+    """THE ±180° ARBITER RULE (276794487 tooth 3, 2026-08-05).
+
+    A span's direction is undirected — ambiguous by a half-turn — and its MIDPOINT is
+    the only thing that resolves the branch (``direction_delta``). A midpoint within
+    ``MIN_LEVER_ARM_MM`` of the part AXIS (the canonical origin, the line the estimated
+    rotation actually turns on) is invariant under that rotation: it carries no
+    rotational information, so it cannot arbitrate the sign, and the branch becomes a
+    coin flip weighted by click noise. Measured on the live defect: a diameter span
+    folded at +174.7° and made the published DEV metric WORSE (0.3109 → 0.3407 RMS).
+
+    The rim-centre lever guard cannot catch this — ``template_rim_centre`` sits off
+    the axis (0.60mm on the part that failed), so a diameter's midpoint read 0.62mm
+    about it and cleared ``MIN_LEVER_ARM_MM``. The two guards ask different questions:
+    the rim-centre one, "is this azimuth readable"; this one, "may this midpoint
+    decide a half-turn". Refusal, never re-weighting: an observation with 8% of the
+    say in the answer must not keep 100% of the say in the branch."""
+    arm = float(np.linalg.norm(np.asarray(mid_xy, float)))
+    if arm >= MIN_LEVER_ARM_MM:
+        return
+    raise AdjustInvalid(
+        f"the {half} span for {label!r} crosses the part's axis — its midpoint sits "
+        f"{arm:.2f}mm from the axis the rotation turns on, so its bearing is a "
+        f"diameter's, ambiguous by a half-turn, and nothing in this pair can say "
+        f"which half-turn is meant. Span the feature along its own radius, or mark "
+        f"its two ends as two separate pairs")
+
+
 def require_clock_lever(radius_mm: float, label: str, *, span: bool) -> float:
     """THE SCAN-SIDE LEVER-ARM RULE (review 2026-07-28, finding A) — the domain's own
     ``MIN_LEVER_ARM_MM`` statement applied to the half it had never been applied to.
@@ -1311,6 +1339,8 @@ def _part_half(pair: Correspondence, ann: PartAnnotation, centre_xy: np.ndarray,
             f"the library span for {label!r} has its midpoint {mid_radius:.2f}mm from "
             f"the part's rim centre — a span across the part's own axis names the "
             f"axis, not a clock angle. Span a coded feature out on the part's face")
+    # the ±180° arbiter rule — the part frame's axis IS the origin here
+    require_span_off_axis(mid, label, "library")
     delta = end[:2] - part_point[:2]
     direction = _fold_half_turn(float(np.degrees(np.arctan2(delta[1], delta[0]))))
     part_audit["part_point_end"] = [round(float(c), 3) for c in end]
@@ -1358,6 +1388,9 @@ def observations_for(pair: Correspondence, label: str, part_azimuth: float,
     # BEFORE the radiality read, because the radiality read cannot see this: a span
     # across the axis-centred screw access reports a perfect 0° offset (module note 2).
     require_clock_lever(readings.midpoint_lever_mm, label, span=True)
+    # AFTER the rim-centre guard so its standing sentence keeps precedence where the
+    # two coincide; this one catches the diameter the offset rim centre lets past
+    require_span_off_axis((a_xy + b_xy) / 2.0, label, "scan")
     midpoint_delta = wrap_deg(readings.midpoint_azimuth_deg - part_azimuth)
     audit["span"] = {
         "scan_point": [round(float(c), 3) for c in pair.scan_point],

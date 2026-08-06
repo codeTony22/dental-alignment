@@ -52,8 +52,10 @@ from case_prep.application.adjust import (ADVISORY_DISAGREEMENT_MM,
                                           reset_target, residual_rows, rotate_site,
                                           seated_payload, site_clicks, span_readings,
                                           validate_span)
+from case_prep.application.adjust import _part_half
 from case_prep.application.cases import CaseRecord, discover_cases
-from case_prep.domain.part_features import (MIN_LEVER_ARM_MM, PartFeature)
+from case_prep.domain.part_features import (MIN_LEVER_ARM_MM, PartAnnotation,
+                                            PartFeature)
 from case_prep.domain.clock_signature import (canon_point_to_world,
                                               template_signature, wrap_deg)
 
@@ -654,6 +656,78 @@ class TestTheLibrarySpanMeasuresWhatTheRadialModelAssumed:
             "point-1", part_azimuth=0.0, lever_mm=2.0, clicks=_flat_clicks(),
             max_span_mm=8.0, audit=audit, part_direction=None)
         assert audit["span"]["direction_reference"] == "radial-model"
+
+
+# --- THE ±180° BRANCH A MIDPOINT COULD NOT ARBITRATE -------------------------------------
+#
+# 276794487-zimmer-4.5 tooth 3, 2026-08-05: one library span, folded at +174.7°, and the
+# published DEV metric got WORSE for it (0.3109 → 0.3407 RMS). The span was a DIAMETER —
+# endpoints at radii 2.40 and 1.18 on OPPOSITE sides of the part axis, midpoint 0.06mm
+# from the axis itself. A span's direction is undirected, ambiguous by a half-turn, and
+# ``direction_delta`` resolves the branch by the midpoint — but a midpoint ON the rotation
+# axis is invariant under the very rotation being estimated: it carries nothing, and the
+# branch became a coin flip that landed on the wrong half-turn. The rim-centre lever guard
+# could not see it: the rim centre sits 0.60mm off the axis, so the diameter's midpoint
+# read 0.62mm about it and walked past MIN_LEVER_ARM_MM with 0.12mm to spare.
+
+
+class TestASpanCannotArbitrateItsOwnHalfTurn:
+    """The restrictive-only fix (per the diagnosis verdict): REFUSE the span at pair
+    time, with the actionable sentence, on either half. Never re-weight — an
+    observation with 8% of the say in the answer must not keep 100% of the say in
+    the branch."""
+
+    # the real catalog's rim-centre offset, to scale — the escape needs it
+    OFFSET_CENTRE = (-0.59, -0.09)
+
+    def test_the_escape_is_refused_on_the_scan_half(self):
+        """THE DEFECT'S OWN GEOMETRY: rim-centre lever 0.65mm (past the old guard),
+        axis distance 0.05mm (a diameter). Refused, naming the axis crossing."""
+        with pytest.raises(AdjustInvalid) as exc:
+            observations_for(
+                Correspondence(scan_point=[2.4, 0.1, 0.0],
+                               scan_point_end=[-2.3, -0.06, 0.0],
+                               part_point=[2.0, 0.0, 1.0]),
+                "point-1", part_azimuth=0.0, lever_mm=2.0,
+                clicks=_flat_clicks(self.OFFSET_CENTRE), max_span_mm=8.0, audit={})
+        msg = str(exc.value)
+        assert "crosses the part's axis" in msg
+        assert "0.05mm" in msg
+        assert "along its own radius" in msg
+
+    def test_the_part_half_is_refused_the_same_way(self):
+        """The 276794487 span was a LIBRARY span — the part half is where its
+        diameter was drawn, and the part frame's axis is exactly the origin."""
+        with pytest.raises(AdjustInvalid) as exc:
+            _part_half(
+                Correspondence(scan_point=[2.4, 0.1, 0.0],
+                               part_point=[2.4, 0.1, 1.0],
+                               part_point_end=[-2.3, -0.06, 1.0]),
+                PartAnnotation(model="zimmer-4.5", variant="5030"),
+                np.asarray(self.OFFSET_CENTRE, float), "zimmer-4.5", "5030", 1)
+        assert "crosses the part's axis" in str(exc.value)
+
+    def test_a_radial_trench_span_still_folds_about_the_same_offset_centre(self):
+        """The guard is for diameters, not for the offset centre: a genuine radial
+        span's midpoint sits half-way out (1.8mm here) and folds exactly as before."""
+        obs = observations_for(
+            Correspondence(scan_point=[1.2, 0.0, 0.0], scan_point_end=[2.4, 0.0, 0.0],
+                           part_point=[2.0, 0.0, 1.0]),
+            "point-1", part_azimuth=0.0, lever_mm=2.0,
+            clicks=_flat_clicks(self.OFFSET_CENTRE), max_span_mm=8.0, audit={})
+        assert [o.kind for o in obs] == ["midpoint", "direction"]
+
+    def test_the_rim_centre_diameter_keeps_its_own_older_sentence(self):
+        """Where BOTH guards would fire (centre and axis coincide), the standing
+        screw-access sentence wins — its pins and its words predate this rule."""
+        with pytest.raises(AdjustInvalid) as exc:
+            observations_for(
+                Correspondence(scan_point=[2.0, 0.0, 0.0],
+                               scan_point_end=[-2.0, 0.0, 0.0],
+                               part_point=[2.0, 0.0, 1.0]),
+                "point-1", part_azimuth=0.0, lever_mm=2.0, clicks=_flat_clicks(),
+                max_span_mm=8.0, audit={})
+        assert "SCREW ACCESS" in str(exc.value)
 
 
 # --- THE DISAGREEMENT THAT WAS MEASURED AND NEVER JUDGED ---------------------------------
