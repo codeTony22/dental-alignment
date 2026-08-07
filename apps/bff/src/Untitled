@@ -1,3 +1,0 @@
- ../worker/.venv/bin/uvicorn bff.main:app --port 8001 --app-dir src --reload --reload-dir src --reload-dir ../worker/src/case_prep/application
-INFO:     Will watch for changes in these directories: ['/Users/tonycodes/Code/artech/dental-alignment/apps/bff/src', '/Users/tonycodes/Code/artech/dental-alignment/apps/worker/src/case_prep/application']
-ERROR:    [Errno 48] Address already in use
