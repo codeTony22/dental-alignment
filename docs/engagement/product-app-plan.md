@@ -1914,3 +1914,21 @@ track flag renders ONLY when the last best-fit response carried a suggestion
 standing "rim reads" claim. If the client wants a true measured matching-
 diameter reference, that is new physics (§10-L's own open measurement), not a
 serving change.
+
+**§10-AL addendum (2026-08-06 late): the zimmer-4.5 fixture scan, measured.**
+Client: "does not find the proper healing cap in the scanner and when marking
+it gets it wrong." Measured: detection proposes 5 sites on this scan and none
+is the cap — the nearest lands 5.45mm from the curated t7 centre, the rest are
+15-25mm tissue artifacts. The scan's vertices and normals are clean; the
+mechanism is the calibration record's own: t7's defining rim arc is 46% ABSENT
+from this capture (the 2026-07-24 sweep's rescan exemplar), and the detector's
+core discriminator is the rim ring test (9-of-12-bins floor) — a rim-keyed
+detector cannot find a rim the scanner never captured. Marking then "gets it
+wrong" at the SEAT, for the same reason the site's own chip says RESCAN. The
+answer is not a threshold tune (guess-and-check is barred by the two hard
+gates): it is (a) the pre-run capture advisory surfaced AT INTAKE
+(next-phase §1.2) so the rescan conversation happens before effort is spent,
+and (b) the detection trace telemetry (§1.3/§10-AN) with THIS scan as the
+priority fixture. Also noted: detection emits numpy runtime warnings on this
+scan from a degenerate internal row — harmless to the result but worth a
+finite-guard when the telemetry lands.
