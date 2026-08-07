@@ -71,6 +71,7 @@ import {
 import {
   indicesFrom,
   partCameraFrame,
+  unifiedPaneRadiusMm,
   scanPaneRadiusMm,
   positionsFrom,
   presetFraming,
@@ -1320,12 +1321,20 @@ export function useSitePaneScene(
      reference and label came from different frames, so a side-on pane read "down the
      seated pose axis" at exactly 90° off it (design review 2026-07-31). */
   const viewPreset = options.viewPreset ?? "occlusal";
+  /* ONE FIELD OF VIEW ACROSS THE WORKSPACE (client 2026-08-06: "the measurements
+     in the 3 panels do not match" — measured 64 vs 84 px/mm): every pane frames at
+     unifiedPaneRadiusMm, the larger of the part's own field and the scan crop's,
+     so one millimetre is the same length on all three and nothing crops. */
+  const partBase = useMemo(
+    () => partCameraFrame(
+      partPositions !== null ? computePartFrame(partPositions) : null),
+    [partPositions],
+  );
+  const paneRadiusMm = unifiedPaneRadiusMm(partBase?.radiusMm ?? null, scanRadiusMm);
   const partFraming = useMemo(() => {
-    const base = partCameraFrame(
-      partPositions !== null ? computePartFrame(partPositions) : null,
-    );
+    const base = partBase === null ? null : { ...partBase, radiusMm: paneRadiusMm };
     return presetFraming(base, viewPreset);
-  }, [partPositions, viewPreset]);
+  }, [partBase, paneRadiusMm, viewPreset]);
   const partFrame = partFraming.frame;
 
   const occlusal = useMemo(() => {
@@ -1336,7 +1345,7 @@ export function useSitePaneScene(
      else the held one — never the proxy while a measured axis is still in hand. */
   const posePresented = payload?.pose ?? options.heldPose ?? null;
   const siteFrameBase = siteFrameFor(siteCenter, posePresented, occlusal,
-                                     scanRadiusMm);
+                                     paneRadiusMm);
   const siteFraming = presetFraming(siteFrameBase, viewPreset);
   const siteFrame = siteFraming.frame;
 

@@ -718,10 +718,29 @@ export function partCameraFrame(fit: PartFrameFit | null): PaneFrame | null {
       fit.rimCentre[1] + fit.centroid[1],
       fit.centroid[2],
     ],
-    radiusMm: fit.rmaxMm * 1.6,
+    // 1.6 → 1.05 (client 2026-08-06: the three panes' scales must match — measured
+    // 64 vs 84 px/mm). The workspace unifies the panes' fields below; this margin
+    // only needs to keep the part's own silhouette uncropped.
+    radiusMm: fit.rmaxMm * 1.05,
     viewDirection: [0, 0, 1],
     up: [1, 0, 0],
   };
+}
+
+/**
+ * ONE FIELD OF VIEW ACROSS THE WORKSPACE (client 2026-08-06: "the measurements in
+ * the 3 panels do not match"). The part pane framed at its own radius while panes
+ * 2/3 framed at the scan crop's — an honest per-pane scale bar, but a 7mm part
+ * rendering 31% smaller than the 7mm cap beside it. Every pane takes the LARGER of
+ * the two fields, so nothing crops and — the panes sharing one row height, the
+ * viewer fitting the radius into the shorter dimension — one millimetre is the
+ * same length on all three.
+ */
+export function unifiedPaneRadiusMm(
+  partRadiusMm: number | null,
+  scanRadiusMm: number,
+): number {
+  return partRadiusMm === null ? scanRadiusMm : Math.max(partRadiusMm, scanRadiusMm);
 }
 
 /** The preview fetch's lifecycle as the union pane sees it — "idle" covers both "not

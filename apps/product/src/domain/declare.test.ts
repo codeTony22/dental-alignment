@@ -29,6 +29,7 @@ import {
   indicesFrom,
   paneNotices,
   partCameraFrame,
+  unifiedPaneRadiusMm,
   poseHeldBy,
   positionsFrom,
   previewKeyFor,
@@ -395,16 +396,21 @@ describe("siteFrameFor — panes 2/3 face the top of the cap (the demo's semanti
 });
 
 describe("partCameraFrame — pane 1 top-down the part's file axis", () => {
-  it("frames down [0,0,1] with up [1,0,0], at the part's own radius", () => {
+  it("frames down [0,0,1] with up [1,0,0], at the part's own radius + a tight margin", () => {
+    /* MARGIN 1.6 → 1.05 (client 2026-08-06: "the measurements in the 3 panels do
+       not match" — measured 64 px/mm on pane 1 vs 84 on panes 2/3). The generous
+       margin predates the tight §10-AE crops; the workspace now unifies every
+       pane's field (unifiedPaneRadiusMm below), so the part frame only needs to
+       not crop its own silhouette. */
     expect(
       partCameraFrame({
         rimCentre: [0.2, -0.1],
         centroid: [10, 20, 5],
-        rmaxMm: 2.5,
+        rmaxMm: 4.0,
       }),
     ).toEqual({
       center: [10.2, 19.9, 5],
-      radiusMm: 4,
+      radiusMm: 4.2,
       viewDirection: [0, 0, 1],
       up: [1, 0, 0],
     });
@@ -412,6 +418,17 @@ describe("partCameraFrame — pane 1 top-down the part's file axis", () => {
 
   it("a mesh that does not read as revolute yields no frame — default framing wins", () => {
     expect(partCameraFrame(null)).toBeNull();
+  });
+});
+
+describe("unifiedPaneRadiusMm — one field of view, so one mm is one length everywhere", () => {
+  it("takes the larger of the part's field and the scan region's — nothing crops", () => {
+    expect(unifiedPaneRadiusMm(4.2, 5.6)).toBe(5.6);
+    expect(unifiedPaneRadiusMm(8.4, 5.6)).toBe(8.4);
+  });
+
+  it("no part frame yet leaves the scan region's field standing", () => {
+    expect(unifiedPaneRadiusMm(null, 5.6)).toBe(5.6);
   });
 });
 
