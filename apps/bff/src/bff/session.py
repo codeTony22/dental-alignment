@@ -598,10 +598,24 @@ def clear_current_run(session: "CaseSession") -> None:
     THE EXCEPTION-ACKNOWLEDGMENT DRAFTS JOIN HERE TOO (2026-08-02,
     ``clear_exception_intents``): every one of them was given over THIS run's
     verdicts, and a run that just stopped being current cannot go on being what an
-    acknowledgment describes."""
+    acknowledgment describes.
+
+    AND SO DO EVERY SITE'S RUN-DERIVED RUNGS (client 2026-08-06, the stale-flagged
+    wedge): FLAGGED and ADJUSTED are rungs only a run's verdict or a tool applied
+    over a run can write. When ONE site's boundary retires the CASE's run, an
+    untouched neighbour must not keep a verdict whose run no longer exists — the
+    queue read "Flagged by the run — no run has measured this fit yet" while
+    Adjustment, which needs a run, refused to open. They fall to READY: the
+    confirmation that admitted the site to the run still stands (only the CHANGED
+    site's own boundary retires that), and READY's pre-run sentence is true. A
+    site's alignment evidence is untouched — it re-applies on the next run
+    (§10-AD), and the evidence badge carries that story."""
     session.run = None
     session.adjust_decision = None
     clear_exception_intents(session)
+    for site in session.sites.values():
+        if site.status in (SiteStatus.FLAGGED, SiteStatus.ADJUSTED):
+            site.status = SiteStatus.READY
 
 
 def clear_exception_intents(session: "CaseSession") -> None:
@@ -856,11 +870,24 @@ class SessionStore:
         if not path.is_file():
             return CaseSession(case_id=case_id)
         try:
-            return CaseSession.model_validate_json(path.read_text())
+            session = CaseSession.model_validate_json(path.read_text())
         except Exception as exc:
             raise ValueError(
                 f"corrupt session file {path} — refusing to silently reset flow state "
                 f"(it may hold a confirmation or payment record): {exc}") from exc
+        # RUN-DERIVED RUNGS CANNOT OUTLIVE THE RUN, even on documents persisted
+        # before clear_current_run learned to demote them (client 2026-08-06, the
+        # stale-flagged wedge): a loaded FLAGGED/ADJUSTED beside run=None is a
+        # verdict whose run does not exist — re-derive it as READY here so a
+        # standing document heals on its next read. This is a consistency
+        # derivation of a status this store itself defines as derived, not a data
+        # repair: nothing an operator recorded is touched, and the next CAS save
+        # persists it.
+        if session.run is None:
+            for site in session.sites.values():
+                if site.status in (SiteStatus.FLAGGED, SiteStatus.ADJUSTED):
+                    site.status = SiteStatus.READY
+        return session
 
     def save(self, session: CaseSession) -> None:
         """Compare-and-swap: refuse when the disk's version is not the one this

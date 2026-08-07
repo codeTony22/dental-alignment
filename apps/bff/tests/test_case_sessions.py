@@ -1843,6 +1843,57 @@ class TestReMarkingAnExistingSite:
         assert r.json()["session"]["confirmed"] is False
         assert SessionStore(product_root).load("neodent-gm").confirmation is None
 
+    def test_a_neighbours_run_derived_rung_falls_with_the_run(
+            self, client, product_root):
+        """THE STALE-FLAGGED CONTRADICTION (client 2026-08-06): tooth 4's re-mark
+        retired the case's run, and tooth 13 — untouched — kept the FLAGGED rung
+        that only that run's verdict ever wrote. The queue then read 'Flagged by
+        the run — no run has measured this fit yet' while Adjustment (which needs
+        a run) refused to open: a verdict outliving its run, wedging the flow.
+        FLAGGED and ADJUSTED are post-run rungs; when the run pointer falls, they
+        fall to READY — the confirmation that admitted them to the run stands,
+        and the ready sentence ('no run has measured this fit yet') is true."""
+        store = SessionStore(product_root)
+        session = store.load("neodent-gm")
+        session.sites["4"] = SiteSession(
+            status=SiteStatus.READY, declared_variant="5020")
+        session.sites["13"] = SiteSession(
+            status=SiteStatus.FLAGGED, declared_variant="5020")
+        session.sites["29"] = SiteSession(
+            status=SiteStatus.ADJUSTED, declared_variant="5020")
+        session.run = RunSession(job_id="run-1", run_id="run-1", state="done",
+                                 summary={"sites": [{"tooth": 4}]})
+        store.save(session)
+
+        r = client.put("/api/case-sessions/neodent-gm/sites/4/mark",
+                       json={"center": [9.0, 8.0, 7.0]})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["session"]["run_state"] == "none"
+        by_tooth = {s["tooth"]: s for s in body["sites"]}
+        assert by_tooth[13]["status"] == "ready"
+        assert by_tooth[29]["status"] == "ready"
+        # the changed site itself keeps the deeper reset its own boundary owes
+        assert by_tooth[4]["status"] == "declared"
+
+    def test_a_standing_document_with_flagged_but_no_run_heals_on_load(
+            self, client, product_root):
+        """The same rule at the LOAD seam: documents persisted BEFORE
+        clear_current_run learned the demotion already hold the contradiction —
+        they must heal on their next read, not wait for a boundary to fire."""
+        store = SessionStore(product_root)
+        session = store.load("neodent-gm")
+        session.sites["13"] = SiteSession(
+            status=SiteStatus.FLAGGED, declared_variant="5020")
+        session.run = None
+        store.save(session)
+
+        reloaded = SessionStore(product_root).load("neodent-gm")
+        assert reloaded.sites["13"].status == SiteStatus.READY
+        r = client.get("/api/case-sessions/neodent-gm")
+        site = next(s for s in r.json()["sites"] if s["tooth"] == 13)
+        assert site["status"] == "ready"
+
     def test_the_activity_log_names_a_re_mark_differently_from_a_first_mark(
             self, client, product_root):
         r = client.put("/api/case-sessions/neodent-gm/sites/4/mark",
