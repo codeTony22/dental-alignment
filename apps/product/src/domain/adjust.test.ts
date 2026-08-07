@@ -66,6 +66,7 @@ import {
   markLeverGuard,
   reworkWords,
   staleMetricsPhrase,
+  unverifiedClockCautionLead,
   unverifiedClockNotice,
   withPick,
   withoutPick,
@@ -1536,6 +1537,20 @@ describe("unverifiedClockNotice — disclosure + routing to auto-mark, never a p
     };
     const notice = unverifiedClockNotice([row], 29)!;
     expect(notice.facts).not.toContain("a stale sentence");
+  });
+});
+
+/**
+ * THE LEAD SENTENCE, NAMED (§10-AN slice D). It used to be a JSX literal in
+ * AdjustStage.tsx's standing inline band; it is retargeted here because the band
+ * itself is gone — the sentence now renders inside the pair-caution dialog
+ * (AdjustDock.test.tsx pins the markup), and this pins the WORDS the dialog reads.
+ */
+describe("unverifiedClockCautionLead — the moved band's own lead sentence", () => {
+  it("names the documented answer without promising verification", () => {
+    const lead = unverifiedClockCautionLead();
+    expect(lead).toContain("auto-mark is the documented answer");
+    expect(lead).not.toContain("will verify");
   });
 });
 

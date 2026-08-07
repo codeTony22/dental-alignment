@@ -1699,6 +1699,25 @@ export function unverifiedClockNotice(
   };
 }
 
+/**
+ * THE UNVERIFIED CLOCK'S LEAD SENTENCE (§10-AN slice D, client screenshots: at a
+ * short window the standing inline band pushed the page into scroll again). The
+ * band folded into the caution chip's dialog — same words, same act, same route to
+ * auto-mark — but the ONE-LINE lead that used to sit outside the `<details>` fold
+ * was a JSX literal with no name of its own. Named here so the dialog and its test
+ * share one sentence rather than a copy that could drift from a pin.
+ *
+ * This product's OWN copy, not the server's — `UnverifiedClockNotice.facts` and
+ * `.act` are the server-adjacent words (the run's own evidence field, the
+ * auto-mark doctrine) and render beside this sentence verbatim, unchanged.
+ */
+export function unverifiedClockCautionLead(): string {
+  return (
+    "The rotation could not be verified automatically — auto-mark is the " +
+    "documented answer."
+  );
+}
+
 /** `blockOf` from domain/declare.ts, mirrored rather than imported: declare.ts is the
  * strip's own module and importing it here for one helper would tie two modules
  * together over a three-line function. Same defensive read every wire narrowing in

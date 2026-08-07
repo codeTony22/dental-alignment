@@ -85,6 +85,7 @@ import {
   trenchBand,
   trenchRingHint,
   trenchToolStateWords,
+  unverifiedClockCautionLead,
   type AdjustQueueEntry,
   type AdjustToolId,
   type AlreadyOptimal,
@@ -92,6 +93,7 @@ import {
   type PairDraft,
   type PairSlot as PairSlotKey,
   type SeatedPhase,
+  type UnverifiedClockNotice,
 } from "../domain/adjust";
 
 // --- shared small pieces (moved from AdjustStage.tsx — §10-AN: this is dock-body
@@ -1047,6 +1049,22 @@ export interface AdjustDockProps {
   readonly cautionsOpen: boolean;
   readonly onOpenCautions: () => void;
   readonly onCloseCautions: () => void;
+
+  /**
+   * THE UNVERIFIED CLOCK'S ACTIONABLE SURFACE, FOLDED IN (§10-AN slice D, client
+   * screenshots: at a short window the standing inline band pushed the page back
+   * into scroll). Null unless the active site's run row carries
+   * `clocking.rotation_unverified === true` (`domain/adjust.unverifiedClockNotice`
+   * — the container computes it from the SAME rows the toolbar and the queue's
+   * flag reasons already read; this component decides nothing about when it
+   * applies). It used to stand between the panes and the dock as its own band;
+   * now it is ONE MORE entry in the caution chip's count and its dialog, with the
+   * SAME sentences (`.facts`/`.act`, verbatim, no longer behind their own nested
+   * `<details>` — the modal already has the room) and the SAME act, wired through
+   * the `onSelectTool` this component already owns. Optional with a null default:
+   * static callers predate it.
+   */
+  readonly clockNotice?: UnverifiedClockNotice | null;
 }
 
 export function AdjustDock({
@@ -1100,11 +1118,15 @@ export function AdjustDock({
   cautionsOpen,
   onOpenCautions,
   onCloseCautions,
+  clockNotice = null,
 }: AdjustDockProps) {
   // §10-AN slice C: "more room" is now LIFTED (AdjustDockProps' own doc explains
   // why) — the pane-grid coupling the comp's own `dockTall` also drives is wired at
   // AdjustStageView, where the pane grid lives. This file only reads the value.
   const cautions = pairCautions(drafts, pose, clock);
+  // §10-AN slice D: the unverified-clock notice folds into the SAME chip/dialog —
+  // one more entry, counted, never a second surface with its own open/close state.
+  const cautionCount = cautions.length + (clockNotice !== null ? 1 : 0);
   // Escape closes the pair-caution dialog; focus moves in, is trapped, and comes
   // back on close (§10-O.8) — see useDialogFocus.
   useDialogEscape(cautionsOpen, onCloseCautions);
@@ -1201,20 +1223,24 @@ export function AdjustDock({
             {stateWords}
           </span>
         </div>
-        {cautions.length > 0 && (
+        {cautionCount > 0 && (
           /* THE CAUTION CHIP (§10-AN slice C, client 2026-08-06: "any warnings or
              things of the sort need to come in as modals"). Replaces the inline
              cross-check advisory and the per-pair screw-access sentence, which
              together were the exact "lot of yellow text" the 2026-08-06 shortening
              had already trimmed once — this trims the CONTROL ROW, not the words:
-             every sentence still renders, verbatim, in the dialog below. */
+             every sentence still renders, verbatim, in the dialog below.
+
+             §10-AN slice D folds the unverified-clock notice into the SAME count —
+             the count is `cautionCount`, not `cautions.length`, so the chip never
+             under-reports while a standing clock caution is the ONLY thing to say. */
           <button
             type="button"
             data-role="pair-caution-chip"
             className="chip chip--exception caution-chip"
             onClick={onOpenCautions}
           >
-            ⚠ {cautions.length === 1 ? "1 caution" : `${cautions.length} cautions`}
+            ⚠ {cautionCount === 1 ? "1 caution" : `${cautionCount} cautions`}
           </button>
         )}
         <button
@@ -1561,7 +1587,7 @@ export function AdjustDock({
             <header className="decode-dialog__header">
               <div>
                 <h2 id="pair-cautions-heading" className="decode-dialog__title">
-                  {cautions.length === 1 ? "1 caution" : `${cautions.length} cautions`}
+                  {cautionCount === 1 ? "1 caution" : `${cautionCount} cautions`}
                 </h2>
                 <p className="decode-dialog__subject">
                   The server's own words. Nothing here is a summary of them.
@@ -1579,6 +1605,50 @@ export function AdjustDock({
             </header>
             <div className="decode-dialog__body">
               <ul data-role="pair-caution-list" className="adjust-queue__reasons">
+                {clockNotice !== null && (
+                  /* THE UNVERIFIED CLOCK, FOLDED IN (§10-AN slice D). Same three
+                     things the standing band used to carry — the lead, the run's
+                     own evidence word (`.facts`), and the documented answer
+                     (`.act`) — now inside the ONE caution surface, with NO nested
+                     `<details>`: the modal already has the room a control row does
+                     not (`pairCautions`' own doctrine, applied here too). The act
+                     stays a live control, not a sentence: it routes to auto-mark
+                     through the SAME `onSelectTool` the rail uses, and never
+                     claims the click will verify anything (`unverifiedClockNotice`'s
+                     own doctrine — this file adds no claim of its own). */
+                  <li
+                    key="clock-caution"
+                    data-role="clock-caution"
+                    className="adjust-queue__reason adjust-queue__reason--clock"
+                  >
+                    <p
+                      data-role="clock-caution-lead"
+                      className="adjust-clock-notice__lead"
+                    >
+                      {unverifiedClockCautionLead()}
+                    </p>
+                    <p
+                      data-role="clock-caution-facts"
+                      className="adjust-clock-notice__line"
+                    >
+                      {clockNotice.facts}
+                    </p>
+                    <p
+                      data-role="clock-caution-act"
+                      className="adjust-clock-notice__line"
+                    >
+                      {clockNotice.act}
+                    </p>
+                    <button
+                      type="button"
+                      data-role="verify-rotation"
+                      className="button button--secondary button--small"
+                      onClick={() => onSelectTool(clockNotice.armTool)}
+                    >
+                      Switch to auto-mark
+                    </button>
+                  </li>
+                )}
                 {cautions.map((caution) => (
                   <li key={caution.id} className="adjust-queue__reason">
                     {caution.message}

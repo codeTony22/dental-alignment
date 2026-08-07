@@ -1225,11 +1225,20 @@ describe("re-reading a site's numbers, without applying a tool", () => {
 
 /**
  * THE UNVERIFIED CLOCK'S ACTIONABLE SURFACE (§10-H's "STILL OPEN" line, closed
- * 2026-08-02). The container computes `unverifiedClockNotice` from the run rows and
- * hands it down whole — this pins only that the VIEW renders it faithfully, never
- * that it holds the trigger logic (that is `domain/adjust.test.ts`'s job).
+ * 2026-08-02) — RETARGETED (§10-AN slice D, client screenshots: at a short window
+ * the standing inline band this describe block used to pin — `data-role=
+ * "clock-unverified"`, a `flex-shrink: 0` box between the panes and the dock —
+ * pushed the whole page back into scroll). The decision that changed: the notice
+ * is no longer a surface of its OWN; it is one more entry in AdjustDock's caution
+ * chip/dialog, counted and rendered the same way a pair caution is. The exhaustive
+ * behaviour pins (the count, closed-by-default, the words verbatim, the routed
+ * control, the no-claim guarantee) now live in AdjustDock.test.tsx, beside the
+ * component that actually owns the chip and the dialog — the switch-confirm/
+ * reasons-dialog precedent, a dialog rendered open through its own lifted prop
+ * rather than a click. This file keeps only what is still ITS job: the container's
+ * `clockNotice` reaches AdjustDock unchanged, and the old standing band is gone.
  */
-describe("the unverified clock's actionable surface", () => {
+describe("the unverified clock's actionable surface — folded into AdjustDock's caution dialog", () => {
   // No apostrophes or quotes in this fixture on purpose — renderToStaticMarkup
   // escapes them to HTML entities, and every other assertion in this suite that
   // pins a rendered sentence verbatim avoids them for the same reason.
@@ -1239,50 +1248,30 @@ describe("the unverified clock's actionable surface", () => {
     armTool: "auto-mark",
   };
 
-  it("renders the notice with its facts, its act, and a control that routes to auto-mark", () => {
+  it("passes clockNotice through to the dock, which counts it in the caution chip", () => {
     const html = view({ clockNotice: NOTICE });
-    expect(html).toContain('data-role="clock-unverified"');
+    expect(html).toMatch(/data-role="pair-caution-chip"[^>]*>⚠ 1 caution</);
+  });
+
+  it("renders no standing band between the panes and the dock any more", () => {
+    const html = view({ clockNotice: NOTICE });
+    expect(html).not.toContain('data-role="clock-unverified"');
+  });
+
+  it("renders no chip when the container found nothing to say (a verified site)", () => {
+    expect(view({ clockNotice: null })).not.toContain('data-role="pair-caution-chip"');
+  });
+
+  it("renders no chip by default — a static caller predating this prop", () => {
+    expect(view()).not.toContain('data-role="pair-caution-chip"');
+  });
+
+  it("surfaces the facts, the act and the route to auto-mark once the dialog opens, through the lifted cautionsOpen prop", () => {
+    const html = view({ clockNotice: NOTICE, cautionsOpen: true });
+    expect(html).toContain('data-role="clock-caution"');
     expect(html).toContain(NOTICE.facts);
     expect(html).toContain(NOTICE.act);
     expect(html).toContain('data-role="verify-rotation"');
-  });
-
-  it("renders no notice when the container found nothing to say (a verified site)", () => {
-    expect(view({ clockNotice: null })).not.toContain('data-role="clock-unverified"');
-  });
-
-  it("renders no notice by default — a static caller predating this prop", () => {
-    expect(view()).not.toContain('data-role="clock-unverified"');
-  });
-
-  it("never claims the control will verify the rotation", () => {
-    const html = view({ clockNotice: NOTICE });
-    expect(html).not.toContain("will verify the rotation");
-    expect(html).not.toContain("marks the rotation verified");
-  });
-
-  it("stays visible whichever tool tab is open", () => {
-    for (const tool of ["fit-by-points", "best-fit", "rotation", "mark-trench", "auto-mark"] as const) {
-      expect(view({ tool, clockNotice: NOTICE })).toContain('data-role="clock-unverified"');
-    }
-  });
-
-  it("folds to one line — the verbatim sentences live behind the disclosure", () => {
-    // client 2026-08-04: "This takes a lot of real estate". The queue's own
-    // precedent: the row keeps the fact, the words move behind a door — and the
-    // sentences inside are UNCHANGED (the facts/act pins above still hold).
-    const html = view({ clockNotice: NOTICE });
-    expect(html).toContain('data-role="clock-unverified-lead"');
-    expect(html).toContain('data-role="clock-unverified-words"');
-    const fold = html.slice(html.indexOf('data-role="clock-unverified-words"'));
-    expect(fold).toContain(NOTICE.facts);
-    expect(fold).toContain(NOTICE.act);
-    // the act stays OUTSIDE the fold — folding the button would hide the answer
-    expect(
-      html
-        .slice(0, html.indexOf('data-role="clock-unverified-words"'))
-        .includes('data-role="verify-rotation"'),
-    ).toBe(true);
   });
 });
 

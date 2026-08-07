@@ -11,7 +11,12 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AdjustDock, type AdjustDockProps } from "./AdjustDock";
-import { newPairDraft, withPick, type AdjustQueueEntry } from "../domain/adjust";
+import {
+  newPairDraft,
+  withPick,
+  type AdjustQueueEntry,
+  type UnverifiedClockNotice,
+} from "../domain/adjust";
 import type { AdjustOutcomeView, LandmarkView } from "../api/client";
 
 const FLAGGED: AdjustQueueEntry = {
@@ -216,6 +221,85 @@ describe("the pair-caution chip and its modal (§10-AN slice C, client 2026-08-0
     expect(html).toContain('data-role="pair-cautions-dialog"');
     expect(html).toContain('role="dialog"');
     expect(html).toContain("no agreement number");
+  });
+});
+
+/**
+ * THE UNVERIFIED CLOCK, FOLDED INTO THE SAME CHIP/DIALOG (§10-AN slice D, client
+ * screenshots: at a short window the standing inline band — rendered by
+ * AdjustStage.tsx, outside this dock's own max-height — pushed the page back into
+ * scroll). RETARGETED from AdjustStage.test.tsx's "the unverified clock's
+ * actionable surface" describe block, which pinned an inline `data-role=
+ * "clock-unverified"` band; that band is gone, so every assertion here targets the
+ * dialog rendered open via `cautionsOpen`, the same precedent `AdjustDockProps`'
+ * own doc cites (switch-confirm / reasons-dialog: a static render pins a dialog
+ * open through its own prop rather than a click).
+ */
+describe("the unverified clock, folded into the pair-caution dialog (§10-AN slice D)", () => {
+  const complete = withPick(
+    withPick(newPairDraft("p1", false), "part", [4, 0, 0]),
+    "scan",
+    [4, 0, 0],
+  );
+
+  // No apostrophes or quotes in this fixture, on purpose — renderToStaticMarkup
+  // escapes them to HTML entities, and every other pin in this suite that checks a
+  // rendered sentence verbatim avoids them for the same reason.
+  const NOTICE: UnverifiedClockNotice = {
+    facts: "The automatic reader could not verify this caps rotation on this scan.",
+    act: "Auto-mark proposes rotation-defining landmarks toward a cross-checked fit.",
+    armTool: "auto-mark",
+  };
+
+  it("renders no chip and no dialog content with no notice (the default)", () => {
+    const html = view({ tool: "fit-by-points", drafts: [] });
+    expect(html).not.toContain('data-role="pair-caution-chip"');
+    expect(html).not.toContain('data-role="clock-caution"');
+  });
+
+  it("counts as one caution on its own", () => {
+    const html = view({ clockNotice: NOTICE });
+    expect(html).toMatch(/data-role="pair-caution-chip"[^>]*>⚠ 1 caution</);
+  });
+
+  it("sums with the pair cautions in the SAME chip, never a second one", () => {
+    const html = view({ tool: "fit-by-points", drafts: [complete], clockNotice: NOTICE });
+    expect(html).toMatch(/data-role="pair-caution-chip"[^>]*>⚠ 2 cautions</);
+    // still one chip, not two
+    expect(html.match(/data-role="pair-caution-chip"/g)).toHaveLength(1);
+  });
+
+  it("stays reachable whichever tool tab is open — the chip lives in the header, not the body", () => {
+    for (const tool of ["fit-by-points", "best-fit", "rotation", "mark-trench", "auto-mark"] as const) {
+      expect(view({ tool, clockNotice: NOTICE })).toMatch(
+        /data-role="pair-caution-chip"[^>]*>⚠ 1 caution</,
+      );
+    }
+  });
+
+  it("lists the lead, the facts and the act verbatim in the dialog once opened, with the route to auto-mark", () => {
+    const html = view({ clockNotice: NOTICE, cautionsOpen: true });
+    expect(html).toContain('data-role="clock-caution"');
+    expect(html).toContain('data-role="clock-caution-lead"');
+    expect(html).toContain("auto-mark is the documented answer");
+    expect(html).toContain('data-role="clock-caution-facts"');
+    expect(html).toContain(NOTICE.facts);
+    expect(html).toContain('data-role="clock-caution-act"');
+    expect(html).toContain(NOTICE.act);
+    expect(html).toContain('data-role="verify-rotation"');
+    expect(html).toContain("Switch to auto-mark");
+  });
+
+  it("renders nothing about the clock when the dialog is closed — same precedent as the pair cautions", () => {
+    const html = view({ clockNotice: NOTICE, cautionsOpen: false });
+    expect(html).not.toContain('data-role="clock-caution"');
+    expect(html).not.toContain(NOTICE.facts);
+  });
+
+  it("never claims the control will verify the rotation", () => {
+    const html = view({ clockNotice: NOTICE, cautionsOpen: true });
+    expect(html).not.toContain("will verify the rotation");
+    expect(html).not.toContain("marks the rotation verified");
   });
 });
 

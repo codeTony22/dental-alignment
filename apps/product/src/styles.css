@@ -2979,6 +2979,48 @@ button.package-files__link:hover {
      and the 420px canvas rule above sizes it like every other stacked viewer. */
 }
 
+/* §10-AN SLICE D: A SHORT-BUT-1000px-WIDE WINDOW IS NOT THE PHONE THE QUERY ABOVE
+   WAS WRITTEN FOR. 1000px sits inside `max-width: 1180px`, so a short desktop
+   window (the client's own, ~1000×500-570) was falling into the "stack and
+   scroll" contract meant for a portrait phone or tablet — `.app-shell` opts
+   itself back INTO document scroll, the pane grid stacks to one column, and
+   each pane locks to a fixed 380px, none of which a short window can afford,
+   and all of which contradict "see everything at once" (client, 2026-08-01).
+
+   Layered on top of the width query rather than editing its condition: a
+   genuinely narrow device keeps the scrolling fallback exactly as written,
+   whatever its height — this only fires in the width-AND-short-height cell of
+   the matrix, which is where the acceptance widths (1000×571, 1000×495) live.
+   Paired with the height-only query above `.workbench__stage--adjust`'s pane-
+   grid coupling, which is what actually lowers the floor these rules restore
+   room for. */
+@media (max-width: 1180px) and (max-height: 760px) {
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .workbench {
+    grid-template-columns: minmax(292px, 356px) minmax(0, 1fr);
+  }
+
+  .workbench__work {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .verify-panels__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .verify-panel__stage {
+    height: auto;
+    flex: 1 1 auto;
+  }
+}
+
 @media (max-width: 960px) {
   .viewer3d {
     height: 360px;
@@ -3142,6 +3184,19 @@ button.package-files__link:hover {
   padding: 4px 8px;
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
   text-align: left;
+}
+
+/* THE UNVERIFIED-CLOCK CAUTION, FOLDED INTO THE SAME LIST (§10-AN slice D): the
+   only entry in `.adjust-queue__reasons` carrying more than a sentence — a lead,
+   the run's own evidence word, the documented answer, and a live control — so it
+   gets its own column layout rather than the plain padded row the others use.
+   `.adjust-clock-notice__lead`/`__line` (this file) are reused verbatim for the
+   text; only the stacking is new. */
+.adjust-queue__reason--clock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
 
 /* Clean sites stay in the list and stay quiet — "visibly optional" is a tone, not a
@@ -4557,26 +4612,13 @@ button.package-files__link:hover {
 }
 
 /* ---- ADJUST: the unverified clock's actionable surface (§10-H's "STILL OPEN" line,
-   closed 2026-08-02) -----------------------------------------------------------------
-   The same amber tone `.adjust-exception` uses for "a consequence to weigh" — nothing
-   here failed a gate the operator can fix by clicking, and nothing here is accepted.
-   UNLIKE `.adjust-exception` this one carries a live control, so it may look
-   clickable: the button ROUTES to auto-mark, it never marks anything verified. */
-.adjust-clock-notice {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 10px;
-  padding: 8px 10px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--color-amber);
-  background: var(--color-amber-bg);
-  border: 1px solid var(--color-amber-border);
-  border-radius: var(--radius-md);
-}
-
+   closed 2026-08-02; folded into the pair-caution dialog, §10-AN slice D) -----------
+   The standing box this rule used to draw (`display:flex` amber card,
+   `flex-shrink:0` between the panes and the dock) is retired — at a short window it
+   sat OUTSIDE the dock's own max-height and pushed the page back into scroll. Its
+   words now render inside `.adjust-queue__reason--clock` (this file), one caution
+   among others; `__line` is the one piece still shared, reused verbatim for the
+   facts/act paragraphs there. */
 .adjust-clock-notice__line {
   margin: 0;
   text-wrap: pretty;
@@ -6284,6 +6326,134 @@ button.package-files__link:hover {
   max-height: 128px;
 }
 
+/* ================================================================================
+   §10-AN SLICE D — THE SHORT WINDOW (client screenshots: the real browser windows
+   run ~1000×500-570 logical px, and at that height the Adjust page scrolled
+   again). Slice C kept the comp's COMPACT floors (160/96/128px above) but never
+   carried the comp's own SECOND round of the same fix (scratchpad
+   comp-delta.json, "Cross-stage pane-card sizing fixes"): stageH's floor drops
+   from 120 to 48, and stageFloor — the fallback that used to win when a card had
+   no room at all — drops to 0 on both branches. Its own comment: "a stage inside
+   a clipping card can never assert a height its card does not have"; a 220px (or
+   160px) minimum inside a card shorter than that does not make the card taller,
+   it makes the geometry and the colorbar crop. 48px is low enough that three
+   panes still each keep SOME pixels rather than the page growing past the
+   viewport to hand them 220.
+
+   Every rule below is the SAME selector as its unscoped counterpart elsewhere in
+   this file, so cascade order (this block sits after all of them) is what makes
+   it win at these heights and lose above them — nothing here is `!important`.
+   `.verify-panels__grid` and `.verify-panel__stage` are unscoped by stage
+   (Declare's `--split` panes need the same relief the acceptance route proves);
+   the `--adjust`/`--dock-tall` pair mirrors the compact/tall split above so
+   "more room" cannot reopen the very floor this query exists to close.
+
+   THE STACK BUDGET (Adjust, the worse of the two routes — it also carries a
+   dock — at 1000×495, the shorter of the two acceptance heights; case-route
+   pages render `CaseShellView`'s own dark band, never `.app-header`, so that
+   band is not in this sum):
+
+     .case-header (the dark case band)     ~59px  ESTIMATED, not read off a live
+                                                    browser: 9px padding × 2 (18px,
+                                                    exact) + the tallest child, the
+                                                    5-stage rail's own two-line
+                                                    step (6px×2 padding + 11.5px
+                                                    label + 2px gap + 9.5px×1.35
+                                                    detail ≈ 40.6px). If the rail
+                                                    itself wraps to two lines at
+                                                    1000px this doubles to ~99px —
+                                                    the rail is untouched by this
+                                                    slice, and is the one figure
+                                                    below worth a live re-check.
+     .workbench padding (16px × 2)          32px   EXACT (`.workbench`, this file)
+     .workbench__stage padding + 2 gaps     24px   EXACT: 8px top padding (the
+       (`:has(.workbench__stage--split)`)          `:has` rule below) + 2 × 8px
+                                                    gaps between its three flex
+                                                    children (toolbar / panes /
+                                                    dock)
+     .stage-toolbar, wrapped to 2 rows      66px   31.5px/row is DOCUMENTED in
+                                                    this file (`.workspace-toolbar
+                                                    .button--small`'s own comment:
+                                                    "13px text at 1.5 line-height +
+                                                    10px padding + 2px border") × 2
+                                                    + 4px row-gap (the winning
+                                                    declaration is `.workbench__
+                                                    stage .stage-toolbar`'s `gap:
+                                                    4px 8px`, which beats
+                                                    `.workspace-toolbar`'s own 3px
+                                                    on specificity) — this IS the
+                                                    toolbar wrapping the ticket asks
+                                                    to verify; the flex column
+                                                    already gives it whatever it
+                                                    needs (no explicit min-height
+                                                    override on `.stage-toolbar`),
+                                                    and squeezes the pane floor
+                                                    instead, which is exactly what
+                                                    this query lowers.
+     banner-freed space                      0px   the standing unverified-clock
+                                                    band (≈80px: 8px×2 box padding
+                                                    + an action row no shorter than
+                                                    its own button, ≈30px, + an
+                                                    ≈17px folded-summary line + 8px
+                                                    internal gap + 10px margin)
+                                                    used to sit OUTSIDE the dock's
+                                                    own max-height, on a
+                                                    `flex-shrink: 0` ancestor that
+                                                    never gave it back — slice D's
+                                                    other half retires it into the
+                                                    caution dialog (below), which
+                                                    costs nothing while closed.
+     pane grid floor (3-across, 1 row)       48px  EXACT, POST-FIX (was 220px);
+                                                    3-across and not stacked
+                                                    because of the compound query
+                                                    below
+     dock ceiling (compact, 42vh of 495)  207.9px  EXACT — min(324px, 42vh); "the
+                                                    dock's cap is already vh-based"
+                                                    stands, unchanged by this slice
+     ------------------------------------------------------------------------
+     total                                ~437px  of 495px available (~58px spare)
+
+   At 1000×571 the only figure that moves is the dock ceiling — min(324px,
+   42vh)=239.8px — for a total of ~469px of 571px (~102px spare). Both totals
+   assume the WORST case for each shrinkable figure (toolbar wrapped, dock at its
+   full ceiling), so the real margin should only be larger.
+
+   THE SECOND FLOOR THIS SLICE HAD TO DROP IS A WIDTH ONE, not a height one:
+   `@media (max-width: 1180px)` (this file) treats any narrow window as a
+   phone — the shell scrolls "by design", the pane grid stacks to a single
+   column, and each pane is a fixed 380px. 1000px sits inside that condition,
+   but the client's window is not a phone: it is a desktop window, resized
+   short, and panes must never hide behind a fold ("I never said I wanted
+   independent views ... see everything at once", 2026-08-01) — which a
+   stacked, one-pane-at-a-time, scrolling page does exactly. The compound query
+   below layers ON TOP of the width query rather than editing its condition, so
+   a genuinely narrow device (a phone, however tall) keeps the scrolling
+   fallback verbatim; only the width-AND-short-height cell of the matrix — the
+   one this slice's acceptance heights sit in — gets the three-across,
+   non-scrolling contract back.
+   ================================================================================ */
+@media (max-height: 760px) {
+  .verify-panels__grid {
+    grid-auto-rows: minmax(48px, 1fr);
+  }
+
+  .verify-panel__stage {
+    min-height: 48px;
+  }
+
+  .workbench__stage--split .verify-panels {
+    min-height: 48px;
+  }
+
+  .workbench__stage--adjust .verify-panels {
+    min-height: 48px;
+  }
+
+  .workbench__stage--adjust.workbench__stage--dock-tall .verify-panels {
+    min-height: 48px;
+  }
+}
+
 /* ---- The selects read as controls, not as bare browser widgets ------------------
    "The dropdown buttons need better styling." They wore the base .decode-select — a
    1px hairline and the UA's own everything. The chevron, the height and the focus
@@ -7094,28 +7264,14 @@ button.package-files__link:hover {
   margin-left: auto;
 }
 
-/* The clock notice, folded (client 2026-08-04): one line + the act; the verbatim
-   sentences live behind the disclosure. */
-.adjust-clock-notice__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
-}
-
+/* The clock caution's lead sentence (client 2026-08-04, folded again into the
+   pair-caution dialog §10-AN slice D: `.adjust-queue__reason--clock` reuses this
+   for the one line ahead of the facts/act paragraphs). `__row`/`__fold`/
+   `__summary` retired with the standing band they laid out — the dialog has the
+   room to show facts and act without a `<details>` disclosure. */
 .adjust-clock-notice__lead {
   font-size: 12px;
   font-weight: 600;
-}
-
-.adjust-clock-notice__fold {
-  margin-top: 4px;
-}
-
-.adjust-clock-notice__summary {
-  cursor: pointer;
-  font-size: 11px;
-  color: var(--color-text-muted);
 }
 
 /* Adopting a detected cap (client 2026-08-04): the detector's facts, the

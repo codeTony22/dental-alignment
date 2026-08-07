@@ -328,9 +328,15 @@ export interface AdjustStageViewProps {
    * 2026-08-02): null unless the active site's run row carries
    * `clocking.rotation_unverified === true`. The container computes this from the
    * SAME rows the ALIGNMENT strip and the queue's flag reasons already read
-   * (`domain/adjust.unverifiedClockNotice`) — the View renders it, and decides
-   * nothing about when it applies. Optional with a null default: static callers
-   * predate it.
+   * (`domain/adjust.unverifiedClockNotice`) — this View decides nothing about when
+   * it applies.
+   *
+   * PASSED STRAIGHT THROUGH TO AdjustDock (§10-AN slice D — see AdjustDockProps'
+   * own note): it used to render here as a standing band between the panes and the
+   * dock; at a short window that band, on a `flex-shrink: 0` ancestor outside the
+   * dock's own max-height, was pushing the page back into scroll. It is now one
+   * more entry in the dock's caution chip/dialog. Optional with a null default:
+   * static callers predate it.
    */
   readonly clockNotice?: UnverifiedClockNotice | null;
   /**
@@ -644,48 +650,15 @@ export function AdjustStageView({
                 The SITE-level acts (re-read, drop) sit in ONE row at the panel's
                 FOOT, which is the comp's own arrangement; with the drawer no longer
                 scrolling (§10-V.3 fixed the flex order) the foot is as reachable as
-                the head was. The clock notice stays above the tabs — a standing
-                fact about the site, not an act on it. */}
+                the head was.
 
-            {clockNotice !== null && (
-              /* THE UNVERIFIED CLOCK'S ACTIONABLE SURFACE (§10-H's "STILL OPEN" line,
-                 closed 2026-08-02). Amber, the tone this product already uses for "a
-                 consequence to weigh" — nothing here failed a gate the operator can
-                 fix by clicking, and nothing here is accepted. The button ROUTES to
-                 auto-mark; it never claims completing that tool will mark this flag
-                 verified (see `unverifiedClockNotice`'s own doctrine). */
-              /* ONE LINE + the act; the full reading behind a fold (client
-                 2026-08-04: "This takes a lot of real estate"). The queue set the
-                 precedent — the row keeps the fact, the words move behind a door —
-                 and the sentences inside the fold are UNCHANGED, verbatim. */
-              <div data-role="clock-unverified" role="status" className="adjust-clock-notice">
-                <div className="adjust-clock-notice__row">
-                  <span data-role="clock-unverified-lead" className="adjust-clock-notice__lead">
-                    The rotation could not be verified automatically — auto-mark
-                    is the documented answer.
-                  </span>
-                  <button
-                    type="button"
-                    data-role="verify-rotation"
-                    className="button button--secondary button--small"
-                    onClick={() => onSelectTool(clockNotice.armTool)}
-                  >
-                    Switch to auto-mark
-                  </button>
-                </div>
-                <details data-role="clock-unverified-words" className="adjust-clock-notice__fold">
-                  <summary className="adjust-clock-notice__summary">
-                    why, and what auto-mark records
-                  </summary>
-                  <p data-role="clock-unverified-facts" className="adjust-clock-notice__line">
-                    {clockNotice.facts}
-                  </p>
-                  <p data-role="clock-unverified-act" className="adjust-clock-notice__line">
-                    {clockNotice.act}
-                  </p>
-                </details>
-              </div>
-            )}
+                THE CLOCK NOTICE NO LONGER STANDS HERE (§10-AN slice D, client
+                screenshots: at a short window this standing band — on a
+                `flex-shrink: 0` ancestor, outside the dock's own max-height —
+                pushed the whole page back into scroll). It is ONE MORE entry in
+                AdjustDock's caution chip/dialog now, counted the same way and
+                carrying the same sentences and the same act; see AdjustDockProps'
+                own note. `clockNotice` passes straight through unchanged. */}
 
             <AdjustDock
               tool={tool}
@@ -738,6 +711,7 @@ export function AdjustStageView({
               cautionsOpen={cautionsOpen}
               onOpenCautions={onOpenCautions}
               onCloseCautions={onCloseCautions}
+              clockNotice={clockNotice}
             />
           </section>
         </div>
