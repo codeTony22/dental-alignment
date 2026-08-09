@@ -28,6 +28,9 @@ export interface Viewer3DHandle {
   loadComposite(parts: readonly CompositePartSpec[], fit?: ViewerFitMode): Promise<void>;
   getCompositeRoles(): PartRole[];
   setAnatomyView(view: AnatomyViewId): void;
+  /** The case's jaw, for the anatomical presets' roll only — "upper" hangs the crowns
+   *  DOWN (client 2026-08-09). See SceneController.setJaw. */
+  setJaw(jaw: string | null | undefined): void;
   hasAnatomyFrame(): boolean;
   /** Route the stage to a site's neighbourhood. False = refused (a tool is armed, or bad input). */
   focusOnSite(
@@ -126,6 +129,9 @@ export const Viewer3D = forwardRef<Viewer3DHandle, Viewer3DProps>(function Viewe
       },
       getCompositeRoles() {
         return controllerRef.current?.getCompositeRoles() ?? [];
+      },
+      setJaw(jaw) {
+        controllerRef.current?.setJaw(jaw);
       },
       setAnatomyView(view) {
         controllerRef.current?.setAnatomyView(view);

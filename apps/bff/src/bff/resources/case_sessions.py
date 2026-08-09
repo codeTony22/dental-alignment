@@ -181,6 +181,13 @@ class DetectedProposalView(BaseModel):
 
 class DetectionView(BaseModel):
     proposals: List[DetectedProposalView]
+    # §10-AM built: the scan's own jaw reading (application.detection.jaw_from_crown_axis)
+    # -- None before detection runs, or when the crown axis makes no claim (a sideways
+    # export). ``effective_jaw`` only carries this value while nothing is chosen; once a
+    # chosen jaw contradicts it, the raw reading survives only HERE, which is what lets
+    # the UI highlight the geometry's own answer on the jaw buttons (the advisory's
+    # one-click fix) even while the effective value disagrees with it.
+    jaw_reading: Optional[str] = None
 
 
 class EffectiveChoiceView(BaseModel):
@@ -233,6 +240,12 @@ class ChoicesView(BaseModel):
     # the standing default answers it, so a case is never incomplete for want of a
     # commercial choice nobody has to make
     complete: bool
+    # §10-AM built: composed server-side, non-null EXACTLY when a scan jaw reading
+    # exists AND contradicts the EFFECTIVE jaw (never the raw/declared one — a jaw
+    # the operator chose to match the scan must not keep warning about itself). The
+    # advisory never blocks: jaw stays the operator's choice, one click away from
+    # matching what the scan itself says. Rendered verbatim; the UI composes nothing.
+    jaw_advisory: Optional[str] = None
 
 
 class CaseView(BaseModel):
@@ -716,7 +729,16 @@ def _release_preview(session: CaseSession) -> Optional[ReleasePreviewView]:
     DONE run — before that there is no fixed answer, and inventing one would be a
     promise about a case that has not been confirmed. The split is
     ``session.split_released_files``: the artifact gate's own rule, so this
-    description and that disclosure are one derivation."""
+    description and that disclosure are one derivation.
+
+    THE INVOICE COUNTS TOO, under the exact condition ``deliver.list_artifacts``
+    appends it (client 2026-08-09: "plus the invoice") — ``session.
+    payment_authorized``. Not imported from ``deliver`` (that module imports THIS
+    one; a cycle), so the condition is restated rather than shared code — but it
+    is the same boolean read off the same session field, never a second guess at
+    when the row appears. Skipping it here is exactly the divergence this
+    function's own docstring exists to prevent: ``TestTheReleasePreview`` pins
+    that the promise and the disclosure never disagree on a count."""
     run, confirmation = session.run, session.confirmation
     if (run is None or run.state != "done" or confirmation is None
             or confirmation.run_id != (run.run_id or run.job_id)):
@@ -725,8 +747,9 @@ def _release_preview(session: CaseSession) -> Optional[ReleasePreviewView]:
     released = released_teeth_of(confirmation.dispositions)
     files, held_case_files = split_released_files(
         run.package_files, teeth, released, session.case_id)
+    invoice_files = 1 if session.payment_authorized else 0
     return ReleasePreviewView(
-        file_count=len(files),
+        file_count=len(files) + invoice_files,
         teeth=released,
         withheld_teeth=sorted(set(teeth) - set(released)),
         withheld_case_file_count=len(held_case_files),
@@ -837,14 +860,24 @@ class EffectiveChoices:
         return (self.construction_path, self.jaw, self.gingival_offset_mm)
 
 
-def _effective_choices(case: CaseRecord, choices: CaseChoices) -> EffectiveChoices:
+def _effective_choices(case: CaseRecord, choices: CaseChoices,
+                       detection: Optional[DetectionRecord] = None) -> EffectiveChoices:
     """The ``_effective_model`` pattern, mirrored onto the case-level choices
     (client 2026-07-27: 'once implant system and variant for tooth are selected
     the union needs to show up' — the case already carries the suggestions):
     chosen ?? suggested (construction, jaw) ?? standing default (relief). A pure
     READ-time derivation: nothing here ever writes the session, so the raw choices
     stay honestly None until the operator acts and the reset boundaries only fire
-    on an explicit CHANGE, never off a default."""
+    on an explicit CHANGE, never off a default.
+
+    JAW precedence (§10-AM built): chosen beats the SCAN's own reading beats the
+    filename suggestion. The scan reading outranks the filename because it is
+    measured off the geometry the run actually seats against, while the filename
+    is a substring guess that silently defaulted on the very case that started
+    this (the arch upload, jaw=upper from no "lower" in its name, geometry lower).
+    Detection is optional (a case not yet detected has no reading yet) — the
+    filename suggestion is always the honest fallback, never upgraded to a claim
+    it cannot support."""
     if choices.construction_path is not None:
         construction = (choices.construction_path, "chosen")
     elif case.suggested_construction is not None:
@@ -853,6 +886,8 @@ def _effective_choices(case: CaseRecord, choices: CaseChoices) -> EffectiveChoic
         construction = (None, "none")
     if choices.jaw is not None:
         jaw = (choices.jaw, "chosen")
+    elif detection is not None and detection.jaw_reading is not None:
+        jaw = (detection.jaw_reading, "scan")   # measured off the crowns' own axis
     elif case.jaw:
         jaw = (case.jaw, "suggested")   # read off the scan filename by discovery
     else:
@@ -890,7 +925,7 @@ def _ceilings(case: CaseRecord, session: CaseSession, sites: List[SiteView],
     declaration since slice 5a, the suggestion else). Without a system+construction
     there is nothing meaningful to measure — the list is honestly empty, never
     guessed."""
-    construction = _effective_choices(case, session.choices).construction_path
+    construction = _effective_choices(case, session.choices, session.detection).construction_path
     model = _effective_model(case, session)
     if model is None or construction is None:
         return []
@@ -916,18 +951,41 @@ def _detection_record(result: DetectionResult) -> DetectionRecord:
             tooth_guess=p.tooth_guess, capture=p.capture,
         ) for p in result.proposals],
         site_capture={str(s.tooth): s.capture for s in result.suggested},
+        jaw_reading=result.jaw_reading,
     )
 
 
 def _detection_view(session: CaseSession) -> Optional[DetectionView]:
     if session.detection is None:
         return None
-    return DetectionView(proposals=[
-        DetectedProposalView(**p.model_dump()) for p in session.detection.proposals])
+    return DetectionView(
+        proposals=[DetectedProposalView(**p.model_dump())
+                  for p in session.detection.proposals],
+        jaw_reading=session.detection.jaw_reading,
+    )
+
+
+def _jaw_advisory(detection: Optional[DetectionRecord],
+                  effective_jaw: Optional[str]) -> Optional[str]:
+    """The composed advisory sentence (§10-AM built), non-null EXACTLY when a scan
+    reading exists and disagrees with the EFFECTIVE jaw. Composed here, not the UI:
+    every fact in the sentence (the reading, the crown direction it stands on, the
+    case's own jaw) is a server derivation, and a client composing it from parts
+    could drift from what was actually measured. Checked against the effective jaw,
+    not the raw declared one, so an operator who already fixed the choice — chosen
+    now matching the scan — stops seeing a warning about a disagreement that no
+    longer exists."""
+    reading = detection.jaw_reading if detection is not None else None
+    if reading is None or effective_jaw is None or reading == effective_jaw:
+        return None
+    direction = "up" if reading == "lower" else "down"
+    return (f"This scan reads as a {reading} jaw — the crowns point {direction} "
+            f"along the scan's own axis — but the case says {effective_jaw}. Check "
+            f"the jaw choice; the package and its labels are named by it.")
 
 
 def _choices_view(case: CaseRecord, session: CaseSession) -> ChoicesView:
-    effective = _effective_choices(case, session.choices)
+    effective = _effective_choices(case, session.choices, session.detection)
     return ChoicesView(
         construction_path=session.choices.construction_path,
         jaw=session.choices.jaw,
@@ -950,6 +1008,7 @@ def _choices_view(case: CaseRecord, session: CaseSession) -> ChoicesView:
             for word in TURNAROUNDS
         ],
         complete=effective.complete,
+        jaw_advisory=_jaw_advisory(session.detection, effective.jaw),
     )
 
 
@@ -1063,7 +1122,7 @@ def worklist(request: Request) -> List[WorklistRow]:
             confirmed=session.confirmation is not None,
             released=_released(session),
             detected=session.detection is not None,
-            choices_complete=_effective_choices(case, session.choices).complete,
+            choices_complete=_effective_choices(case, session.choices, session.detection).complete,
         ))
     return rows
 
@@ -1252,8 +1311,8 @@ def put_choices(case_id: str, body: ChoicesIn, request: Request) -> CaseSessionD
             gingival_offset_mm=body.gingival_offset_mm,
             turnaround=body.turnaround,
         )
-        eff_new = _effective_choices(case, replacement)
-        eff_old = _effective_choices(case, session.choices)
+        eff_new = _effective_choices(case, replacement, session.detection)
+        eff_old = _effective_choices(case, session.choices, session.detection)
         effective_changed = eff_new.values != eff_old.values
         # THE RE-EMIT BOUNDARY (§10-AC, retiring §10-M's deadlock): a change that
         # touches ONLY the construction part and/or the relief, over a DONE run,
@@ -1365,7 +1424,7 @@ def put_site_relief(case_id: str, tooth: int, body: SiteReliefIn,
         if before == after:
             return   # an identical re-assertion states nothing new
         site.gingival_offset_mm = after
-        effective = _effective_choices(case, session.choices)
+        effective = _effective_choices(case, session.choices, session.detection)
         run_done = (session.run is not None and session.run.state == "done"
                     and (session.run.run_id or session.run.job_id) is not None)
         if run_done:
@@ -1562,7 +1621,7 @@ def preview_site_action(case_id: str, tooth: int, request: Request) -> dict:
         the piece no fallback covers."""
         _require_known_tooth(case, session, tooth)
         site = session.sites.get(str(tooth))
-        effective = _effective_choices(case, session.choices)
+        effective = _effective_choices(case, session.choices, session.detection)
         model = _effective_model(case, session)
         missing = []
         if site is None or site.declared_variant is None:
@@ -2074,7 +2133,7 @@ def _authorized_selection(case: CaseRecord, case_id: str,
     sites = _site_views(case, session)
     missing: List[str] = []
     model = _effective_model(case, session)
-    effective = _effective_choices(case, session.choices)
+    effective = _effective_choices(case, session.choices, session.detection)
     if model is None:
         missing.append("the implant system")
     if effective.construction_path is None:

@@ -23,7 +23,8 @@ from case_prep.application.cases import CaseRecord, discover_cases
 from case_prep.application.detection import (CaptureContext, DetectionResult,
                                              FALLBACK_RIM_RADIUS_MM, ScanUnreadable,
                                              capture_context, detect,
-                                             site_capture_inputs, tooth_guess_for)
+                                             jaw_from_crown_axis, site_capture_inputs,
+                                             tooth_guess_for)
 
 REAL = Path(__file__).resolve().parents[1] / "data" / "real"
 real_only = pytest.mark.skipif(not (REAL / "library").is_dir(),
@@ -97,6 +98,36 @@ class TestCaptureContext:
         assert np.allclose(back, pts, atol=1e-9)
 
 
+class TestJawFromCrownAxis:
+    """The measured convention (§10-AM): crown-up reads jaw-signed across the fleet --
+    +z for a lower arch, -z for an upper one -- within a 60-degree cone of either pole.
+    Outside that cone the reading is an honest ``None``, never a coin-flip guess (the
+    tooth_guess_for discipline applied to the jaw). This is a SUGGESTION only: nothing
+    here writes the declared jaw or touches scan bytes."""
+
+    def test_a_z_aligned_crown_axis_reads_lower(self):
+        assert jaw_from_crown_axis([0.0, 0.0, 1.0]) == "lower"
+
+    def test_a_minus_z_crown_axis_reads_upper(self):
+        assert jaw_from_crown_axis([0.0, 0.0, -1.0]) == "upper"
+
+    def test_a_horizontal_axis_makes_no_claim(self):
+        assert jaw_from_crown_axis([1.0, 0.0, 0.0]) is None
+
+    def test_the_cone_boundary_is_inclusive_toward_lower(self):
+        # z-component exactly cos(60deg) = 0.5 -- the >= boundary
+        axis = [np.sqrt(1.0 - 0.5 ** 2), 0.0, 0.5]
+        assert jaw_from_crown_axis(axis) == "lower"
+
+    def test_the_cone_boundary_is_inclusive_toward_upper(self):
+        axis = [np.sqrt(1.0 - 0.5 ** 2), 0.0, -0.5]
+        assert jaw_from_crown_axis(axis) == "upper"
+
+    def test_just_inside_the_cone_makes_no_claim(self):
+        axis = [np.sqrt(1.0 - 0.49 ** 2), 0.0, 0.49]
+        assert jaw_from_crown_axis(axis) is None
+
+
 class TestToothGuess:
     """NEW product logic (recorded as a divergence in ledger row 6): the demo's
     proposals carry no tooth — its operator assigns one at confirmation. Intake's site
@@ -151,9 +182,28 @@ class TestDetectOnTheRealTree:
         assert [s.tooth for s in result.suggested] == [4, 13]
         for s in result.suggested:
             assert s.capture["verdict"] in ("pass", "marginal", "rescan")
+        assert len(result.crown_axis) == 3
+        assert result.jaw_reading in (None, "upper", "lower")
 
     def test_detection_is_deterministic_given_the_case(self):
         case = next(c for c in discover_cases(REAL) if c.id == "neodent-gm")
         a, b = detect(case), detect(case)
         assert [p.center for p in a.proposals] == [p.center for p in b.proposals]
         assert [s.capture for s in a.suggested] == [s.capture for s in b.suggested]
+
+
+@real_only
+@pytest.mark.slow  # parses the real scan and derives the crown axis
+class TestJawReadingOnTheRealTree:
+    """§10-AM's one real catch: this case's scan filename carries no "lower", so
+    ``discover_cases`` defaults its jaw to "upper" -- but the geometry itself, read
+    off the crowns' own axis, says "lower". This is the gap the cross-check exists
+    to close (never silently correct -- surface the contradiction and let the
+    operator fix it in one click)."""
+
+    def test_the_arch_upload_geometry_reads_lower_though_its_filename_says_upper(self):
+        case = next(c for c in discover_cases(REAL)
+                   if c.id == "297589851-neodent-gm-arch-with-healingcaps")
+        assert case.jaw == "upper"  # the filename heuristic's wrong default
+        result = detect(case)
+        assert result.jaw_reading == "lower"

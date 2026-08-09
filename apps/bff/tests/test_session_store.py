@@ -19,12 +19,13 @@ session fields from a request body — see test_case_sessions for the route-shap
 """
 from __future__ import annotations
 
+import json
 import threading
 
 import pytest
 
-from bff.session import (CaseSession, RunSession, SessionConflict, SessionStore,
-                         SiteSession, SiteStatus)
+from bff.session import (CaseSession, DetectionRecord, RunSession, SessionConflict,
+                         SessionStore, SiteSession, SiteStatus)
 
 
 def test_a_missing_session_starts_fresh_and_fail_closed(tmp_path):
@@ -53,6 +54,28 @@ def test_save_then_load_round_trips_every_field(tmp_path):
     assert again.adjust_visited is True
     assert again.run is not None and again.run.refusal == "gate said no"
     assert (tmp_path / "case-a" / "session.json").is_file()
+
+
+def test_a_document_predating_jaw_reading_loads_with_it_honestly_absent(tmp_path):
+    """§10-AM built: ``DetectionRecord.jaw_reading`` is ADDITIVE Optional (default
+    None) exactly so a document written before the field existed loads cleanly
+    rather than refusing — the store's own schema-additivity promise (module
+    docstring), pinned the way ``payment_authorized``'s pre-8 default already is
+    above."""
+    store = SessionStore(tmp_path)
+    s = store.load("case-a")
+    s.detection = DetectionRecord(proposals=[], site_capture={"4": {"verdict": "pass"}},
+                                  jaw_reading="lower")
+    store.save(s)
+    path = tmp_path / "case-a" / "session.json"
+    doc = json.loads(path.read_text())
+    assert doc["detection"]["jaw_reading"] == "lower"   # sanity: today's shape carries it
+    del doc["detection"]["jaw_reading"]                 # simulate a document written before
+    path.write_text(json.dumps(doc))
+    again = SessionStore(tmp_path).load("case-a")
+    assert again.detection is not None
+    assert again.detection.jaw_reading is None
+    assert again.detection.site_capture == {"4": {"verdict": "pass"}}
 
 
 def test_save_leaves_no_partial_files_beside_the_session(tmp_path):

@@ -76,6 +76,60 @@ describe("anatomyViewOrientation — the four presets' camera math", () => {
     expect(up).toEqual([0, 1, 0]); // the anterior axis — that IS the screen-top roll
   });
 
+  /* THE JAW CHOOSES THE ROLL (client 2026-08-09, on an upper-jaw Intake: "we recognize
+     that the scan was an upper jaw but we didnt set the camara / posisiton to be facing
+     with the teeth downwards").
+
+     An upper arch's teeth point DOWN in the patient. `up = occlusal` puts the crowns at
+     the TOP of the screen for every scan, which reads as a lower jaw whatever the case
+     says. `crownsDown` flips the ROLL only — the view DIRECTION is untouched, because
+     the camera already sits on the side the crowns face (the elevation term rides
+     `occlusal`, which for an upper arch points down, so the camera is correctly below).
+     Nothing here transforms geometry: §10-AM's rule is that the jaw is a name and a
+     cross-check, never a transform, and a camera's roll is neither. */
+  it("crownsDown flips the roll and NOTHING else", () => {
+    const plain = anatomyViewOrientation(CANONICAL_FRAME, "front");
+    const flipped = anatomyViewOrientation(CANONICAL_FRAME, "front", {
+      crownsDown: true,
+    });
+    expect(flipped.up).toEqual([-0, -0, -1]);
+    expect(flipped.direction[0]).toBeCloseTo(plain.direction[0]!, 12);
+    expect(flipped.direction[1]).toBeCloseTo(plain.direction[1]!, 12);
+    expect(flipped.direction[2]).toBeCloseTo(plain.direction[2]!, 12);
+  });
+
+  it("crownsDown rolls the profile views too — one arch, one horizon", () => {
+    for (const view of ["left", "right"] as const) {
+      const plain = anatomyViewOrientation(CANONICAL_FRAME, view);
+      const flipped = anatomyViewOrientation(CANONICAL_FRAME, view, {
+        crownsDown: true,
+      });
+      expect(dot(flipped.up, plain.up)).toBeCloseTo(-1, 10);
+      expect(dot(flipped.direction, plain.direction)).toBeCloseTo(1, 10);
+    }
+  });
+
+  it("the occlusal view's roll is the anterior axis, jaw or no jaw", () => {
+    /* A plan view has no crowns-up question to answer — you are looking straight AT the
+       biting surfaces from the side they face, on either jaw. Its roll stays the
+       anterior axis so the front teeth stay at the top of the screen. */
+    const flipped = anatomyViewOrientation(CANONICAL_FRAME, "occlusal", {
+      crownsDown: true,
+    });
+    expect(flipped.up).toEqual([0, 1, 0]);
+  });
+
+  it("omitting the option leaves every preset exactly as it was", () => {
+    for (const view of ["front", "left", "right", "occlusal"] as const) {
+      const bare = anatomyViewOrientation(CANONICAL_FRAME, view);
+      const explicit = anatomyViewOrientation(CANONICAL_FRAME, view, {
+        crownsDown: false,
+      });
+      expect(explicit.up).toEqual(bare.up);
+      expect(explicit.direction).toEqual(bare.direction);
+    }
+  });
+
   it("left and right are mirror images across the front view's vertical plane", () => {
     const left = anatomyViewOrientation(CANONICAL_FRAME, "left").direction;
     const right = anatomyViewOrientation(CANONICAL_FRAME, "right").direction;

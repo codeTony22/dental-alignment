@@ -259,6 +259,12 @@ export interface MainStageProps {
    *  what every existing mount wants. */
   readonly markArmed?: boolean;
   readonly onMark?: ((point: readonly [number, number, number]) => void) | null;
+  /** THE CASE'S JAW (client 2026-08-09: "we recognize that the scan was an upper jaw but
+   *  we didnt set the camara / posisiton to be facing with the teeth downwards"). "upper"
+   *  rolls the anatomical presets so the crowns hang DOWN, as they do in the patient.
+   *  Omitted/null keeps the standing crowns-up roll — a mount that does not know the jaw
+   *  must not guess one. Presentation only: no geometry moves (§10-AM). */
+  readonly jaw?: string | null;
 }
 
 /** The container: streams the scan, opens FRONT, routes to the active site. */
@@ -271,6 +277,7 @@ export function MainStage({
   activeTooth,
   markArmed = false,
   onMark = null,
+  jaw = null,
 }: MainStageProps) {
   const viewerRef = useRef<Viewer3DHandle | null>(null);
   const [scanState, setScanState] = useState<ScanLoadState>({ kind: "loading" });
@@ -303,6 +310,11 @@ export function MainStage({
     let cancelled = false;
     setScanState({ kind: "loading" });
     routedKeyRef.current = null;
+    // THE JAW GOES FIRST (client 2026-08-09). loadStl's own auto-front fires the moment
+    // the frame is derived, so the roll has to be in place BEFORE the load, not after —
+    // set it after and every scan opens crowns-up and then flips, which is a worse bug
+    // than the one being fixed.
+    viewerRef.current?.setJaw(jaw);
     // anatomy: true — the viewer derives the anatomical frame and OPENS AT FRONT, the
     // safe rim-reading angle (sceneController.loadStl's own contract).
     void viewerRef.current
@@ -323,6 +335,15 @@ export function MainStage({
       cancelled = true;
     };
   }, [caseId]);
+
+  /* A jaw CHANGE after the load re-rolls the camera in place. The load effect keys on
+     `caseId` alone on purpose — adding `jaw` there would re-download the whole scan to
+     answer what is only a camera question — so the operator flipping upper/lower at
+     Intake is answered here instead: setJaw re-applies whichever preset is showing. */
+  useEffect(() => {
+    if (scanState.kind !== "ready") return;
+    viewerRef.current?.setJaw(jaw);
+  }, [jaw, scanState.kind]);
 
   // Markers follow the payload, not click history: whatever the BFF's detection
   // record says, after every load and on every change (an empty list CLEARS — a

@@ -54,6 +54,8 @@ import {
   OFF_SCAN_MISS_WORDS,
 } from "../domain/intake";
 import { MainStage } from "./MainStage";
+import { useDialogEscape } from "./useDialogEscape";
+import { useDialogFocus } from "./useDialogFocus";
 
 /** Detection's honest lifecycle on this mount — never a spinner over a lie. */
 export type DetectPhase =
@@ -550,17 +552,27 @@ export interface ChoicesPanelProps {
   readonly saving: boolean;
   readonly error: string | null;
   readonly onChoice: (patch: Partial<ChoicesUpdate>) => void;
+  /** §10-AM built: the jaw cross-check's caution dialog, open-state via PROP —
+   *  the §10-AN slice-C precedent (AdjustDock's `cautionsOpen`) applied here so a
+   *  static render can pin the dialog open without simulating a click. Optional
+   *  with defaults: every existing caller (and every fixture predating this)
+   *  renders it closed. */
+  readonly jawAdvisoryOpen?: boolean;
+  readonly onOpenJawAdvisory?: () => void;
+  readonly onCloseJawAdvisory?: () => void;
 }
 
 /** The prefilled-choice chip (client 2026-07-27): the SERVER's attribution, worn
  * exactly like the system bar's "suggested" tag — "suggested" on a fallback the
- * case supplied, "default" on the standing relief. An operator's chosen value
- * carries no chip, and "none" has no value to tag. */
+ * case supplied, "default" on the standing relief, "read from the scan" on the
+ * jaw's new §10-AM rung (the raw word "scan" alone would not say where a reading
+ * comes from). An operator's chosen value carries no chip, and "none" has no
+ * value to tag. */
 function ChoiceSourceChip({
   source,
   choice,
 }: {
-  readonly source: "chosen" | "suggested" | "default" | "none";
+  readonly source: "chosen" | "scan" | "suggested" | "default" | "none";
   readonly choice: string;
 }) {
   if (source === "chosen" || source === "none") return null;
@@ -570,7 +582,7 @@ function ChoiceSourceChip({
       data-choice={choice}
       className="library-badge library-badge--suggested"
     >
-      {source}
+      {source === "scan" ? "read from the scan" : source}
     </span>
   );
 }
@@ -582,11 +594,30 @@ function ChoiceSourceChip({
  * slice: the demo's selection-card language — the decode select, the Upper/Lower
  * pair, the relief input beside its measured ceilings with the amber
  * over-ceiling tone. */
-export function ChoicesPanel({ detail, saving, error, onChoice }: ChoicesPanelProps) {
+export function ChoicesPanel({
+  detail,
+  saving,
+  error,
+  onChoice,
+  jawAdvisoryOpen = false,
+  onOpenJawAdvisory = () => undefined,
+  onCloseJawAdvisory = () => undefined,
+}: ChoicesPanelProps) {
   const chosen = detail.choices;
   const construction = chosen.effective_construction.value ?? "";
   const jaw = chosen.effective_jaw.value;
   const relief = chosen.effective_relief.value ?? chosen.gingival_offset_default_mm;
+  // §10-AM built: non-null exactly when the SERVER found a contradiction between
+  // the scan's own reading and the effective jaw — composed server-side, rendered
+  // verbatim (never recomposed here). The RAW reading (for the one-click fix's
+  // button highlight) lives on `detection`, not `choices`: `effective_jaw` only
+  // carries it while nothing is chosen, and the advisory only exists once
+  // something IS (§10-AM: a cross-check, never a silent correction).
+  const jawAdvisory = chosen.jaw_advisory ?? null;
+  const geometryJaw = detail.detection?.jaw_reading ?? null;
+  const jawAdvisoryDialogRef = useRef<HTMLElement | null>(null);
+  useDialogEscape(jawAdvisoryOpen, onCloseJawAdvisory);
+  useDialogFocus(jawAdvisoryOpen, jawAdvisoryDialogRef);
   return (
     <section data-role="intake-choices" className="panel">
       <h3 className="panel__title">Case-level choices</h3>
@@ -619,21 +650,40 @@ export function ChoicesPanel({ detail, saving, error, onChoice }: ChoicesPanelPr
           <h4 className="decode-section__title">
             Jaw
             <ChoiceSourceChip source={chosen.effective_jaw.source} choice="jaw" />
+            {/* THE JAW CROSS-CHECK CHIP (§10-AM built). Non-null `jaw_advisory` IS
+                the trigger — this app never re-derives the contradiction, only
+                renders that one served fact exists. The advisory never blocks:
+                jaw stays the operator's choice, one click away on the buttons
+                below (the geometry's own answer, highlighted). */}
+            {jawAdvisory !== null && (
+              <button
+                type="button"
+                data-role="jaw-advisory-chip"
+                className="chip chip--exception caution-chip"
+                onClick={onOpenJawAdvisory}
+              >
+                ⚠ check jaw
+              </button>
+            )}
           </h4>
           <div data-role="choice-jaw" className="decode-jaw" role="group" aria-label="Jaw">
-            {JAW_CHOICES.map((candidate) => (
-              <button
-                key={candidate}
-                type="button"
-                aria-pressed={candidate === jaw}
-                className={`decode-jaw__option${
-                  candidate === jaw ? " decode-jaw__option--selected" : ""
-                }`}
-                onClick={() => onChoice({ jaw: candidate })}
-              >
-                {candidate}
-              </button>
-            ))}
+            {JAW_CHOICES.map((candidate) => {
+              const isGeometryAnswer = jawAdvisory !== null && candidate === geometryJaw;
+              return (
+                <button
+                  key={candidate}
+                  type="button"
+                  aria-pressed={candidate === jaw}
+                  data-geometry-answer={isGeometryAnswer ? "true" : undefined}
+                  className={`decode-jaw__option${
+                    candidate === jaw ? " decode-jaw__option--selected" : ""
+                  }${isGeometryAnswer ? " decode-jaw__option--geometry" : ""}`}
+                  onClick={() => onChoice({ jaw: candidate })}
+                >
+                  {candidate}
+                </button>
+              );
+            })}
           </div>
         </div>
         <div>
@@ -720,6 +770,51 @@ export function ChoicesPanel({ detail, saving, error, onChoice }: ChoicesPanelPr
       {error !== null && (
         <div data-role="choices-error" role="alert" className="panel__error">
           {error}
+        </div>
+      )}
+      {/* THE JAW ADVISORY MODAL (§10-AM built). Same decode-dialog chrome as every
+          other dialog in this app (AdjustDock's pair-caution dialog is the direct
+          precedent) — scrim, role="dialog", escape + focus trap — carrying the
+          server's own sentence VERBATIM, nothing folded or paraphrased. */}
+      {jawAdvisoryOpen && jawAdvisory !== null && (
+        <div
+          data-role="jaw-advisory-backdrop"
+          className="decode-dialog-backdrop"
+          onClick={onCloseJawAdvisory}
+        >
+          <section
+            ref={jawAdvisoryDialogRef}
+            data-role="jaw-advisory-dialog"
+            className="decode-dialog decode-dialog--narrow"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="jaw-advisory-heading"
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="decode-dialog__header">
+              <div>
+                <h2 id="jaw-advisory-heading" className="decode-dialog__title">
+                  Check the jaw choice
+                </h2>
+                <p className="decode-dialog__subject">
+                  The server's own words. Nothing here is a summary of them.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-role="jaw-advisory-close"
+                data-autofocus=""
+                className="button button--ghost button--small"
+                onClick={onCloseJawAdvisory}
+              >
+                Close
+              </button>
+            </header>
+            <div className="decode-dialog__body">
+              <p data-role="jaw-advisory-text">{jawAdvisory}</p>
+            </div>
+          </section>
         </div>
       )}
     </section>
@@ -894,6 +989,10 @@ export interface IntakeStageViewProps {
   readonly onUseDetectorCentre?: (tooth: number, point: readonly number[]) => void;
   readonly onConfirmDetectorCentre?: (tooth: number, point: readonly number[]) => void;
   readonly onCancelDetectorCentre?: () => void;
+  /** §10-AM built: the jaw cross-check's caution dialog, threaded to `ChoicesPanel`. */
+  readonly jawAdvisoryOpen?: boolean;
+  readonly onOpenJawAdvisory?: () => void;
+  readonly onCloseJawAdvisory?: () => void;
 }
 
 /** The stage's whole surface, pure payload → markup — statically testable. */
@@ -938,6 +1037,9 @@ export function IntakeStageView({
   onUseDetectorCentre = () => undefined,
   onConfirmDetectorCentre = () => undefined,
   onCancelDetectorCentre = () => undefined,
+  jawAdvisoryOpen = false,
+  onOpenJawAdvisory = () => undefined,
+  onCloseJawAdvisory = () => undefined,
 }: IntakeStageViewProps) {
   const facts = factsFromCaseSession(detail);
   const declareOpen = isReachable("declare", facts);
@@ -968,6 +1070,9 @@ export function IntakeStageView({
               sites={detail.sites}
               markers={detectionMarkers(detail)}
               activeTooth={activeTooth}
+              /* The effective jaw, not the raw reading: if the operator has overridden
+                 what the scan says, the view follows THEIR answer (client 2026-08-09). */
+              jaw={detail.choices.effective_jaw.value}
               // ONE point-pick door, THREE callers (client 2026-07-31, extended
               // 2026-08-01): the stage arms the viewer's one-shot pick while the
               // missed-cap mark, the site picker OR a confirmed re-mark is armed, and
@@ -1044,6 +1149,9 @@ export function IntakeStageView({
           saving={savingChoices}
           error={choicesError}
           onChoice={onChoice}
+          jawAdvisoryOpen={jawAdvisoryOpen}
+          onOpenJawAdvisory={onOpenJawAdvisory}
+          onCloseJawAdvisory={onCloseJawAdvisory}
         />
         <div className="panel__actions panel__actions--advance">
           {declareOpen ? (
@@ -1079,6 +1187,9 @@ export interface IntakeStageProps {
 export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
   const caseId = detail.case.id;
   const firedRef = useRef<string | null>(null);
+  // §10-AM built: the jaw cross-check's caution dialog — owned here, exactly the
+  // §10-AN slice-C precedent (AdjustStage's `cautionsOpen`).
+  const [jawAdvisoryOpen, setJawAdvisoryOpen] = useState(false);
 
   /* MARKING A MISSED CAP (client 2026-07-28). Three states, and the middle one is
      the reason this is not a single form: ARMED (the next scan click is the centre),
@@ -1477,6 +1588,9 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
       onUseDetectorCentre={handleUseDetectorCentre}
       onConfirmDetectorCentre={commitDetectorCentre}
       onCancelDetectorCentre={handleCancelDetectorCentre}
+      jawAdvisoryOpen={jawAdvisoryOpen}
+      onOpenJawAdvisory={() => setJawAdvisoryOpen(true)}
+      onCloseJawAdvisory={() => setJawAdvisoryOpen(false)}
     />
   );
 }

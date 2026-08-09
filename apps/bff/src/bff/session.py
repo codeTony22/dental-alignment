@@ -265,6 +265,11 @@ class DetectionRecord(BaseModel):
 
     proposals: List[DetectedProposal] = Field(default_factory=list)
     site_capture: Dict[str, dict] = Field(default_factory=dict)
+    # §10-AM built: the jaw read off the scan's own crown-up axis (application.detection.
+    # jaw_from_crown_axis) — "lower"/"upper"/None (a sideways export makes no claim).
+    # ADDITIVE Optional, default None: an old session document predating this field loads
+    # cleanly with no reading, exactly the store's schema-additivity discipline.
+    jaw_reading: Optional[str] = None
 
 
 class RunSession(BaseModel):

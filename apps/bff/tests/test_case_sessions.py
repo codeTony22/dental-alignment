@@ -73,9 +73,13 @@ CAP_RESCAN = {"verdict": "rescan", "rim_z_mm": None,
                           "message": "Only 31% of the rim arc is captured."}]}
 
 
-def stub_detection() -> DetectionResult:
+def stub_detection(jaw_reading: str | None = None) -> DetectionResult:
     """A detection result shaped exactly like the application layer's — teeth 4 and 13
-    match the conftest tree's curated sites; one extra proposal has no tooth to inherit."""
+    match the conftest tree's curated sites; one extra proposal has no tooth to inherit.
+    ``jaw_reading`` defaults to None (a case not yet asserting a geometric reading, the
+    pre-§10-AM shape every existing test here still exercises) — the resource never
+    reads ``crown_axis`` (that physics is pinned worker-side, test_detection.py), so a
+    placeholder is honest here."""
     return DetectionResult(
         proposals=(
             DetectedSite(center=(1.0, 2.0, 3.0), void_ratio=0.10,
@@ -87,6 +91,8 @@ def stub_detection() -> DetectionResult:
             SuggestedSiteCapture(tooth=4, center=(1.0, 2.0, 3.0), capture=CAP_PASS),
             SuggestedSiteCapture(tooth=13, center=(4.0, 5.0, 6.0), capture=CAP_RESCAN),
         ),
+        crown_axis=(0.0, 0.0, 0.0),
+        jaw_reading=jaw_reading,
     )
 
 
@@ -188,6 +194,9 @@ class TestCaseSessionDetail:
                 {"value": "rush", "unit_amount_cents": 4800, "currency": "USD"},
             ],
             "complete": True,
+            # no detection has run yet -- nothing to cross-check against, so honestly
+            # absent rather than a warning about a reading that does not exist
+            "jaw_advisory": None,
         }
         assert body["session"] == {
             "tenant_id": "local",
@@ -389,6 +398,84 @@ class TestDetect:
         assert persisted.choices.complete is True
 
 
+class TestJawReadingCrossCheck:
+    """§10-AM built: the jaw reads itself off the scan. ``application.detection``
+    measures a SUGGESTION off the crowns' own axis (test_detection.py pins the
+    physics); this resource's job is precedence (chosen beats the scan reading
+    beats the filename) and the advisory sentence — never a transform, never a
+    silent correction (§10-AM: cross-check, not a rewrite)."""
+
+    def _detected_client(self, settings, monkeypatch, jaw_reading):
+        def stub(case):
+            return stub_detection(jaw_reading=jaw_reading)
+
+        monkeypatch.setattr(case_sessions, "detect", stub)
+        client = TestClient(create_app(settings))
+        client.post("/api/case-sessions/neodent-gm/detect")
+        return client
+
+    def test_the_record_write_persists_the_reading(self, settings, monkeypatch):
+        client = self._detected_client(settings, monkeypatch, "lower")
+        persisted = SessionStore(settings.product_root).load("neodent-gm")
+        assert persisted.detection.jaw_reading == "lower"
+
+    def test_the_detection_view_carries_the_raw_reading(self, settings, monkeypatch):
+        # the RAW reading survives on the wire even once a chosen jaw contradicts it
+        # (effective_jaw only carries it while nothing is chosen) -- the UI's one-click
+        # fix highlights the geometry's own answer on the jaw buttons from THIS field
+        client = self._detected_client(settings, monkeypatch, "lower")
+        client.put("/api/case-sessions/neodent-gm/choices", json={"jaw": "upper"})
+        body = client.get("/api/case-sessions/neodent-gm").json()
+        assert body["detection"]["jaw_reading"] == "lower"
+
+    def test_a_scan_reading_beats_the_filename_suggestion(self, settings, monkeypatch):
+        # the fixture's scan file is "upper_jaw.stl" -- the filename suggestion is
+        # "upper" -- but the scan itself, once detected, reads "lower"
+        client = self._detected_client(settings, monkeypatch, "lower")
+        body = client.get("/api/case-sessions/neodent-gm").json()
+        assert body["choices"]["effective_jaw"] == {"value": "lower", "source": "scan"}
+        # effective now EQUALS the reading -- nothing to warn about
+        assert body["choices"]["jaw_advisory"] is None
+
+    def test_a_chosen_jaw_beats_the_scan_reading(self, settings, monkeypatch):
+        client = self._detected_client(settings, monkeypatch, "lower")
+        body = client.put("/api/case-sessions/neodent-gm/choices",
+                          json={"jaw": "upper"}).json()
+        assert body["choices"]["effective_jaw"] == {"value": "upper", "source": "chosen"}
+
+    def test_the_advisory_names_the_contradiction_between_chosen_and_scan(
+            self, settings, monkeypatch):
+        client = self._detected_client(settings, monkeypatch, "lower")
+        body = client.put("/api/case-sessions/neodent-gm/choices",
+                          json={"jaw": "upper"}).json()
+        assert body["choices"]["jaw_advisory"] == (
+            "This scan reads as a lower jaw — the crowns point up along the "
+            "scan's own axis — but the case says upper. Check the jaw choice; "
+            "the package and its labels are named by it.")
+
+    def test_the_advisory_is_absent_when_the_chosen_jaw_matches_the_reading(
+            self, settings, monkeypatch):
+        client = self._detected_client(settings, monkeypatch, "lower")
+        body = client.put("/api/case-sessions/neodent-gm/choices",
+                          json={"jaw": "lower"}).json()
+        assert body["choices"]["jaw_advisory"] is None
+
+    def test_the_advisory_is_absent_before_detection_has_run(self, client):
+        # no reading exists yet -- nothing to cross-check the declared jaw against
+        body = client.put("/api/case-sessions/neodent-gm/choices",
+                          json={"jaw": "lower"}).json()
+        assert body["choices"]["jaw_advisory"] is None
+
+    def test_an_ambiguous_reading_makes_no_claim_and_no_advisory(
+            self, settings, monkeypatch):
+        # jaw_from_crown_axis returned None (a sideways export) -- honest absence,
+        # never a coin-flip: the filename suggestion still stands
+        client = self._detected_client(settings, monkeypatch, None)
+        body = client.get("/api/case-sessions/neodent-gm").json()
+        assert body["choices"]["effective_jaw"] == {"value": "upper", "source": "suggested"}
+        assert body["choices"]["jaw_advisory"] is None
+
+
 class TestChoices:
     """PUT /{id}/choices (plan §4/§6): the case-level operator choices, re-validated by
     the BFF in the demo's own words — the UI is untrusted (AM-9, ledger row 4)."""
@@ -418,6 +505,7 @@ class TestChoices:
                 {"value": "rush", "unit_amount_cents": 4800, "currency": "USD"},
             ],
             "complete": True,
+            "jaw_advisory": None,   # no detection has run -- nothing to cross-check
         }
         # persisted: a fresh app serves the same choices and the worklist's fact
         row, = TestClient(create_app(settings)).get("/api/case-sessions").json()

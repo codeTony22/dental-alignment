@@ -46,6 +46,11 @@ FALLBACK_RIM_RADIUS_MM = 2.6
 # centre is that site seen by the detector, anything farther is its own finding.
 TOOTH_GUESS_RADIUS_MM = 5.0
 
+# cos(60 deg) -- the fleet-measured jaw cone (§10-AM: crown-up sat within 1-16 deg of
+# world z on every one of 10 scans). 60 deg is generous headroom over that spread, not
+# a fitted boundary -- a scan that lands outside it is genuinely ambiguous, not unlucky.
+JAW_AXIS_COS_THRESHOLD = 0.5
+
 
 class ScanUnreadable(RuntimeError):
     """The case's scan could not be parsed into a usable mesh. The message is the whole
@@ -90,6 +95,8 @@ class SuggestedSiteCapture:
 class DetectionResult:
     proposals: Tuple[DetectedSite, ...]
     suggested: Tuple[SuggestedSiteCapture, ...]
+    crown_axis: Tuple[float, float, float]  # world-space crown-up axis, from _crowns_frame
+    jaw_reading: Optional[str]              # jaw_from_crown_axis(crown_axis) -- §10-AM
 
 
 def capture_context(points: np.ndarray, normals: Optional[np.ndarray]) -> CaptureContext:
@@ -143,6 +150,22 @@ def tooth_guess_for(center, suggested_sites: Sequence[Dict],
     return best[1]
 
 
+def jaw_from_crown_axis(axis) -> Optional[str]:
+    """The measured convention (§10-AM): scanners export arches jaw-signed -- crown-up
+    points toward +z for a lower arch, -z for an upper one, confirmed across the whole
+    fleet. Outside a 60-degree cone of either pole the scan makes no claim: a sideways
+    export is honestly ``None``, never a coin-flip guess -- the same discipline
+    ``tooth_guess_for`` applies to an unmatched proposal. A SUGGESTION only: the caller
+    never rewrites the declared jaw or the scan bytes from this (§10-AM: cross-check,
+    never a transform)."""
+    z = float(np.asarray(axis, float)[2])
+    if z >= JAW_AXIS_COS_THRESHOLD:
+        return "lower"
+    if z <= -JAW_AXIS_COS_THRESHOLD:
+        return "upper"
+    return None
+
+
 def _scan_mesh(scan: Path) -> trimesh.Trimesh:
     try:
         mesh = trimesh.load(scan, force="mesh")
@@ -192,4 +215,6 @@ def detect(case: CaseRecord) -> DetectionResult:
             capture=_capture_at(ctx, centre_xy, hint),
         ))
 
-    return DetectionResult(proposals=tuple(proposals), suggested=tuple(suggested))
+    axis = tuple(float(c) for c in ctx.frame[:, 2])  # _crowns_frame's third column -- expose, don't recompute
+    return DetectionResult(proposals=tuple(proposals), suggested=tuple(suggested),
+                           crown_axis=axis, jaw_reading=jaw_from_crown_axis(axis))

@@ -152,6 +152,12 @@ export interface DetectedProposalView {
 
 export interface DetectionView {
   proposals: DetectedProposalView[];
+  /** §10-AM built: the scan's own jaw reading (measured off the crowns' axis) —
+   *  null before detection runs, or when the axis makes no claim (a sideways
+   *  export). `effective_jaw`'s "scan" source only carries this value while
+   *  nothing is chosen; once a chosen jaw disagrees, this is the only place the
+   *  raw reading survives — the jaw buttons' one-click fix reads it from here. */
+  jaw_reading?: string | null;
 }
 
 /** One case-level choice as the automation consumes it (the SystemView pattern
@@ -160,7 +166,11 @@ export interface DetectionView {
  * facts, exactly like the system bar's tag. */
 export interface EffectiveChoiceView<T> {
   value: T | null;
-  source: "chosen" | "suggested" | "default" | "none";
+  /** §10-AM built: "scan" is the jaw's own new rung — the geometry's reading off
+   *  the crowns' axis, ranked between "chosen" and "suggested" (the filename
+   *  guess). No other choice ever serves it (construction/relief have no scan
+   *  reading to fall back to). */
+  source: "chosen" | "scan" | "suggested" | "default" | "none";
 }
 
 /** The turnaround ask (design speedChips 1159-1160): what the lab ASKED FOR, never
@@ -193,6 +203,12 @@ export interface ChoicesView {
   /** DELIBERATELY unaffected by the turnaround: the standing default always answers
    * it, so a case is never incomplete for want of a commercial choice. */
   complete: boolean;
+  /** §10-AM built: composed server-side, non-null EXACTLY when a scan jaw reading
+   *  exists and CONTRADICTS the effective jaw (never the raw one — a chosen jaw
+   *  that already matches the scan stops warning about itself). Rendered
+   *  verbatim; this app composes none of it. The advisory never blocks — jaw
+   *  stays the operator's choice. */
+  jaw_advisory?: string | null;
 }
 
 /** One turnaround the rate card prices — value + per-site unit in integer cents,

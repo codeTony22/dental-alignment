@@ -293,7 +293,71 @@ describe("the choices panel — the BFF's effective values, with their source ch
     expect(html).toContain('data-role="choices-error"');
     expect(html).toContain("jaw must be one of upper, lower");
   });
+});
 
+describe("the jaw cross-check advisory (§10-AM built)", () => {
+  // the raw sentence, as the BFF composes it (pinned verbatim in
+  // apps/bff/tests/test_case_sessions.py) — the fixture's own apostrophe, since
+  // this app never generates the words, only renders them
+  const SENTENCE =
+    "This scan reads as a lower jaw — the crowns point up along the " +
+    "scan's own axis — but the case says upper. Check the jaw choice; " +
+    "the package and its labels are named by it.";
+  // renderToStaticMarkup escapes the sentence's own apostrophe (scan&#x27;s) — the
+  // AdjustStage/DeclarePanes/LibraryStage precedent for matching served prose
+  const RENDERED_SENTENCE = SENTENCE.replace(/'/g, "&#x27;");
+
+  const contradicted = caseSessionDetail({
+    detection: { ...detectionView([]), jaw_reading: "lower" },
+    choices: {
+      construction_path: null,
+      jaw: "upper",
+      gingival_offset_mm: null,
+      gingival_offset_default_mm: 0.2,
+      effective_construction: { value: null, source: "none" },
+      effective_jaw: { value: "upper", source: "chosen" },
+      effective_relief: { value: 0.2, source: "default" },
+      complete: false,
+      jaw_advisory: SENTENCE,
+    },
+  });
+
+  it("an amber chip names the cross-check when the server serves an advisory", () => {
+    const html = view({ detail: contradicted });
+    expect(html).toMatch(/data-role="jaw-advisory-chip"[^>]*>⚠ check jaw</);
+  });
+
+  it("the geometry's own answer is highlighted on the jaw buttons", () => {
+    const html = view({ detail: contradicted });
+    expect(html).toMatch(
+      /data-geometry-answer="true"[^>]*decode-jaw__option--geometry[^>]*>lower/,
+    );
+    // the chosen "upper" button carries no such highlight
+    expect(html).not.toMatch(
+      /decode-jaw__option--geometry[^>]*>upper/,
+    );
+  });
+
+  it("opens on the jawAdvisoryOpen prop — the §10-AN slice-C precedent — and renders the served sentence VERBATIM", () => {
+    const html = view({ detail: contradicted, jawAdvisoryOpen: true });
+    expect(html).toContain('data-role="jaw-advisory-dialog"');
+    expect(html).toContain('data-role="jaw-advisory-text"');
+    expect(html).toContain(RENDERED_SENTENCE);
+  });
+
+  it("renders no dialog while jawAdvisoryOpen is false, even with an advisory served", () => {
+    const html = view({ detail: contradicted, jawAdvisoryOpen: false });
+    expect(html).not.toContain('data-role="jaw-advisory-dialog"');
+  });
+
+  it("absent entirely when the server serves no advisory (agreement, or nothing detected)", () => {
+    const html = view();   // caseSessionDetail()'s default: no detection, jaw_advisory absent
+    expect(html).not.toContain('data-role="jaw-advisory-chip"');
+    expect(html).not.toContain("decode-jaw__option--geometry");
+  });
+});
+
+describe("the choices panel — saving state", () => {
   it("saving is stated while the PUT is in flight (optimism is OFF)", () => {
     expect(view({ savingChoices: true })).toContain("Saving choices…");
   });

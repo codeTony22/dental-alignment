@@ -267,6 +267,7 @@ export function anyPointerToolActive(modes: {
 export function anatomyViewOrientation(
   frame: AnatomyFrame,
   view: AnatomyViewId,
+  opts?: { readonly crownsDown?: boolean },
 ): {
   readonly direction: readonly [number, number, number];
   readonly up: readonly [number, number, number];
@@ -296,6 +297,17 @@ export function anatomyViewOrientation(
       up = ant.clone();
       break;
   }
+  /* THE ROLL FOLLOWS THE JAW (client 2026-08-09). An upper arch's crowns point DOWN in
+     the patient, and `up = occlusal` renders them at the top of the screen on every
+     scan — an upper jaw drawn like a lower one. Flipping the roll (and only the roll)
+     puts the teeth where the operator expects them. The DIRECTION is deliberately
+     untouched: its elevation term rides `occlusal`, which on an upper arch already
+     points downward, so the camera is correctly on the side the teeth face. The
+     occlusal preset is exempt — a plan view looks straight at the biting surfaces from
+     the side they face on either jaw, and its roll is the anterior axis, not the
+     crowns. NOT a transform of anything: §10-AM's rule is that the jaw names and
+     cross-checks, never rotates, and a camera roll does neither. */
+  if (opts?.crownsDown && view !== "occlusal") up.negate();
   direction.normalize();
   return { direction: [direction.x, direction.y, direction.z], up: [up.x, up.y, up.z] };
 }
@@ -426,6 +438,16 @@ export class SceneController {
   // Shift+left-drag pan: LEFT stays ROTATE by default; holding Shift swaps it to PAN so the
   // operator can go "side to side" without needing the right mouse button.
   private shiftPanActive = false;
+
+  /* THE JAW'S ROLL (client 2026-08-09). Held on the controller rather than passed per call
+     because the presets fire from THREE places — the operator's own buttons, and the two
+     auto-front calls that run when a scan or composite finishes loading. A per-call
+     argument would have dressed the operator's clicks correctly and left every freshly
+     loaded scan upside down, which is precisely the state the client reported. */
+  private crownsDown = false;
+
+  /** The preset currently showing, so a jaw change can re-apply it in place. */
+  private lastAnatomyView: AnatomyViewId | null = null;
 
   // Anatomical frame of the CURRENT arch view (scan, or a composite's arch part) — null for
   // non-arch content (library-part previews, construction-alone composites) where anatomical
@@ -940,14 +962,31 @@ export class SceneController {
    * front view; "occlusal" looks straight down at the crowns with the anterior at the top of
    * the screen.
    */
+  /**
+   * Which way the crowns hang, from the case's own jaw (client 2026-08-09). "upper" rolls
+   * the anatomical presets so the teeth point DOWN, as they do in the patient; "lower" and
+   * an unknown jaw keep the standing crowns-up roll. Re-applies immediately when a preset
+   * is already showing, so changing the jaw at Intake turns the scan the right way up
+   * without a reload. Presentation only — no geometry moves.
+   */
+  setJaw(jaw: string | null | undefined): void {
+    const crownsDown = jaw === "upper";
+    if (crownsDown === this.crownsDown) return;
+    this.crownsDown = crownsDown;
+    if (this.anatomyFrame && this.lastAnatomyView) this.setAnatomyView(this.lastAnatomyView);
+  }
+
   setAnatomyView(view: AnatomyViewId): void {
+    this.lastAnatomyView = view;
     const frame = this.anatomyFrame;
     const center = this.lastFrameCenter;
     if (!frame || !center || this.lastFrameDistance <= 0) return;
 
     // The direction/up math lives in anatomyViewOrientation (extracted, verbatim — see the
     // pure-rules block above); what stays here is the camera/controls application.
-    const { direction, up } = anatomyViewOrientation(frame, view);
+    const { direction, up } = anatomyViewOrientation(frame, view, {
+      crownsDown: this.crownsDown,
+    });
     this.setCameraUp(new THREE.Vector3(up[0], up[1], up[2]));
     this.camera.position
       .copy(center)
