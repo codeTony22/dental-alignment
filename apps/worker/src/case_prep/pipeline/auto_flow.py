@@ -31,7 +31,7 @@ from case_prep.domain.guidance import advisory_guidance
 from case_prep.domain.island import segment_island
 from case_prep.domain.pose_confidence import confidence_grade, pose_spread
 from case_prep.domain.poses import Retention
-from case_prep.pipeline.deliverables import (arch_with_clean_holes, arch_with_parts,
+from case_prep.pipeline.deliverables import (arch_with_parts, cap_imprint_holes,
                                               remove_cap_region)
 from case_prep.pipeline.final_product import (DEFAULT_GINGIVAL_OFFSET_MM,
                                               DEFAULT_SCREW_RADIUS_MM,
@@ -2465,18 +2465,33 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
             arch_caps_path = _P(out_dir) / f"{case_id}-arch-with-healingcaps.stl"
             arch_caps.export(arch_caps_path)
 
-            hole_sites = []
+            # THE SEAT IS THE CAP'S OWN IMPRINT (§10-AO, client 2026-08-06): each
+            # hole is the healing cap's dilated surface — its exact footprint plus
+            # the relief this run applied — floored by the cap's own offset base.
+            # The cylinder socket survives only as the per-site fallback, noted on
+            # the site's own row.
+            imprint_sites = []
             for sp, tmpl, _c in package_sites:
                 dia_h = dims.get(sp.variant_code)
                 if dia_h is None:
-                    # no catalog dims for this variant — derive the removal cylinder from the
+                    # no catalog dims for this variant — derive the fallback radius from the
                     # template's own canonical geometry (bore on +z) rather than guessing a constant
                     ext = tmpl.bounds[1] - tmpl.bounds[0]
                     dia_h = (float(max(ext[0], ext[1])), float(ext[2]))
-                hole_sites.append((sp.pose_matrix, float(dia_h[0]) / 2.0))
-            # the cap-removed arch with CLEAN cylinder-lined holes (3shape model-builder style,
-            # client spec 2026-07-12) — also the ivory base layer of the stage-2 composite view
-            arch_removed = arch_with_clean_holes(scan, hole_sites)
+                row = _rows_by_tooth_qc.get(sp.tooth) or {}
+                applied = row.get("gingival_offset_applied_mm")
+                offset = (float(applied) if isinstance(applied, (int, float))
+                          else float((site_gingival_offsets or {}).get(
+                              sp.tooth, gingival_offset_mm)))
+                imprint_sites.append((tmpl, sp.pose_matrix, offset,
+                                      float(dia_h[0]) / 2.0))
+            arch_removed, imprint_notes = cap_imprint_holes(scan, imprint_sites)
+            for note in imprint_notes:
+                tooth = package_sites[
+                    int(note.split(":", 1)[0].split()[1]) - 1][0].tooth
+                target = _rows_by_tooth_qc.get(tooth)
+                if target is not None:
+                    target.setdefault("production", {})["imprint_note"] = note
             arch_capless_path = _P(out_dir) / f"{case_id}-arch-capless.stl"
             arch_removed.export(arch_capless_path)
 

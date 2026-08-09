@@ -117,3 +117,274 @@ def arch_with_clean_holes(arch: trimesh.Trimesh,
 
 
 _HOLE_DEPTH_MM = 8.0  # socket depth below the collar (floored — reads solid)
+
+
+def _envelope_profile(template: trimesh.Trimesh,
+                      offset_mm: float) -> Tuple[np.ndarray, np.ndarray]:
+    """The cap's per-height maximum-radius profile + the relief, as ``(zs, prof)``
+    arrays in the template's own canonical frame — the one source both the lathe
+    and the collar annulus read. Smoothed OUTWARD-ONLY (a ring keeps the larger of
+    itself and its neighbours' blend), so vendor tessellation steps round off
+    while the envelope still covers every point of the cap."""
+    pts = np.asarray(template.vertices, float)
+    if len(pts) < 3 or not np.isfinite(pts).all():
+        raise ValueError("imprint template is empty or degenerate")
+    radii = np.hypot(pts[:, 0], pts[:, 1])
+    z = pts[:, 2]
+    z_lo, z_hi = float(z.min()), float(z.max())
+    if z_hi - z_lo < 0.2:
+        raise ValueError("imprint template has no height")
+    bins = 40
+    idx = np.clip(((z - z_lo) / (z_hi - z_lo) * bins).astype(int), 0, bins - 1)
+    prof = np.full(bins, np.nan)
+    for b in range(bins):
+        sel = radii[idx == b]
+        if len(sel):
+            prof[b] = float(sel.max())
+    good = np.flatnonzero(~np.isnan(prof))
+    if len(good) == 0:
+        raise ValueError("imprint template has no radial extent")
+    # sparse vendor tessellation can leave empty height bins — inherit neighbours
+    prof = np.interp(np.arange(bins), good, prof[good])
+    # smooth it out (client 2026-08-09), without ever dipping below the true
+    # envelope: the blend only wins where it is LARGER
+    blend = np.convolve(np.pad(prof, 1, mode="edge"),
+                        [0.25, 0.5, 0.25], mode="valid")
+    prof = np.maximum(prof, blend)
+    prof = np.maximum(prof + float(offset_mm), 0.05)
+    zs = z_lo + (np.arange(bins) + 0.5) * (z_hi - z_lo) / bins
+    # the end rings move to the offset extremes, so the solid clears the cap's
+    # own top and base by the relief exactly as the walls clear its sides
+    zs[0], zs[-1] = z_lo - float(offset_mm), z_hi + float(offset_mm)
+    return zs, prof
+
+
+def _envelope_solid(template: trimesh.Trimesh, offset_mm: float) -> trimesh.Trimesh:
+    """The cap's REVOLUTE ENVELOPE grown by ``offset_mm`` — per-height maximum
+    radius, lathed into a closed solid (client 2026-08-09, competitor comp).
+
+    This replaced an exact-surface dilation (vertex normals on the sealed vendor
+    CAD) after live testing: the exact surface faithfully reproduced the screw
+    slot and coded trenches into the socket — noise, not information, in a seat —
+    and its sealing machinery inherited every defect of vendor tessellation. The
+    envelope reads the template as a POINT CLOUD (no watertightness demanded of
+    the input), and the lathe is watertight by construction: smooth wall, a flat
+    disc at each end, reliable ``contains``. The bottom disc, offset downward,
+    becomes the socket's floor."""
+    zs, prof = _envelope_profile(template, offset_mm)
+    bins = len(zs)
+    seg = 64
+    ang = np.linspace(0.0, 2.0 * np.pi, seg, endpoint=False)
+    ca, sa = np.cos(ang), np.sin(ang)
+    rings = np.concatenate([
+        np.column_stack([rr * ca, rr * sa, np.full(seg, zz)])
+        for rr, zz in zip(prof, zs)])
+    verts = np.vstack([rings, [[0.0, 0.0, zs[0]]], [[0.0, 0.0, zs[-1]]]])
+    faces = []
+    for i in range(bins - 1):
+        a0, b0 = i * seg, (i + 1) * seg
+        for j in range(seg):
+            k = (j + 1) % seg
+            # outward winding: phi-hat x z-hat = r-hat
+            faces.append([a0 + j, a0 + k, b0 + k])
+            faces.append([a0 + j, b0 + k, b0 + j])
+    bot, top = len(verts) - 2, len(verts) - 1
+    last = (bins - 1) * seg
+    for j in range(seg):
+        k = (j + 1) % seg
+        faces.append([bot, k, j])                  # bottom cap faces -z
+        faces.append([top, last + j, last + k])    # top cap faces +z
+    out = trimesh.Trimesh(verts, np.asarray(faces, int), process=False)
+    out.merge_vertices()
+    if not out.is_watertight:  # unreachable by construction; refuse over guessing
+        raise ValueError("imprint envelope failed to close")
+    return out
+
+
+def _collar_z_local(arch_vertices: np.ndarray, pose: np.ndarray,
+                    rim_radius_mm: float) -> float:
+    """The local gingiva height about the pose axis — the same ring-sampling rule
+    ``arch_with_clean_holes`` uses, factored so both socket shapes share it."""
+    origin, axis = pose[:3, 3], pose[:3, :3] @ np.array([0.0, 0.0, 1.0])
+    rel = arch_vertices - origin
+    axial = rel @ axis
+    radial = np.linalg.norm(rel - np.outer(axial, axis), axis=1)
+    ring = axial[(radial > rim_radius_mm + 0.5) & (radial < rim_radius_mm + 2.5)
+                 & (np.abs(axial) < 6.0)]
+    return float(np.median(ring)) if len(ring) else 0.0
+
+
+def _collar_plane(arch_vertices: np.ndarray, pose: np.ndarray,
+                  rim_radius_mm: float) -> np.ndarray:
+    """The gingiva as a PLANE about the pose axis (client 2026-08-09): one median
+    collar height left the socket wall standing in a ~0.5mm proud crescent out of
+    the LOW side of a tilted arch, and azimuth bins inherit the same defect in a
+    smaller coat — the ring band samples tissue 0.5-2.5mm OUTWARD of the wall, so
+    any per-bearing height still over-reads a slope at the wall itself. A fitted
+    plane extrapolates the tilt back to the wall exactly. Least squares of
+    ``axial = a + b*x + c*y`` over the same ring band ``_collar_z_local`` uses
+    (local in-plane x/y about the pose origin); returns ``[a, b, c]``. Falls back
+    to the flat median plane when the band is empty or degenerate."""
+    origin = pose[:3, 3]
+    R = pose[:3, :3]
+    axis = R @ np.array([0.0, 0.0, 1.0])
+    rel = arch_vertices - origin
+    axial = rel @ axis
+    in_plane = rel - np.outer(axial, axis)
+    radial = np.linalg.norm(in_plane, axis=1)
+    band = ((radial > rim_radius_mm + 0.5) & (radial < rim_radius_mm + 2.5)
+            & (np.abs(axial) < 6.0))
+    if band.sum() < 8:
+        level = float(np.median(axial[band])) if band.any() else 0.0
+        return np.array([level, 0.0, 0.0])
+    x = in_plane[band] @ (R @ np.array([1.0, 0.0, 0.0]))
+    y = in_plane[band] @ (R @ np.array([0.0, 1.0, 0.0]))
+    A = np.column_stack([np.ones(len(x)), x, y])
+    sol, *_ = np.linalg.lstsq(A, axial[band], rcond=None)
+    if not np.isfinite(sol).all():
+        return np.array([float(np.median(axial[band])), 0.0, 0.0])
+    return sol
+
+
+def cap_imprint_holes(arch: trimesh.Trimesh,
+                      sites: Sequence[Tuple[trimesh.Trimesh, np.ndarray,
+                                            float, float]]
+                      ) -> Tuple[trimesh.Trimesh, list]:
+    """THE SEAT IS THE CAP'S ENVELOPE SOCKET (client 2026-08-06 §10-AO; reshaped
+    2026-08-09 on the client's competitor screenshot): the arch with each scanned
+    cap replaced by a CLEAN RECESS — the cap's revolute envelope grown by the
+    relief, with a flat floor — the industry ditch as the competitor's tooling
+    renders it, not the cap's exact tessellated surface (which printed the screw
+    slot into the floor: noise in a seat).
+
+    Per site ``(template, pose_matrix, offset_mm, rim_radius_mm)``:
+      * faces with ANY vertex inside the posed envelope are culled — a centroid
+        cull kept straddling triangles whose needle tips overhung the hole as a
+        fringe of spikes (6,272 on cap7020, the client's screenshot); only the
+        cap's footprint + offset is removed and the gum beside it survives;
+      * the hole is lined with the envelope's own surface below the local gum
+        line, wound to face the void — smooth walls, and THE FLOOR IS THE FLAT
+        DISC AT THE CAP'S OFFSET BASE ("there needs to be a floor"); the mouth
+        stays open where the cap emerged from the gum;
+      * a site whose template cannot make an envelope FALLS BACK to the old
+        cylinder socket for that site, and says so — the second element of the
+        returned tuple is the list of those sentences (the caller surfaces them
+        on the site's own row). ``rim_radius_mm`` exists for exactly that
+        fallback.
+
+    True CSG is deliberately NOT used: no boolean backend ships in this
+    environment, and scan shells are open meshes where booleans are fragile —
+    face-culling against the watertight envelope plus the envelope's own surface
+    achieves the subtraction, robustly."""
+    out = arch
+    notes: list = []
+    liners = []
+    V = np.asarray(arch.vertices, float)
+    for index, (template, pose, offset_mm, rim_radius_mm) in enumerate(sites, 1):
+        pose = np.asarray(pose, float)
+        try:
+            posed = _envelope_solid(template, offset_mm)
+            posed.apply_transform(pose)
+            collar = _collar_z_local(V, pose, rim_radius_mm)
+            # THE ANY-VERTEX CULL: a face goes if any of its three corners is
+            # inside the envelope. All-corners-outside-with-centroid-inside needs
+            # a triangle wider than the socket — scan facets are ~0.3mm against a
+            # ~5mm envelope, so the vertex test alone decides. The kept boundary
+            # then has no vertex reaching in: no overhanging needle tips.
+            verts_now = np.asarray(out.vertices, float)
+            lo, hi = posed.bounds
+            near_v = np.all((verts_now >= lo - 1e-6) & (verts_now <= hi + 1e-6),
+                            axis=1)
+            v_inside = np.zeros(len(verts_now), bool)
+            if near_v.any():
+                v_inside[near_v] = posed.contains(verts_now[near_v])
+            face_gone = v_inside[out.faces].any(axis=1)
+            kept = trimesh.Trimesh(verts_now.copy(),
+                                   out.faces[~face_gone], process=False)
+            kept.remove_unreferenced_vertices()
+            # the liner: the envelope's surface below the gum line (plus a small
+            # tuck so the wall reaches behind the cut edge), measured along the
+            # POSE AXIS about the pose origin. The gum line is a FITTED PLANE
+            # (client 2026-08-09): one median collar left the wall standing in a
+            # proud crescent out of the low side of a tilted arch — each face is
+            # clipped against the plane's height at its OWN position. Wound to
+            # face the VOID: walls inward, floor discs upward — the flip is
+            # skipped for faces already pointing up the axis (the top disc, when
+            # a submerged cap leaves it below the gum).
+            origin = pose[:3, 3]
+            R = pose[:3, :3]
+            axis = R @ np.array([0.0, 0.0, 1.0])
+            a0, bx, cy = _collar_plane(V, pose, rim_radius_mm)
+            fc = np.asarray(posed.triangles_center, float) - origin
+            face_axial = fc @ axis
+            fx = fc @ (R @ np.array([1.0, 0.0, 0.0]))
+            fy = fc @ (R @ np.array([0.0, 1.0, 0.0]))
+            # judged by the face's HIGHEST vertex, not its centroid: the bottom
+            # ring is pulled down by the offset, so its quads span several ring
+            # rows — a centroid that passed the clip left its top vertex 0.36mm
+            # proud of the gum (measured on the tilted-sheet pin)
+            v_axial = (np.asarray(posed.vertices, float) - origin) @ axis
+            face_top = v_axial[posed.faces].max(axis=1)
+            below = face_top <= a0 + bx * fx + cy * fy + 0.15
+            if not below.any():
+                raise ValueError("imprint sits wholly above the gum line")
+            kept_faces = posed.faces[below].copy()
+            outward = np.asarray(posed.face_normals, float)[below] @ axis
+            flip = outward <= 0.9
+            kept_faces[flip] = kept_faces[flip][:, ::-1]
+            liner = trimesh.Trimesh(np.asarray(posed.vertices).copy(),
+                                    kept_faces, process=False)
+            liner.remove_unreferenced_vertices()
+            # THE COLLAR ANNULUS (client 2026-08-09: "we cannot leave the empty
+            # space there"): the any-vertex cull opens the scan up to one
+            # triangle-edge WIDER than the wall, leaving an annular moat between
+            # the wall's mouth and the cut edge. Bridge it — inner ring on the
+            # wall's own mouth, outer ring 1.4mm out riding the fitted gum
+            # plane, faces up. The same bridging the cylinder socket always had
+            # (_hole_bore's collar); this one follows the tilt.
+            zs_p, prof_p = _envelope_profile(template, offset_mm)
+            xl = R @ np.array([1.0, 0.0, 0.0])
+            yl = R @ np.array([0.0, 1.0, 0.0])
+            seg = 64
+            theta = np.linspace(0.0, 2.0 * np.pi, seg, endpoint=False)
+            dirs = (np.outer(np.cos(theta), xl) + np.outer(np.sin(theta), yl))
+            # the mouth's radius depends on its height and vice versa (a tilted
+            # plane over a lathe) — two fixed-point passes settle it
+            mouth_h = np.full(seg, a0 + 0.15)
+            for _ in range(2):
+                r_mouth = np.interp(mouth_h, zs_p, prof_p)
+                mx = r_mouth * np.cos(theta)
+                my = r_mouth * np.sin(theta)
+                mouth_h = a0 + bx * mx + cy * my + 0.15
+            r_outer = r_mouth + 1.4
+            ox = r_outer * np.cos(theta)
+            oy = r_outer * np.sin(theta)
+            outer_h = a0 + bx * ox + cy * oy
+            inner_pts = (origin[None, :] + dirs * r_mouth[:, None]
+                         + np.outer(mouth_h, axis))
+            outer_pts = (origin[None, :] + dirs * r_outer[:, None]
+                         + np.outer(outer_h, axis))
+            collar_faces = []
+            for j in range(seg):
+                k = (j + 1) % seg
+                collar_faces.append([j, seg + j, seg + k])
+                collar_faces.append([j, seg + k, k])
+            collar = trimesh.Trimesh(np.vstack([inner_pts, outer_pts]),
+                                     np.asarray(collar_faces, int),
+                                     process=False)
+            out = kept
+            liners.append(liner)
+            liners.append(collar)
+        except Exception as exc:  # noqa: BLE001 — the fallback IS the containment
+            notes.append(f"site {index}: the cap imprint could not be built "
+                         f"({exc}) — the cylinder socket was used instead")
+            collar = _collar_z_local(V, pose, rim_radius_mm)
+            span_up = 8.0
+            shifted = pose.copy()
+            shifted[:3, 3] = (pose[:3, 3] + (pose[:3, :3] @ np.array([0., 0., 1.]))
+                              * (collar + (span_up - _HOLE_DEPTH_MM) / 2.0))
+            out = remove_cap_region(out, shifted, radius_mm=rim_radius_mm,
+                                    half_height_mm=(_HOLE_DEPTH_MM + span_up) / 2.0)
+            liners.append(_hole_bore(pose, rim_radius_mm + _REGION_MARGIN_MM,
+                                     collar, _HOLE_DEPTH_MM))
+    return trimesh.util.concatenate([out] + liners), notes

@@ -52,7 +52,7 @@ from case_prep.domain.channel import channel_from_boundary_loops
 # that re-implemented either would drift from the thing it claims to re-emit.
 from case_prep.pipeline.auto_flow import _crowns_frame, _relief_summary
 from case_prep.pipeline.auto_flow import delivered_channel_offsets
-from case_prep.pipeline.deliverables import arch_with_clean_holes, arch_with_parts
+from case_prep.pipeline.deliverables import arch_with_parts, cap_imprint_holes
 from case_prep.pipeline.final_product import (DEFAULT_SCREW_RADIUS_MM,
                                               build_final_product,
                                               resolve_gingival_offset)
@@ -265,14 +265,27 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
     arch_caps_path = out_dir / f"{case.id}-arch-with-healingcaps.stl"
     arch_with_parts(scan, caps_posed).export(arch_caps_path)
 
-    hole_sites = []
+    # THE SEAT IS THE CAP'S OWN IMPRINT (§10-AO, client 2026-08-06): each hole is
+    # the healing cap's dilated surface — its exact footprint plus the relief the
+    # run itself applied — floored by the cap's own offset base. The cylinder
+    # socket survives only as the per-site fallback, and a fallen-back site says
+    # so on its own row.
+    imprint_sites = []
     for sp, tmpl, _c in package_sites:
         dia_h = dims.get(sp.variant_code)
         if dia_h is None:
             ext = tmpl.bounds[1] - tmpl.bounds[0]
             dia_h = (float(max(ext[0], ext[1])), float(ext[2]))
-        hole_sites.append((sp.pose_matrix, float(dia_h[0]) / 2.0))
-    arch_removed = arch_with_clean_holes(scan, hole_sites)
+        clamp = clamp_by_tooth.get(sp.tooth)
+        offset = float(clamp.applied_mm) if clamp is not None \
+            else float(_relief_ask(sp.tooth))
+        imprint_sites.append((tmpl, sp.pose_matrix, offset,
+                              float(dia_h[0]) / 2.0))
+    arch_removed, imprint_notes = cap_imprint_holes(scan, imprint_sites)
+    for note in imprint_notes:
+        # "site N: …" — N is 1-based package_sites order; land it on that row
+        tooth = package_sites[int(note.split(":", 1)[0].split()[1]) - 1][0].tooth
+        rows_by_tooth[tooth].setdefault("production", {})["imprint_note"] = note
     arch_capless_path = out_dir / f"{case.id}-arch-capless.stl"
     arch_removed.export(arch_capless_path)
 
