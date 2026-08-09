@@ -54,6 +54,7 @@ function view(overrides: Partial<AdjustDockProps> = {}) {
       onStartPair={() => undefined}
       onRemovePair={() => undefined}
       onRemovePoint={() => undefined}
+      onReplacePair={() => undefined}
       onApplyPairs={() => undefined}
       onClearPairs={() => undefined}
       ghostsActive={false}
@@ -316,6 +317,41 @@ describe("the tool-refusal modal — opens on a NEW refusal, no effect required 
     expect(html).toContain('role="alertdialog"');
     expect(html).toContain("the rim cannot hold this rotation still");
   });
+
+  // THE SPLIT TOOL'S POINTER, FOLDED IN (client live-testing 2026-08-09) — a
+  // CLIENT-AUTHORED sentence appended to the recovery note, never a reworded server
+  // sentence. Present in BOTH the persistent inline region and the modal, since
+  // both render the same recovery note; absent unless a complete both-halves span
+  // actually stands to click the button on.
+  describe("the split-tool pointer, appended to the recovery note", () => {
+    const bothSpan = () => {
+      let d = newPairDraft("s1", true, true);
+      d = withPick(d, "part", [2, 0, 1]);
+      d = withPick(d, "part", [2, 1, 1]);
+      d = withPick(d, "scan", [1, 0, 0]);
+      return withPick(d, "scan", [2, 0, 0]);
+    };
+
+    it("says nothing extra with no splittable span among the drafts", () => {
+      const html = view({
+        refusal: "the axis span was refused",
+        drafts: [],
+      });
+      expect(html).not.toContain('data-role="split-hint"');
+    });
+
+    it("appends the pointer, in BOTH the inline region and the modal, once a complete both-halves span stands", () => {
+      const html = view({
+        refusal: "the axis span was refused",
+        drafts: [bothSpan()],
+      });
+      const hints = [...html.matchAll(/data-role="split-hint"/g)];
+      expect(hints).toHaveLength(2);
+      expect(html).toContain("Mark ends as two pairs");
+      // the served sentence is untouched, verbatim
+      expect(html).toContain("the axis span was refused");
+    });
+  });
 });
 
 describe("the rotation gauge widget", () => {
@@ -440,6 +476,62 @@ describe("fit by points — the eight-slot strip, our own pair model", () => {
   it("offers no 'place the next pair for me' button — no equivalent act exists (§10-AN)", () => {
     const html = view({ tool: "fit-by-points" });
     expect(html).not.toContain("place the next pair for me");
+  });
+
+  // THE SPLIT AFFORDANCE (client live-testing 2026-08-09: "there needs to be more
+  // tooling added that solves the specific blocker" — the ±180° arbiter's own
+  // remedy, "mark its two ends as two separate pairs", mechanized as a button).
+  describe("the split affordance — only on a COMPLETE both-halves span row", () => {
+    const bothSpan = (id: string) => {
+      let d = newPairDraft(id, true, true);
+      d = withPick(d, "part", [2, 0, 1]);
+      d = withPick(d, "part", [2, 1, 1]);
+      d = withPick(d, "scan", [1, 0, 0]);
+      return withPick(d, "scan", [2, 0, 0]);
+    };
+
+    it("renders the button on a complete both-halves span", () => {
+      const html = view({ tool: "fit-by-points", drafts: [bothSpan("s1")] });
+      expect(html).toMatch(
+        /data-role="split-pair" data-pair="s1"[^>]*>\s*Mark ends as two pairs\s*</,
+      );
+    });
+
+    it("renders no button for an ordinary point pair", () => {
+      const point = withPick(
+        withPick(newPairDraft("p1", false), "part", [1, 0, 1]),
+        "scan",
+        [5, 5, 5],
+      );
+      const html = view({ tool: "fit-by-points", drafts: [point] });
+      expect(html).not.toContain('data-role="split-pair"');
+    });
+
+    it("renders no button for a SCAN-ONLY span — splitSpanDraft returns null for it", () => {
+      const scanOnly = withPick(
+        withPick(
+          withPick(newPairDraft("s2", true), "part", [5, 0, 0]),
+          "scan",
+          [1, 0, 0],
+        ),
+        "scan",
+        [2, 0, 0],
+      );
+      const html = view({ tool: "fit-by-points", drafts: [scanOnly] });
+      expect(html).not.toContain('data-role="split-pair"');
+    });
+
+    it("renders no button while the both-halves span is still incomplete", () => {
+      let open = newPairDraft("s3", true, true);
+      open = withPick(open, "part", [2, 0, 1]);
+      const html = view({ tool: "fit-by-points", drafts: [open] });
+      expect(html).not.toContain('data-role="split-pair"');
+    });
+
+    it("also renders on auto-mark's pair list — the same PairsList, the same rule", () => {
+      const html = view({ tool: "auto-mark", drafts: [bothSpan("s4")] });
+      expect(html).toContain('data-role="split-pair" data-pair="s4"');
+    });
   });
 
   it("the scatter meter is absent with no served residual, present once one lands", () => {

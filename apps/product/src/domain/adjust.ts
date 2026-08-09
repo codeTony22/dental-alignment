@@ -703,6 +703,14 @@ export function applyBlockedReason(
     if (guard !== null && guard.kind === "refusal") {
       return `Pair ${index + 1}: ${guard.message}`;
     }
+    // THE SECOND GUARD (client 2026-08-09): the rim-centre guard above and this one
+    // ask different questions — `axisSpanGuard`'s own doc says which — and a span
+    // that clears one may still fail the other, exactly the 422 the client hit with
+    // no warning at all.
+    const axisGuard = axisSpanGuard(draft, pose, clock);
+    if (axisGuard !== null) {
+      return `Pair ${index + 1}: ${axisGuard.message}`;
+    }
   }
   return null;
 }
@@ -1524,6 +1532,129 @@ export function markLeverGuard(
         `rather than a clock angle, so it cannot anchor a rotation. Click the coded ` +
         `trench out on the cap's face instead.`,
   };
+}
+
+/**
+ * THE ±180° ARBITER, MIRRORED CLIENT-SIDE (client live-testing 2026-08-09: "We need
+ * better error messaging" — this operator's span was refused by the worker's
+ * `require_span_off_axis` AFTER the round trip, with no warning at all).
+ *
+ * `markLeverGuard` mirrors `require_clock_lever` — a mark's arm from the MEASURED
+ * RIM CENTRE. `require_span_off_axis` asks a DIFFERENT question: whether a span's
+ * midpoint sits far enough from the PART AXIS (the pose origin, in-plane) to
+ * arbitrate its own ±180° ambiguity. The worker's own docstring records why the
+ * rim-centre guard cannot stand in for this one — `template_rim_centre` sits OFF the
+ * axis (0.60mm on the part that failed), so a diameter's midpoint can clear the
+ * rim-centre bound while its bearing is still an unreadable coin flip about the axis
+ * itself.
+ *
+ * This measures the SAME quantity `require_span_off_axis` does: `to_canon_xy`'s
+ * in-plane distance about `pose.origin`/`pose.axis`, which `inPlaneRadius` already
+ * computes (rigid transforms preserve distance, so the client's pose and the
+ * worker's canonical frame agree exactly here — unlike the rim centre, there is no
+ * server-only quantity this has to wait for). So, like `markLeverGuard` once
+ * `clock_reference` arrived, this may REFUSE outright rather than merely caution.
+ *
+ * FAILS OPEN exactly like `markLeverGuard` (§10-F's discipline): null on a missing
+ * pose, a missing clock (its only use here is the bound, `min_lever_mm`), or a
+ * non-finite number — a guard whose whole point is "never block a correction the
+ * server would take" must never block on its OWN missing inputs.
+ */
+export function axisSpanGuard(
+  draft: PairDraft,
+  pose: { readonly origin: readonly number[]; readonly axis: readonly number[] } | null,
+  clock: ClockReferenceLike | null,
+): LeverGuard | null {
+  if (pose === null || clock === null) return null;
+  if (!draft.span) return null;
+  const a = draft.scanPoint;
+  const b = draft.scanPointEnd;
+  if (a === null || b === null) return null;
+  const mid = [(a[0]! + b[0]!) / 2, (a[1]! + b[1]!) / 2, (a[2]! + b[2]!) / 2];
+  const radius = inPlaneRadius(mid, pose.origin, pose.axis);
+  if (!Number.isFinite(radius) || !Number.isFinite(clock.min_lever_mm)) return null;
+  if (radius >= clock.min_lever_mm) return null;
+  const bound = clock.min_lever_mm.toFixed(2);
+  return {
+    kind: "refusal",
+    message:
+      `This span's midpoint sits ${radius.toFixed(2)}mm from the part's axis — ` +
+      `inside ${bound}mm a span's bearing is ambiguous by a half-turn and only the ` +
+      `midpoint can say which half is meant, so on the axis itself it cannot. Split ` +
+      `it: 'Mark ends as two pairs' turns this span into two point pairs, or undo ` +
+      `one end and span the feature along its own radius.`,
+  };
+}
+
+/**
+ * THE SERVER'S OWN REMEDY, MECHANIZED. `require_span_off_axis`'s refusal ends "Span
+ * the feature along its own radius, or mark its two ends as two separate pairs" —
+ * this is that second half, done rather than merely described: one COMPLETE
+ * both-halves span (two ends placed on the part, two on the scan — `draft.partSpan`
+ * as well as `draft.span`) becomes TWO ORDINARY point pairs, each end paired with
+ * its own respective end.
+ *
+ * Null for anything this cannot mechanize:
+ *  - not a span at all, or a library span was never taken (`partSpan` false). A
+ *    SCAN-ONLY span has ONE part landmark; splitting it would claim that one part
+ *    feature sits at two different scan spots, a shape the server refuses outright —
+ *    the tool this remedy hands the operator must not offer an act that can only 422.
+ *  - incomplete: any of the four points still open.
+ *
+ * Pure: the input draft is read, never written, and the two returned drafts are
+ * fresh objects. `idFor` defaults to `${id}-a`/`${id}-b`; a caller with its own
+ * naming scheme may supply one.
+ */
+export function splitSpanDraft(
+  draft: PairDraft,
+  idFor: (suffix: "a" | "b") => string = (suffix) => `${draft.id}-${suffix}`,
+): readonly [PairDraft, PairDraft] | null {
+  if (!draft.span || !draft.partSpan) return null;
+  const { partPoint, partPointEnd, scanPoint, scanPointEnd } = draft;
+  if (
+    partPoint === null ||
+    partPointEnd === null ||
+    scanPoint === null ||
+    scanPointEnd === null
+  ) {
+    return null;
+  }
+  const first: PairDraft = {
+    id: idFor("a"),
+    span: false,
+    partSpan: false,
+    partPoint: [...partPoint],
+    partPointEnd: null,
+    scanPoint: [...scanPoint],
+    scanPointEnd: null,
+  };
+  const second: PairDraft = {
+    id: idFor("b"),
+    span: false,
+    partSpan: false,
+    partPoint: [...partPointEnd],
+    partPointEnd: null,
+    scanPoint: [...scanPointEnd],
+    scanPointEnd: null,
+  };
+  return [first, second];
+}
+
+/**
+ * THE SPLIT TOOL'S OWN POINTER, folded into the post-422 recovery note (client
+ * 2026-08-09: "the ability to unblock each of the blockers — there needs to be more
+ * tooling added that solves the specific blocker"). Null unless a COMPLETE
+ * both-halves span actually stands among the drafts — `splitSpanDraft`'s button only
+ * renders on such a row (`AdjustDock`), so naming the tool with none present would
+ * send the operator hunting for a control that is not on screen.
+ */
+export function spanSplitRecoveryHint(drafts: readonly PairDraft[]): string | null {
+  const splittable = drafts.some((d) => d.span && d.partSpan && isComplete(d));
+  if (!splittable) return null;
+  return (
+    "If the message names a span across the axis, 'Mark ends as two pairs' on " +
+    "that pair resolves it in one click."
+  );
 }
 
 /** One caution, ready for the ONE list §10-AN slice C's amber chip opens — a stable id

@@ -207,6 +207,11 @@ export interface AdjustStageViewProps {
   readonly onRemovePair: (id: string) => void;
   /** Clear ONE mark, leaving the rest of the pair (client 2026-07-29). */
   readonly onRemovePoint: (id: string, slot: PairSlot) => void;
+  /** THE SPLIT AFFORDANCE'S ACT (client live-testing 2026-08-09): replaces the ONE
+   *  complete both-halves span draft `id` names with the TWO point-pair drafts
+   *  `splitSpanDraft` returns — see AdjustDock's `PairsList` for the button.
+   *  Optional with an inert default: static callers predate it. */
+  readonly onReplacePair?: (id: string, replacements: readonly PairDraft[]) => void;
   readonly onApplyPairs: () => void;
   /** START OVER, on the ACTIVE tool's set only (design review 2026-07-31). Optional
    *  with an inert default: static callers predate it. */
@@ -381,6 +386,7 @@ export function AdjustStageView({
   onStartPair,
   onRemovePair,
   onRemovePoint,
+  onReplacePair = () => undefined,
   onApplyPairs,
   onClearPairs = () => undefined,
   panes,
@@ -680,6 +686,7 @@ export function AdjustStageView({
               onStartPair={onStartPair}
               onRemovePair={onRemovePair}
               onRemovePoint={onRemovePoint}
+              onReplacePair={onReplacePair}
               onApplyPairs={onApplyPairs}
               onClearPairs={onClearPairs}
               ghostsActive={ghostsActive}
@@ -1427,6 +1434,16 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       onRemovePoint={(id, slot) =>
         setDrafts((current) =>
           current.map((d) => (d.id === id ? withoutPick(d, slot) : d)),
+        )
+      }
+      /* THE SPLIT AFFORDANCE'S ACT (client live-testing 2026-08-09). The add path
+         (`onStartPair` above) has no equivalent for landing TWO ready-made drafts
+         at once, so this is the minimal new callback the state owner needs —
+         `flatMap` replaces the one draft `id` names with the `replacements`
+         `splitSpanDraft` computed, in place, same threading as every sibling here. */
+      onReplacePair={(id, replacements) =>
+        setDrafts((current) =>
+          current.flatMap((d) => (d.id === id ? replacements : [d])),
         )
       }
       onApplyPairs={handleApplyPairs}

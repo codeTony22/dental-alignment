@@ -81,6 +81,8 @@ import {
   rotationTrenchTickDeg,
   scatterFillFraction,
   scatterWords,
+  spanSplitRecoveryHint,
+  splitSpanDraft,
   staleMetricsPhrase,
   trenchBand,
   trenchRingHint,
@@ -201,6 +203,7 @@ function PairsList({
   pose,
   onRemovePair,
   onRemovePoint,
+  onReplacePair,
   onApplyPairs,
   onClearPairs,
   clearLabel,
@@ -213,6 +216,11 @@ function PairsList({
   readonly clock: ClockReferenceLike | null;
   readonly onRemovePair: (id: string) => void;
   readonly onRemovePoint: (id: string, slot: PairSlotKey) => void;
+  /** THE SPLIT AFFORDANCE'S OWN ACT (client live-testing 2026-08-09: "the ability to
+   *  unblock each of the blockers"). Mechanizes `require_span_off_axis`'s own
+   *  remedy sentence — `splitSpanDraft` does the arithmetic, this replaces the ONE
+   *  both-halves span draft with the TWO point pairs it returns. */
+  readonly onReplacePair: (id: string, replacements: readonly PairDraft[]) => void;
   readonly onApplyPairs: () => void;
   readonly onClearPairs: () => void;
   readonly clearLabel: string;
@@ -282,6 +290,27 @@ function PairsList({
                 </li>
               ))}
             </ol>
+            {/* THE SPLIT AFFORDANCE (client live-testing 2026-08-09): only a COMPLETE
+                both-halves span — the shape `splitSpanDraft` actually knows how to
+                turn into two point pairs — offers this. A scan-only span has one
+                part landmark; `splitSpanDraft` returns null for it, and a button
+                that clicked to nothing would be worse than no button. */}
+            {draft.span && draft.partSpan && isComplete(draft) && (
+              <button
+                type="button"
+                data-role="split-pair"
+                data-pair={draft.id}
+                className="button button--ghost button--small"
+                title="Turns this span into two ordinary point pairs, ends paired respectively — the server's own remedy for a span across the axis."
+                disabled={busy}
+                onClick={() => {
+                  const halves = splitSpanDraft(draft);
+                  if (halves !== null) onReplacePair(draft.id, halves);
+                }}
+              >
+                Mark ends as two pairs
+              </button>
+            )}
             <button
               type="button"
               data-role="remove-pair"
@@ -766,6 +795,7 @@ function FitByPointsWidget({
   onStartPair,
   onRemovePair,
   onRemovePoint,
+  onReplacePair,
   onApplyPairs,
   onClearPairs,
   ghostsActive,
@@ -778,6 +808,7 @@ function FitByPointsWidget({
   readonly onStartPair: (span: boolean, partSpan?: boolean) => void;
   readonly onRemovePair: (id: string) => void;
   readonly onRemovePoint: (id: string, slot: PairSlotKey) => void;
+  readonly onReplacePair: (id: string, replacements: readonly PairDraft[]) => void;
   readonly onApplyPairs: () => void;
   readonly onClearPairs: () => void;
   readonly ghostsActive: boolean;
@@ -848,6 +879,7 @@ function FitByPointsWidget({
         clock={clock}
         onRemovePair={onRemovePair}
         onRemovePoint={onRemovePoint}
+        onReplacePair={onReplacePair}
         onApplyPairs={onApplyPairs}
         onClearPairs={onClearPairs}
         clearLabel="Clear all pairs"
@@ -893,6 +925,7 @@ function AutoMarkWidget({
   clock,
   onRemovePair,
   onRemovePoint,
+  onReplacePair,
   onApplyPairs,
   onClearPairs,
   ghostsActive,
@@ -907,6 +940,7 @@ function AutoMarkWidget({
   readonly clock: ClockReferenceLike | null;
   readonly onRemovePair: (id: string) => void;
   readonly onRemovePoint: (id: string, slot: PairSlotKey) => void;
+  readonly onReplacePair: (id: string, replacements: readonly PairDraft[]) => void;
   readonly onApplyPairs: () => void;
   readonly onClearPairs: () => void;
   readonly ghostsActive: boolean;
@@ -950,6 +984,7 @@ function AutoMarkWidget({
         clock={clock}
         onRemovePair={onRemovePair}
         onRemovePoint={onRemovePoint}
+        onReplacePair={onReplacePair}
         onApplyPairs={onApplyPairs}
         onClearPairs={onClearPairs}
         clearLabel="Start the matching over"
@@ -986,6 +1021,10 @@ export interface AdjustDockProps {
   readonly onStartPair: (span: boolean, partSpan?: boolean) => void;
   readonly onRemovePair: (id: string) => void;
   readonly onRemovePoint: (id: string, slot: PairSlotKey) => void;
+  /** THE SPLIT AFFORDANCE'S ACT (client live-testing 2026-08-09) — see `PairsList`'s
+   *  own doc. Required, like its siblings above: an omitted callback here would
+   *  silently ship a button that clicks to nothing. */
+  readonly onReplacePair: (id: string, replacements: readonly PairDraft[]) => void;
   readonly onApplyPairs: () => void;
   readonly onClearPairs: () => void;
   readonly ghostsActive: boolean;
@@ -1087,6 +1126,7 @@ export function AdjustDock({
   onStartPair,
   onRemovePair,
   onRemovePoint,
+  onReplacePair,
   onApplyPairs,
   onClearPairs,
   ghostsActive,
@@ -1154,6 +1194,10 @@ export function AdjustDock({
   const reconfirm = reconfirmControl(activeStatus, seatedPhase, seatedPayloadPresent);
   const exceptionWords = flaggedExceptionWords(activeStatus);
   const reworkNote = lastOutcome !== null ? reworkWords(lastOutcome) : null;
+  // THE SPLIT TOOL'S POINTER (client live-testing 2026-08-09), folded into the
+  // post-422 recovery note below — see `spanSplitRecoveryHint`'s own doc for why
+  // this is null (and says nothing) unless the split button is actually on screen.
+  const splitHint = spanSplitRecoveryHint(drafts);
 
   const good = (id: AdjustToolId) =>
     dockToolGood(id, {
@@ -1297,6 +1341,7 @@ export function AdjustDock({
                 onStartPair={onStartPair}
                 onRemovePair={onRemovePair}
                 onRemovePoint={onRemovePoint}
+                onReplacePair={onReplacePair}
                 onApplyPairs={onApplyPairs}
                 onClearPairs={onClearPairs}
                 ghostsActive={ghostsActive}
@@ -1314,6 +1359,7 @@ export function AdjustDock({
                 clock={clock}
                 onRemovePair={onRemovePair}
                 onRemovePoint={onRemovePoint}
+                onReplacePair={onReplacePair}
                 onApplyPairs={onApplyPairs}
                 onClearPairs={onClearPairs}
                 ghostsActive={ghostsActive}
@@ -1361,6 +1407,9 @@ export function AdjustDock({
               Nothing changed — the fit on screen is the one that passed the gates.
               Your marks are still placed: undo just the one the message names and
               re-place it, rather than starting the pair again.
+              {splitHint !== null && (
+                <span data-role="split-hint"> {splitHint}</span>
+              )}
             </p>
           </div>
         )}
@@ -1703,6 +1752,9 @@ export function AdjustDock({
                 Nothing changed — the fit on screen is the one that passed the gates.
                 Your marks are still placed: undo just the one the message names and
                 re-place it, rather than starting the pair again.
+                {splitHint !== null && (
+                  <span data-role="split-hint"> {splitHint}</span>
+                )}
               </p>
             </div>
           </section>

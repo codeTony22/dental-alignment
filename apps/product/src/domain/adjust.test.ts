@@ -64,6 +64,9 @@ import {
   rePreviewWords,
   spanLeverCaution,
   markLeverGuard,
+  axisSpanGuard,
+  splitSpanDraft,
+  spanSplitRecoveryHint,
   reworkWords,
   staleMetricsPhrase,
   unverifiedClockCautionLead,
@@ -936,6 +939,204 @@ describe("markLeverGuard — the server's own quantity, so the client may refuse
 });
 
 /**
+ * axisSpanGuard — THE ±180° ARBITER, MIRRORED CLIENT-SIDE (client live-testing
+ * 2026-08-09: an operator's span was refused by `require_span_off_axis` AFTER the
+ * round trip, with no warning at all — `markLeverGuard` mirrors the RIM-CENTRE guard
+ * only, and the worker's own docstring records why that guard cannot catch this one:
+ * `template_rim_centre` sits off the AXIS, so a diameter's midpoint can clear the
+ * rim-centre bound while still landing on the axis a rotation turns on. This measures
+ * the SAME quantity `require_span_off_axis` does — the scan span's midpoint, in-plane
+ * about `pose.axis` through `pose.origin` — so, unlike the old `spanLeverCaution`
+ * approximation, it may refuse outright with no risk of disagreeing with the server.
+ */
+describe("axisSpanGuard — the ±180° arbiter, mirrored client-side", () => {
+  const pose = { origin: [0, 0, 0], axis: [0, 0, 1] };
+  // rim_centre OFF the axis by 0.6mm, exactly the shape the worker's docstring
+  // records (`template_rim_centre sits off the axis (0.60mm on the part that
+  // failed)`) — a midpoint AT the axis reads 0.6mm off THIS point and clears
+  // markLeverGuard, which is the whole reason a second guard exists.
+  const clock = { rim_centre: [0.6, 0, 0], min_lever_mm: 0.5 };
+  const span = (a: number[], b: number[]) => {
+    let d = newPairDraft("s1", true);
+    d = withPick(d, "part", [5, 0, 0]);
+    d = withPick(d, "scan", a);
+    return withPick(d, "scan", b);
+  };
+
+  it("refuses a diameter the rim-centre guard cannot catch — the exact gap this closes", () => {
+    // midpoint lands ON the axis (arm 0) but 0.6mm from the offset rim centre
+    const draft = span([0.62, 0, -1], [-0.62, 0, 1]);
+    expect(markLeverGuard(draft, pose, clock)).toBeNull();
+    const guard = axisSpanGuard(draft, pose, clock);
+    expect(guard?.kind).toBe("refusal");
+    expect(guard?.message).toContain("0.00mm");
+    expect(guard?.message).toContain("0.50mm");
+  });
+
+  it("states the half-turn physics and ends by naming BOTH remedies, including the new split tool", () => {
+    const guard = axisSpanGuard(span([0.62, 0, -1], [-0.62, 0, 1]), pose, clock);
+    expect(guard?.message).toContain("half-turn");
+    expect(guard?.message).toContain("Mark ends as two pairs");
+    expect(guard?.message).toContain("along its own radius");
+  });
+
+  it("measures PERPENDICULAR to the axis, exactly like the rim-centre guard does", () => {
+    // varying only along the axis keeps the in-plane point fixed at the bound
+    expect(axisSpanGuard(span([0.5, 0, -1], [0.5, 0, 1]), pose, clock)).toBeNull();
+  });
+
+  it("stays silent at the bound, and safely clear of it", () => {
+    expect(axisSpanGuard(span([0.5, 0, -1], [0.5, 0, 1]), pose, clock)).toBeNull();
+    expect(axisSpanGuard(span([2, 0, 0], [3, 0, 0]), pose, clock)).toBeNull();
+  });
+
+  it("says nothing about a point pair, or a span still missing an end", () => {
+    let point = newPairDraft("p1", false);
+    point = withPick(point, "part", [5, 0, 0]);
+    point = withPick(point, "scan", [0, 0, 0]);
+    expect(axisSpanGuard(point, pose, clock)).toBeNull();
+
+    let half = newPairDraft("s2", true);
+    half = withPick(half, "part", [5, 0, 0]);
+    half = withPick(half, "scan", [0, 0, 0]);
+    expect(axisSpanGuard(half, pose, clock)).toBeNull();
+  });
+
+  it("FAILS OPEN on a missing pose, a missing clock, or a non-finite bound — never blocks on our own missing inputs", () => {
+    const draft = span([0.62, 0, -1], [-0.62, 0, 1]);
+    expect(axisSpanGuard(draft, null, clock)).toBeNull();
+    expect(axisSpanGuard(draft, pose, null)).toBeNull();
+    const noBound = { rim_centre: [0.6, 0, 0] } as unknown as {
+      rim_centre: number[];
+      min_lever_mm: number;
+    };
+    expect(() => axisSpanGuard(draft, pose, noBound)).not.toThrow();
+    expect(axisSpanGuard(draft, pose, noBound)).toBeNull();
+  });
+});
+
+/**
+ * splitSpanDraft — THE SERVER'S OWN REMEDY, MECHANIZED. `require_span_off_axis`'s
+ * refusal ends "Span the feature along its own radius, or mark its two ends as two
+ * separate pairs" — this is the second half, done for the operator rather than
+ * described at them: one complete BOTH-HALVES span (two ends on the part, two on the
+ * scan) becomes two ordinary point pairs, each end paired with its own respective end.
+ */
+describe("splitSpanDraft — the server's own remedy, mechanized", () => {
+  const bothSpan = () => {
+    let d = newPairDraft("s1", true, true);
+    d = withPick(d, "part", [2, 0, 1]);
+    d = withPick(d, "part", [2, 1, 1]);
+    d = withPick(d, "scan", [1, 0, 0]);
+    d = withPick(d, "scan", [2, 0, 0]);
+    return d;
+  };
+
+  it("turns one complete both-halves span into two point pairs, ends paired respectively", () => {
+    const [a, b] = splitSpanDraft(bothSpan())!;
+    expect(a.partPoint).toEqual([2, 0, 1]);
+    expect(a.scanPoint).toEqual([1, 0, 0]);
+    expect(b.partPoint).toEqual([2, 1, 1]);
+    expect(b.scanPoint).toEqual([2, 0, 0]);
+  });
+
+  it("each half is an ORDINARY point pair — no span, no partSpan, no open end slots", () => {
+    const [a, b] = splitSpanDraft(bothSpan())!;
+    for (const half of [a, b]) {
+      expect(half.span).toBe(false);
+      expect(half.partSpan).toBe(false);
+      expect(half.partPointEnd).toBeNull();
+      expect(half.scanPointEnd).toBeNull();
+      expect(isComplete(half)).toBe(true);
+    }
+  });
+
+  it("mints fresh ids derived from the source when no maker is given", () => {
+    const [a, b] = splitSpanDraft(bothSpan())!;
+    expect(a.id).toBe("s1-a");
+    expect(b.id).toBe("s1-b");
+    expect(a.id).not.toBe(bothSpan().id);
+  });
+
+  it("takes an id-maker when the caller has its own naming scheme", () => {
+    const [a, b] = splitSpanDraft(bothSpan(), (suffix) => `x-${suffix}`)!;
+    expect(a.id).toBe("x-a");
+    expect(b.id).toBe("x-b");
+  });
+
+  it("is null for a SCAN-ONLY span — one part landmark cannot become two", () => {
+    // a scan-only span has ONE part landmark; splitting it would claim that one part
+    // feature sits at two different scan spots, a shape the server refuses outright
+    let d = newPairDraft("s2", true);
+    d = withPick(d, "part", [5, 0, 0]);
+    d = withPick(d, "scan", [1, 0, 0]);
+    d = withPick(d, "scan", [2, 0, 0]);
+    expect(splitSpanDraft(d)).toBeNull();
+  });
+
+  it("is null for an ordinary point pair — nothing to split", () => {
+    let d = newPairDraft("p1", false);
+    d = withPick(d, "part", [5, 0, 0]);
+    d = withPick(d, "scan", [1, 0, 0]);
+    expect(splitSpanDraft(d)).toBeNull();
+  });
+
+  it("is null while any of the four points is still open", () => {
+    let d = newPairDraft("s3", true, true);
+    d = withPick(d, "part", [2, 0, 1]);
+    d = withPick(d, "part", [2, 1, 1]);
+    d = withPick(d, "scan", [1, 0, 0]);
+    // the scan span's second end is still missing
+    expect(splitSpanDraft(d)).toBeNull();
+  });
+
+  it("does not mutate the input draft", () => {
+    const source = bothSpan();
+    const before = JSON.stringify(source);
+    splitSpanDraft(source);
+    expect(JSON.stringify(source)).toBe(before);
+  });
+});
+
+/**
+ * spanSplitRecoveryHint — THE SPLIT TOOL'S OWN POINTER, folded into the post-422
+ * recovery note (client 2026-08-09: "the ability to unblock each of the blockers").
+ * Null unless a COMPLETE both-halves span actually stands to click the split button
+ * on — naming a control that is not on screen would send the operator hunting.
+ */
+describe("spanSplitRecoveryHint — the split tool's pointer, only when the tool exists to point at", () => {
+  const bothSpan = () => {
+    let d = newPairDraft("s1", true, true);
+    d = withPick(d, "part", [2, 0, 1]);
+    d = withPick(d, "part", [2, 1, 1]);
+    d = withPick(d, "scan", [1, 0, 0]);
+    return withPick(d, "scan", [2, 0, 0]);
+  };
+
+  it("is null with no drafts, and null with a scan-only span (no split button for it)", () => {
+    expect(spanSplitRecoveryHint([])).toBeNull();
+    let scanOnly = newPairDraft("s2", true);
+    scanOnly = withPick(scanOnly, "part", [5, 0, 0]);
+    scanOnly = withPick(scanOnly, "scan", [1, 0, 0]);
+    scanOnly = withPick(scanOnly, "scan", [2, 0, 0]);
+    expect(spanSplitRecoveryHint([scanOnly])).toBeNull();
+  });
+
+  it("is null while the both-halves span is still incomplete", () => {
+    let d = newPairDraft("s3", true, true);
+    d = withPick(d, "part", [2, 0, 1]);
+    expect(spanSplitRecoveryHint([d])).toBeNull();
+  });
+
+  it("points at the tool once a complete both-halves span stands among the drafts", () => {
+    const words = spanSplitRecoveryHint([bothSpan()]);
+    expect(words).not.toBeNull();
+    expect(words).toContain("Mark ends as two pairs");
+    expect(words).toContain("across the axis");
+  });
+});
+
+/**
  * §10-AN slice C: the ONE list the dock header's caution chip opens. This collects
  * exactly what used to render inline — `crossCheckCaution`'s lead (+ its fold) and
  * each pair's `markLeverGuard` message — nothing more, nothing paraphrased.
@@ -1052,6 +1253,28 @@ describe("applyBlockedReason — a local refusal blocks Apply, a caution does no
 
   it("stays live when only the approximation is available", () => {
     expect(applyBlockedReason([onAccess()], pose, null)).toBeNull();
+  });
+
+  it("blocks on an axis-crossing span the rim-centre guard cannot catch, naming the pair the same way (client 2026-08-09)", () => {
+    // rim_centre OFF the axis, exactly the shape that let a real 422 through with no
+    // client-side warning at all — markLeverGuard alone is silent on this fixture
+    const offsetClock = { rim_centre: [0.6, 0, 0], min_lever_mm: 0.5 };
+    const good = () => {
+      let d = newPairDraft("p0", false);
+      d = withPick(d, "part", [5, 0, 0]);
+      return withPick(d, "scan", [4, 0, 0]);
+    };
+    const axisSpan = () => {
+      let d = newPairDraft("s1", true);
+      d = withPick(d, "part", [5, 0, 0]);
+      d = withPick(d, "scan", [0.62, 0, -1]);
+      return withPick(d, "scan", [-0.62, 0, 1]);
+    };
+    expect(markLeverGuard(axisSpan(), pose, offsetClock)).toBeNull();
+    const words = applyBlockedReason([good(), axisSpan()], pose, offsetClock);
+    expect(words).not.toBeNull();
+    expect(words).toContain("Pair 2");
+    expect(words).toContain("half-turn");
   });
 });
 
