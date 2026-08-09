@@ -1853,6 +1853,63 @@ operator sees ("the x axis") are centre/seed errors in the site plane —
 measured all week, invariant to the global frame — a different problem this
 direction does not touch.
 
+BUILT (2026-08-06), all three layers, test-first throughout:
+
+- **Worker** (`apps/worker/src/case_prep/application/detection.py`): pure
+  `jaw_from_crown_axis(axis) -> Optional[str]` — crown-up z-component
+  ≥ +cos(60°) reads `"lower"`, ≤ −cos(60°) reads `"upper"`, the open cone
+  between is an honest `None` (a sideways-exported scan makes no claim, the
+  same discipline `tooth_guess_for` applies to an unmatched proposal — never a
+  coin-flip). `DetectionResult` gains `crown_axis` (world-space, `_crowns_frame`'s
+  third column — exposed, not recomputed) and `jaw_reading`. Pinned in
+  `tests/test_detection.py`: both sign directions, the inclusive ±cos(60°)
+  boundary, the open-cone `None`, and one slow real-mesh pin — the arch upload
+  (`297589851-neodent-gm-arch-with-healingcaps`) reads `"lower"` off its
+  geometry while its filename-suggested jaw (`discover_cases`) reads `"upper"`,
+  exactly the gap this section opened with.
+- **BFF**: `DetectionRecord.jaw_reading: Optional[str] = None` (`bff/session.py`,
+  additive), written by `_detection_record` from the worker's result
+  (`resources/case_sessions.py`). `_effective_choices`' jaw branch now reads
+  chosen → detection's `jaw_reading` (new source word `"scan"`) → the filename
+  suggestion — ranked there because it is measured off the geometry the run
+  actually seats against, while the filename is a substring guess that
+  silently defaulted on the very case that opened this section. The choices
+  view serves `jaw_advisory: Optional[str]`, composed server-side, non-null
+  EXACTLY when a reading exists and the EFFECTIVE jaw (never the raw one)
+  contradicts it — checked against effective so an operator who already fixed
+  the choice stops seeing a warning about a disagreement that no longer
+  exists. The exact served sentence (verified in `test_case_sessions.py`,
+  reading `"lower"` against a chosen `"upper"`):
+
+  > This scan reads as a lower jaw — the crowns point up along the scan's own
+  > axis — but the case says upper. Check the jaw choice; the package and its
+  > labels are named by it.
+
+  `DetectionView` additionally carries the raw `jaw_reading` (the effective
+  value alone loses it the instant a chosen jaw contradicts the scan) so the
+  UI's one-click fix can name the geometry's own answer even then. Pins: the
+  three-way precedence (scan beats filename, chosen beats both), the advisory's
+  exact appearance/absence including the ambiguous-reading (`None`) case, the
+  record + view writes, and a document predating the field
+  (`test_session_store.py`) loading with it honestly absent.
+- **Product** (`components/IntakeStage.tsx`, `api/client.ts`): the choice-source
+  chip's vocabulary gains the word for `"scan"` — "read from the scan", not the
+  bare source string. A non-null `jaw_advisory` raises an amber ⚠ "check jaw"
+  chip beside the jaw control that opens the established §10-AN slice-C caution
+  dialog (open-state via prop, the `AdjustDock`/`cautionsOpen` precedent
+  exactly — `escape`+focus-trap included), carrying the served sentence
+  verbatim; the jaw button matching the scan's own reading wears a highlight —
+  the one-click fix. Pins in `IntakeStage.test.tsx`: the chip word, the
+  geometry highlight, the dialog's open/closed render via the prop, and total
+  absence when the server serves no advisory.
+
+Verification: worker fast lane + the new detection tests (20 pins, fast +
+slow) green; BFF gate (`test_case_sessions.py` 110, `test_session_store.py`
+19) green; product `vitest` (`IntakeStage.test.tsx` 51, `client.test.ts` +
+`intake.test.ts` 110) green; the real typecheck
+(`tsc --noEmit -p tsconfig.app.json`) clean; freeze diff empty (jaw enters no
+physics — `verify-fleet`/`rehearse` untouched by this slice).
+
 ## §10-AN — the new comp: the Adjustment instrument dock (2026-08-06)
 
 The client's updated design bundle (new standalone, 265KB) was diffed against
@@ -1932,3 +1989,234 @@ and (b) the detection trace telemetry (§1.3/§10-AN) with THIS scan as the
 priority fixture. Also noted: detection emits numpy runtime warnings on this
 scan from a degenerate internal row — harmless to the result but worth a
 finite-guard when the telemetry lands.
+
+## §10-AO — the client's same-evening look/artifact batch (2026-08-06, late; B1-B5 built)
+
+Four product-side asks, none touching physics, plus B5 — the worker-side
+cap-imprint seat (recorded at the end of this section).
+
+**B1 — SUPERSEDES §10-AE's margins.** `scanPaneRadiusMm`
+(`apps/product/src/domain/declare.ts`) tightens a third time: `SCAN_PANE_MARGIN_MM`
+1.5 → 0.6 mm, `SCAN_PANE_FLOOR_MM` 5 → 3.5 mm ("whenever possible" crop to the cap,
+not the gum). The declared-variant branch, the no-variant fallback (largest served
+rim) and the standing 11 mm ceiling are unchanged. A declared 6.2 mm cap now derives
+to 3.7 mm (was 4.6 → floored to 5); the caption self-updates (it prints the same
+number `scanPaneRadiusMm` returns).
+
+**B2 — the cap-crop layer stops wearing the whole-arch tan.** New standalone
+constant `CAP_SCAN_COLOR` (bone-white `0xf2f1ec`, NOT pure white — flat white kills
+the scene's Lambert shading) in `packages/viewer/src/viewer/palette.ts`, exported
+alongside `FREE_POINT_COLOR`/`GHOST_POINT_COLOR` rather than added to the
+`PartRole`-keyed `PALETTE` table: the cap-crop mesh (`SitePanes.tsx`'s
+`scanGeometry`, panes 2 and 3) never goes through the composite STL loader that
+`PALETTE`/`PartRole` serve, so a new role would be dead weight on that path. Pane
+2's "scanned cap" swatch and the union pane's "scan" swatch both moved to
+`capScanHex()` — the SAME cropped mesh, one colour on both. The whole-arch surfaces
+(Arch context dialog, Delivery previews, the worklist) all load through
+`loadComposite`/`PartRole` and keep `PALETTE.arch` untouched.
+
+**B3 — SUPERSEDES §10-AA.2's chip rule, on the Construction library page ONLY.**
+§10-AA.2 read: "the effective one keeps its server-attributed suggested/selected
+chip." Client, 2026-08-06: the word "suggested" goes on this page — the effective
+part's chip always reads "selected", even when `effective_construction.source`
+is `"suggested"`. `deliver.constructionStepWords`'s `info.suggested` field is
+UNCHANGED (it still carries the server's true attribution for any caller that
+wants it — DeliverStage's own construction step reads it too); only
+`LibraryStage.tsx`'s one chip stopped consuming it. Intake's and Alignment's
+effective-choice chips keep naming "suggested" vs "chosen" verbatim — untouched.
+
+**B4 — the fourth Delivery preview tab, "Arch alone."** `previewTabs`
+(`apps/product/src/domain/deliver.ts`) gains a fourth entry, ordered last (after
+every per-tooth tab 3): key `arch-alone`, label `4 · Arch alone`, one layer (role
+`arch`), matched by the existing `CAPLESS_SUFFIX` against `-arch-capless.stl` —
+the SAME file tabs 1/2 already resolve as their own composite base, so this invents
+no new geometry, just a fourth view of a file that was already in `package_files`.
+`DeliverPreview.tsx` needed no change (layers-driven). Checked and confirmed, not
+found: no client-side filter drops the capless file from Delivery's download
+listing (`groupArtifacts` buckets by tooth only, and `handleDownloadAll` walks
+`artifacts.data.files` verbatim) — a regression pin was added rather than an
+unfilter, since there was nothing to unfilter.
+
+**B5 — the seat is the cap's own imprint, not a cylinder.** Client (verbatim
+intent): remove the cylinder — the hole must be the exact healing-cap geometry
+with "a small offset like the GINGIVAL RELIEF", and "there needs to be a floor
+of the healing cap in the 'arch alone' artifact with the offset". Domain note,
+client 2026-08-06: a vendor library STL carries FOUR geometric elements — the
+implant, the screw bore, the healing cap, the construction — and the imprint
+subtracts the HEALING CAP element only. Our catalog templates ARE that element
+(canonicalized revolute solids), so no in-file separation is needed today; if a
+bundled multi-element vendor STL ever enters the catalog, the split happens at
+ingest, not here.
+
+Built as `cap_imprint_holes(arch, sites)` in
+`apps/worker/src/case_prep/pipeline/deliverables.py`, each site
+`(template, pose_matrix, offset_mm, rim_radius_mm)`; no CSG backend exists in
+the venv (manifold3d/blender both absent) and scan shells are open, so the
+subtraction is face-cull + liner, not a boolean:
+
+1. **Seal, then dilate.** The catalog caps carry OPEN screw-lumen mouths by
+   design (`domain/channel.py` reads the channel off exactly those boundary
+   loops), so the template is first sealed — a centroid fan over each
+   `outline()` loop, then `fix_normals` for coherent winding — and only then
+   dilated by `offset_mm` along vertex normals. A template that will not seal
+   watertight refuses (the per-site fallback catches it).
+2. **Cull** arch faces whose centroid lies inside the posed dilated solid
+   (bbox prefilter, then containment) — only the cap's true footprint + offset
+   is removed; the gum around it survives.
+3. **Line** the hole with the dilated cap's own surface below the local gum
+   line, wound inward. THE FLOOR IS THE CAP'S OWN OFFSET BASE — never a
+   synthetic disc, never an open shaft — and the seat's mouth stays open at
+   the gum line. The visible groove IS the ditch.
+4. `offset_mm` is the site's EFFECTIVE gingival relief: the run's applied
+   clamp value when the row carries one, else the §10-B/C per-site ask —
+   both call sites resolve it (`application/emit.py` for the §10-AC re-emit
+   lane, `pipeline/auto_flow.py` for full runs).
+5. **Per-site fail-open**: a degenerate template falls back to the old
+   cylinder socket for that site and the manifest row carries
+   `production.imprint_note` naming it — an honest degradation, never a dead
+   package. `arch_with_clean_holes` stays present as that fallback.
+
+Pinned: footprint-only cull with gum survival, liner walls at the offset with
+no 8 mm bore, the floor (a downward ray from inside the seat must hit the
+cap's offset base; an upward ray must escape — closed floor, open mouth),
+liner orientation (floor normals up, walls inward), the cylinder fallback with
+its note, input non-mutation, and a slow real-mesh pin (cap6030-neodent-gm:
+no fallback on a real template, the gum ring survives, and near-seat liner
+vertices sit within relief + 0.3 mm of the true cap surface).
+
+## §10-AP — two live-testing findings (client 2026-08-09)
+
+Both are presentation. Neither moves a millimetre of geometry.
+
+**AP.1 — the archive fold resized the panes.** Client, on Alignment: opening
+"Superseded shelf — N archived parts" "shrinks the panels — the panels need to be
+always the main center of attention and size should not change."
+
+Mechanism: `.workspace-drawer` is `flex: 0 1 auto` under
+`max-height: min(238px, 27vh)`, so its height tracks its own content, and the panes
+above are the flex sibling that gives that height back. The `<details>` fold grew
+the drawer on open and shrank it on close; the panes moved both ways.
+
+REJECTED, and worth recording because it is the obvious fix: pinning the drawer to a
+fixed band. A constant band has to be sized for the drawer's TALLEST state, so it
+buys stability by shrinking the panes permanently — the opposite of the ask. Measured
+at 1280×800 the collapsed Alignment drawer is ~155 px against a 238 px cap, so a
+fixed band would have cost the panes ~83 px in the common case to save them ~83 px in
+the rare one.
+
+BUILT: the archived chips leave the flow. `VariantChips` renders one control
+(`data-role="superseded-open"`) whose size never changes, and the shelf opens in the
+`decode-dialog` idiom this surface already uses four times (arch context, cautions,
+switch-confirm, gate reasons) — same scrim, escape, focus trap. A variant is still
+declarable from inside it; declaring closes the dialog. Pinned from both sides: the
+closed render carries NO archived-chip markup at all, and the open one puts every
+chip after `data-role="superseded-backdrop"`, which is `position: fixed; inset: 0`.
+
+**AP.2 — an upper jaw was drawn like a lower one.** Client, on an upper-jaw Intake:
+"we recognize that the scan was an upper jaw but we didnt set the camara / posisiton
+to be facing with the teeth downwards."
+
+`anatomyViewOrientation` set the camera roll to `up = occlusal` for every scan, and
+`occlusal` points at the crowns — so the teeth rendered at the TOP of the screen on
+both jaws. §10-AM had just given the product a trustworthy jaw; nothing consumed it
+for display.
+
+BUILT: `anatomyViewOrientation(frame, view, { crownsDown })` negates the roll — AND
+ONLY THE ROLL — for front/left/right. The view DIRECTION is deliberately untouched:
+its elevation term rides `occlusal`, which on an upper arch already points downward,
+so the camera was always correctly on the side the teeth face. The occlusal preset is
+exempt (a plan view looks straight at the biting surfaces from the side they face on
+either jaw; its roll is the anterior axis). A roll is a rotation, not a reflection,
+so the pinned left/right handedness is untouched.
+
+`crownsDown` is held on the SceneController (`setJaw`), not passed per call, because
+the presets fire from three places — the operator's buttons and the two auto-front
+calls after a load. A per-call argument would have dressed the clicks correctly and
+left every freshly loaded scan upside down, which is the reported state exactly.
+MainStage sets the jaw BEFORE `loadStl` for the same reason, and re-applies in place
+on a jaw change so the Intake toggle turns the scan without re-downloading it.
+
+The source is the EFFECTIVE jaw, not the raw scan reading: if the operator has
+overridden what the geometry says, the view follows their answer. An unknown jaw
+keeps the standing crowns-up roll — a mount that does not know the jaw must not
+guess one. This consumes §10-AM's reading for PRESENTATION; the rule that the jaw
+names and cross-checks but never transforms is intact, since a camera roll is
+neither.
+
+Verified live on the pair: `cap6030-neodent-gm` (lower) still renders crowns up;
+`cap7020-zimmer-4.5` (upper) now renders crowns down.
+
+## §10-AQ — the socket becomes the envelope, and every pair blocker earns its tool (2026-08-09)
+
+**AQ.1 — SUPERSEDES §10-AO B5's exact-surface imprint, on the client's own
+competitor screenshot.** The client (verbatim): the tabs-2/4 artifacts are "messed
+up"; the target is the competitor's pocket — a clean recess with a floor "where the
+healing cap healed", the gingival offset being the clearance in which the crown's
+emergence is completed. Measured on cap7020's landed run: the exact-surface liner
+had printed the screw slot into the seat (top band a ring, radius 1.29-3.15mm,
+z-spread 3.17mm ≈ the whole cap), and the centroid cull had left 6,272 straddling
+fringe triangles overhanging the hole as a comb of spikes.
+
+Rebuilt in `pipeline/deliverables.py`:
+- `_envelope_solid` replaces `_dilated_solid`: the cap's REVOLUTE ENVELOPE —
+  per-height maximum radius + the applied relief, lathed watertight (40 rings x 64
+  segments, flat discs at both offset ends). Reads the template as a point cloud;
+  no watertightness demanded of vendor CAD, no sealing machinery.
+- The cull is by ANY VERTEX inside the envelope, not the centroid — no kept face
+  reaches into the socket (fringe = 0, re-measured on the re-emitted artifact).
+- The liner is clipped against a FITTED COLLAR PLANE (least squares over the same
+  ring band the old median used): one median height left the wall standing in a
+  proud crescent out of the LOW side of a tilted arch, and per-azimuth bins keep a
+  radial bias on slopes. Faces are judged by their HIGHEST vertex (the offset
+  bottom ring spans several rows — a passing centroid left its top vertex 0.36mm
+  proud, measured on the tilted-sheet pin).
+- THE FLOOR IS THE FLAT DISC at the cap's base + relief — where the cap healed.
+  On the landed artifact: flat to 0.000mm spread. The floor may legitimately
+  emerge from DOWNHILL tissue on a steep slope (the physical cap did too); the
+  wall above it may not, and the pin distinguishes them.
+
+17 deliverables pins (5 new) + 5 emit tests green. Landed on the client's live
+case via the §10-AC lane: site 3's relief override set to the clamp's own 0.08
+("ask for what you get" — the wall rule refuses 0.20 on zimmer-4.5 7020), which
+re-emitted the package in ~1s; run `20260809-150041-7bb2fe`.
+
+**AQ.2 — the pair tool's blockers each carry their fix (client: "better error
+messaging and the ability to unblock each of the blockers").** The client ate an
+HTTP 422 from the worker's ±180° arbiter (`require_span_off_axis`) with no
+client-side warning: the rim-centre guard cannot catch an axis-crossing span
+(the worker's own docstring records why — `template_rim_centre` sits off the
+axis), and the server's remedy sentence named a manual splice no tool performed.
+Built in `apps/product` (`domain/adjust.ts` + `AdjustDock`/`AdjustStage`):
+- `axisSpanGuard` — the arbiter mirrored client-side (same quantity off
+  `pose.origin`/`pose.axis`, same served `min_lever_mm` bound, fail-open on
+  missing inputs), wired into `applyBlockedReason` — the refusal now lands
+  BEFORE the round trip, named per pair.
+- `splitSpanDraft` + the "Mark ends as two pairs" button on complete both-halves
+  span pairs — the server's own remedy, mechanized: one click turns the span into
+  its two point pairs and the rotation gains a cross-check instead of losing an
+  observation.
+- `spanSplitRecoveryHint` — both post-422 recovery notes point at the split tool
+  when a splittable span stands; served sentences untouched.
+Product battery 1413 green; typecheck clean; freeze diff empty.
+
+**AQ.3 — the Delivery preview learns presentation, and the download learns the
+receipt (client 2026-08-09).** Client: a panel-like tool to hide library /
+construction / scan layers "such that we can make it appear more visually
+appealing — but when downloading the mesh you get the 4 requirements plus the
+invoice that they paid for." Built as exactly that split:
+- `previewLayerRows`/`visiblePreviewLayers` (`domain/deliver.ts`) + per-role
+  eye rows on the Delivery preview reusing the panes' own layer-HUD chrome —
+  view-local state, reset per tab, byte-identical downloads markup pinned with
+  every layer hidden. Single-layer tabs carry no HUD (toggling the only thing
+  in a scene is an off switch with no "on").
+- The paid invoice becomes a case-wide artifact: `_invoice_document`
+  (`bff/resources/deliver.py`) composes HTML SERVER-SIDE from `derive_invoice`'s
+  priced lines + the payment record + the standing billing dispositions
+  (withheld sites keep their $0 "not billed" line under a partial release —
+  the receipt is unconditional once paid). Listed by `list_artifacts` and
+  counted by `_release_preview` (their file counts are pinned to never
+  disagree), served at `.../artifacts/invoice` gated on PAYMENT alone — the
+  invoice states what was charged, fixed at authorization, so it is
+  deliberately narrower than the release gate; before payment the row is
+  absent and the route refuses with its own sentence. The four mesh artifacts
+  are untouched. BFF 655, product 1430, typecheck clean.
