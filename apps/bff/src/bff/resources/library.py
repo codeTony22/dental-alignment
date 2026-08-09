@@ -20,10 +20,10 @@ that is not there — nothing about asking was malformed.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from case_prep.application.catalog import (UnknownSelection, require_construction,
-                                           require_variant)
+                                           require_variant, variant_top_png)
 
 from ..config import Settings
 
@@ -41,6 +41,20 @@ def library_mesh(model: str, variant: str, request: Request) -> FileResponse:
     # "model/stl" for the same reason the scan stream states it: FileResponse would
     # otherwise guess application/octet-stream, which tells the viewer nothing.
     return FileResponse(path, media_type="model/stl", filename=path.name)
+
+
+@router.get("/{model}/{variant}/top.png")
+def library_top(model: str, variant: str, request: Request) -> Response:
+    """The variant's top-view thumbnail (client 2026-08-09: the shelf cards show the
+    part). Same membership door as the mesh route — ``variant_top_png`` resolves
+    through ``require_variant`` and renders the catalog's own file; nothing here is
+    a path. Cached per process behind the application layer."""
+    settings: Settings = request.app.state.settings
+    try:
+        png = variant_top_png(settings.data_root, model, variant)
+    except UnknownSelection as exc:
+        raise HTTPException(404, str(exc))
+    return Response(content=png, media_type="image/png")
 
 
 @constructions_router.get("/{vendor}/{filename}/mesh")

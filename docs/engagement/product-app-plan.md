@@ -2240,3 +2240,18 @@ extent −3.78 → −2.29 along the axis; the underside tube reduced to a plug.
 Operational note for live testing: uvicorn's reload dirs do not watch
 `pipeline/` — a pipeline-only change needs a touch of a watched file (or a
 restart) before the §10-AC lane serves it; this cost one confusing re-emit.
+
+**AQ.5 — the variant cards wear the part's face (client 2026-08-09).** The
+superseded-shelf dialog's cards were words in empty boxes; the client's mock puts
+the part's top view on them. Served end-to-end like every library asset: the
+catalog row gains `top_url` beside `mesh_url` (adapters/library_catalog — the UI
+never assembles a library path), the BFF's `/api/library/{model}/{variant}/top.png`
+resolves through the same `require_variant` membership door as the mesh route, and
+the worker's `variant_top_png` renders the canonical occlusal view — painter's
+algorithm, the viewer's own cap green 0x2fa75f, transparent ground, lru-cached per
+resolved file. `VariantChip` renders the image on BOTH shelves; CSS sizes it by
+context (26px inline on the dense current shelf — the §10-AA condensation stands —
+116px in the archive dialog). A row without `top_url` renders no image. Pins:
+route serves real PNG bytes + 404 in catalog words, detail rows carry the URL,
+chips wear/omit the image by the served field. BFF 658, product 1432, worker fast
+lane 857.

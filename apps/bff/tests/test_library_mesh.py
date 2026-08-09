@@ -58,3 +58,38 @@ def test_the_detail_payloads_mesh_urls_point_at_this_route(client):
     entry = next(v for v in group["variants"] if v["id"] == "5020")
     assert entry["mesh_url"] == "/api/library/neodent-gm/5020/mesh"
     assert client.get(entry["mesh_url"]).status_code == 200
+
+
+def test_serves_a_top_view_png_for_a_catalog_variant(settings):
+    """The variant thumbnail (client 2026-08-09): same membership door as the mesh
+    route, rendered from the catalog's own file — a real PNG, not a placeholder."""
+    import trimesh
+
+    stl = trimesh.creation.cylinder(radius=2.0, height=3.0).export(
+        file_type="stl")
+    (settings.data_root
+     / "library/caps/neodent-gm/neodent-gm-5020.stl").write_bytes(stl)
+    client = TestClient(create_app(settings))
+    res = client.get("/api/library/neodent-gm/5020/top.png")
+    assert res.status_code == 200
+    assert res.headers["content-type"] == "image/png"
+    assert res.content.startswith(b"\x89PNG")
+    assert len(res.content) > 1500, "an empty render is not a thumbnail"
+
+
+def test_an_unknown_variant_top_png_is_a_404_in_catalog_words(settings):
+    (settings.data_root
+     / "library/caps/neodent-gm/neodent-gm-5020.stl").write_bytes(MESH_BYTES)
+    client = TestClient(create_app(settings))
+    res = client.get("/api/library/neodent-gm/nope/top.png")
+    assert res.status_code == 404
+    assert "not a part of" in res.json()["detail"]
+
+
+def test_the_detail_payloads_catalog_rows_carry_the_top_url(client):
+    """The UI never assembles this URL: the catalog row serves it, exactly like
+    mesh_url (same seam as the mesh_url test above)."""
+    body = client.get("/api/case-sessions/neodent-gm").json()
+    group = next(g for g in body["catalog"]["groups"] if g["model"] == "neodent-gm")
+    entry = next(v for v in group["variants"] if v["id"] == "5020")
+    assert entry["top_url"] == "/api/library/neodent-gm/5020/top.png"

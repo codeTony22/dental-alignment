@@ -76,6 +76,10 @@ export interface VariantCard {
    * operator moves down the queue.
    */
   readonly suggested: boolean;
+  /** The SERVED top-view thumbnail URL (client 2026-08-09: the cards show the
+   *  part), from the catalog row's own `top_url` — this app never assembles a
+   *  library path. null = the catalog serves none; the chip renders no image. */
+  readonly topUrl: string | null;
 }
 
 /** "Ø 5.0 × 2.0 mm", or honesty when the catalog could not measure the file. */
@@ -132,6 +136,7 @@ export function variantShelves(
         ),
         superseded: flags.includes("superseded"),
         suggested: proposed !== null && id === proposed,
+        topUrl: typeof row["top_url"] === "string" ? row["top_url"] : null,
       },
     ];
   });

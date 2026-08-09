@@ -184,6 +184,30 @@ describe("the variant chips — the active site declares from the catalog", () =
      they open it, where on a chip it is a badge on the face of the page. Chips again,
      but COMPACT: the real-estate complaint that drove the dropdown was real, and it is
      answered by the chips' size rather than by hiding them. */
+  it("chips wear the part's SERVED top-view render (client 2026-08-09)", () => {
+    const html = view();
+    expect(html).toMatch(
+      /data-role="variant-top"[^>]*src="\/api\/library\/conical-4x4\/5020\/top\.png"/,
+    );
+  });
+
+  it("no served top_url, no image — the chip never assembles a library URL", () => {
+    const html = view({
+      detail: {
+        ...detail,
+        catalog: {
+          groups: [
+            catalogGroup("conical-4x4", [
+              catalogEntry({ id: "5020", top_url: undefined }),
+            ]),
+          ],
+          constructions: [],
+        },
+      },
+    });
+    expect(html).not.toContain('data-role="variant-top"');
+  });
+
   it("current chips carry the catalog's Ø × height line", () => {
     const html = view();
     expect(html).toContain('data-role="variant-cards"');

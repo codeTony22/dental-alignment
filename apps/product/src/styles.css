@@ -6522,6 +6522,28 @@ button.package-files__link:hover {
   border-radius: var(--radius-md);
 }
 
+/* THE PART'S FACE ON ITS CHIP (client 2026-08-09): a served top-view render.
+   Small and inline on the dense shelf — the §10-AA condensation stands — and a
+   real preview in the archive dialog, where the cards had room to spare. */
+.decode-variant__thumb {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  vertical-align: -7px;
+  margin-right: 6px;
+}
+
+.decode-dialog .decode-variant__thumb {
+  display: block;
+  width: 116px;
+  height: 116px;
+  margin: 4px auto 8px;
+}
+
+.decode-dialog .decode-variant {
+  min-width: 150px;
+}
+
 .declare-controls .decode-variant__dims {
   font-size: 11px;
   color: var(--color-text-muted);

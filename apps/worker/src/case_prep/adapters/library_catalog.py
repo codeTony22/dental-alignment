@@ -156,6 +156,11 @@ def build_catalog(data_root: Path) -> Tuple[List[dict], CatalogIndex]:
             entry["id"] = entry_id
             entry["mesh_url"] = "/api/library/{}/{}/mesh".format(
                 quote(group["model"], safe=""), quote(entry_id, safe=""))
+            # the SERVED thumbnail URL (client 2026-08-09: variant cards show the
+            # part's top view) — composed here beside mesh_url for the same
+            # reason: the UI follows served URLs, it never assembles library paths
+            entry["top_url"] = "/api/library/{}/{}/top.png".format(
+                quote(group["model"], safe=""), quote(entry_id, safe=""))
     return groups, index
 
 

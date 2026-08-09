@@ -260,6 +260,18 @@ function VariantChip({ card, declared, archived, onDeclare }: VariantChipProps) 
       }`}
       onClick={() => onDeclare(card.id)}
     >
+      {/* the part's own face (client 2026-08-09): the SERVED top-view render —
+          small beside the dense shelf's words, large in the archive dialog (CSS
+          decides by context). Absent when the catalog serves no thumbnail. */}
+      {card.topUrl !== null && (
+        <img
+          data-role="variant-top"
+          className="decode-variant__thumb"
+          src={card.topUrl}
+          alt=""
+          loading="lazy"
+        />
+      )}
       <span className="decode-variant__name">{card.label}</span>{" "}
       <span className="decode-variant__dims">{card.dims}</span>
       {card.suggested && (

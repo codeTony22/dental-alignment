@@ -113,6 +113,7 @@ export function catalogEntry(
     flags: [],
     duplicate_of: [],
     mesh_url: "/api/library/conical-4x4/5020/mesh",
+    top_url: "/api/library/conical-4x4/5020/top.png",
     ...overrides,
   };
 }

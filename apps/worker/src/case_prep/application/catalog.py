@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import quote
 
+import numpy as np
 import trimesh
 
 from case_prep.adapters import construction_catalog, library_catalog
@@ -114,6 +115,55 @@ def require_variant(data_root: Path, model: str, variant: str) -> Path:
         raise UnknownSelection(f"{variant!r} is not a part of the {model!r} library "
                                f"— pick a variant the library catalog lists")
     return path
+
+
+@lru_cache(maxsize=96)
+def _variant_top_png_cached(path_str: str) -> bytes:
+    """The rendered bytes behind ``variant_top_png``, keyed on the resolved catalog
+    file — the catalog is immutable per deploy, so one render per part per process."""
+    import io
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import PolyCollection
+
+    mesh = trimesh.load_mesh(path_str)
+    tris = np.asarray(mesh.triangles, float)
+    normals = np.asarray(mesh.face_normals, float)
+    # painter's algorithm straight down the canonical +z (the occlusal face — the
+    # view the client's comp shows): farthest faces first, top faces last
+    order = np.argsort(tris[:, :, 2].mean(axis=1))
+    tris = tris[order]
+    normals = normals[order]
+    light = np.array([0.35, -0.3, 0.9])
+    light /= np.linalg.norm(light)
+    lam = np.clip(normals @ light, 0.15, 1.0)
+    # the viewer's own healing-cap green (packages/viewer palette `cap: 0x2fa75f`)
+    base = np.array([0x2F, 0xA7, 0x5F], float) / 255.0
+    cols = np.clip(base[None, :] * (0.35 + 0.75 * lam[:, None]), 0, 1)
+    fig, ax = plt.subplots(figsize=(3.0, 3.0), dpi=110)
+    ax.add_collection(PolyCollection(tris[:, :, :2], facecolors=cols,
+                                     edgecolors="none"))
+    r = float(np.abs(tris[:, :, :2]).max()) * 1.06
+    ax.set_xlim(-r, r)
+    ax.set_ylim(-r, r)
+    ax.set_aspect("equal")
+    ax.set_axis_off()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", transparent=True,
+                bbox_inches="tight", pad_inches=0.02)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def variant_top_png(data_root: Path, model: str, variant: str) -> bytes:
+    """A top-view render of one catalog cap (client 2026-08-09: the variant cards
+    should show the part "like the panes do" — a PNG of the library top). Resolution
+    is catalog membership through ``require_variant``, exactly the mesh endpoint's
+    door; the render is the canonical occlusal view in the viewer's cap green."""
+    path = require_variant(Path(data_root), model, variant)
+    return _variant_top_png_cached(str(path))
 
 
 @lru_cache(maxsize=16)
