@@ -2220,3 +2220,23 @@ invoice that they paid for." Built as exactly that split:
   deliberately narrower than the release gate; before payment the row is
   absent and the route refuses with its own sentence. The four mesh artifacts
   are untouched. BFF 655, product 1430, typecheck clean.
+
+**AQ.4 — the socket's visible depth (client 2026-08-09, on 276794487's 6030).**
+The envelope lined the cap's FULL tunnel — this tall cap's base sits ~4mm
+subgingival, and on a paper-thin scan shell that liner hung out of the underside
+as a protruding cylinder ("showing all the way down until where the implant is
+going rather than just the healing cap"). The client allowed the artifacts to
+keep the full truth while the visuals go shallow; built instead as ONE truth —
+a preview that differs from the downloaded mesh is a disclosure trap on a page
+the operator signs over. `_SOCKET_VISIBLE_DEPTH_MM = 1.8`: the floor is the
+HIGHER of the cap's offset base and (collar − 1.8) — shallow caps unchanged,
+tall caps stop just below the gum like the competitor's dish, always one flat
+fan from the envelope's own profile at that height. The wall band may
+legitimately be EMPTY (a gum line at the cap's base leaves a floor-and-collar
+socket); the wholly-above-the-gum refusal now judges the floor, not the wall,
+and each site's liner pieces land atomically so a late exception reaches the
+fallback with nothing half-appended. Measured on the re-emitted case: socket
+extent −3.78 → −2.29 along the axis; the underside tube reduced to a plug.
+Operational note for live testing: uvicorn's reload dirs do not watch
+`pipeline/` — a pipeline-only change needs a touch of a watched file (or a
+restart) before the §10-AC lane serves it; this cost one confusing re-emit.

@@ -322,6 +322,36 @@ class TestCapImprintHoles:
             assert bool(np.asarray(hits).all()), \
                 f"the moat at r={radius} still lets rays through"
 
+    def test_a_tall_cap_socket_stops_just_below_the_gum(self):
+        """THE VISIBLE-DEPTH CAP (client 2026-08-09, on 276794487's 6030): a tall
+        cap's base sits ~4mm below the gum, and a socket lined all the way down
+        hangs out of the thin scan shell as a protruding cylinder — 'showing all
+        the way down until where the implant is going rather than just the
+        healing cap.' The dish the competitor shows is SHALLOW: the floor stops
+        just below the gum. The socket keeps the cap's footprint, but its floor
+        is the HIGHER of the cap's offset base and (collar − visible depth).
+        The short fixture cap elsewhere in this class is untouched by the cap —
+        its base is already above that line."""
+        from case_prep.pipeline.deliverables import cap_imprint_holes
+
+        tall = trimesh.creation.cylinder(radius=2.0, height=10.0)
+        arch = _arch_with_bump()
+        out, notes = cap_imprint_holes(arch, [(tall, _pose_at(0, 0, 5.0),
+                                               0.2, 2.0)])
+        assert notes == []
+        v = np.asarray(out.vertices, float)
+        r = np.linalg.norm(v[:, :2], axis=1)
+        sock = r < 2.5
+        # the cap's base+offset is at -0.2; the collar sits near the sheet top
+        # (~0.5): nothing of the socket may reach deeper than collar - 2.0
+        deepest = float(v[sock][:, 2].min())
+        assert deepest > -1.9, \
+            f"socket reaches {deepest}mm — the tube out of the shell is back"
+        # and the shallow floor is still a FLOOR: a down-ray from the mouth hits
+        down = out.ray.intersects_any(ray_origins=[[0.0, 0.0, 0.3]],
+                                      ray_directions=[[0.0, 0.0, -1.0]])
+        assert bool(down[0]), "the capped socket still needs its floor"
+
     def test_a_degenerate_template_falls_back_to_the_cylinder_socket(self):
         from case_prep.pipeline.deliverables import cap_imprint_holes
 

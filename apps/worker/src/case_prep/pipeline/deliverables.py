@@ -118,6 +118,14 @@ def arch_with_clean_holes(arch: trimesh.Trimesh,
 
 _HOLE_DEPTH_MM = 8.0  # socket depth below the collar (floored — reads solid)
 
+# THE SOCKET'S VISIBLE DEPTH (client 2026-08-09, on 276794487's tall 6030 cap):
+# a cap whose base sits ~4mm subgingival lined a socket that hung out of the
+# thin scan shell as a protruding cylinder — "showing all the way down until
+# where the implant is going rather than just the healing cap". The dish the
+# competitor renders is SHALLOW. The socket keeps the cap's exact footprint,
+# but its floor stops at (collar − this) when the cap's offset base is deeper.
+_SOCKET_VISIBLE_DEPTH_MM = 1.8
+
 
 def _envelope_profile(template: trimesh.Trimesh,
                       offset_mm: float) -> Tuple[np.ndarray, np.ndarray]:
@@ -315,6 +323,11 @@ def cap_imprint_holes(arch: trimesh.Trimesh,
             R = pose[:3, :3]
             axis = R @ np.array([0.0, 0.0, 1.0])
             a0, bx, cy = _collar_plane(V, pose, rim_radius_mm)
+            zs_p, prof_p = _envelope_profile(template, offset_mm)
+            # THE FLOOR STOPS JUST BELOW THE GUM (client 2026-08-09): the higher
+            # of the cap's offset base and (collar − visible depth). A tall cap's
+            # full tunnel hung out of the thin scan shell as a cylinder.
+            floor_axial = max(float(zs_p[0]), a0 - _SOCKET_VISIBLE_DEPTH_MM)
             fc = np.asarray(posed.triangles_center, float) - origin
             face_axial = fc @ axis
             fx = fc @ (R @ np.array([1.0, 0.0, 0.0]))
@@ -325,16 +338,41 @@ def cap_imprint_holes(arch: trimesh.Trimesh,
             # proud of the gum (measured on the tilted-sheet pin)
             v_axial = (np.asarray(posed.vertices, float) - origin) @ axis
             face_top = v_axial[posed.faces].max(axis=1)
-            below = face_top <= a0 + bx * fx + cy * fy + 0.15
-            if not below.any():
+            # the wall band: fully below the gum tuck, with any part above the
+            # floor (a face straddling the floor hides under the floor fan).
+            # The honest emptiness test is the FLOOR's, not the wall's: a gum
+            # line at the cap's base leaves a legitimate floor-and-collar
+            # socket with no wall rows at all.
+            if floor_axial > a0 + 0.15:
                 raise ValueError("imprint sits wholly above the gum line")
-            kept_faces = posed.faces[below].copy()
-            outward = np.asarray(posed.face_normals, float)[below] @ axis
-            flip = outward <= 0.9
-            kept_faces[flip] = kept_faces[flip][:, ::-1]
-            liner = trimesh.Trimesh(np.asarray(posed.vertices).copy(),
-                                    kept_faces, process=False)
-            liner.remove_unreferenced_vertices()
+            below = ((face_top <= a0 + bx * fx + cy * fy + 0.15)
+                     & (face_top >= floor_axial + 0.01))
+            site_liners = []
+            if below.any():
+                kept_faces = posed.faces[below].copy()
+                outward = np.asarray(posed.face_normals, float)[below] @ axis
+                flip = outward <= 0.9
+                kept_faces[flip] = kept_faces[flip][:, ::-1]
+                liner = trimesh.Trimesh(np.asarray(posed.vertices).copy(),
+                                        kept_faces, process=False)
+                liner.remove_unreferenced_vertices()
+                site_liners.append(liner)
+            # the floor itself: one flat fan at the visible depth, radius from
+            # the envelope's own profile there — the lathe's bottom disc is
+            # below the axial filter, so this is the ONE floor either way
+            r_floor = float(np.interp(floor_axial, zs_p, prof_p))
+            f_seg = 64
+            f_theta = np.linspace(0.0, 2.0 * np.pi, f_seg, endpoint=False)
+            xl0 = R @ np.array([1.0, 0.0, 0.0])
+            yl0 = R @ np.array([0.0, 1.0, 0.0])
+            ring = (origin[None, :] + axis[None, :] * floor_axial
+                    + np.outer(np.cos(f_theta) * r_floor, xl0)
+                    + np.outer(np.sin(f_theta) * r_floor, yl0))
+            f_verts = np.vstack([origin + axis * floor_axial, ring])
+            f_faces = [[0, 1 + j, 1 + (j + 1) % f_seg] for j in range(f_seg)]
+            site_liners.append(trimesh.Trimesh(f_verts,
+                                               np.asarray(f_faces, int),
+                                               process=False))
             # THE COLLAR ANNULUS (client 2026-08-09: "we cannot leave the empty
             # space there"): the any-vertex cull opens the scan up to one
             # triangle-edge WIDER than the wall, leaving an annular moat between
@@ -342,7 +380,6 @@ def cap_imprint_holes(arch: trimesh.Trimesh,
             # wall's own mouth, outer ring 1.4mm out riding the fitted gum
             # plane, faces up. The same bridging the cylinder socket always had
             # (_hole_bore's collar); this one follows the tilt.
-            zs_p, prof_p = _envelope_profile(template, offset_mm)
             xl = R @ np.array([1.0, 0.0, 0.0])
             yl = R @ np.array([0.0, 1.0, 0.0])
             seg = 64
@@ -372,9 +409,12 @@ def cap_imprint_holes(arch: trimesh.Trimesh,
             collar = trimesh.Trimesh(np.vstack([inner_pts, outer_pts]),
                                      np.asarray(collar_faces, int),
                                      process=False)
+            # the site lands ATOMICALLY: nothing joins the output until every
+            # piece of it exists — a late exception must reach the fallback with
+            # no half-liner already in the list
+            site_liners.append(collar)
             out = kept
-            liners.append(liner)
-            liners.append(collar)
+            liners.extend(site_liners)
         except Exception as exc:  # noqa: BLE001 — the fallback IS the containment
             notes.append(f"site {index}: the cap imprint could not be built "
                          f"({exc}) — the cylinder socket was used instead")
