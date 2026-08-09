@@ -118,6 +118,40 @@ def require_variant(data_root: Path, model: str, variant: str) -> Path:
 
 
 @lru_cache(maxsize=96)
+def _variant_canonical_stl_cached(path_str: str) -> bytes:
+    """The canonicalized template's STL bytes — cached per resolved catalog file
+    (the catalog is immutable per deploy). ``canonicalize_revolute`` is the SAME
+    door ``CapLibrary`` loads every template through, applied to the file
+    ``require_variant`` resolved — so archived ids canonicalize exactly like
+    current ones, by the file the catalog names."""
+    from case_prep.adapters.ingest import canonicalize_revolute
+
+    mesh = trimesh.load_mesh(path_str)
+    local, _ = canonicalize_revolute(mesh)
+    return local.export(file_type="stl")
+
+
+def variant_canonical_stl(data_root: Path, model: str, variant: str) -> bytes:
+    """One catalog cap as CANONICAL STL bytes — the frame every other actor speaks.
+
+    THE FRAME DEFECT THIS CLOSES (measured 2026-08-09): the mesh endpoint used to
+    stream the vendor file VERBATIM, but the worker's pair fold reads part clicks
+    as canonical, and raw→canonical is a per-part translation of 0.21-0.59mm in xy
+    and 2.3-4.7mm in z across the catalog. Every click on pane 1's part was
+    therefore recorded in the wrong frame: ghosts and auto-mark landmarks drew
+    2.4-4.8mm off the features (the client's "the tool doesn't mark the proper
+    holes", literally), and the parallax injected up to ±22° of clock error on
+    some variants. Serving the canonical mesh makes pane 1's clicks, the fold,
+    the ghosts and the landmarks ONE frame — the run's own.
+
+    Resolution stays catalog membership: ``require_variant`` first (the 404
+    wording), then the same ``_library_for``/``template`` door the run loads
+    through — never a re-derived canonicalization."""
+    path = require_variant(Path(data_root), model, variant)
+    return _variant_canonical_stl_cached(str(path))
+
+
+@lru_cache(maxsize=96)
 def _variant_top_png_cached(path_str: str) -> bytes:
     """The rendered bytes behind ``variant_top_png``, keyed on the resolved catalog
     file — the catalog is immutable per deploy, so one render per part per process."""

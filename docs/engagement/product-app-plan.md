@@ -2255,3 +2255,49 @@ context (26px inline on the dense current shelf — the §10-AA condensation sta
 route serves real PNG bytes + 404 in catalog words, detail rows carry the URL,
 chips wear/omit the image by the served field. BFF 658, product 1432, worker fast
 lane 857.
+
+## §10-AR — the pair tool measured: one frame bug fixed, one pivot bias queued (2026-08-09)
+
+Client: "the span points tool dont make the proper holes — doing position rather
+than matching the points." Measured against their own three recorded pairs
+(cap7020 tooth 3, 10:26-10:27): the ROTATION MATH IS EXACT — each apply turned
+the pose by precisely the asked angle (tilt 0.0000°), the landed pose replays to
+0.0236°, azimuth residual as shipped −0.00/+0.05/+0.03°. The visible wrongness
+was upstream, in TWO measured defects:
+
+**AR.1 — FIXED: the part half was clicked in the vendor file's frame and read as
+canonical.** The library mesh route streamed the catalog file VERBATIM; the fold,
+the ghosts, auto-mark's landmarks and the run all speak the CANONICALIZED frame;
+raw→canonical is a pure per-part translation (0.213-0.594mm xy, 2.33-4.72mm z,
+all 21 variants; the recorded clicks sit 0.0002mm from the raw surface and
+1.93-2.28mm from canonical — the decisive read). Consequences measured: ghosts
+and auto-mark landmarks drew 2.408-4.758mm off the features ("doesn't mark the
+proper holes", literally) and the parallax injected −10..+8° of clock at the
+trench levers (worst case 22.04° on 5030). BUILT: the route serves the CANONICAL
+template — `variant_canonical_stl` (application/catalog) through
+`canonicalize_revolute`, the same door `CapLibrary` loads every template through,
+applied to the exact file `require_variant` resolves (archived ids included);
+the BFF route returns those bytes as model/stl. The client-side ghost/landmark
+math needed NO change — it always assumed canonical. Pinned: the served mesh of
+an off-origin fixture comes back on-axis, for current AND superseded ids. The
+conftest tree deliberately keeps EMPTY placeholder STLs (a real cap there sends
+the detector into the empty fixture scan across 369 tests — measured); geometry
+tests write their own.
+CAVEAT, recorded rather than silently corrected: pair evidence recorded BEFORE
+this fix carries the old frame, and §10-AD re-application preserves it verbatim —
+re-place pairs on sites adjusted before 2026-08-09 (the backend must never
+self-correct calibrated operator input; the re-click integrity rule).
+
+**AR.2 — QUEUED, not hot-patched: the scan half reads about the part's rim
+centre.** Since the one-pivot fix (2026-08-05) both halves measure about
+`template_rim_centre`; the scanned cap's own ring sits e = 0.251-0.377mm off it
+on the measured cases, so a dead-on scan click reads with a bias up to
+asin(e/r) — 4.5-14.2° at the levers in use. On cap7020 t3 the cumulative +6.08°
+applied moved the part OFF an already-correct clock (coded-cutout arbiter
+−0.11° → +6.18°; trench-to-trench 0.375 → 0.539mm). Why queued: from three
+clicks, operator scatter (±5.5-7.5° at these levers) and the parallax are the
+SAME magnitude — attribution needs the controlled repeat (N clicks, one feature,
+one pose) before changing a calibrated fold that was itself a deliberate fix.
+The experiment is the gate; the candidate correction (scan azimuths about the
+scan's own measured ring centre) is named here so the next session starts from
+the measurement, not the argument.

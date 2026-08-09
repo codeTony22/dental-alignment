@@ -23,7 +23,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 
 from case_prep.application.catalog import (UnknownSelection, require_construction,
-                                           require_variant, variant_top_png)
+                                           variant_canonical_stl, variant_top_png)
 
 from ..config import Settings
 
@@ -32,15 +32,21 @@ constructions_router = APIRouter(prefix="/api/constructions", tags=["library"])
 
 
 @router.get("/{model}/{variant}/mesh")
-def library_mesh(model: str, variant: str, request: Request) -> FileResponse:
+def library_mesh(model: str, variant: str, request: Request) -> Response:
+    """THE CANONICAL FRAME, SERVED (frame defect, measured 2026-08-09): this used
+    to stream the vendor file verbatim, but every other actor — the pair fold, the
+    posed ghosts, auto-mark's landmarks, the run itself — speaks the CANONICALIZED
+    frame, and the raw file sits a per-part translation away (0.2-0.6mm xy,
+    2.3-4.7mm z across the catalog). Pane 1's clicks were being recorded in the
+    wrong frame. The canonicalization comes from the application layer's one door
+    (``variant_canonical_stl`` → the same ``_library_for``/``template`` the run
+    loads through); "model/stl" for the same reason the scan stream states it."""
     settings: Settings = request.app.state.settings
     try:
-        path = require_variant(settings.data_root, model, variant)
+        stl = variant_canonical_stl(settings.data_root, model, variant)
     except UnknownSelection as exc:
         raise HTTPException(404, str(exc))
-    # "model/stl" for the same reason the scan stream states it: FileResponse would
-    # otherwise guess application/octet-stream, which tells the viewer nothing.
-    return FileResponse(path, media_type="model/stl", filename=path.name)
+    return Response(content=stl, media_type="model/stl")
 
 
 @router.get("/{model}/{variant}/top.png")
