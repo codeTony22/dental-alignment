@@ -126,6 +126,15 @@ _HOLE_DEPTH_MM = 8.0  # socket depth below the collar (floored — reads solid)
 # but its floor stops at (collar − this) when the cap's offset base is deeper.
 _SOCKET_VISIBLE_DEPTH_MM = 1.8
 
+# THE CULL'S OWN CLEARANCE (client 2026-08-09, on 295811960's torn flaps): the
+# liner is the template + the applied relief — the SEAT truth — but the SCANNED
+# cap deviates from the template (p90 0.36mm measured on the client's case), and
+# a cull sized exactly to the relief left every real-cap excursion standing as a
+# torn crescent around the socket. The cull sweeps this much beyond the relief;
+# the liner does not move. Far tighter than the old cylinder's rim+0.6-on-a-
+# bounding-can, and sized to cover seat p90 + scan noise.
+_CULL_MARGIN_MM = 0.5
+
 
 def _envelope_profile(template: trimesh.Trimesh,
                       offset_mm: float) -> Tuple[np.ndarray, np.ndarray]:
@@ -293,19 +302,25 @@ def cap_imprint_holes(arch: trimesh.Trimesh,
         try:
             posed = _envelope_solid(template, offset_mm)
             posed.apply_transform(pose)
+            # THE CULL SWEEPS WIDER THAN THE SEAT (client 2026-08-09): the
+            # scanned cap deviates from the template, and everything it does
+            # beyond the relief envelope survived as torn flaps around the
+            # socket. The cull uses its own clearance; the liner stays exact.
+            cull = _envelope_solid(template, offset_mm + _CULL_MARGIN_MM)
+            cull.apply_transform(pose)
             collar = _collar_z_local(V, pose, rim_radius_mm)
             # THE ANY-VERTEX CULL: a face goes if any of its three corners is
-            # inside the envelope. All-corners-outside-with-centroid-inside needs
-            # a triangle wider than the socket — scan facets are ~0.3mm against a
-            # ~5mm envelope, so the vertex test alone decides. The kept boundary
-            # then has no vertex reaching in: no overhanging needle tips.
+            # inside the cull envelope. All-corners-outside-with-centroid-inside
+            # needs a triangle wider than the socket — scan facets are ~0.3mm
+            # against a ~5mm envelope, so the vertex test alone decides. The
+            # kept boundary then has no vertex reaching in: no needle tips.
             verts_now = np.asarray(out.vertices, float)
-            lo, hi = posed.bounds
+            lo, hi = cull.bounds
             near_v = np.all((verts_now >= lo - 1e-6) & (verts_now <= hi + 1e-6),
                             axis=1)
             v_inside = np.zeros(len(verts_now), bool)
             if near_v.any():
-                v_inside[near_v] = posed.contains(verts_now[near_v])
+                v_inside[near_v] = cull.contains(verts_now[near_v])
             face_gone = v_inside[out.faces].any(axis=1)
             kept = trimesh.Trimesh(verts_now.copy(),
                                    out.faces[~face_gone], process=False)
@@ -393,7 +408,9 @@ def cap_imprint_holes(arch: trimesh.Trimesh,
                 mx = r_mouth * np.cos(theta)
                 my = r_mouth * np.sin(theta)
                 mouth_h = a0 + bx * mx + cy * my + 0.15
-            r_outer = r_mouth + 1.4
+            # the collar reaches past the cut edge, which now sits a cull margin
+            # farther out than the wall
+            r_outer = r_mouth + 1.4 + _CULL_MARGIN_MM
             ox = r_outer * np.cos(theta)
             oy = r_outer * np.sin(theta)
             outer_h = a0 + bx * ox + cy * oy

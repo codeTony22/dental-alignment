@@ -322,6 +322,37 @@ class TestCapImprintHoles:
             assert bool(np.asarray(hits).all()), \
                 f"the moat at r={radius} still lets rays through"
 
+    def test_a_deviated_scanned_cap_leaves_no_flaps(self):
+        """THE TORN-FLAP MECHANISM (client 2026-08-09, on 295811960: 'a lot of
+        the scan left... not smoothed into the scan'). The cull removed what sat
+        inside template + relief, but the SCANNED cap deviates from the template
+        (p90 0.36mm on the client's case) — everything the real cap does beyond
+        the relief envelope survived as torn crescents standing around the
+        socket. The CULL now carries its own clearance beyond the relief; the
+        LINER stays at the exact relief (the seat is unchanged — only the
+        cleanup is honest about real scans)."""
+        from case_prep.pipeline.deliverables import cap_imprint_holes
+
+        # the scanned cap sits 0.35mm OFF the declared pose — a realistic seat
+        # deviation, larger than the 0.2 relief
+        sheet = trimesh.creation.box(extents=[40, 20, 1])
+        for _ in range(4):
+            sheet = sheet.subdivide()
+        bump = trimesh.creation.cylinder(radius=2.0, height=4.0)
+        bump.apply_translation([0.35, 0.0, 2.0])
+        arch = trimesh.util.concatenate([sheet, bump])
+        out, notes = cap_imprint_holes(arch, [self._site()])
+        assert notes == []
+        v = np.asarray(out.vertices, float)
+        r = np.linalg.norm(v[:, :2], axis=1)
+        # WITHOUT the cull clearance, a crescent of the shifted bump survives
+        # just outside the relief envelope (r 2.2..2.55) standing tall above the
+        # sheet — the flaps in the client's screenshot. Nothing of the scan may
+        # stand there now.
+        flaps = (r < 2.9) & (v[:, 2] > 1.0) & (v[:, 2] < 3.8)
+        assert not flaps.any(), \
+            f"{int(flaps.sum())} scan vertices still stand in the seat's throat"
+
     def test_a_tall_cap_socket_stops_just_below_the_gum(self):
         """THE VISIBLE-DEPTH CAP (client 2026-08-09, on 276794487's 6030): a tall
         cap's base sits ~4mm below the gum, and a socket lined all the way down

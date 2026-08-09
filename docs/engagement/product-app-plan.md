@@ -2301,3 +2301,16 @@ one pose) before changing a calibrated fold that was itself a deliberate fix.
 The experiment is the gate; the candidate correction (scan azimuths about the
 scan's own measured ring centre) is named here so the next session starts from
 the measurement, not the argument.
+
+**AR.3 — the cull sweeps real-cap deviation; the seat stays at the relief
+(client 2026-08-09, on 295811960's torn flaps).** The cull removed what sat
+inside template + relief, but the SCANNED cap deviates from the template (p90
+0.36mm on the client's case) — every excursion beyond the relief envelope
+survived as a torn crescent standing in the socket's throat ("a lot of the scan
+left... not smoothed into the scan"). `_CULL_MARGIN_MM = 0.5`: the cull uses its
+own envelope, relief + clearance, sized for seat p90 + scan noise; the LINER
+does not move (the seat truth is untouched); the collar annulus widens by the
+same margin so the moat stays bridged. Still far tighter than the old cylinder's
+blunt can. Pinned with a deliberately mis-seated cap (0.35mm off-pose): nothing
+of the scan may stand in the throat. 20 deliverables pins, emit suite, fast lane
+858 green; re-emitted live as 295811960 run 20260809-180344.
