@@ -200,15 +200,48 @@ describe("the variant chips — the active site declares from the catalog", () =
     );
   });
 
-  it("the superseded shelf collapses behind a LABELLED fold", () => {
+  /* THE ARCHIVE OPENS OUT OF FLOW (client 2026-08-09: "it shrinks the panels — the
+     panels need to be always the main center of attention and size should not
+     change"). It used to be a `<details>` fold INSIDE the drawer, and the drawer is
+     `flex: 0 1 auto` under a `max-height` — so its height tracked its content, and
+     every open/close handed height back and forth with the panes above it. No fixed
+     band could fix that without pinning the panes at their worst-case size forever,
+     which is the opposite of the ask. So the archived chips leave the flow entirely:
+     the drawer holds one control whose size never changes, and the shelf opens in the
+     product's own dialog idiom. */
+  it("the archive control names its count and carries NO chip in the drawer", () => {
     const html = view();
-    expect(html).toContain('data-role="superseded-fold"');
+    expect(html).toContain('data-role="superseded-open"');
     expect(html).toContain("Superseded shelf — 1 archived part");
-    expect(html).toContain("4.0 × 1.0 (archived)");
+    // THE INVARIANT: closed, not one byte of archived chip is in the flow — the
+    // drawer cannot grow by opening what it does not contain.
+    expect(html).not.toContain("4.0 × 1.0 (archived)");
+    expect(html).not.toContain('data-role="superseded-dialog"');
   });
 
-  it("no superseded parts, no fold at all", () => {
-    const html = view({
+  it("the archived chips render in a dialog, out of the drawer's flow", () => {
+    const html = view({ archiveOpen: true });
+    expect(html).toContain('data-role="superseded-dialog"');
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain("4.0 × 1.0 (archived)");
+    expect(html).toContain('data-role="superseded-close"');
+    // declarable from inside the dialog — the shelf is a shelf, not a read-only list
+    expect(html).toMatch(
+      /data-role="superseded-dialog"[\s\S]*data-role="variant-card"[^>]*data-variant="superseded-2025-01-01--4010"/,
+    );
+    /* THE OTHER HALF OF THE INVARIANT. The closed render proves the drawer holds no
+       archived chip; this proves the open one puts every chip inside the BACKDROP,
+       which is `position: fixed; inset: 0` (styles.css `.decode-dialog-backdrop`) —
+       out of the drawer's flow entirely. Together: opening the shelf cannot change
+       the drawer's height, so it cannot take a pixel from the panes. */
+    const backdropAt = html.indexOf('data-role="superseded-backdrop"');
+    expect(backdropAt).toBeGreaterThan(-1);
+    expect(html).toContain("decode-dialog-backdrop");
+    expect(html.indexOf("4.0 × 1.0 (archived)")).toBeGreaterThan(backdropAt);
+  });
+
+  it("no superseded parts, no control and no dialog at all", () => {
+    const bare = {
       detail: {
         ...detail,
         catalog: {
@@ -216,8 +249,11 @@ describe("the variant chips — the active site declares from the catalog", () =
           constructions: [],
         },
       },
-    });
-    expect(html).not.toContain('data-role="superseded-fold"');
+    };
+    expect(view(bare)).not.toContain('data-role="superseded-open"');
+    expect(view({ ...bare, archiveOpen: true })).not.toContain(
+      'data-role="superseded-dialog"',
+    );
   });
 
   it("the chip detection proposed for the ACTIVE site wears a VISIBLE badge", () => {

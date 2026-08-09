@@ -279,6 +279,7 @@ interface VariantChipsProps {
   readonly active: SiteView | null;
   readonly shelves: ReturnType<typeof variantShelves>;
   readonly onDeclare: (variantId: string) => void;
+  readonly onOpenArchive: () => void;
 }
 
 /**
@@ -297,7 +298,12 @@ interface VariantChipsProps {
  * cards. The superseded shelf stays behind its own fold — kept apart from the current
  * shelf, never mixed into it.
  */
-function VariantChips({ active, shelves, onDeclare }: VariantChipsProps) {
+function VariantChips({
+  active,
+  shelves,
+  onDeclare,
+  onOpenArchive,
+}: VariantChipsProps) {
   return (
     <div
       data-role="variant-cards"
@@ -321,26 +327,16 @@ function VariantChips({ active, shelves, onDeclare }: VariantChipsProps) {
             ))}
           </div>
           {shelves.superseded.length > 0 && (
-            <details data-role="superseded-fold" className="decode-archive">
-              <summary className="decode-archive__title">
-                Superseded shelf — {shelves.superseded.length} archived part
-                {shelves.superseded.length === 1 ? "" : "s"}
-              </summary>
-              <p className="decode-archive__note">
-                Kept apart from the current shelf, never mixed into it.
-              </p>
-              <div className="decode-variant-list">
-                {shelves.superseded.map((card) => (
-                  <VariantChip
-                    key={card.id}
-                    card={card}
-                    declared={active.declared_variant === card.id}
-                    archived
-                    onDeclare={onDeclare}
-                  />
-                ))}
-              </div>
-            </details>
+            <button
+              type="button"
+              data-role="superseded-open"
+              className="decode-archive__title"
+              aria-haspopup="dialog"
+              onClick={onOpenArchive}
+            >
+              Superseded shelf — {shelves.superseded.length} archived part
+              {shelves.superseded.length === 1 ? "" : "s"}
+            </button>
           )}
         </>
       )}
@@ -636,6 +632,13 @@ export interface DeclareStageViewProps {
   readonly cautionsOpen?: boolean;
   readonly onOpenCautions?: () => void;
   readonly onCloseCautions?: () => void;
+  /** THE SUPERSEDED SHELF, OUT OF FLOW (client 2026-08-09: opening it "shrinks the
+   *  panels — the panels need to be always the main center of attention and size
+   *  should not change"). A prop for the same reason `cautionsOpen` is one: a static
+   *  render can pin it open. Optional with an inert default. */
+  readonly archiveOpen?: boolean;
+  readonly onOpenArchive?: () => void;
+  readonly onCloseArchive?: () => void;
 }
 
 /** The stage's whole surface, pure payload → markup — statically testable. */
@@ -670,6 +673,9 @@ export function DeclareStageView({
   cautionsOpen = false,
   onOpenCautions = () => undefined,
   onCloseCautions = () => undefined,
+  archiveOpen = false,
+  onOpenArchive = () => undefined,
+  onCloseArchive = () => undefined,
 }: DeclareStageViewProps) {
   const facts = factsFromCaseSession(detail);
   const active = activeSiteFrom(detail.sites, activeTooth);
@@ -687,6 +693,10 @@ export function DeclareStageView({
   useDialogEscape(cautionsOpen, onCloseCautions);
   const cautionsDialogRef = useRef<HTMLElement | null>(null);
   useDialogFocus(cautionsOpen, cautionsDialogRef);
+  // THE ARCHIVE (client 2026-08-09) — same chrome, same escape and focus discipline.
+  useDialogEscape(archiveOpen, onCloseArchive);
+  const archiveDialogRef = useRef<HTMLElement | null>(null);
+  useDialogFocus(archiveOpen, archiveDialogRef);
   const cautionWords = declareCautionWords(active, runRows);
   // Per-SITE shelves: the detector's proposal is a fact about the active site, so the
   // same catalog marks a different card as the operator moves down the queue.
@@ -989,7 +999,12 @@ export function DeclareStageView({
         <div className="workspace-drawer workspace-drawer--declare">
           <div data-role="declare-controls" className="declare-controls">
             <SystemSelect detail={detail} onAskSwitch={onAskSwitch} />
-            <VariantChips active={active} shelves={shelves} onDeclare={onDeclare} />
+            <VariantChips
+              active={active}
+              shelves={shelves}
+              onDeclare={onDeclare}
+              onOpenArchive={onOpenArchive}
+            />
           </div>
           {pendingSwitch !== null && (
             <SwitchConfirm
@@ -1040,7 +1055,79 @@ export function DeclareStageView({
                 scanFilename={detail.case.scan_filename}
                 sites={detail.sites}
                 activeTooth={active?.tooth ?? null}
+                jaw={detail.choices.effective_jaw.value}
               />
+            </div>
+          </section>
+        </div>
+      )}
+      {/* THE SUPERSEDED SHELF, OUT OF THE DRAWER'S FLOW (client 2026-08-09: "it
+          shrinks the panels — the panels need to be always the main center of
+          attention and size should not change").
+
+          It was a `<details>` fold inside the drawer, and the drawer is `flex: 0 1
+          auto` under `max-height: min(238px, 27vh)` — so its height tracked its own
+          content and every toggle traded height with the panes above it. The obvious
+          fix, pinning the drawer to a fixed band, is WRONG here: a constant band must
+          be sized for the drawer's tallest state, so it would shrink the panes
+          permanently to buy stability — the opposite of the ask. The chips leave the
+          flow instead. The drawer keeps one control whose size never changes, the
+          panes keep every pixel they have, and the shelf opens in the dialog idiom
+          this surface already uses four times over. */}
+      {archiveOpen && shelves.superseded.length > 0 && (
+        <div
+          data-role="superseded-backdrop"
+          className="decode-dialog-backdrop"
+          onClick={onCloseArchive}
+        >
+          <section
+            ref={archiveDialogRef}
+            data-role="superseded-dialog"
+            className="decode-dialog decode-dialog--narrow"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="superseded-dialog-heading"
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="decode-dialog__header">
+              <div>
+                <h2 id="superseded-dialog-heading" className="decode-dialog__title">
+                  Superseded shelf — {shelves.superseded.length} archived part
+                  {shelves.superseded.length === 1 ? "" : "s"}
+                </h2>
+                <p className="decode-dialog__subject">
+                  Kept apart from the current shelf, never mixed into it.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-role="superseded-close"
+                data-autofocus=""
+                className="button button--ghost button--small"
+                onClick={onCloseArchive}
+              >
+                Close
+              </button>
+            </header>
+            <div className="decode-dialog__body">
+              {/* Declarable from here: this is a shelf, not a read-only list. The
+                  chip's own act is unchanged — it closes the dialog after, so the
+                  operator lands back on the panes with the declaration made. */}
+              <div className="decode-variant-list">
+                {shelves.superseded.map((card) => (
+                  <VariantChip
+                    key={card.id}
+                    card={card}
+                    declared={active?.declared_variant === card.id}
+                    archived
+                    onDeclare={(variantId) => {
+                      onDeclare(variantId);
+                      onCloseArchive();
+                    }}
+                  />
+                ))}
+              </div>
             </div>
           </section>
         </div>
@@ -1141,6 +1228,8 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
   // THE CAUTION MODAL (§10-AN slice C) — held here like `pendingSwitch`, so the View
   // stays "pure props → markup" and a static render can pin it open via a prop.
   const [cautionsOpen, setCautionsOpen] = useState(false);
+  // The archive shelf's dialog (client 2026-08-09) — held here for the same reason.
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const handleZoom = useCallback((direction: 1 | -1) => {
     /* CLAMPED AT THE COUNTER, not only at the camera: an unbounded counter accepts
        presses the camera cannot answer, and the operator then presses the other way
@@ -1338,6 +1427,9 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
       cautionsOpen={cautionsOpen}
       onOpenCautions={() => setCautionsOpen(true)}
       onCloseCautions={() => setCautionsOpen(false)}
+      archiveOpen={archiveOpen}
+      onOpenArchive={() => setArchiveOpen(true)}
+      onCloseArchive={() => setArchiveOpen(false)}
       panesSlot={
         <DeclarePanes
           detail={detail}
