@@ -130,11 +130,14 @@ describe("the parity chrome (ledger row 9): HUDs on the glass, the demo's clothe
     library: [
       { id: "part", label: "library part", swatch: "#2fa75f", visible: true, opacity: 1, available: true },
     ],
+    // Retargeted 2026-08-06 (§10-AO, client: "the scanned healing cap renders white"):
+    // the cap-crop layers moved off the whole-arch tan (#f2e3a6) to capScanHex()
+    // (#f2f1ec) — see SitePanes.test.tsx for the real hook's pin.
     scan: [
-      { id: "scan", label: "scanned cap", swatch: "#f2e3a6", visible: true, opacity: 1, available: true },
+      { id: "scan", label: "scanned cap", swatch: "#f2f1ec", visible: true, opacity: 1, available: true },
     ],
     union: [
-      { id: "scan", label: "scan", swatch: "#f2e3a6", visible: true, opacity: 0.45, available: true },
+      { id: "scan", label: "scan", swatch: "#f2f1ec", visible: true, opacity: 0.45, available: true },
       { id: "deviation", label: "preview deviation", swatch: null, visible: false, opacity: 1, available: true },
     ],
   } as const;

@@ -43,7 +43,7 @@ import {
   useSitePaneScene,
   type SitePanesViewProps,
 } from "./SitePanes";
-import { armedViewerClassName } from "viewer";
+import { armedViewerClassName, capScanHex, paletteHex } from "viewer";
 import { newPairDraft, paneArming, withPick } from "../domain/adjust";
 import type { PreviewPose } from "../api/client";
 import { caseSessionDetail, sitePreviewPayload, siteView } from "../testing/fixtures";
@@ -577,5 +577,46 @@ describe("useSitePaneScene — the held pose keeps aiming panes 2/3", () => {
     const html = renderToStaticMarkup(<Probe />);
     const frame = frameOf(html, "The scanned cap region") as { viewDirection: unknown };
     expect(frame.viewDirection).toBeNull();
+  });
+});
+
+/* THE CAP-CROP LAYERS WEAR THE CAP-SCAN COLOUR, NOT THE WHOLE-ARCH TAN (§10-AO, client
+ * 2026-08-06: "the scanned healing cap renders WHITE"). Pane 2's scan crop and the
+ * union pane's scan underlay are the SAME cropped mesh — a pair corrupted by two
+ * different colours on one mesh is exactly the failure mode this pins against. The
+ * library part (pane 1, `paletteHex("cap")`) is untouched — only the cap-crop layers
+ * move off PALETTE.arch. */
+describe("useSitePaneScene — the cap-crop layers (§10-AO)", () => {
+  const detail = caseSessionDetail({
+    sites: [siteView({ tooth: 19, center: [1, 2, 3] })],
+  });
+
+  function LayersProbe() {
+    const scene = useSitePaneScene(detail, detail.sites[0]!, null, {});
+    return (
+      <div data-role="layers-probe" data-layers={encodeURIComponent(JSON.stringify(scene.layers))} />
+    );
+  }
+
+  function layersOf(html: string): typeof LAYERS {
+    const match = html.match(/data-layers="([^"]*)"/);
+    expect(match, "the layers probe").not.toBeNull();
+    return JSON.parse(decodeURIComponent(match![1]!));
+  }
+
+  it("panes 2 and 3's scan layers both wear capScanHex — one mesh, one colour", () => {
+    const html = renderToStaticMarkup(<LayersProbe />);
+    const layers = layersOf(html);
+    expect(layers.scan[0]!.swatch).toBe(capScanHex());
+    expect(layers.union[0]!.swatch).toBe(capScanHex());
+    // never the whole-arch tan those layers used to share with the arch surfaces
+    expect(layers.scan[0]!.swatch).not.toBe(paletteHex("arch"));
+    expect(layers.union[0]!.swatch).not.toBe(paletteHex("arch"));
+  });
+
+  it("the library pane's part layer is untouched — still the cap-part green", () => {
+    const html = renderToStaticMarkup(<LayersProbe />);
+    const layers = layersOf(html);
+    expect(layers.library[0]!.swatch).toBe(paletteHex("cap"));
   });
 });

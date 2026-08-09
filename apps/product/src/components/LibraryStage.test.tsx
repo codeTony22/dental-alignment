@@ -201,8 +201,40 @@ describe("the comp's page clothes", () => {
 
   it("offers a non-effective part as a card wearing the comp's select chip", () => {
     const html = view();
-    // the effective row keeps its suggested/selected chip; the OTHER row invites
+    // the effective row wears its own chip (below); the OTHER row invites
     expect(html).toContain(">select<");
+  });
+
+  /* Retargeted 2026-08-06 (§10-AO, client): "suggested" goes — the effective part's
+   * chip on THIS page always reads "selected", even when the server's own
+   * attribution is `source: "suggested"`. This supersedes the §10-AA attribution
+   * rule ON THIS PAGE ONLY: Intake's and Alignment's effective-choice chips keep
+   * naming "suggested" vs "chosen" verbatim (constructionStepWords itself is
+   * unchanged — `info.suggested` still carries the true attribution for any
+   * caller that wants it; LibraryStageView is the one renderer that now ignores
+   * it for this one chip). */
+  it("the effective chip always reads 'selected', even when the server suggested it", () => {
+    const detail = runnableDetail({ catalog: CATALOG });
+    const html = view({
+      detail: {
+        ...detail,
+        choices: {
+          ...detail.choices,
+          effective_construction: {
+            value: "dess/conical-scanbody.stl",
+            source: "suggested",
+          },
+        },
+      },
+    });
+    expect(html).toContain(">selected<");
+    expect(html).not.toContain(">suggested<");
+  });
+
+  it("the effective chip reads 'selected' when the server's own attribution already agrees", () => {
+    const html = view(); // runnableDetail's default source is "chosen"
+    expect(html).toContain(">selected<");
+    expect(html).not.toContain(">suggested<");
   });
 
   it("keeps the acts at the preview column's foot, forward leading", () => {

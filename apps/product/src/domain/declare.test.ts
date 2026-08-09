@@ -1492,9 +1492,10 @@ describe("seatedReadWanted — the panes' fallback to the shipped fit", () => {
 });
 
 /**
- * PANE 2's DISPLAY RADIUS (§10-AE.2): the cap + a little more, derived from the
- * SERVED catalog (largest rim diameter's radius + 3 mm of surrounding anatomy),
- * never wider than the standing 11 mm band and never below a workable 6 mm.
+ * PANE 2's DISPLAY RADIUS (§10-AE.2, tightened twice since — §10-AO,
+ * 2026-08-06): the DECLARED cap's own rim when known, else the largest
+ * SERVED catalog rim's radius + 0.6 mm of surrounding anatomy, never wider
+ * than the standing 11 mm band and never below a workable 3.5 mm.
  * DISPLAY-ONLY — §10-I.3: no client bound ever reaches the aligner.
  */
 describe("scanPaneRadiusMm — the cap-tight display band", () => {
@@ -1513,25 +1514,25 @@ describe("scanPaneRadiusMm — the cap-tight display band", () => {
     },
   });
 
-  it("keys to the DECLARED cap's own rim (client 2026-08-04, second tightening)", () => {
-    // 6.2/2 + 1.5 = 4.6 → floor 5: the pane shows THIS cap, not the largest
-    // cap the catalog could serve
-    expect(scanPaneRadiusMm(twoVariants, "5020")).toBe(5);
-    expect(scanPaneRadiusMm(twoVariants, "7030")).toBeCloseTo(5.6, 5);
+  it("keys to the DECLARED cap's own rim (client 2026-08-06, third tightening)", () => {
+    // 6.2/2 + 0.6 = 3.7 (above the 3.5 floor): the pane shows THIS cap, not
+    // the largest cap the catalog could serve
+    expect(scanPaneRadiusMm(twoVariants, "5020")).toBeCloseTo(3.7, 5);
+    expect(scanPaneRadiusMm(twoVariants, "7030")).toBeCloseTo(4.7, 5);
   });
 
   it("bounds by the largest served rim while nothing is declared", () => {
-    // 8.2/2 + 1.5 = 5.6 — an honest bound, never a guess at the declaration
-    expect(scanPaneRadiusMm(twoVariants)).toBeCloseTo(5.6, 5);
+    // 8.2/2 + 0.6 = 4.7 — an honest bound, never a guess at the declaration
+    expect(scanPaneRadiusMm(twoVariants)).toBeCloseTo(4.7, 5);
     // a declared variant the catalog does not carry falls back the same way
-    expect(scanPaneRadiusMm(twoVariants, "9999")).toBeCloseTo(5.6, 5);
+    expect(scanPaneRadiusMm(twoVariants, "9999")).toBeCloseTo(4.7, 5);
   });
 
   it("falls back to the standing band when the catalog serves no dimensions", () => {
     expect(scanPaneRadiusMm(caseSessionDetail())).toBe(11);
   });
 
-  it("never narrows below 5 mm and never widens past the standing band", () => {
+  it("never narrows below 3.5 mm and never widens past the standing band", () => {
     const tiny = caseSessionDetail({
       catalog: {
         groups: [{ model: "conical-4x4",
@@ -1540,7 +1541,8 @@ describe("scanPaneRadiusMm — the cap-tight display band", () => {
         constructions: [],
       },
     });
-    expect(scanPaneRadiusMm(tiny)).toBe(5);
+    // 3.0/2 + 0.6 = 2.1 → floor 3.5
+    expect(scanPaneRadiusMm(tiny)).toBe(3.5);
     const huge = caseSessionDetail({
       catalog: {
         groups: [{ model: "conical-4x4",

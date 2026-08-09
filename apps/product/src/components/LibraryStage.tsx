@@ -145,13 +145,14 @@ export function LibraryStageView({
                                 <span className="library-part__label">
                                   {option.label}
                                 </span>
-                                {/* the comp's card chip: the effective row states its
-                                    ATTRIBUTION (suggested/selected — the server's
-                                    word), any other row wears the neutral invite */}
+                                {/* the comp's card chip: the effective row always reads
+                                    "selected" (client 2026-08-06, §10-AO — the word
+                                    "suggested" goes on THIS page only; Intake's and
+                                    Alignment's effective-choice chips still name the
+                                    server's own attribution verbatim), any other row
+                                    wears the neutral invite */}
                                 {effective ? (
-                                  <span className="chip chip--ready">
-                                    {info.suggested ? "suggested" : "selected"}
-                                  </span>
+                                  <span className="chip chip--ready">selected</span>
                                 ) : (
                                   <span className="chip chip--gate">select</span>
                                 )}

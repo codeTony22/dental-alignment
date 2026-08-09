@@ -386,21 +386,25 @@ export function shouldAutoPreview(args: {
 /** The standing display band (§10-K; packages/viewer meshCrop's own constant,
  * restated here as the fallback + ceiling so this module stays viewer-free). */
 const STANDING_BAND_MM = 11;
-// 1.5mm since the client's 2026-08-04 second tightening ("we are cropping a lot of
-// the gum rather than just working with the scanned cap") — was 3mm at §10-AE.2.
-const SCAN_PANE_MARGIN_MM = 1.5;
-const SCAN_PANE_FLOOR_MM = 5;
+// 0.6mm since the client's 2026-08-06 third tightening (§10-AO): "whenever possible"
+// crop to the cap, not the gum — was 1.5mm at the 2026-08-04 second tightening ("we
+// are cropping a lot of the gum rather than just working with the scanned cap"),
+// 3mm at §10-AE.2. This supersedes both prior margins.
+const SCAN_PANE_MARGIN_MM = 0.6;
+// 3.5mm: a context floor for marking, not a gum window (§10-AO). Was 5mm.
+const SCAN_PANE_FLOOR_MM = 3.5;
 
 /**
- * PANE 2's DISPLAY RADIUS (§10-AE.2, tightened twice on the client's own asks —
+ * PANE 2's DISPLAY RADIUS (§10-AE.2, tightened three times on the client's own asks —
  * "just the healing cap and maybe a little more", then 2026-08-04 "we are cropping
- * a lot of the gum rather than just working with the scanned cap").
+ * a lot of the gum rather than just working with the scanned cap", then 2026-08-06
+ * (§10-AO) "crop to the cap, not the gum, whenever possible").
  *
  * Keyed to the DECLARED variant's own rim when the active site has one — the pane
  * shows THIS cap, not the largest cap the catalog could serve — falling back to
  * the served catalog's largest rim while nothing is declared (an honest bound, not
  * a guess), and to the standing band when the catalog serves no dimensions at all.
- * Margin 1.5 mm of surrounding anatomy; never below a workable 5 mm; never wider
+ * Margin 0.6 mm of surrounding anatomy; never below a workable 3.5 mm; never wider
  * than the standing 11 mm band. DISPLAY-ONLY: §10-I.3's rule stands — no client
  * bound ever reaches the aligner; a tighter pane improves alignments only through
  * the operator's mark placement.
