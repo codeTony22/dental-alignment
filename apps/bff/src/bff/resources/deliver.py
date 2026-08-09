@@ -23,11 +23,12 @@ pinned above the fold, then the worse gate leads).
 from __future__ import annotations
 
 import datetime
+import html
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from case_prep.application.adjust import cross_checked
@@ -1750,10 +1751,131 @@ def _artifact_file(run_dir: Path, name: str, case_id: str,
     )
 
 
+# --- the paid invoice, riding the download bundle (client 2026-08-09: "when
+# downloading the mesh you get the 4 requirements that I asked for plus the invoice
+# that they paid for") ---------------------------------------------------------------
+#
+# TWO THINGS THIS SECTION IS DELIBERATELY NOT: it is not a fifth run-package file —
+# ``run.package_files`` is the WORKER's own claim about what it wrote, and this
+# document did not come from the worker, so it never enters that list or touches
+# ``fetch_artifact``'s ``filename not in run.package_files`` check. And it is not
+# priced here a second time — every figure below is ``derive_invoice``'s own line,
+# read back rather than recomputed, so a withheld site's $0 and an exception's half
+# rate are exactly the fold the checkout already rendered (the one pricing rule,
+# now with a second reader instead of a second definition).
+#
+# GATED ON PAYMENT, DELIBERATELY NARROWER than ``_require_valid_release``: the run's
+# own STL files describe EVIDENCE, which can drift (a re-confirm moves the sha), so
+# they need the full release chain re-verified on every read. The invoice describes
+# what was CHARGED, which ``authorize_payment`` fixes the instant it lands and does
+# not move again on this run — so it may serve before a release exists at all, which
+# is also the honest answer to "can the lab see its own receipt before disclosing
+# anything": yes, it already paid for it.
+
+INVOICE_ARTIFACT_NAME = "invoice"
+
+
+def _require_paid(session: CaseSession, case_id: str) -> PaymentRecord:
+    """The invoice document's own gate. Named in the refusal, the same voice every
+    other Deliver refusal uses: what stands in the way, and the door through it."""
+    payment = session.payment
+    if payment is None or not payment.payment_authorized:
+        raise HTTPException(
+            409, f"the invoice document is not available for case {case_id!r} — "
+                 f"payment has not been authorized yet; confirm over the assurance "
+                 f"evidence, then authorize payment (stub) before requesting the "
+                 f"invoice")
+    return payment
+
+
+def _money(cents: int, currency: str) -> str:
+    """Integer-cents formatting, mirroring the product's own ``formatMoney`` —
+    never a float, so this document and the checkout can never round differently."""
+    sign = "-" if cents < 0 else ""
+    whole, part = divmod(abs(cents), 100)
+    return f"{sign}${whole}.{part:02d}" if currency == "USD" \
+        else f"{sign}{whole}.{part:02d} {currency}"
+
+
+def _invoice_document(case: CaseRecord, run: RunSession, invoice: InvoiceView,
+                      assurance: AssuranceView, payment: PaymentRecord,
+                      dispositions: Dict[str, str]) -> str:
+    """The document itself — composed HERE, server-side, from facts every one of
+    which already exists elsewhere on the case: ``invoice``'s own priced lines
+    (``derive_invoice``, never re-priced), the payment record's own receipt facts
+    (what was actually charged, which can differ from ``invoice.total_cents`` if the
+    case repriced after payment — both are shown, neither invented), and the
+    released/withheld split off the SAME disposition map ``derive_invoice`` folded
+    (``_billing_dispositions``, read again rather than re-derived — the standing
+    withhold fold, mirrored, per the invoice view's own ``derive_invoice`` note)."""
+    released = sorted(site.tooth for site in assurance.sites
+                      if dispositions.get(str(site.tooth), "release") != "withhold")
+    withheld = sorted(site.tooth for site in assurance.sites
+                      if dispositions.get(str(site.tooth), "release") == "withhold")
+    rows = "".join(
+        f"<tr><td>{html.escape(line.label)}</td><td>{line.quantity}</td>"
+        f"<td>{_money(line.amount_cents, invoice.currency) if line.billed else 'not billed'}</td></tr>"
+        for line in invoice.lines)
+    withheld_row = (
+        f"<p data-role=\"invoice-withheld\">Withheld — not released, not billed: "
+        + ", ".join(f"tooth {t}" for t in withheld) + ".</p>"
+        if withheld else "")
+    receipt = (
+        f"<p data-role=\"invoice-receipt\">Charged "
+        f"{_money(payment.amount_cents, payment.currency or invoice.currency)} at "
+        f"{html.escape(payment.at)}"
+        + (f" under rate card {html.escape(payment.rate_card_version)}"
+           if payment.rate_card_version else "")
+        + (f", {html.escape(payment.turnaround)} turnaround"
+           if payment.turnaround else "")
+        + ".</p>"
+        if payment.amount_cents is not None else
+        f"<p data-role=\"invoice-receipt\">Authorized at {html.escape(payment.at)} — "
+        f"no amount was recorded with this payment.</p>")
+    case_id = html.escape(case.id)
+    return (
+        "<!doctype html><html><head><meta charset=\"utf-8\">"
+        f"<title>Invoice — case {case_id}</title></head><body>"
+        f"<h1>Invoice — case {case_id}</h1>"
+        f"<p data-role=\"invoice-run\">Run {html.escape(invoice.run_id)}.</p>"
+        f"<p data-role=\"invoice-released\">Released sites: "
+        + (", ".join(f"tooth {t}" for t in released) if released else "no site")
+        + ".</p>"
+        + withheld_row
+        + "<table data-role=\"invoice-lines\"><thead><tr><th>Line</th><th>Qty</th>"
+          f"<th>Amount</th></tr></thead><tbody>{rows}</tbody>"
+          "<tfoot><tr><th colspan=\"2\">Total</th>"
+          f"<th data-role=\"invoice-total\">"
+          f"{_money(invoice.total_cents, invoice.currency)}</th></tr></tfoot></table>"
+        + receipt
+        + "</body></html>"
+    )
+
+
+def _invoice_document_for(case: CaseRecord, session: CaseSession,
+                          run: RunSession) -> Tuple[str, PaymentRecord]:
+    """One call, both readers (the listing's size stat and the document route) —
+    so the bytes ``list_artifacts`` reports as this file's size are exactly the
+    bytes the fetch route serves, never two derivations that could drift apart."""
+    payment = _require_paid(session, case.id)
+    assurance = derive_assurance(case, session)
+    invoice = derive_invoice(case, session)
+    dispositions = _billing_dispositions(session, run)
+    body = _invoice_document(case, run, invoice, assurance, payment, dispositions)
+    return body, payment
+
+
 @router.get("/{case_id}/runs/current/artifacts", response_model=ArtifactsView)
 def list_artifacts(case_id: str, request: Request) -> ArtifactsView:
     """The DELIVERABLE list — even listing is disclosure (names leak what was
-    made), so the release gate sits on the list too."""
+    made), so the release gate sits on the list too.
+
+    THE INVOICE RIDES HERE TOO (client 2026-08-09), appended after the worker's own
+    package files and BEFORE nothing new is checked: a valid release already implies
+    ``session.payment_authorized`` (``release_case`` refuses without it), so the
+    ``if`` below is documentation of the real precondition rather than a second gate
+    — it stays explicit so a future loosening of the release chain cannot silently
+    ship this row unpaid."""
     settings, store = _context(request)
     case = _case_or_404(settings, case_id)
     session = store.load(case_id)
@@ -1763,11 +1885,33 @@ def list_artifacts(case_id: str, request: Request) -> ArtifactsView:
     names, held_case_files = split_released_files(
         run.package_files, teeth, release.released_teeth, case.id)
     run_dir = _run_dir(settings, case.id, run)
+    files = [_artifact_file(run_dir, name, case.id, teeth) for name in names]
+    if session.payment_authorized:
+        body, _payment = _invoice_document_for(case, session, run)
+        files.append(ArtifactFile(name=INVOICE_ARTIFACT_NAME,
+                                  size_bytes=len(body.encode("utf-8")), tooth=None))
     return ArtifactsView(run_id=run.run_id or run.job_id,
-                         files=[_artifact_file(run_dir, name, case.id, teeth)
-                                for name in names],
+                         files=files,
                          withheld_teeth=withheld,
                          withheld_case_files=held_case_files)
+
+
+@router.get("/{case_id}/runs/current/artifacts/" + INVOICE_ARTIFACT_NAME)
+def fetch_artifact_invoice(case_id: str, request: Request) -> HTMLResponse:
+    """The invoice document's own bytes. Registered here, BEFORE ``fetch_artifact``'s
+    ``{filename}`` route below — route order is match order (Starlette tries routes
+    in registration order), so this literal path wins before the generic one ever
+    sees ``"invoice"`` and refuses it for not being in ``run.package_files`` (it
+    never is; it is composed here, not written by the worker)."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+    session = store.load(case_id)
+    run = _require_done_run_for_act(session, case_id,
+                                    "produce an invoice document for")
+    body, _payment = _invoice_document_for(case, session, run)
+    return HTMLResponse(
+        content=body,
+        headers={"Content-Disposition": "attachment; filename=\"invoice.html\""})
 
 
 @router.get("/{case_id}/runs/current/artifacts/{filename}")

@@ -788,13 +788,17 @@ class TestArtifactsDisclose:
         client = self._released(settings, product_root)
         body = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts").json()
         assert body["run_id"]
+        # "invoice" rides LAST — the worker's own package files first, the
+        # server-composed receipt after (client 2026-08-09: "plus the invoice
+        # that they paid for")
         assert [f["name"] for f in body["files"]] == [
             "neodent-gm-4-healingcap-aligned.stl",
             "neodent-gm-13-healingcap-aligned.stl",
             "neodent-gm-upper-overlay.stl",
             "neodent-gm-manifest.json",
             "neodent-gm-upper.stl",
-            "view.html"]
+            "view.html",
+            "invoice"]
         assert body["withheld_teeth"] == []
         # a full release ships the case-wide files: nothing withheld, nothing held
         assert body["withheld_case_files"] == []
@@ -834,8 +838,11 @@ class TestArtifactsDisclose:
         client = self._released(settings, product_root,
                                 {"4": "release", "13": "withhold"})
         body = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts").json()
+        # the invoice still rides — it is priced against the SAME withhold (tooth
+        # 13 billed nothing), never held back the way a case-wide FILE is; it
+        # describes the receipt for what shipped, not a file that aggregates sites
         assert [f["name"] for f in body["files"]] == [
-            "neodent-gm-4-healingcap-aligned.stl"]
+            "neodent-gm-4-healingcap-aligned.stl", "invoice"]
         assert body["withheld_teeth"] == [13]
         assert body["withheld_case_files"] == ["neodent-gm-upper-overlay.stl",
                                                "neodent-gm-manifest.json",
@@ -894,6 +901,103 @@ class TestArtifactsDisclose:
             res = client.get("/api/case-sessions/neodent-gm/runs/current/"
                              f"artifacts/{name}")
             assert res.status_code == 404, name
+
+
+# --- the paid invoice, riding the download bundle (client 2026-08-09) ------------------
+
+class TestTheInvoiceDocument:
+    """GET .../artifacts/invoice — a server-composed receipt, gated on PAYMENT alone
+    (narrower than the run's own files, which need the full release chain): the
+    invoice describes what was CHARGED, fixed the instant payment lands, not
+    evidence that can drift after."""
+
+    INVOICE_PATH = "/api/case-sessions/neodent-gm/runs/current/artifacts/invoice"
+
+    def test_unconfirmed_unpaid_refuses_with_a_named_sentence(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        res = client.get(self.INVOICE_PATH)
+        assert res.status_code == 409
+        assert "payment" in res.json()["detail"]
+
+    def test_confirmed_but_not_yet_paid_still_refuses(
+            self, settings, product_root):
+        client = deliverable_client(settings, product_root)
+        assert confirm(client).status_code == 200
+        res = client.get(self.INVOICE_PATH)
+        assert res.status_code == 409
+        assert "payment" in res.json()["detail"]
+
+    def test_no_invoice_row_before_payment_either(self, settings, product_root):
+        # the SAME fact from the listing's side: nothing lists before payment,
+        # because nothing lists before release, and release itself requires
+        # payment — "unpaid" and "unlisted" agree by construction
+        client = deliverable_client(settings, product_root)
+        res = client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts")
+        assert res.status_code == 409
+
+    def test_paid_but_not_yet_released_already_serves_the_document(
+            self, settings, product_root):
+        # THE NARROWER GATE, DEMONSTRATED: unlike the mesh files (release-gated),
+        # the invoice is available the moment payment lands
+        client = confirmed_paid_client(settings, product_root)
+        res = client.get(self.INVOICE_PATH)
+        assert res.status_code == 200
+        assert res.headers["content-type"].startswith("text/html")
+        assert "case-a" not in res.text  # sanity: no cross-case bleed
+        assert "neodent-gm" in res.text
+
+    def test_the_document_carries_the_priced_total_and_the_released_site_count(
+            self, settings, product_root):
+        # two clean sites, standard turnaround, nothing withheld: $32 * 2
+        client = confirmed_paid_client(settings, product_root)
+        invoice = client.get(
+            "/api/case-sessions/neodent-gm/invoice").json()
+        assert invoice["total_cents"] == 6400
+        res = client.get(self.INVOICE_PATH)
+        assert res.status_code == 200
+        assert "$64.00" in res.text
+        assert "tooth 4" in res.text
+        assert "tooth 13" in res.text
+
+    def test_a_withheld_site_prices_per_the_standing_withhold_fold(
+            self, settings, product_root):
+        # mirrors derive_invoice's own fold (never re-derived here): tooth 13
+        # withheld bills nothing and tooth 4 alone carries the total
+        client = confirmed_paid_client(
+            settings, product_root, {"4": "release", "13": "withhold"})
+        invoice = client.get(
+            "/api/case-sessions/neodent-gm/invoice").json()
+        assert invoice["total_cents"] == 3200
+        res = client.get(self.INVOICE_PATH)
+        assert res.status_code == 200
+        assert "$32.00" in res.text
+        assert "tooth 4" in res.text
+        assert "Withheld" in res.text
+        assert "tooth 13" in res.text
+        assert "not billed" in res.text
+
+    def test_the_listed_row_appears_once_released_sized_to_the_served_bytes(
+            self, settings, product_root):
+        client = confirmed_paid_client(settings, product_root)
+        assert release(client).status_code == 200
+        listing = client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts").json()
+        row_ = next(f for f in listing["files"] if f["name"] == "invoice")
+        assert row_["tooth"] is None   # case-wide, like the manifest
+        served = client.get(self.INVOICE_PATH)
+        assert served.status_code == 200
+        assert row_["size_bytes"] == len(served.content)
+
+    def test_the_document_route_wins_over_the_generic_filename_route(
+            self, settings, product_root):
+        # route-order pin (module doctrine): "invoice" must never fall through to
+        # fetch_artifact's `filename not in run.package_files` 404
+        client = confirmed_paid_client(settings, product_root)
+        res = client.get(self.INVOICE_PATH)
+        assert res.status_code == 200
+        assert "is not among the run's package" not in res.text
 
 
 # --- file→site attribution is anchored, never a substring scan -------------------------

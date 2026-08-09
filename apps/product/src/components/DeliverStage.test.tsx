@@ -684,6 +684,53 @@ describe("the artifacts — grouped by site, with names and sizes (#6)", () => {
     expect(html).toContain('data-role="artifacts-error"');
     expect(html).toContain("confirmation changed after release");
   });
+
+  /* THE PAID INVOICE, RIDING THE BUNDLE (client 2026-08-09: "when downloading the
+   * mesh you get the 4 requirements … plus the invoice that they paid for"). This
+   * surface never special-cases it: `list_artifacts` (BFF) appends it like any
+   * other case-wide file (`tooth: null`) ONLY once payment is authorized, and this
+   * component's own `groupArtifacts`/`handleDownloadAll` are already generic over
+   * `artifacts.data.files` — so the pins here are about what the FIXTURE proves,
+   * never a special code path added for this one row. */
+  describe("the paid invoice rides the listing like any other case-wide file", () => {
+    const withInvoice = {
+      kind: "ok" as const,
+      data: {
+        run_id: "20260727-120000-abc123",
+        files: [
+          { name: "case-a-19-healingcap-aligned.stl", size_bytes: 2048, tooth: 19 },
+          { name: "case-a-manifest.json", size_bytes: 512, tooth: null },
+          { name: "invoice", size_bytes: 906, tooth: null },
+        ],
+        withheld_teeth: [],
+        withheld_case_files: [],
+      },
+    };
+
+    it("renders as a download button in the case-wide group, absent before payment", () => {
+      const paid = view({ detail: releasedDetail(), artifacts: withInvoice });
+      expect(paid).toMatch(/data-role="artifact-download" data-file="invoice"/);
+      expect(paid).toMatch(
+        /data-role="artifact-group"[^>]*data-tooth="case-wide"/,
+      );
+
+      // the SAME fixture shape, minus the row — the honest "before payment" state:
+      // nothing here special-cases its absence, it is just not in the served list
+      const unpaid = view({
+        detail: releasedDetail(),
+        artifacts: {
+          ...withInvoice,
+          data: { ...withInvoice.data, files: withInvoice.data.files.slice(0, 2) },
+        },
+      });
+      expect(unpaid).not.toMatch(/data-file="invoice"/);
+    });
+
+    it("download-all's own count includes it — the button walks `files`, unfiltered", () => {
+      const html = view({ detail: releasedDetail(), artifacts: withInvoice });
+      expect(html).toContain("Download all 3 files");
+    });
+  });
 });
 
 describe("the 409 re-confirm flow, phases and errors", () => {

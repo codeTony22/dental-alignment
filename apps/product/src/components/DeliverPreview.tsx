@@ -29,9 +29,22 @@
  * composite and a small lone construction alike, with no per-tab frame math needed.
  */
 import { useEffect, useState, type ReactNode } from "react";
-import { PALETTE, VerifyViewer, loadStlPositions, type VerifyLayerGeometry } from "viewer";
+import {
+  PALETTE,
+  ROLE_LABEL,
+  VerifyViewer,
+  loadStlPositions,
+  paletteHex,
+  type VerifyLayerGeometry,
+} from "viewer";
 import { previewMeshUrl } from "../api/client";
-import type { PreviewTab } from "../domain/deliver";
+import {
+  previewLayerRows,
+  visiblePreviewLayers,
+  type PreviewLayerRow,
+  type PreviewMeshRole,
+  type PreviewTab,
+} from "../domain/deliver";
 
 export interface DeliverPreviewViewProps {
   readonly tabs: readonly PreviewTab[];
@@ -41,6 +54,16 @@ export interface DeliverPreviewViewProps {
   readonly error: string | null;
   /** The 3D surface itself — the container passes the real viewer; tests pass a stub. */
   readonly viewerSlot: ReactNode;
+  /**
+   * THE ACTIVE TAB'S LAYERS, GROUPED — never offered for a single-layer tab (tabs 3/4):
+   * hiding the one thing in the scene is not a visibility control, it is an off switch
+   * with no "on" beside it, so the row (and its whole HUD) is simply absent there,
+   * exactly like `PaneShell`'s own "no layers, no toggle" rule in SitePanes.
+   */
+  readonly layerRows?: readonly PreviewLayerRow[];
+  /** Which roles are currently hidden — view-local in the container, read-only here. */
+  readonly hiddenRoles?: ReadonlySet<PreviewMeshRole>;
+  readonly onToggleLayer?: (role: PreviewMeshRole) => void;
 }
 
 /** The panel's chrome, pure payload → markup — statically testable without WebGL. */
@@ -51,6 +74,9 @@ export function DeliverPreviewView({
   busy,
   error,
   viewerSlot,
+  layerRows = [],
+  hiddenRoles = new Set(),
+  onToggleLayer = () => undefined,
 }: DeliverPreviewViewProps) {
   // AN HONEST ABSENCE, TESTED (task doctrine): a run whose package names none of the
   // three files renders no panel at all — never an empty tab strip over a blank pane.
@@ -88,6 +114,41 @@ export function DeliverPreviewView({
       </div>
       <div data-role="deliver-mesh-preview-canvas" className="deliver-mesh-preview__canvas">
         {viewerSlot}
+        {/* ONLY WHERE THERE IS SOMETHING TO CHOOSE BETWEEN (client 2026-08-09: "a tool
+            like the panels to hide certain parts … to make it appear more visually
+            appealing"). Presentation only — see visiblePreviewLayers's own doctrine —
+            and borrows the workspace panes' own on-glass layer-row chrome
+            (SitePanes.tsx's LayerHud) rather than inventing a second one. */}
+        {layerRows.length > 1 && (
+          <div
+            data-role="deliver-mesh-preview-layers"
+            className="verify-panel__hud verify-panel__hud--layers"
+          >
+            {layerRows.map((row) => {
+              const visible = !hiddenRoles.has(row.role);
+              return (
+                <div key={row.role} data-role="preview-layer-row" className="verify-layer">
+                  <button
+                    type="button"
+                    data-role="preview-layer-toggle"
+                    data-layer-role={row.role}
+                    className={`verify-layer__eye${visible ? " verify-layer__eye--on" : ""}`}
+                    aria-pressed={visible}
+                    aria-label={`${visible ? "Hide" : "Show"} ${ROLE_LABEL[row.role]}`}
+                    onClick={() => onToggleLayer(row.role)}
+                  >
+                    {visible ? "👁" : "🚫"}
+                  </button>
+                  <span
+                    className="verify-layer__swatch"
+                    style={{ background: paletteHex(row.role) }}
+                  />
+                  <span className="verify-layer__label">{ROLE_LABEL[row.role]}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {busy && (
           <p data-role="deliver-mesh-preview-busy" className="deliver-mesh-preview__notice">
             Loading {active?.label ?? "the preview"}…
@@ -129,6 +190,29 @@ export function DeliverPreview({ caseId, tabs }: DeliverPreviewProps) {
   }, [tabs, activeKey]);
 
   const active = tabs.find((tab) => tab.key === activeKey) ?? null;
+
+  /* THE HIDDEN-LAYER TOGGLE (client 2026-08-09), view-local by design — like
+     DeclareStageView's `archOpen`: whether a layer is hidden is presentation, not
+     case state. Nothing downstream reads it (the artifacts list and every download
+     handler read the run's own record, never this component's state), so it earns
+     no prop and rides no request. Reset on every tab switch AND on mount, both by
+     the same effect: a hide the operator set on tab 1 must not silently carry onto
+     tab 2's differently-composed scene. */
+  const [hiddenRoles, setHiddenRoles] = useState<ReadonlySet<PreviewMeshRole>>(
+    () => new Set(),
+  );
+  useEffect(() => {
+    setHiddenRoles(new Set());
+  }, [activeKey]);
+  const onToggleLayer = (role: PreviewMeshRole): void => {
+    setHiddenRoles((now) => {
+      const next = new Set(now);
+      if (next.has(role)) next.delete(role);
+      else next.add(role);
+      return next;
+    });
+  };
+  const layerRows = active !== null ? previewLayerRows(active) : [];
 
   // ALL of the active tab's layers, or none: the scene is arch + parts composed
   // (client 2026-08-06: "only the healing cap is green"), and a half-loaded scene —
@@ -173,17 +257,24 @@ export function DeliverPreview({ caseId, tabs }: DeliverPreviewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId, layerKey]);
 
+  // THE HIDDEN ROLES ARE APPLIED HERE ONLY — every file the tab names is still
+  // fetched above regardless of visibility (so re-showing a role is instant, the
+  // bytes already arrived); a hidden role's layer is simply absent from what this
+  // build hands the viewer, per `visiblePreviewLayers`'s own doctrine.
   const layers =
     active !== null && meshes !== null
-      ? active.layers.map((layer, index) => ({
-          id: `${layer.role}-${index}`,
-          geometry: {
-            positions: meshes[index]!,
-            color: PALETTE[layer.role],
-          } satisfies VerifyLayerGeometry,
-          visible: true,
-          opacity: 1,
-        }))
+      ? visiblePreviewLayers(active, hiddenRoles).map((layer) => {
+          const index = active.layers.indexOf(layer);
+          return {
+            id: `${layer.role}-${index}`,
+            geometry: {
+              positions: meshes[index]!,
+              color: PALETTE[layer.role],
+            } satisfies VerifyLayerGeometry,
+            visible: true,
+            opacity: 1,
+          };
+        })
       : [{ id: "preview", geometry: null, visible: true, opacity: 1 }];
 
   return (
@@ -193,6 +284,9 @@ export function DeliverPreview({ caseId, tabs }: DeliverPreviewProps) {
       onSelectTab={setActiveKey}
       busy={busy}
       error={error}
+      layerRows={layerRows}
+      hiddenRoles={hiddenRoles}
+      onToggleLayer={onToggleLayer}
       viewerSlot={
         <VerifyViewer
           layers={layers}

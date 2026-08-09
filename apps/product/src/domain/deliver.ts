@@ -1297,8 +1297,9 @@ export function constructionChangeWords(
   );
 }
 
-// --- the three 3D preview tabs (client 2026-08-01: "we also have the previews of
-// the artifacts" — the demo's three labelled tabs) --------------------------------------
+// --- the four 3D preview tabs (client 2026-08-01: "we also have the previews of
+// the artifacts" — the demo's three labelled tabs; a fourth added 2026-08-06,
+// §10-AO) --------------------------------------------------------------------------
 //
 // The demo composited these client-side from raw scan + per-part STLs
 // (apps/web/src/components/ViewerControls.tsx). This product's worker bakes merged
@@ -1310,6 +1311,13 @@ export function constructionChangeWords(
 // the merged mesh in the arch material when it does not (an older run). Every layer
 // is still a filename MATCH against the worker's own export names — nothing here
 // invents geometry or re-parses a name for attribution.
+//
+// TAB 4, "Arch alone" (client 2026-08-06, §10-AO): the capless arch — the scan with
+// the cap's seat cut, no healing cap, no construction — invents no new geometry
+// either; `arch-capless.stl` is already tabs 1/2's own composite base and already
+// in `package_files`. It is its own tab because "the arch with its seats cut and
+// nothing sitting in them" is a fact worth seeing on its own, not just as scaffolding
+// under the other two composites.
 
 /** The tinting role a preview layer renders with — the viewer package's own
  *  PartRole values, carried by NAME rather than imported: this module stays
@@ -1344,7 +1352,7 @@ const CONSTRUCTION_SUFFIX = "-prosthesis_cad.stl";
 const CAPLESS_SUFFIX = "-arch-capless.stl";
 
 /**
- * THE THREE TABS, MATCHED BY SUFFIX, NEVER CONSTRUCTED: each candidate is the
+ * THE FOUR TABS, MATCHED BY SUFFIX, NEVER CONSTRUCTED: each candidate is the
  * worker's own fixed tail (auto_flow.py/output_package.py's exact export names),
  * matched against the run's OWN ``package_files`` list — the same suffix-matching
  * discipline ``qcPreviews`` already applies to the QC images. A tab whose file the
@@ -1357,6 +1365,11 @@ const CAPLESS_SUFFIX = "-arch-capless.stl";
  * read in the same order as the table above them). Nothing here parses a tooth
  * number back OUT of a filename (this app never re-parses a filename to attribute
  * it); the teeth are named by the caller and only checked for membership.
+ *
+ * TAB 4 ("Arch alone", §10-AO) is the same ``capless`` file tabs 1/2 already
+ * resolved above, ordered LAST (after every per-tooth tab 3) per the client's own
+ * 1-2-3-4 numbering — the scan with the cap's seat cut, no healing cap, no
+ * construction: one layer, the arch role, nothing composed on top of it.
  */
 export function previewTabs(
   packageFiles: readonly string[],
@@ -1419,7 +1432,71 @@ export function previewTabs(
       layers: [{ filename: file, role: "construction" }],
     });
   }
+  // TAB 4, LAST (§10-AO): the scan with the cap's seat cut — no healing cap, no
+  // construction. The same `capless` file resolved above; absent exactly when tabs
+  // 1/2 already fell back to their merged mesh for the same reason.
+  if (capless !== undefined) {
+    tabs.push({
+      key: "arch-alone",
+      label: "4 · Arch alone",
+      filename: capless,
+      tooth: null,
+      layers: [{ filename: capless, role: "arch" }],
+    });
+  }
   return tabs;
+}
+
+// --- the preview's per-layer visibility toggle (client 2026-08-09: "a tool like the
+// panels to hide certain parts of the library, construction, or scan" — PRESENTATION
+// ONLY. Read the caution twice: this is the same 3D preview the download bundle's own
+// files are named after, and a toggle that fed anything back into what gets fetched,
+// downloaded or listed would let the surface manufacture an artifact nobody ran. It
+// changes what the operator SEES, never what shipped, so it lives entirely in the
+// component's own view-local state; these two functions are its only domain logic,
+// pure so the exclusion is pinned without a WebGL viewer. -----------------------------
+
+/** ONE ROW PER DISTINCT ROLE a tab's layers carry, in first-appearance order — never
+ * one row per FILE. A composite tab can carry several same-role files (one healing-cap
+ * mesh per site on tab 1, one construction mesh per site on tab 2); grouping them under
+ * one row is what makes "hide the caps" one click rather than one per tooth, and
+ * matches the client's own words ("hide certain parts of the library, construction, or
+ * scan" — three things, not N).
+ */
+export function previewLayerRows(tab: PreviewTab): readonly PreviewLayerRow[] {
+  const order: PreviewMeshRole[] = [];
+  const buckets = new Map<PreviewMeshRole, string[]>();
+  for (const layer of tab.layers) {
+    if (!buckets.has(layer.role)) {
+      buckets.set(layer.role, []);
+      order.push(layer.role);
+    }
+    buckets.get(layer.role)!.push(layer.filename);
+  }
+  return order.map((role) => ({ role, filenames: buckets.get(role) ?? [] }));
+}
+
+/** One toggle row — the role it stands for, and every file it groups (display need
+ *  only ever asks "how many", but the filenames are kept rather than a count so a
+ *  future caller never has to re-derive them from the tab). */
+export interface PreviewLayerRow {
+  readonly role: PreviewMeshRole;
+  readonly filenames: readonly string[];
+}
+
+/**
+ * THE SCENE'S OWN LAYER LIST, given what the operator hid — a hidden ROLE is dropped
+ * entirely from the build, not merely dimmed: a layer excluded here never reaches
+ * `VerifyViewer`, so there is nothing partial about "hidden" for this panel to get
+ * wrong. Nothing else changes: the container still loads every file's bytes exactly as
+ * it did before this existed (`meshes` stays keyed to `tab.layers`'s own order), so
+ * re-showing a role is instant — the fetch already happened.
+ */
+export function visiblePreviewLayers(
+  tab: PreviewTab,
+  hiddenRoles: ReadonlySet<PreviewMeshRole>,
+): readonly PreviewLayer[] {
+  return tab.layers.filter((layer) => !hiddenRoles.has(layer.role));
 }
 
 /* --- THE CONSTRUCTION LIBRARY AS ITS OWN PAGE (client 2026-08-01) ------------------

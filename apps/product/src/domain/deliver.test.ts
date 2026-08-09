@@ -56,6 +56,8 @@ import {
   constructionGroups,
   constructionStepWords,
   previewTabs,
+  previewLayerRows,
+  visiblePreviewLayers,
   libraryPartPreviewCaption,
   toleranceBandsWords,
   type ConstructionOption,
@@ -667,6 +669,20 @@ describe("the artifacts, grouped and sized (client #6)", () => {
 
   it("an empty list groups into nothing, never a phantom bucket", () => {
     expect(groupArtifacts([])).toEqual([]);
+  });
+
+  /* §10-AO, client 2026-08-06: "Arch alone" is a new PREVIEW tab, not new geometry —
+   * `-arch-capless.stl` is already in `package_files` and was already served. This
+   * pins that the download listing carries it through untouched: `groupArtifacts`
+   * buckets by tooth only and drops no file by name. Whether it is disclosed at all
+   * is the server's release gate (case-wide, never a client-side filter). */
+  it("case-wide files are never dropped by name — the capless arch lists like any other", () => {
+    const groups = groupArtifacts([
+      { name: "case-a-arch-capless.stl", size_bytes: 40960, tooth: null },
+      { name: "case-a-manifest.json", size_bytes: 512, tooth: null },
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.files.map((f) => f.name)).toContain("case-a-arch-capless.stl");
   });
 
   it("sizes read as people read them; a missing size stays UNKNOWN, not zero", () => {
@@ -1547,6 +1563,122 @@ describe("previewTabs — the demo's three tabs, matched onto the run's own pack
     );
     expect(tabs).toHaveLength(1);
     expect(tabs[0]!.filename).toBe("case-a-9-prosthesis_cad.stl");
+  });
+
+  /* THE FOURTH TAB — "Arch alone" (§10-AO, client 2026-08-06): the capless arch is
+   * already emitted (it is tabs 1/2's own composite base) and already in
+   * `package_files` — this is a fourth VIEW of an existing file, not new geometry. */
+  it("a fourth tab, 'Arch alone', appears last when the capless arch is in the package", () => {
+    const tabs = previewTabs(
+      [
+        "case-a-arch-with-healingcaps.stl",
+        "case-a-arch-with-constructions.stl",
+        "case-a-19-prosthesis_cad.stl",
+        "case-a-arch-capless.stl",
+      ],
+      [19],
+    );
+    expect(tabs.map((t) => t.key)).toEqual([
+      "alignment",
+      "construction-in-arch",
+      "construction-tooth-19",
+      "arch-alone",
+    ]);
+    expect(tabs[3]).toEqual({
+      key: "arch-alone",
+      label: "4 · Arch alone",
+      filename: "case-a-arch-capless.stl",
+      tooth: null,
+      layers: [{ filename: "case-a-arch-capless.stl", role: "arch" }],
+    });
+  });
+
+  it("no capless file in the package: no fourth tab, never a placeholder", () => {
+    const tabs = previewTabs(["case-a-arch-with-healingcaps.stl"], [19]);
+    expect(tabs.some((t) => t.key === "arch-alone")).toBe(false);
+  });
+});
+
+/* THE PREVIEW'S LAYER-VISIBILITY TOGGLE (client 2026-08-09: "a tool like the panels
+ * to hide certain parts of the library, construction, or scan … to make it appear
+ * more visually appealing"). Presentation only, so the two functions it needs are
+ * pure grouping/filtering over a tab's own `layers` — nothing here decides what is
+ * fetched, downloaded or listed, and neither function reads the operator's toggle
+ * anywhere but the scene it hands the viewer. */
+describe("previewLayerRows — one toggle row per ROLE, not per file", () => {
+  it("a single-role tab (construction alone) yields exactly one row", () => {
+    const rows = previewLayerRows(
+      previewTabs(["case-a-19-prosthesis_cad.stl"], [19])[0]!,
+    );
+    expect(rows).toEqual([
+      { role: "construction", filenames: ["case-a-19-prosthesis_cad.stl"] },
+    ]);
+  });
+
+  it("a composed tab groups every same-role file under its one row, in the served order", () => {
+    // tab 1 composes the capless arch (role "arch") plus one healing-cap file per
+    // site (role "cap") — two teeth here yield ONE "cap" row carrying both files,
+    // never two rows for the same role
+    const tabs = previewTabs(
+      [
+        "case-a-arch-with-healingcaps.stl",
+        "case-a-arch-capless.stl",
+        "case-a-19-healingcap-aligned.stl",
+        "case-a-30-healingcap-aligned.stl",
+      ],
+      [19, 30],
+    );
+    const rows = previewLayerRows(tabs[0]!);
+    expect(rows).toEqual([
+      { role: "arch", filenames: ["case-a-arch-capless.stl"] },
+      {
+        role: "cap",
+        filenames: [
+          "case-a-19-healingcap-aligned.stl",
+          "case-a-30-healingcap-aligned.stl",
+        ],
+      },
+    ]);
+  });
+
+  it("an older run with no capless base falls back to the merged file as the sole (arch) row", () => {
+    const tabs = previewTabs(["case-a-arch-with-healingcaps.stl"], [19]);
+    expect(previewLayerRows(tabs[0]!)).toEqual([
+      { role: "arch", filenames: ["case-a-arch-with-healingcaps.stl"] },
+    ]);
+  });
+});
+
+describe("visiblePreviewLayers — a hidden role is ABSENT from the scene build, not dimmed", () => {
+  const composedTab = previewTabs(
+    [
+      "case-a-arch-with-healingcaps.stl",
+      "case-a-arch-capless.stl",
+      "case-a-19-healingcap-aligned.stl",
+    ],
+    [19],
+  )[0]!;
+
+  it("nothing hidden returns every layer, in the tab's own order", () => {
+    expect(visiblePreviewLayers(composedTab, new Set())).toEqual(composedTab.layers);
+  });
+
+  it("hiding one role drops exactly that role's layer(s) and keeps the rest", () => {
+    const visible = visiblePreviewLayers(composedTab, new Set(["cap"]));
+    expect(visible).toEqual([
+      { filename: "case-a-arch-capless.stl", role: "arch" },
+    ]);
+  });
+
+  it("hiding every role present empties the scene build entirely", () => {
+    const visible = visiblePreviewLayers(composedTab, new Set(["arch", "cap"]));
+    expect(visible).toEqual([]);
+  });
+
+  it("a role this tab does not carry is a no-op", () => {
+    expect(visiblePreviewLayers(composedTab, new Set(["construction"]))).toEqual(
+      composedTab.layers,
+    );
   });
 });
 
