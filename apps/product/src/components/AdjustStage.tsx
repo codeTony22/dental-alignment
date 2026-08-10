@@ -45,6 +45,7 @@ import {
   postRePreview,
   postReview,
   postRotation,
+  postRun,
   putWithholdIntent,
   postAcknowledgeException,
   deleteAcknowledgeException,
@@ -166,6 +167,13 @@ export function pairMarkers(
 export interface AdjustStageViewProps {
   readonly entries: readonly AdjustQueueEntry[];
   readonly activeTooth: number | null;
+  /** THE EXPLICIT RE-RUN (client 2026-08-09): fire the full authorized run again
+   *  with nothing changed — the BFF has allowed re-authorizing a DONE run
+   *  directly since 2026-08-02, and §10-AD re-applies the operator's evidence
+   *  after the automation. Null/omitted = no button (static callers). */
+  readonly onRerunAlignment?: (() => void) | null;
+  readonly rerunning?: boolean;
+  readonly rerunError?: string | null;
   /** §10-AD's answer half: true when the standing run is a §10-AC re-emit whose
    * receipts were CARRIED with the copied poses — the block's title says so. */
   readonly receiptsCarried?: boolean;
@@ -434,6 +442,9 @@ export function AdjustStageView({
   cautionsOpen = false,
   onOpenCautions = () => undefined,
   onCloseCautions = () => undefined,
+  onRerunAlignment = null,
+  rerunning = false,
+  rerunError = null,
 }: AdjustStageViewProps) {
   const active = entries.find((e) => e.tooth === activeTooth) ?? null;
   const busy = phase === "working";
@@ -458,6 +469,33 @@ export function AdjustStageView({
           <p data-role="queue-summary" className="panel__hint">
             {queueSummary(entries)}
           </p>
+          {/* THE EXPLICIT RE-RUN (client 2026-08-09: "re-run the alignment
+              again, not just when the numbers change"). The same door the
+              Alignment confirm fires — a DONE run re-authorizes directly, the
+              current verdicts retire, and §10-AD re-applies the operator's
+              evidence after the automation. */}
+          {onRerunAlignment !== null && (
+            <div className="adjust-queue__rerun">
+              <button
+                type="button"
+                data-role="rerun-alignment"
+                className="button button--small"
+                disabled={busy || rerunning}
+                onClick={onRerunAlignment}
+              >
+                {rerunning ? "Re-running…" : "Re-run the alignment"}
+              </button>
+              <p className="panel__hint">
+                Your marks, pairs and best fits re-apply after the automation —
+                the receipts land below.
+              </p>
+              {rerunError !== null && (
+                <p data-role="rerun-error" className="panel__error">
+                  {rerunError}
+                </p>
+              )}
+            </div>
+          )}
           <ul className="decode-stepper__overview">
             {entries.map((entry) => (
               <li key={entry.tooth}>
@@ -822,6 +860,22 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   // §10-AN slice C: the pair-caution modal, lifted for the same testability reason
   // as `reasonsFor` below.
   const [cautionsOpen, setCautionsOpen] = useState(false);
+  // THE EXPLICIT RE-RUN (client 2026-08-09). The POST returns the whole new
+  // detail (verdicts landed server-side) or the refusal's words verbatim.
+  const [rerunning, setRerunning] = useState(false);
+  const [rerunError, setRerunError] = useState<string | null>(null);
+  const handleRerunAlignment = useCallback(() => {
+    setRerunning(true);
+    setRerunError(null);
+    void postRun(caseId).then((result) => {
+      setRerunning(false);
+      if (result.kind === "ok") {
+        onDetail(result.data);
+      } else {
+        setRerunError(result.detail);
+      }
+    });
+  }, [caseId, onDetail]);
   // AUTO-MARK (client 2026-07-29, item 3) keeps its OWN draft set, separate from
   // fit-by-points' hand-built one: switching tabs must never silently discard a pair
   // the operator is mid-way through building by hand, and the two mean different
@@ -1453,6 +1507,9 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       cautionsOpen={cautionsOpen}
       onOpenCautions={() => setCautionsOpen(true)}
       onCloseCautions={() => setCautionsOpen(false)}
+      onRerunAlignment={handleRerunAlignment}
+      rerunning={rerunning}
+      rerunError={rerunError}
       panes={panes}
       activeStatus={activeSite?.status ?? null}
       onReconfirm={handleReconfirm}

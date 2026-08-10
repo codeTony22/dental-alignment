@@ -2327,3 +2327,15 @@ old package never grows a tab pointing at a file it lacks). On short caps the
 two floors can coincide (the base sits inside the visible depth); on tall caps
 they diverge — pinned both ways. 26 worker pins + emit suite, product 1433,
 fast lane 859; live on 295811960 run 20260810-000822.
+
+**AR.5 — the explicit re-run (client 2026-08-09: "we need button in adjustment
+to re-run the alignment again, not just when the numbers change").** The door
+existed — POST /{case}/run has re-authorized a DONE run directly since the
+2026-08-02 ruling, with the full retirement semantics and §10-AD evidence
+re-application — but no surface offered it as an act. Built UI-only: a
+"Re-run the alignment" button in the Adjustment queue panel (busy state, the
+refusal's words verbatim beside it, the §10-AD promise as its hint: "your
+marks, pairs and best fits re-apply after the automation — the receipts land
+below"). No handler, no button — a static render cannot offer a dead act.
+Pinned four ways; product 1437, typecheck clean; fired live on 295811960 —
+run 20260810-004113 landed from the button.

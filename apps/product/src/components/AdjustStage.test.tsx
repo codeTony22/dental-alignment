@@ -1042,6 +1042,40 @@ describe("the workspace toolbar over the panes", () => {
     expect(html.indexOf('data-role="workspace-toolbar"')).toBeGreaterThan(queue);
   });
 
+  /* THE EXPLICIT RE-RUN (client 2026-08-09: "we need button in adjustment to
+     re-run the alignment again, not just when the numbers change"). The BFF's
+     POST /run has allowed re-authorizing a DONE run with no change since the
+     2026-08-02 ruling; this is that door as a visible act. The §10-AD promise
+     rides the hint: evidence re-applies after the automation. */
+  it("the re-run button renders in the queue panel with the re-apply promise", () => {
+    const html = view({ onRerunAlignment: () => undefined });
+    const queue = html.indexOf('data-role="adjust-queue"');
+    const button = html.indexOf('data-role="rerun-alignment"');
+    expect(button).toBeGreaterThan(queue);
+    expect(html).toContain("Re-run the alignment");
+    expect(html).toContain(
+      "marks, pairs and best fits re-apply after the automation",
+    );
+  });
+
+  it("no handler, no button — a static render cannot offer a dead act", () => {
+    expect(view()).not.toContain('data-role="rerun-alignment"');
+  });
+
+  it("while the re-run is in flight the button says so and disables", () => {
+    const html = view({ onRerunAlignment: () => undefined, rerunning: true });
+    expect(html).toMatch(/data-role="rerun-alignment"[^>]*disabled/);
+    expect(html).toContain("Re-running");
+  });
+
+  it("a re-run refusal renders its words beside the button, verbatim", () => {
+    const html = view({
+      onRerunAlignment: () => undefined,
+      rerunError: "a run is already in flight for case 'x'",
+    });
+    expect(html).toContain("a run is already in flight");
+  });
+
   it("named view presets render only when a handler can apply them", () => {
     expect(view()).not.toContain('data-role="view-preset"');
     const wired = view({ onSelectView: () => undefined, viewPreset: "occlusal" });

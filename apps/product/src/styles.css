@@ -7929,3 +7929,10 @@ button.package-files__link:hover {
   border: 2px solid #b9c2bb;
   color: var(--color-text-muted);
 }
+
+/* THE EXPLICIT RE-RUN (client 2026-08-09) — a compact act in the queue panel. */
+.adjust-queue__rerun {
+  margin: 8px 0 10px;
+  display: grid;
+  gap: 4px;
+}
