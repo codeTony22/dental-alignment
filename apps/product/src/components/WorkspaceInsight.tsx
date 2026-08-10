@@ -44,6 +44,7 @@ import {
   thresholdWords,
 } from "../domain/provenance";
 import { recordedAtWords, type WorkspaceStat } from "../domain/declare";
+import { workspaceAnalysisText } from "../domain/workspace";
 import { useDialogEscape } from "./useDialogEscape";
 
 /** One measured metric row: the label the catalog gave it, its band chip, the
@@ -327,6 +328,8 @@ export function WorkspaceInsightView({
   stats = [],
 }: WorkspaceInsightViewProps): ReactNode {
   const wrapRef = useRef<HTMLSpanElement | null>(null);
+  // the evidence copy's transient confirmation (client 2026-08-10)
+  const [insightCopied, setInsightCopied] = useState(false);
   // Escape closes it — the one dialog-adjacent behaviour this disclosure still wants;
   // useDialogEscape is generic over "a key should close this while open" and does not
   // require role="dialog" to be true of what it is closing.
@@ -370,6 +373,28 @@ export function WorkspaceInsightView({
           aria-label={`Site numbers and case log — case ${caseId}`}
           className="workspace-insight__panel"
         >
+          {/* THE EVIDENCE COPY (client 2026-08-10): the panel's own fetched
+              facts — toolbar stats, the served site numbers, the case log —
+              as one paste-ready digest for debugging with an outside
+              reviewer. Composed from what is already on screen. */}
+          {acceptance?.kind === "ok" && activity.kind === "ok" && (
+            <button
+              type="button"
+              data-role="copy-workspace-analysis"
+              className="button button--ghost button--small"
+              onClick={() => {
+                const text = workspaceAnalysisText(
+                  caseId, tooth, stats, acceptance.data, activity.data,
+                );
+                void navigator.clipboard?.writeText(text).then(() => {
+                  setInsightCopied(true);
+                  window.setTimeout(() => setInsightCopied(false), 2000);
+                });
+              }}
+            >
+              {insightCopied ? "Copied ✓" : "Copy for analysis"}
+            </button>
+          )}
           <button
             type="button"
             data-role="insight-close"

@@ -2381,3 +2381,81 @@ queue panel (AR.5), and Delivery's header beside the door back (AR.8, seal
 respected). On Alignment it hides honestly when NO run exists — the demo reset
 had put the client's test case back to detected, which is why they "didn't see
 it"; a case with a landed run shows it. Product 1446.
+
+**AR.10 — the clamped platform floor becomes a saucer (client 2026-08-09,
+fourth pass: "it looks weird, like not smoothed out... see-through / empty
+spaces").** When the channel-mouth plane (AR.6) clamps below the gum, the flat
+disc it left floated inside the envelope with a visible gap to the collar —
+an open ring the camera saw straight through. The clamped case now builds a
+SAUCER: a fan from a centre point 0.30mm below the clamp on the axis out to
+the collar's own inner ring, SHARING the collar's vertices so the seam cannot
+gap by construction. The unclamped platform (floor at the channel mouth,
+inside the envelope) and the dish are untouched. Pinned on a tilted gum sheet:
+nothing stands proud past 0.25mm and a downward ray from the mouth always
+lands on socket geometry — the seat is closed. 27 deliverables pins.
+
+**AR.11 — the socket wears its own colour (client 2026-08-09, night: "still
+look bad, do we need some contrast or something — can't see depth at all").**
+The cut could not read against the arch because it WAS the arch — one mesh,
+one tint. The builder splits: `cap_imprint_parts` returns (culled arch, socket
+liner, notes) and `cap_imprint_holes` becomes a thin concatenating wrapper, so
+every geometric truth (envelope, collar, cull margin, saucer, fallback) lives
+once. Both emit lanes now write three LAYER files beside the merged solids —
+`-arch-socketless.stl`, `-socket-dish.stl`, `-socket-platform.stl`, all in
+package_files — while the downloads keep the merged `-arch-capless` /
+`-arch-platform` the lab expects. Tabs 4 and 5 compose [socketless as arch,
+socket as its own layer] exactly when the run wrote the files; an old package
+falls back to the merged single layer. The viewer's palette gains the role:
+`socket` 0xb9ab84 — the scan's warm family one step darker and greyer, legend
+"Socket (derived)" — and the layer HUD's eye toggles work on it for free.
+Worker fast lane 873, product 1452, viewer 138; live on 276794487 run
+20260810-015003 — the dish reads as a distinct darker recess on both tabs.
+
+## §10-AS — the evidence batch: digests everywhere, and gates that speak first (2026-08-10)
+
+**AS.1 — the Delivery digest carries everything served (client: "try to expose
+all of these information").** `analysisClipboardText` (AR.7) gains three
+sections, each only when its data exists: the RELIEF RECORD verbatim (the
+served gingival_relief object key-by-key — the clamp story and the by-tooth
+trail exactly as the run recorded them), the PACKAGE FILES (the artifact
+listing's names), and the CONFIRMATION SEAL (sealed-at, evidence sha, terms
+version) when one stands. The extras ride an optional argument, so the digest
+still composes from the assurance payload alone when the listing has not
+loaded. Nothing composed that was not served.
+
+**AS.2 — the copy tool reaches Alignment and Adjustment (client: "should we
+also have the evidence copy tool in the alignment page and adjustment page, to
+facilitate information gathering for debugging" — yes).** `workspaceAnalysisText`
+(domain/workspace) composes the workspace's own evidence as paste-ready
+markdown: the toolbar's stats by their own labels, the site numbers with their
+bands and pass/review edges plus the not-measured and stale-metric rows (where
+a complaint usually lives), and the case log verbatim. A "Copy for analysis"
+button lands in the Numbers & log panel — ONE component, so both pages get it
+— rendered only when the acceptance and activity fetches are both ok: a digest
+never composes from a half-loaded panel. Same clipboard + "Copied ✓" manners
+as Delivery's.
+
+**AS.3 — the re-run gate speaks before the round trip (client's own 422 on
+cap6020: "the run is not authorized yet — still needs: tooth 29 reviewed over
+the panes (now 'adjusted')").** The Alignment re-run button fired into a
+refusal the client had to read out of an error dump. The page already knows
+the gate's answer — no authorized run key means the gate WILL refuse — so the
+button now disables pre-flight with the reason riding its title: "the run gate
+will refuse: every site must be reviewed over the panes first — an adjusted
+site needs its re-review tick." The server sentence stays the authority; the
+button just stops offering an act it knows is dead. (Adjustment's button is
+exempt by construction: its page exists only once a run does.)
+
+**AS.4 — the measured cap height proposes the variant family (client, picking
+from the queue: "for point 2 — do this").** The declared-tall-over-short trap
+(297589851 tooth 20) gets its instrument: detection measures the standing
+cap's height off the scan (`measured_cap_height_mm`), and
+`propose_variant` (domain/cap_catalog) names the nearest catalog variant —
+diameter class first via the existing classifier, then nearest height, `None`
+whenever the read is ambiguous (a margin under 0.3mm between candidates makes
+no claim), never a superseded id. Precedence at the BFF is honest attribution,
+not override: a CURATED suggestion (sites.json) always wins; the measured
+proposal fills only the gap, and `suggested_variant_source` says which, so the
+Alignment chip reads "measured" instead of wearing curated clothes. BFF 663;
+the arch-upload case live-checks the honest `None` — its cap read too flat to
+classify, and the chip stays silent rather than guessing.
