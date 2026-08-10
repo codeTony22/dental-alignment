@@ -1278,11 +1278,13 @@ export function useSitePaneScene(
     return c && c.length === 3 ? [c[0]!, c[1]!, c[2]!] : null;
   }, [site]);
 
-  // PANE 2's CAP-TIGHT BAND (§10-AE.2, keyed to the DECLARED cap since the client's
-  // 2026-08-04 second tightening): display only — the crop, the frame and the
-  // caption all read this ONE number so the pane can never claim a band it is not
-  // drawing.
-  const scanRadiusMm = scanPaneRadiusMm(detail, site?.declared_variant ?? null);
+  // PANE 2's CAP-TIGHT BAND (§10-AE.2; §10-AS.6 keys it to the EFFECTIVE cap —
+  // declared, else suggested — client 2026-08-10: "without selecting any variant
+  // the panel in the middle should still look to the top of the scan healing
+  // cap"): display only — the crop, the frame and the caption all read this ONE
+  // number so the pane can never claim a band it is not drawing.
+  const scanRadiusMm = scanPaneRadiusMm(detail, site?.declared_variant ?? null,
+                                        site?.suggested_variant ?? null);
 
   const scanCrop = useMemo(() => {
     if (scanPositions === null || siteCenter === null) return null;

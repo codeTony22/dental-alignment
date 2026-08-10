@@ -417,19 +417,24 @@ const SCAN_PANE_FLOOR_MM = 3.5;
  * a lot of the gum rather than just working with the scanned cap", then 2026-08-06
  * (§10-AO) "crop to the cap, not the gum, whenever possible").
  *
- * Keyed to the DECLARED variant's own rim when the active site has one — the pane
- * shows THIS cap, not the largest cap the catalog could serve — falling back to
- * the served catalog's largest rim while nothing is declared (an honest bound, not
- * a guess), and to the standing band when the catalog serves no dimensions at all.
- * Margin 0.6 mm of surrounding anatomy; never below a workable 3.5 mm; never wider
- * than the standing 11 mm band. DISPLAY-ONLY: §10-I.3's rule stands — no client
- * bound ever reaches the aligner; a tighter pane improves alignments only through
- * the operator's mark placement.
+ * Keyed to the EFFECTIVE cap's own rim — the declared variant first, else the
+ * SUGGESTED one (curated or measured; §10-AS.6, client 2026-08-10: "without
+ * selecting any variant the panel in the middle should still look to the top of
+ * the scan healing cap" — the suggestion already names the cap on screen, so the
+ * pane frames it) — falling back to the served catalog's largest rim when
+ * neither names a served cap (an honest bound, not a guess), and to the standing
+ * band when the catalog serves no dimensions at all. Margin 0.6 mm of
+ * surrounding anatomy; never below a workable 3.5 mm; never wider than the
+ * standing 11 mm band. DISPLAY-ONLY: §10-I.3's rule stands — no client bound
+ * ever reaches the aligner; a tighter pane improves alignments only through the
+ * operator's mark placement.
  */
 export function scanPaneRadiusMm(
   detail: CaseSessionDetail,
   declaredVariant: string | null = null,
+  suggestedVariant: string | null = null,
 ): number {
+  const target = declaredVariant ?? suggestedVariant;
   const diameters: number[] = [];
   let declaredDia: number | null = null;
   for (const group of declarableGroups(detail)) {
@@ -438,7 +443,7 @@ export function scanPaneRadiusMm(
       const dia = record["rim_diameter_mm"];
       if (typeof dia !== "number" || !Number.isFinite(dia)) continue;
       diameters.push(dia);
-      if (declaredVariant !== null && record["variant"] === declaredVariant) {
+      if (target !== null && record["variant"] === target) {
         declaredDia = dia;
       }
     }

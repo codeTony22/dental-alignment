@@ -1549,6 +1549,15 @@ describe("scanPaneRadiusMm — the cap-tight display band", () => {
     expect(scanPaneRadiusMm(twoVariants, "9999")).toBeCloseTo(4.7, 5);
   });
 
+  it("keys to the SUGGESTED cap while nothing is declared (client 2026-08-10)", () => {
+    // "without selecting any variant the panel in the middle should still look
+    // to the top of the scan healing cap" — the suggestion (curated or measured)
+    // already names the cap on screen, so the band wears it: 6.2/2 + 0.6 = 3.7
+    expect(scanPaneRadiusMm(twoVariants, null, "5020")).toBeCloseTo(3.7, 5);
+    // a declaration always beats the suggestion — the pane shows THIS cap
+    expect(scanPaneRadiusMm(twoVariants, "7030", "5020")).toBeCloseTo(4.7, 5);
+  });
+
   it("falls back to the standing band when the catalog serves no dimensions", () => {
     expect(scanPaneRadiusMm(caseSessionDetail())).toBe(11);
   });

@@ -39,6 +39,7 @@ import { DeliverPreview } from "./DeliverPreview";
 import {
   fetchArtifactBlob,
   fetchArtifacts,
+  fetchActivity,
   fetchAssurance,
   fetchInvoice,
   fetchRun,
@@ -49,6 +50,7 @@ import {
   putChoices,
   qcImageUrl,
   type ArtifactsView,
+  type CaseActivityView,
   type AssuranceSite,
   type AssuranceView,
   type CaseSessionDetail,
@@ -737,6 +739,10 @@ export interface DeliverStageViewProps {
   readonly staleWords?: string | null;
   /** The gated artifact list's fetch state; null until a release exists. */
   readonly artifacts?: FetchState<ArtifactsView> | null;
+  /** The served case log, for the analysis digest (client 2026-08-10: "enough
+   *  data, math information for the LLM to make an opinion of what is wrong
+   *  with that current alignment run") — every act's receipt rides the copy. */
+  readonly activity?: FetchState<CaseActivityView> | null;
   /** True while "download all" is walking the list one file at a time. */
   readonly downloadingAll?: boolean;
   /** The current run's package file list (client 2026-08-01) — feeds the 3D preview
@@ -795,6 +801,7 @@ export function DeliverStageView({
   actionError = null,
   staleWords = null,
   artifacts = null,
+  activity = null,
   downloadingAll = false,
   runFacts = null,
   constructionEditing = false,
@@ -1563,6 +1570,9 @@ export function DeliverStageView({
                             ? artifacts.data.files.map((f) => f.name)
                             : undefined,
                         confirmation: detail.session.confirmation,
+                        detection: detail.detection,
+                        activity:
+                          activity?.kind === "ok" ? activity.data : undefined,
                       },
                     );
                     void navigator.clipboard?.writeText(text).then(() => {
@@ -1683,6 +1693,11 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
   const [assurance, setAssurance] = useState<FetchState<AssuranceView>>({
     kind: "loading",
   });
+  // the case log rides the analysis digest (client 2026-08-10) — fetched with
+  // the assurance so the copy is whole the moment the dialog can open
+  const [activity, setActivity] = useState<FetchState<CaseActivityView>>({
+    kind: "loading",
+  });
   const [invoice, setInvoice] = useState<FetchState<InvoiceView>>({
     kind: "loading",
   });
@@ -1755,6 +1770,10 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
     setAssurance({ kind: "loading" });
     void fetchAssurance(caseId).then((result) => {
       if (mountedRef.current) setAssurance(result);
+    });
+    setActivity({ kind: "loading" });
+    void fetchActivity(caseId).then((result) => {
+      if (mountedRef.current) setActivity(result);
     });
   }, [caseId, runState]);
 
@@ -2017,6 +2036,7 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
       actionError={actionError}
       staleWords={staleWords}
       artifacts={artifacts}
+      activity={activity}
       downloadingAll={downloadingAll}
       runFacts={runFacts}
       constructionEditing={constructionEditing}

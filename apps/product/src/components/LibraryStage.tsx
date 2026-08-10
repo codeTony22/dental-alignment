@@ -44,6 +44,7 @@ import {
   libraryPreviewPending,
   libraryPreviewTab,
 } from "../domain/deliver";
+import { scanPaneRadiusMm } from "../domain/declare";
 import { DeliverPreview } from "./DeliverPreview";
 import { ErrorBanner } from "./ErrorBanner";
 import { PartPreview } from "./PartPreview";
@@ -232,7 +233,23 @@ export function LibraryStageView({
               </p>
             ) : (
               <>
-                <DeliverPreview caseId={caseId} tabs={[previewTab]} />
+                <DeliverPreview
+                  caseId={caseId}
+                  tabs={[previewTab]}
+                  /* client 2026-08-10: "Construction page should do the same —
+                     looking at the top of the construction site". Centres are
+                     the served sites'; the band is the workspace panes' own
+                     cap-tight radius, so the two pages frame alike. */
+                  siteFrame={{
+                    centers: detail.sites.map((s) => s.center),
+                    /* the workspace band plus 4mm of arch context: this pane is
+                       several times a workspace pane's size, and at the bare
+                       band the part filled it as an abstract close-up — the
+                       neighbouring anatomy is what makes it read as standing
+                       IN the arch */
+                    bandMm: scanPaneRadiusMm(detail) + 4,
+                  }}
+                />
                 <p data-role="library-preview-caption" className="panel__hint">
                   {libraryPreviewCaption(info.label)}
                 </p>

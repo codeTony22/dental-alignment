@@ -2470,3 +2470,53 @@ retired from the viewer's API, so a future retune of the scan tone moves the
 panes and the Delivery previews together instead of leaving a twin to drift.
 One mesh, one colour, one home. Viewer 137, product 1452, typecheck clean;
 verified live on 276794487's Adjustment workspace.
+
+**AS.6 — pane 2 frames the cap before any declaration (client 2026-08-10:
+"without selecting any variant the panel in the middle should still look to
+the top of the scan healing cap").** The cap-tight band (§10-AE.2/AO) was
+keyed to the DECLARED variant only — undeclared sites fell to the catalog's
+largest rim, a wide gum window. It now keys to the EFFECTIVE cap: declared
+first, else the SUGGESTED one (curated or measured — the same suggestion the
+cards already wear on screen), else the honest largest-rim bound as before. A
+declaration always wins; the caption prints whichever band is actually drawn.
+
+**AS.7 — the collar drapes onto the gum (client 2026-08-10, on 276794487's
+platform tab: "the arch-platform artifact looks terrible").** The tinted
+socket (AR.11) exposed what the arch tan had hidden: the collar annulus rode
+the FITTED PLANE, and wherever the real gum curves away from that plane the
+ring floated free as dark crescent blades. The collar's mid and outer rings
+now DRAPE onto the local scan surface, bearing by bearing — the median axial
+height of the kept scan's own vertices within 0.9mm of the ring point, tucked
+0.05 under so the scan wins where they coincide, the plane kept as the
+fallback where no tissue is near, and every drape bounded to 2.5mm of the
+plane so one stray sample can never throw a blade. Pinned on a ridge-curved
+sheet where the plane is honestly wrong by over a millimetre. Measured on the
+client's own case (new run 20260810-232907): collar proudness max 1.89 →
+1.05mm, p90 0.66 → 0.47, median at the tuck — and the blades are gone from
+the oblique view that showed them. Worker fast lane 874 + the real-mesh
+imprint pin.
+
+**AS.8 — the Construction page looks at the top of the construction site
+(client 2026-08-10: "Construction page should do the same").** The library
+preview passed frame=null and fit the whole arch — a thumbnail of everything,
+a view of nothing. `constructionSiteFrame` (domain/deliver) now frames the
+served site centres' centroid, widened by their spread so a multi-site case
+keeps every site in frame, down the occlusal direction measured off the
+loaded mesh itself (the same read pane 2 aims by); the band is the workspace
+panes' own cap-tight radius plus 4mm of arch context, so the part reads as
+standing IN the arch rather than an abstract close-up. No valid centre — or
+Delivery's own previews, which do not pass the prop — keeps the whole-mesh
+fit. Verified live: the page opens looking straight down at the scanbody's
+top.
+
+**AS.9 — the digest carries the math (client 2026-08-10: "the copy analysis
+tool should show enough data, math information for the LLM to make an opinion
+of what is wrong with that current alignment run").** Two sections join the
+Delivery digest, each only when its data exists: the DETECTION record (the
+jaw reading, and per tooth the measured cap height and the measured-variant
+proposal — the scan's own numbers, before any operator act) and the CASE LOG
+verbatim, oldest first — every tool act with its own residual receipt (the
+pair fits' "marks agree to X mm RMS", the re-apply receipts, the retirements).
+The reviewer note now says to read the log oldest-first for the causal chain.
+Delivery fetches the activity beside the assurance so the copy is whole the
+moment the dialog can open. Product 1459, typecheck clean.

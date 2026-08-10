@@ -11,6 +11,7 @@
 import { describe, expect, it } from "vitest";
 import {
   analysisClipboardText,
+  constructionSiteFrame,
   libraryPreviewCaption,
   libraryPreviewTab,
   libraryForwardLabel,
@@ -1993,6 +1994,70 @@ describe("analysisClipboardText — the paste-ready case digest (client 2026-08-
     expect(text).toContain("- c-arch-platform.stl");
     expect(text).toContain("## Confirmation seal");
     expect(text).toContain("terms placeholder-v2");
+  });
+
+  it("carries the detection record and the case log — the math the reviewer diagnoses from (client 2026-08-10)", () => {
+    // "the copy analysis tool should show enough data, math information for the
+    // LLM to make an opinion of what is wrong with that current alignment run"
+    const text = analysisClipboardText("c", "d", null, assurance as never, {
+      detection: {
+        jaw_reading: "upper",
+        site_measured_height_mm: { "3": 4.021 },
+        site_proposed_variant: { "3": null },
+      } as never,
+      activity: {
+        entries: [
+          {
+            at: "2026-08-10T23:18:03+00:00",
+            event: "pair-fit-applied",
+            tooth: 3,
+            detail: "fit by 2 point pair(s) → 2 observation(s): rotated −14.7°, marks agree to 0.123mm RMS",
+          },
+        ],
+      } as never,
+    });
+    expect(text).toContain("## Detection (served record)");
+    expect(text).toContain("jaw reading: upper");
+    expect(text).toContain("tooth 3: measured cap height 4.021 mm");
+    expect(text).toContain("measured-variant proposal none");
+    expect(text).toContain("## Case log (served acts, oldest first)");
+    expect(text).toContain(
+      "2026-08-10T23:18:03+00:00 pair-fit-applied · tooth 3: fit by 2 point pair(s)",
+    );
+  });
+
+  it("absent detection and activity leave no empty headings", () => {
+    const text = analysisClipboardText("c", "d", null, assurance as never, {});
+    expect(text).not.toContain("## Detection");
+    expect(text).not.toContain("## Case log");
+  });
+});
+
+describe("constructionSiteFrame — the library preview looks at the top of the construction site (client 2026-08-10)", () => {
+  it("frames one site at its centre, down the occlusal, at the band", () => {
+    const frame = constructionSiteFrame([[1, 2, 3]], [0, 0, 1], 4.7);
+    expect(frame).toEqual({
+      center: [1, 2, 3],
+      radiusMm: 4.7,
+      viewDirection: [0, 0, 1],
+      up: null,
+    });
+  });
+
+  it("frames several sites from their centroid, widened by their spread", () => {
+    const frame = constructionSiteFrame([[0, 0, 0], [6, 0, 0]], [0, 0, 1], 4.0);
+    expect(frame?.center).toEqual([3, 0, 0]);
+    expect(frame?.radiusMm).toBeCloseTo(7.0, 5); // 4.0 band + 3.0 spread
+  });
+
+  it("skips malformed centres, and no valid centre means NO frame — the viewer's whole-mesh fit stands", () => {
+    expect(constructionSiteFrame([null, [1, 2]], [0, 0, 1], 4)).toBeNull();
+    const frame = constructionSiteFrame([null, [1, 2, 3]], [0, 0, 1], 4);
+    expect(frame?.center).toEqual([1, 2, 3]);
+  });
+
+  it("a missing occlusal read leaves the direction null — the default angle, never a guess", () => {
+    expect(constructionSiteFrame([[1, 2, 3]], null, 4)?.viewDirection).toBeNull();
   });
 });
 

@@ -1742,6 +1742,23 @@ export function analysisClipboardText(
       readonly evidence_sha256: string;
       readonly terms_version?: string | null;
     } | null;
+    /** the served detection record — the scan's own measured numbers (client
+     *  2026-08-10: "enough data, math information for the LLM to make an
+     *  opinion of what is wrong with that current alignment run") */
+    readonly detection?: {
+      readonly jaw_reading?: string | null;
+      readonly site_measured_height_mm?: Record<string, number | null>;
+      readonly site_proposed_variant?: Record<string, string | null>;
+    } | null;
+    /** the served case log — every act with its receipt, oldest first */
+    readonly activity?: {
+      readonly entries: readonly {
+        readonly at: string;
+        readonly event: string;
+        readonly tooth: number | null;
+        readonly detail: string;
+      }[];
+    } | null;
   },
 ): string {
   const head = [
@@ -1787,6 +1804,39 @@ export function analysisClipboardText(
           : ""),
     );
   }
+  // THE MATH FOR THE REVIEWER (client 2026-08-10): the detection record's own
+  // measured numbers and the case log's receipts — the raw material an outside
+  // reviewer diagnoses an alignment from, not just the verdicts.
+  const detectionLines: string[] = [];
+  const detection = extras?.detection;
+  if (detection != null) {
+    detectionLines.push("", "## Detection (served record)");
+    if (detection.jaw_reading != null) {
+      detectionLines.push(`- jaw reading: ${detection.jaw_reading}`);
+    }
+    const heights = detection.site_measured_height_mm ?? {};
+    const proposals = detection.site_proposed_variant ?? {};
+    for (const tooth of Object.keys(heights)) {
+      const h = heights[tooth];
+      const p = proposals[tooth];
+      detectionLines.push(
+        `- tooth ${tooth}: measured cap height ${
+          h != null ? `${h} mm` : "not measured"
+        } · measured-variant proposal ${p ?? "none"}`,
+      );
+    }
+    if (detectionLines.length === 1) detectionLines.length = 0;
+  }
+  const logLines: string[] = [];
+  const entries = extras?.activity?.entries ?? [];
+  if (entries.length > 0) {
+    logLines.push("", "## Case log (served acts, oldest first)");
+    for (const e of entries) {
+      logLines.push(
+        `- ${e.at} ${e.event}${e.tooth !== null ? ` · tooth ${e.tooth}` : ""}: ${e.detail}`,
+      );
+    }
+  }
   const tail = [
     "",
     "## For the reviewer",
@@ -1794,9 +1844,54 @@ export function analysisClipboardText(
     "the run's own measurement. Useful questions: which gate actions repeat",
     "across cases; whether rim/RMS/p90 sit near their band edges; whether a",
     "clamp or production note explains an operator complaint; what the rotation",
-    "evidence kind was when a fit needed rework.",
+    "evidence kind was when a fit needed rework. Read the case log oldest-first",
+    "for the causal chain — each tool act carries its own residual receipt.",
   ];
   return [
-    ...head, ...blocks, ...reliefLines, ...fileLines, ...sealLines, ...tail,
+    ...head, ...blocks, ...reliefLines, ...detectionLines, ...logLines,
+    ...fileLines, ...sealLines, ...tail,
   ].join("\n");
+}
+
+/**
+ * THE LIBRARY PREVIEW'S FRAME (client 2026-08-10: "Construction page should do
+ * the same — looking at the top of the construction site"). The run's unified
+ * construction-in-arch mesh framed AT the sites rather than the whole arch: the
+ * centroid of the served site centres, widened by their spread so every site
+ * stays in frame, looking down the occlusal read. Frame-shaped exactly like the
+ * workspace panes' (declare.PaneFrame), because it feeds the same viewer prop.
+ * No valid centre → null → the viewer's whole-mesh fit stands, never a guess;
+ * a missing occlusal read leaves the direction null the same way.
+ */
+export function constructionSiteFrame(
+  centers: readonly (readonly number[] | null)[],
+  occlusal: readonly [number, number, number] | null,
+  bandMm: number,
+): {
+  readonly center: readonly [number, number, number];
+  readonly radiusMm: number;
+  readonly viewDirection: readonly [number, number, number] | null;
+  readonly up: null;
+} | null {
+  const valid = centers.filter(
+    (c): c is readonly [number, number, number] =>
+      c !== null && c.length === 3 && c.every((v) => Number.isFinite(v)),
+  );
+  if (valid.length === 0) return null;
+  const centre: [number, number, number] = [
+    valid.reduce((s, c) => s + c[0], 0) / valid.length,
+    valid.reduce((s, c) => s + c[1], 0) / valid.length,
+    valid.reduce((s, c) => s + c[2], 0) / valid.length,
+  ];
+  const spread = Math.max(
+    ...valid.map((c) =>
+      Math.hypot(c[0] - centre[0], c[1] - centre[1], c[2] - centre[2]),
+    ),
+  );
+  return {
+    center: centre,
+    radiusMm: bandMm + spread,
+    viewDirection: occlusal,
+    up: null,
+  };
 }

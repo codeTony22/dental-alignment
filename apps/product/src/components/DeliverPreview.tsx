@@ -28,17 +28,19 @@
  * "whole arch" and the library pane's own framing already use — right for a big arch
  * composite and a small lone construction alike, with no per-tab frame math needed.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   PALETTE,
   ROLE_LABEL,
   VerifyViewer,
+  computeAnatomyFrame,
   loadStlPositions,
   paletteHex,
   type VerifyLayerGeometry,
 } from "viewer";
 import { previewMeshUrl } from "../api/client";
 import {
+  constructionSiteFrame,
   previewLayerRows,
   visiblePreviewLayers,
   type PreviewLayerRow,
@@ -173,10 +175,21 @@ export interface DeliverPreviewProps {
   /** domain/deliver.previewTabs's own result — the container fetches nothing about
    * WHICH tabs exist; it only loads the ACTIVE one's bytes. */
   readonly tabs: readonly PreviewTab[];
+  /** Frame the scene AT the construction sites instead of the whole mesh
+   * (client 2026-08-10, the library page: "looking at the top of the
+   * construction site"). The centres are the served site centres; the band is
+   * the same cap-tight display radius the workspace panes use. The occlusal
+   * direction is measured off the loaded mesh itself — the same read pane 2
+   * aims by — so the camera looks down at the sites' tops. Omitted (Delivery's
+   * own previews) nothing changes: the whole-mesh fit stands. */
+  readonly siteFrame?: {
+    readonly centers: readonly (readonly number[] | null)[];
+    readonly bandMm: number;
+  } | null;
 }
 
 /** The container: which tab is active, and that tab's mesh bytes. */
-export function DeliverPreview({ caseId, tabs }: DeliverPreviewProps) {
+export function DeliverPreview({ caseId, tabs, siteFrame = null }: DeliverPreviewProps) {
   const [activeKey, setActiveKey] = useState<string | null>(tabs[0]?.key ?? null);
 
   // A tab list that no longer carries the active key (a fresh run renamed or dropped
@@ -277,6 +290,19 @@ export function DeliverPreview({ caseId, tabs }: DeliverPreviewProps) {
         })
       : [{ id: "preview", geometry: null, visible: true, opacity: 1 }];
 
+  // THE SITE FRAME (client 2026-08-10, the library page): aim at the sites'
+  // tops once the mesh is loaded — the occlusal read comes off the loaded
+  // geometry itself, the same measurement pane 2 aims by. Without the prop, or
+  // before the bytes land, frame stays null and the whole-mesh fit stands.
+  const firstMesh = meshes !== null && meshes.length > 0 ? meshes[0]! : null;
+  const paneFrame = useMemo(() => {
+    if (siteFrame === null || firstMesh === null) return null;
+    const occ = (computeAnatomyFrame(firstMesh)?.occlusal ?? null) as
+      | readonly [number, number, number]
+      | null;
+    return constructionSiteFrame(siteFrame.centers, occ, siteFrame.bandMm);
+  }, [siteFrame, firstMesh]);
+
   return (
     <DeliverPreviewView
       tabs={tabs}
@@ -290,7 +316,7 @@ export function DeliverPreview({ caseId, tabs }: DeliverPreviewProps) {
       viewerSlot={
         <VerifyViewer
           layers={layers}
-          frame={null}
+          frame={paneFrame}
           ariaLabel={active !== null ? `Preview: ${active.label}` : "No preview selected"}
         />
       }
