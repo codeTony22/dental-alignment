@@ -11,7 +11,7 @@ via the SDF engine is the follow-up if a manufacturer requires a single fused so
 """
 from __future__ import annotations
 
-from typing import Iterable, Sequence, Tuple
+from typing import Iterable, Optional, Sequence, Tuple
 
 import numpy as np
 import trimesh
@@ -265,7 +265,9 @@ def _collar_plane(arch_vertices: np.ndarray, pose: np.ndarray,
 
 def cap_imprint_holes(arch: trimesh.Trimesh,
                       sites: Sequence[Tuple[trimesh.Trimesh, np.ndarray,
-                                            float, float]]
+                                            float, float]],
+                      visible_depth_mm: Optional[float] =
+                      _SOCKET_VISIBLE_DEPTH_MM
                       ) -> Tuple[trimesh.Trimesh, list]:
     """THE SEAT IS THE CAP'S ENVELOPE SOCKET (client 2026-08-06 §10-AO; reshaped
     2026-08-09 on the client's competitor screenshot): the arch with each scanned
@@ -342,7 +344,14 @@ def cap_imprint_holes(arch: trimesh.Trimesh,
             # THE FLOOR STOPS JUST BELOW THE GUM (client 2026-08-09): the higher
             # of the cap's offset base and (collar − visible depth). A tall cap's
             # full tunnel hung out of the thin scan shell as a cylinder.
-            floor_axial = max(float(zs_p[0]), a0 - _SOCKET_VISIBLE_DEPTH_MM)
+            # None = FULL DEPTH (the fifth artifact, client 2026-08-09): walls
+            # all the way down, floor at the cap's offset base — the implant's
+            # top space. The default stays the shallow visible dish.
+            if visible_depth_mm is None:
+                floor_axial = float(zs_p[0])
+            else:
+                floor_axial = max(float(zs_p[0]),
+                                  a0 - float(visible_depth_mm))
             fc = np.asarray(posed.triangles_center, float) - origin
             face_axial = fc @ axis
             fx = fc @ (R @ np.array([1.0, 0.0, 0.0]))

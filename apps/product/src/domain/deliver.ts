@@ -1350,6 +1350,8 @@ const ALIGNMENT_SUFFIX = "-arch-with-healingcaps.stl";
 const CONSTRUCTION_ARCH_SUFFIX = "-arch-with-constructions.stl";
 const CONSTRUCTION_SUFFIX = "-prosthesis_cad.stl";
 const CAPLESS_SUFFIX = "-arch-capless.stl";
+// the full-depth socket variant (client 2026-08-09) — floor at the implant's top
+const PLATFORM_SUFFIX = "-arch-platform.stl";
 
 /**
  * THE FOUR TABS, MATCHED BY SUFFIX, NEVER CONSTRUCTED: each candidate is the
@@ -1442,6 +1444,21 @@ export function previewTabs(
       filename: capless,
       tooth: null,
       layers: [{ filename: capless, role: "arch" }],
+    });
+  }
+  // THE FIFTH TAB (client 2026-08-09: the platform-level floor, "do the
+  // envelope walls"): the same socket at FULL depth — walls down to the cap's
+  // offset base, the implant's top space. Served as its own package file; tab 4
+  // stays the shallow visible dish. Absent on packages emitted before the
+  // artifact existed — a tab must never point at a file the run did not write.
+  const platform = packageFiles.find((f) => f.endsWith(PLATFORM_SUFFIX));
+  if (platform !== undefined) {
+    tabs.push({
+      key: "arch-platform",
+      label: "5 · Arch — to the platform",
+      filename: platform,
+      tooth: null,
+      layers: [{ filename: platform, role: "arch" }],
     });
   }
   return tabs;

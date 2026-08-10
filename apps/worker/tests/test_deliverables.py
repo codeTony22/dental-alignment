@@ -322,6 +322,31 @@ class TestCapImprintHoles:
             assert bool(np.asarray(hits).all()), \
                 f"the moat at r={radius} still lets rays through"
 
+    def test_full_depth_reaches_the_platform_and_keeps_its_floor(self):
+        """THE FIFTH ARTIFACT (client 2026-08-09: 'the floor at the implant's
+        platform level — do the envelope walls'). ``visible_depth_mm=None``
+        lines the socket at FULL depth: walls all the way down, floor at the
+        cap's offset base — the implant's top space. The default stays the
+        shallow dish (its own pin above)."""
+        from case_prep.pipeline.deliverables import cap_imprint_holes
+
+        tall = trimesh.creation.cylinder(radius=2.0, height=10.0)
+        arch = _arch_with_bump()
+        out, notes = cap_imprint_holes(arch, [(tall, _pose_at(0, 0, 5.0),
+                                               0.2, 2.0)],
+                                       visible_depth_mm=None)
+        assert notes == []
+        v = np.asarray(out.vertices, float)
+        r = np.linalg.norm(v[:, :2], axis=1)
+        sock = r < 2.5
+        # the tall cap's offset base sits at -0.2 world; full depth reaches it
+        deepest = float(v[sock][:, 2].min())
+        assert deepest < -0.15, \
+            f"full depth stopped at {deepest} — the platform was not reached"
+        down = out.ray.intersects_any(ray_origins=[[0.0, 0.0, 0.3]],
+                                      ray_directions=[[0.0, 0.0, -1.0]])
+        assert bool(down[0]), "the platform socket still needs its floor"
+
     def test_a_deviated_scanned_cap_leaves_no_flaps(self):
         """THE TORN-FLAP MECHANISM (client 2026-08-09, on 295811960: 'a lot of
         the scan left... not smoothed into the scan'). The cull removed what sat

@@ -2314,3 +2314,16 @@ same margin so the moat stays bridged. Still far tighter than the old cylinder's
 blunt can. Pinned with a deliberately mis-seated cap (0.35mm off-pose): nothing
 of the scan may stand in the throat. 20 deliverables pins, emit suite, fast lane
 858 green; re-emitted live as 295811960 run 20260809-180344.
+
+**AR.4 — the fifth artifact: the arch to the platform (client 2026-08-09).**
+Client, after the mesh inventory (24 cap meshes + 2 scanbodies; the implant has
+NO mesh anywhere — its top is the plane the cap's base sat on): the platform
+floor "— do the envelope walls". Built as `{case}-arch-platform.stl` in BOTH
+emit lanes: `cap_imprint_holes` gains `visible_depth_mm` (None = full depth —
+walls all the way down, floor at the cap's offset base, the implant's top
+space); the default stays the shallow dish, so tab 4 is untouched and tab
+`5 · Arch — to the platform` appears exactly when the run wrote the file (an
+old package never grows a tab pointing at a file it lacks). On short caps the
+two floors can coincide (the base sits inside the visible depth); on tall caps
+they diverge — pinned both ways. 26 worker pins + emit suite, product 1433,
+fast lane 859; live on 295811960 run 20260810-000822.

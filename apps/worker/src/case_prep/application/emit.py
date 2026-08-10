@@ -288,6 +288,13 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
         rows_by_tooth[tooth].setdefault("production", {})["imprint_note"] = note
     arch_capless_path = out_dir / f"{case.id}-arch-capless.stl"
     arch_removed.export(arch_capless_path)
+    # THE FIFTH ARTIFACT (client 2026-08-09): the same socket at FULL depth —
+    # walls all the way down, floor at the cap's offset base, the implant's top
+    # space. The shallow dish above stays the default capless artifact.
+    arch_platform, _ = cap_imprint_holes(scan, imprint_sites,
+                                         visible_depth_mm=None)
+    arch_platform_path = out_dir / f"{case.id}-arch-platform.stl"
+    arch_platform.export(arch_platform_path)
 
     cons_posed = [(final_products[sp.tooth], sp.pose_matrix)
                   for sp, _t, _cons in package_sites]
@@ -339,7 +346,8 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
         "gingival_relief": _relief_summary(selection.gingival_offset_mm,
                                            clamp_by_tooth),
         "package_files": [f.name for f in manifest.files]
-        + [arch_caps_path.name, arch_capless_path.name, arch_cons_path.name]
+        + [arch_caps_path.name, arch_capless_path.name,
+           arch_platform_path.name, arch_cons_path.name]
         + viewer_file,
     }
     out_dir.mkdir(parents=True, exist_ok=True)

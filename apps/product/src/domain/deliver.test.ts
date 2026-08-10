@@ -1516,6 +1516,29 @@ describe("previewTabs — the demo's three tabs, matched onto the run's own pack
     ]);
   });
 
+  it("the platform tab appears fifth exactly when the run wrote its file", () => {
+    /* THE FIFTH ARTIFACT (client 2026-08-09: the platform-level floor, "do the
+       envelope walls") — full-depth socket as its own file; tab 4 stays the
+       shallow dish. Absent on packages emitted before the artifact existed. */
+    const withPlatform = previewTabs(
+      ["case-a-arch-capless.stl", "case-a-arch-platform.stl"],
+      [19],
+    );
+    expect(withPlatform.map((t) => t.key)).toEqual([
+      "arch-alone",
+      "arch-platform",
+    ]);
+    expect(withPlatform[1]).toEqual({
+      key: "arch-platform",
+      label: "5 · Arch — to the platform",
+      filename: "case-a-arch-platform.stl",
+      tooth: null,
+      layers: [{ filename: "case-a-arch-platform.stl", role: "arch" }],
+    });
+    const without = previewTabs(["case-a-arch-capless.stl"], [19]);
+    expect(without.map((t) => t.key)).toEqual(["arch-alone"]);
+  });
+
   it("a tab whose file the package does not name is simply absent — no placeholder", () => {
     const tabs = previewTabs(["case-a-arch-with-healingcaps.stl"], [19]);
     expect(tabs).toEqual([

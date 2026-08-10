@@ -2494,6 +2494,12 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                     target.setdefault("production", {})["imprint_note"] = note
             arch_capless_path = _P(out_dir) / f"{case_id}-arch-capless.stl"
             arch_removed.export(arch_capless_path)
+            # THE FIFTH ARTIFACT (client 2026-08-09): the same socket at FULL
+            # depth — floor at the cap's offset base, the implant's top space
+            arch_platform, _ = cap_imprint_holes(scan, imprint_sites,
+                                                 visible_depth_mm=None)
+            (_P(out_dir) / f"{case_id}-arch-platform.stl").write_bytes(
+                arch_platform.export(file_type="stl"))
 
             cons_posed = [(final_products[sp.tooth] if final_products else cons, sp.pose_matrix)
                           for sp, _t, cons in package_sites]
@@ -2541,7 +2547,8 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
         "gingival_relief": _relief_summary(gingival_offset_mm, _clamp_by_tooth),
         # A preview lists its per-site files but no arch deliverables (none were made).
         "package_files": [f.name for f in manifest.files] + (
-            [arch_caps_path.name, arch_capless_path.name, arch_cons_path.name]
+            [arch_caps_path.name, arch_capless_path.name,
+             f"{case_id}-arch-platform.stl", arch_cons_path.name]
             + viewer_file if emit_package else []),
     }
     # emit_case_package used to create out_dir as a side effect; a preview skips it,
