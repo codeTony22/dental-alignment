@@ -2364,3 +2364,11 @@ analysis" button beside the report's close writes it to the clipboard with a
 transient "Copied ✓". Nothing is disclosed that the dialog does not already
 show; nothing is composed that was not served. Pinned: verbatim gate sentence,
 identities, clamp-sentence-over-numbers; the dialog markup pin. Product 1440.
+
+**AR.8 — the re-run rides Delivery too, beside the door back (client 2026-08-09:
+"put it next to undo this confirmation").** The same POST /run act as
+Adjustment's button, in Delivery's header next to "Start over (demo) — withdraw
+confirmation, payment & release". The seal is respected rather than silently
+broken: while a confirmation stands the button disables with its reason in the
+title ("withdraw the confirmation first — the seal covers the current run's
+evidence"); with no seal standing it is live. Pinned three ways; product 1443.

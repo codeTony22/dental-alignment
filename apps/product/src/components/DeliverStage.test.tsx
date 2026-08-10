@@ -1341,3 +1341,31 @@ describe("the report dialog's copy-for-analysis act (client 2026-08-09)", () => 
     expect(html).toContain("Copy for analysis");
   });
 });
+
+describe("the Delivery re-run act beside the door back (client 2026-08-09)", () => {
+  it("renders next to the start-over control, disabled while a confirmation stands", () => {
+    const html = view({
+      onRerunAlignment: () => undefined,
+      detail: deliverableDetail(CONFIRMED),
+    });
+    const reset = html.indexOf('data-role="delivery-reset"');
+    const rerun = html.indexOf('data-role="delivery-rerun"');
+    expect(rerun).toBeGreaterThan(-1);
+    expect(reset).toBeGreaterThan(-1);
+    expect(html).toMatch(/data-role="delivery-rerun"[^>]*disabled/);
+    expect(html).toContain("withdraw the confirmation first");
+  });
+
+  it("with no confirmation standing the act is live", () => {
+    const html = view({
+      onRerunAlignment: () => undefined,
+      detail: deliverableDetail(),
+    });
+    expect(html).toContain('data-role="delivery-rerun"');
+    expect(html).not.toMatch(/data-role="delivery-rerun"[^>]*disabled/);
+  });
+
+  it("no handler, no button", () => {
+    expect(view()).not.toContain('data-role="delivery-rerun"');
+  });
+});

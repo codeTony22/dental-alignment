@@ -43,6 +43,7 @@ import {
   fetchInvoice,
   fetchRun,
   postConfirm,
+  postRun,
   postDeliveryReset,
   postRelease,
   putChoices,
@@ -762,6 +763,12 @@ export interface DeliverStageViewProps {
   readonly onConfirm: () => void;
   /** The demo's door back (client 2026-07-30) — optional: static tests predate it. */
   readonly onStartOver?: () => void;
+  /** THE RE-RUN, ON DELIVERY TOO (client 2026-08-09: "put it next to undo this
+   *  confirmation"). Fires the full authorized run again; disabled while a
+   *  confirmation stands — the seal covers the current run's evidence, so the
+   *  door back comes first. Null/omitted = no button. */
+  readonly onRerunAlignment?: (() => void) | null;
+  readonly rerunning?: boolean;
   /** Opens the checkout DIALOG; the container renders it via `checkoutDialog`. */
   readonly onOpenCheckout?: () => void;
   readonly checkoutDialog?: React.ReactNode;
@@ -807,6 +814,8 @@ export function DeliverStageView({
   onTermsChange = () => undefined,
   onConfirm,
   onStartOver = () => undefined,
+  onRerunAlignment = null,
+  rerunning = false,
   onOpenCheckout = () => undefined,
   checkoutDialog = null,
   onRelease,
@@ -908,6 +917,27 @@ export function DeliverStageView({
               onClick={onStartOver}
             >
               Start over (demo) — withdraw confirmation, payment &amp; release
+            </button>
+          )}
+          {onRerunAlignment !== null && (
+            <button
+              type="button"
+              data-role="delivery-rerun"
+              className="button button--ghost button--small"
+              disabled={
+                rerunning || phase !== "idle" ||
+                detail.session.confirmation !== null
+              }
+              title={
+                detail.session.confirmation !== null
+                  ? "withdraw the confirmation first — the seal covers the " +
+                    "current run's evidence"
+                  : "fire the full alignment again; marks, pairs and best " +
+                    "fits re-apply"
+              }
+              onClick={onRerunAlignment}
+            >
+              {rerunning ? "Re-running…" : "Re-run the alignment"}
             </button>
           )}
         </header>
@@ -1896,6 +1926,17 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
      page's detail — the dialog itself owns the two-leg flow (CheckoutDialog). */
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 
+  // THE RE-RUN ON DELIVERY (client 2026-08-09) — same door as Adjustment's
+  // button; the view disables it while a confirmation stands.
+  const [rerunning, setRerunning] = useState(false);
+  const handleRerunAlignment = useCallback(() => {
+    setRerunning(true);
+    void postRun(caseId).then((result) => {
+      setRerunning(false);
+      if (result.kind === "ok") onDetail(result.data);
+      else setActionError(result.detail);
+    });
+  }, [caseId, onDetail]);
   const handleStartOver = useCallback(() => {
     setPhase("resetting");
     setActionError(null);
@@ -1988,6 +2029,8 @@ export function DeliverStage({ detail, onDetail }: DeliverStageProps) {
       onTermsChange={handleTermsChange}
       onConfirm={handleConfirm}
       onStartOver={handleStartOver}
+      onRerunAlignment={handleRerunAlignment}
+      rerunning={rerunning}
       onOpenCheckout={() => setCheckoutOpen(true)}
       checkoutDialog={
         checkoutOpen ? (
