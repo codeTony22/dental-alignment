@@ -148,6 +148,47 @@ def classify_diameter(measured_mm: float, table: Dict[str, Tuple[float, float]],
                          margin_mm=None if margin is None else float(margin))
 
 
+def propose_variant(measured_diameter_mm: Optional[float],
+                    measured_height_mm: Optional[float],
+                    table: Dict[str, Tuple[float, float]],
+                    min_margin_mm: float = 0.3) -> Optional[str]:
+    """The nearest variant the scan's OWN measurements suggest — a suggestion and a
+    cross-check, never a transform (client escalation 2026-08-09, cap
+    297589851-neodent-gm tooth 20: a TALL variant was declared, unmeasured, over a
+    visibly SHORT cap and the preview seated a 5.4mm barrel onto a ~3.4mm cap, DEV
+    RMS 2.065 — detection measured the rim DIAMETER and nothing about HEIGHT, so
+    nothing could catch it).
+
+    Diameter picks the Ø class through ``classify_diameter`` UNCHANGED — same
+    table, same refusal. But a Ø class groups every collar HEIGHT sharing that
+    diameter (``DiameterClass.variants`` — see the class's own docstring), which is
+    exactly the 20-vs-30 ambiguity ``classify_diameter`` was never asked to
+    resolve: height breaks that tie, nearest wins. The SAME fixed margin gates the
+    break, for the same reason a diameter reading within it refuses — two heights
+    within a coin-flip of the read are not a proposal, they are noise, and a
+    number strong enough to preselect a variant on someone's behalf must never be
+    a guess dressed as one.
+
+    None — never a guess — when either measurement is missing, the table is empty
+    (nothing to propose against), the diameter class is ambiguous, or the height
+    pick is itself a coin-flip. ``table`` is the CALLER's contract: pass ONLY the
+    CURRENT shelf (``CapLibrary.variant_dimensions()`` already excludes archived
+    subdirectories by construction) and a superseded id can never be proposed,
+    because this function can only ever answer with a label the table names."""
+    if measured_diameter_mm is None or measured_height_mm is None or not table:
+        return None
+    dia_class = classify_diameter(measured_diameter_mm, table, min_margin_mm=min_margin_mm)
+    if dia_class is None:
+        return None
+    if len(dia_class.variants) == 1:
+        return dia_class.variants[0]
+    ranked = sorted((abs(measured_height_mm - table[v][1]), v)
+                    for v in dia_class.variants)
+    if ranked[1][0] - ranked[0][0] < min_margin_mm:
+        return None  # two height families within a coin-flip — not a proposal
+    return ranked[0][1]
+
+
 def variant_agreement(declared: Optional[str], identified: str) -> List[str]:
     """The billing/clinical gate signal: an explainable flag when the doctor's DECLARED variant
     disagrees with what the system identified on the scan (a smaller part constructed into a

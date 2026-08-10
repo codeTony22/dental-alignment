@@ -33,8 +33,10 @@ import numpy as np
 import trimesh
 from scipy.spatial import cKDTree
 
+from case_prep.adapters import library_catalog
 from case_prep.adapters.cap_detection import measure_rim_diameter
 from case_prep.application.cases import CaseRecord
+from case_prep.domain.cap_catalog import propose_variant
 from case_prep.domain.capture_gate import assess_capture
 from case_prep.pipeline.auto_flow import _crowns_frame, _fit_circle_xy, propose_sites
 
@@ -84,11 +86,20 @@ class DetectedSite:
 @dataclass(frozen=True)
 class SuggestedSiteCapture:
     """A CURATED suggested site's capture assessment (the demo's ``suggested_capture``
-    rows) — the chair-side chips need these before any work is invested."""
+    rows) — the chair-side chips need these before any work is invested.
+
+    ``measured_cap_height_mm``/``proposed_variant`` (client escalation 2026-08-09):
+    the site's own honest height reading and the variant it independently suggests
+    — see ``measured_cap_height_mm`` and ``domain.cap_catalog.propose_variant`` for
+    what "honest" means here. Both None whenever the geometry cannot support the
+    read (a starved site, no system to propose against, an ambiguous class) —
+    never a guess wearing a suggestion's clothes."""
 
     tooth: int
     center: Optional[Tuple[float, float, float]]
     capture: dict
+    measured_cap_height_mm: Optional[float] = None
+    proposed_variant: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -166,6 +177,63 @@ def jaw_from_crown_axis(axis) -> Optional[str]:
     return None
 
 
+# A footprint sample needs enough points to trust a "top" reading — the same
+# >=20-point bar the seat's own centre-snap already trusts before it reads a local
+# patch of the scan (auto_flow's ``_mean_shift_top``/``snap_r`` convention).
+_HEIGHT_FOOTPRINT_MIN_PTS = 20
+
+
+def measured_cap_height_mm(ctx: CaptureContext, centre_xy, footprint_r: float,
+                           collar_z: Optional[float]) -> Optional[float]:
+    """The cap's own measured height at one site: its highest scanned point within
+    its own footprint, above the LOCAL collar ``assess_capture`` already read there
+    (``CaptureAssessment.rim_z`` — passed in, never resampled here, so a site's
+    capture verdict and its height can never disagree about where the collar
+    sits). The footprint is the same disc the capture checks sample around, radius
+    = the site's own measured rim — reusing the gate's own vocabulary rather than
+    inventing a new sampler.
+
+    None — never a guess — when the collar itself is unmeasurable (mirrors
+    ``assess_capture``'s own starved-site refusal), the footprint holds too few
+    points to trust a top reading, or the reading is non-positive (a cap's dome
+    sits ABOVE its own rim by definition; anything else says the footprint was
+    not really the cap — noise, not a measurement)."""
+    if collar_z is None:
+        return None
+    xy = ctx.local_points[:, :2] - np.asarray(centre_xy, float)
+    footprint = ctx.local_points[np.linalg.norm(xy, axis=1) < footprint_r]
+    if len(footprint) < _HEIGHT_FOOTPRINT_MIN_PTS:
+        return None
+    height = float(footprint[:, 2].max()) - float(collar_z)
+    return height if height > 0.0 else None
+
+
+def _variant_table_for(case: CaseRecord) -> Dict[str, Tuple[float, float]]:
+    """variant -> (rim_diameter_mm, height_mm), CURRENT shelf only, for the case's
+    own suggested system — the exact table run-time identification measures a cap
+    against (``CapLibrary.variant_dimensions``), read here from the cached
+    full-catalog scan (``library_catalog.catalog_groups`` hashes every mesh once
+    per process per data root) instead of loading a second ``CapLibrary``:
+    ``detect()`` already parses the whole doctor's scan, and it must not ALSO
+    re-canonicalize a shelf of cap CADs on every Intake click.
+
+    Empty — never raised — when the case names no system, or its folder-matched
+    name is not an actual catalog model: an honest 'nothing to propose against',
+    and ``propose_variant`` already answers None over an empty table. Superseded/
+    legacy/unloadable entries are excluded by construction, so nothing built from
+    this table can ever propose an archived id (curation may still declare one)."""
+    if case.suggested_model is None:
+        return {}
+    group = next((g for g in library_catalog.catalog_groups(case.data_root)
+                 if g["model"] == case.suggested_model), None)
+    if group is None:
+        return {}
+    return {v["variant"]: (v["rim_diameter_mm"], v["height_mm"])
+           for v in group["variants"]
+           if not (set(v["flags"]) & {"superseded", "legacy", "unloadable"})
+           and v["rim_diameter_mm"] is not None and v["height_mm"] is not None}
+
+
 def _scan_mesh(scan: Path) -> trimesh.Trimesh:
     try:
         mesh = trimesh.load(scan, force="mesh")
@@ -204,15 +272,29 @@ def detect(case: CaseRecord) -> DetectionResult:
             capture=_capture_at(ctx, seed[:2], hint),
         ))
 
+    variant_table = _variant_table_for(case)
     suggested = []
     for s in case.suggested_sites:
         centre_xy, hint = site_capture_inputs(
             ctx, s.get("center"), s.get("center_mark"), s.get("rim_mark"))
         center = s.get("center")
+        cap = _capture_at(ctx, centre_xy, hint)
+        # THE INDEPENDENT SCAN READ (client escalation 2026-08-09): a human mark's
+        # own RADIUS is exactly what this measurement is asked to CROSS-CHECK, so
+        # the diameter feeding the variant proposal is read fresh off the scan at
+        # the site's centre — never substituted by a human's rim click. Same
+        # posture auto_flow's own dia_class cross-check already takes
+        # (``measured_dia`` there is computed unconditionally, marks or not).
+        measured_dia = measure_rim_diameter(ctx.local_points, ctx.xy_tree, centre_xy)
+        height = (measured_cap_height_mm(ctx, centre_xy, measured_dia / 2.0,
+                                         cap.get("rim_z_mm"))
+                 if measured_dia is not None else None)
         suggested.append(SuggestedSiteCapture(
             tooth=int(s["tooth"]),
             center=(tuple(float(c) for c in center) if center is not None else None),
-            capture=_capture_at(ctx, centre_xy, hint),
+            capture=cap,
+            measured_cap_height_mm=height,
+            proposed_variant=propose_variant(measured_dia, height, variant_table),
         ))
 
     axis = tuple(float(c) for c in ctx.frame[:, 2])  # _crowns_frame's third column -- expose, don't recompute

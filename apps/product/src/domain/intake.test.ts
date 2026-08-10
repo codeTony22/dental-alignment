@@ -441,6 +441,20 @@ describe("siteEvidence — what the server already knows about a site", () => {
     expect(facts[2]!.text).toBe("rim 0.31mm below cusps");
   });
 
+  it("a MEASURED suggestion says so (client escalation 2026-08-09), not 'suggested'", () => {
+    const detail = caseSessionDetail({
+      sites: [
+        siteView({
+          tooth: 19,
+          suggested_variant: "5020",
+          suggested_variant_source: "measured",
+        }),
+      ],
+      detection: detectionView([detectedProposal({ tooth_guess: 19 })]),
+    });
+    expect(siteEvidence(detail, detail.sites[0]!)[0]!.text).toBe("measured 5020");
+  });
+
   it("a declared variant supersedes the suggestion — the operator's act wins the row", () => {
     const detail = caseSessionDetail({
       sites: [siteView({ tooth: 19, declared_variant: "6030", suggested_variant: "5020" })],

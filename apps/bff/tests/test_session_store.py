@@ -78,6 +78,32 @@ def test_a_document_predating_jaw_reading_loads_with_it_honestly_absent(tmp_path
     assert again.detection.site_capture == {"4": {"verdict": "pass"}}
 
 
+def test_a_document_predating_the_measured_proposal_loads_with_it_honestly_absent(
+        tmp_path):
+    """Client escalation 2026-08-09: ``site_measured_height_mm``/``site_proposed_
+    variant`` are ADDITIVE Optional dicts (default empty) for exactly the reason
+    ``jaw_reading`` is above — a session written before the detect route carried
+    this pair must load cleanly, not refuse, and must not invent an entry for a
+    tooth it never measured."""
+    store = SessionStore(tmp_path)
+    s = store.load("case-a")
+    s.detection = DetectionRecord(
+        proposals=[], site_capture={"20": {"verdict": "pass"}},
+        site_measured_height_mm={"20": 0.32}, site_proposed_variant={"20": None})
+    store.save(s)
+    path = tmp_path / "case-a" / "session.json"
+    doc = json.loads(path.read_text())
+    assert doc["detection"]["site_measured_height_mm"] == {"20": 0.32}  # today's shape
+    del doc["detection"]["site_measured_height_mm"]
+    del doc["detection"]["site_proposed_variant"]
+    path.write_text(json.dumps(doc))
+    again = SessionStore(tmp_path).load("case-a")
+    assert again.detection is not None
+    assert again.detection.site_measured_height_mm == {}
+    assert again.detection.site_proposed_variant == {}
+    assert again.detection.site_capture == {"20": {"verdict": "pass"}}
+
+
 def test_save_leaves_no_partial_files_beside_the_session(tmp_path):
     store = SessionStore(tmp_path)
     store.save(store.load("case-a"))

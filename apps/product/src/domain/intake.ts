@@ -619,13 +619,20 @@ export function siteEvidence(
   const facts: SiteFact[] = [];
   const variant = site.declared_variant ?? site.suggested_variant;
   if (variant !== null) {
+    // client escalation 2026-08-09: a suggestion says WHERE it came from — the
+    // case's own curation ("suggested", unchanged) or detection's own honest
+    // height+diameter read ("measured") — never the same word for both
+    const measured =
+      site.declared_variant === null && site.suggested_variant_source === "measured";
     facts.push({
       key: "variant",
-      text: `${site.declared_variant !== null ? "declared" : "suggested"} ${variant}`,
+      text: `${site.declared_variant !== null ? "declared" : measured ? "measured" : "suggested"} ${variant}`,
       title:
         site.declared_variant !== null
           ? "The variant declared for this site. Declare is where it is changed."
-          : "The variant registration suggested for this site — a proposal, not a declaration.",
+          : measured
+            ? "The variant detection's own measurement (rim diameter + cap height) proposes for this site — a cross-check, not a declaration."
+            : "The variant registration suggested for this site — a proposal, not a declaration.",
     });
   }
   const proposal = (detail.detection?.proposals ?? []).find(

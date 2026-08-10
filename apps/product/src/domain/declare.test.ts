@@ -985,6 +985,27 @@ describe("the variant DETECTION proposed for this site (gap variant-suggested-ba
     const site = siteView({ tooth: 19, suggested_variant: "not-in-this-catalog" });
     expect(variantShelves(detail, site).current.every((c) => !c.suggested)).toBe(true);
   });
+
+  it("carries the server's attribution on the marked card (client escalation 2026-08-09)", () => {
+    const measured = siteView({
+      tooth: 19,
+      suggested_variant: "6030",
+      suggested_variant_source: "measured",
+    });
+    const cards = variantShelves(detail, measured).current;
+    expect(cards.find((c) => c.id === "6030")?.suggestedSource).toBe("measured");
+    expect(cards.find((c) => c.id === "5020")?.suggestedSource).toBe(null);
+  });
+
+  it("a curated suggestion attributes as curated, same as ever", () => {
+    const curated = siteView({
+      tooth: 19,
+      suggested_variant: "6030",
+      suggested_variant_source: "curated",
+    });
+    const cards = variantShelves(detail, curated).current;
+    expect(cards.find((c) => c.id === "6030")?.suggestedSource).toBe("curated");
+  });
 });
 
 describe("declareQueueSummary — how far through the declaration the operator is", () => {

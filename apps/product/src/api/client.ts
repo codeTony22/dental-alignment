@@ -111,6 +111,12 @@ export interface SiteView {
   status: SiteStatus;
   declared_variant: string | null;
   suggested_variant: string | null;
+  /** Where `suggested_variant` came from (client escalation 2026-08-09): the
+   *  case's own CURATED value (sites.json) or the DETECTION-MEASURED proposal —
+   *  never both, and null exactly when `suggested_variant` is null. Optional
+   *  only because fixtures/tests built before this field existed omit it; the
+   *  BFF always sends it. */
+  suggested_variant_source?: "curated" | "measured" | null;
   center: number[] | null;
   capture: CaptureAssessmentView | null;
   /** THE PREVIEW'S SEAT FACTS (client 2026-07-27 #2): what this site's attestation
@@ -158,6 +164,14 @@ export interface DetectionView {
    *  nothing is chosen; once a chosen jaw disagrees, this is the only place the
    *  raw reading survives — the jaw buttons' one-click fix reads it from here. */
   jaw_reading?: string | null;
+  /** The client escalation's raw evidence (2026-08-09), keyed by tooth (string
+   *  keys — JSON object) like `site_capture`: the honest height reading and the
+   *  variant it independently suggests. `SiteView.suggested_variant`/
+   *  `suggested_variant_source` are the composed per-site read surfaces render
+   *  from; these are the record's own verbatim numbers. Optional for the same
+   *  reason `jaw_reading` is — the BFF always sends both. */
+  site_measured_height_mm?: Record<string, number | null>;
+  site_proposed_variant?: Record<string, string | null>;
 }
 
 /** One case-level choice as the automation consumes it (the SystemView pattern

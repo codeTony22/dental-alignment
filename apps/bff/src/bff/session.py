@@ -270,6 +270,14 @@ class DetectionRecord(BaseModel):
     # ADDITIVE Optional, default None: an old session document predating this field loads
     # cleanly with no reading, exactly the store's schema-additivity discipline.
     jaw_reading: Optional[str] = None
+    # THE MEASURED HEIGHT + PROPOSAL (client escalation 2026-08-09), keyed by tooth
+    # like ``site_capture`` — ``application.detection.SuggestedSiteCapture.
+    # measured_cap_height_mm``/``proposed_variant`` verbatim, worker facts written
+    # only by the detect route. ADDITIVE, same discipline as ``jaw_reading``: a
+    # document written before this pair existed loads with both honestly empty
+    # rather than refusing.
+    site_measured_height_mm: Dict[str, Optional[float]] = Field(default_factory=dict)
+    site_proposed_variant: Dict[str, Optional[str]] = Field(default_factory=dict)
 
 
 class RunSession(BaseModel):

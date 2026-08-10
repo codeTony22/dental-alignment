@@ -280,7 +280,10 @@ function VariantChip({ card, declared, archived, onDeclare }: VariantChipProps) 
           className="library-badge library-badge--suggested"
         >
           {" "}
-          sugg.
+          {/* client escalation 2026-08-09: a MEASURED suggestion (detection's own
+              honest height+diameter read) wears its own word on the same badge —
+              the smallest honest change, never a redesigned chip */}
+          {card.suggestedSource === "measured" ? "measured" : "sugg."}
         </span>
       )}
     </button>
@@ -649,6 +652,10 @@ export interface DeclareStageViewProps {
    *  offered again once a run's rows exist — §10-AD re-applies the operator's
    *  evidence after the automation. Null/omitted = no button. */
   readonly onRerunAlignment?: (() => void) | null;
+  /** Why the run gate would refuse right now (client's 422, 2026-08-10: the
+   *  button fired into "still needs: tooth N reviewed"). Non-null DISABLES the
+   *  button and rides its title, so the gate speaks before the round trip. */
+  readonly rerunBlockedReason?: string | null;
   /** THE SUPERSEDED SHELF, OUT OF FLOW (client 2026-08-09: opening it "shrinks the
    *  panels — the panels need to be always the main center of attention and size
    *  should not change"). A prop for the same reason `cautionsOpen` is one: a static
@@ -691,6 +698,7 @@ export function DeclareStageView({
   onOpenCautions = () => undefined,
   onCloseCautions = () => undefined,
   onRerunAlignment = null,
+  rerunBlockedReason = null,
   archiveOpen = false,
   onOpenArchive = () => undefined,
   onCloseArchive = () => undefined,
@@ -859,8 +867,15 @@ export function DeclareStageView({
                 type="button"
                 data-role="rerun-alignment"
                 className="button button--ghost button--small"
-                disabled={runPhase === "firing" || forkSaving !== "idle"}
-                title="Fire the full alignment again — your marks, pairs and best fits re-apply after the automation"
+                disabled={
+                  runPhase === "firing" || forkSaving !== "idle" ||
+                  rerunBlockedReason !== null
+                }
+                title={
+                  rerunBlockedReason ??
+                  "Fire the full alignment again — your marks, pairs and " +
+                    "best fits re-apply after the automation"
+                }
                 onClick={onRerunAlignment}
               >
                 {runPhase === "firing" ? "Re-running…" : "Re-run the alignment"}
@@ -1460,6 +1475,12 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
       onToggleLinked={handleToggleLinked}
       cautionsOpen={cautionsOpen}
       onRerunAlignment={() => fireRun(runKey ?? "manual")}
+      rerunBlockedReason={
+        runKey === null
+          ? "the run gate will refuse: every site must be reviewed over the " +
+            "panes first — an adjusted site needs its re-review tick"
+          : null
+      }
       onOpenCautions={() => setCautionsOpen(true)}
       onCloseCautions={() => setCautionsOpen(false)}
       archiveOpen={archiveOpen}

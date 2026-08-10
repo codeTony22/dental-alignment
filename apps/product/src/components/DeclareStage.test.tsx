@@ -297,6 +297,28 @@ describe("the variant chips — the active site declares from the catalog", () =
     expect(html.match(/data-role="variant-suggested"/g)).toHaveLength(1);
   });
 
+  it("a MEASURED suggestion wears the word 'measured' on the same badge idiom (client escalation 2026-08-09)", () => {
+    const html = view({
+      activeTooth: 30,
+      detail: {
+        ...detail,
+        sites: [
+          detail.sites[0]!,
+          siteView({
+            tooth: 30,
+            suggested_variant: "5020",
+            suggested_variant_source: "measured",
+          }),
+        ],
+      },
+    });
+    expect(html).toMatch(
+      /data-role="variant-card"[^>]*data-variant="5020"[\s\S]*?data-role="variant-suggested"/,
+    );
+    expect(html).toContain("measured");
+    expect(html).not.toContain("sugg.");
+  });
+
   it("the badge SURVIVES declaration — the way back to the proposal (client 2026-08-05)", () => {
     /* reversed from vanish-on-declaration: "we lost the suggested label" — the
        SELECTED state already attributes the operator's act, and the badge keeps

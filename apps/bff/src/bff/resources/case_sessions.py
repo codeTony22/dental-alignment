@@ -43,7 +43,7 @@ import dataclasses
 import datetime
 import math
 import uuid
-from typing import Callable, Dict, List, Literal, Optional, Union
+from typing import Callable, Dict, List, Literal, Optional, Tuple, Union
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -132,7 +132,14 @@ class SiteView(BaseModel):
     tooth: int
     status: str
     declared_variant: Optional[str]     # the session's (an operator act), never inferred
-    suggested_variant: Optional[str]    # the curated suggestion the UI may prefill
+    # THE SUGGESTION'S PRECEDENCE (client escalation 2026-08-09): the case's own
+    # CURATED value (sites.json) when one exists, else the DETECTION-MEASURED
+    # proposal (application.detection.SuggestedSiteCapture.proposed_variant) —
+    # never a guess dressed as one; None when neither exists. ``source`` says
+    # which, so the UI's chip can render "measured" honestly instead of wearing
+    # the curated wording for a fact detection derived on its own.
+    suggested_variant: Optional[str]
+    suggested_variant_source: Optional[Literal["curated", "measured"]] = None
     center: Optional[List[float]]       # a coordinate FACT from intake, passed through
     # the worker's capture assessment (CaptureAssessment.to_dict), once detection ran —
     # the chair-side verdict Intake surfaces BEFORE any work is invested (plan §4)
@@ -188,6 +195,14 @@ class DetectionView(BaseModel):
     # the UI highlight the geometry's own answer on the jaw buttons (the advisory's
     # one-click fix) even while the effective value disagrees with it.
     jaw_reading: Optional[str] = None
+    # THE RAW MEASURED FACTS (client escalation 2026-08-09), keyed by tooth like
+    # ``site_capture`` — served for the same reason as ``jaw_reading``: a fact the
+    # worker computed must not be a fact the UI has no way to show (rule 8).
+    # ``SiteView.suggested_variant``/``suggested_variant_source`` are the composed
+    # per-site read the surfaces actually render from; this is the record's own
+    # verbatim evidence.
+    site_measured_height_mm: Dict[str, Optional[float]] = Field(default_factory=dict)
+    site_proposed_variant: Dict[str, Optional[str]] = Field(default_factory=dict)
 
 
 class EffectiveChoiceView(BaseModel):
@@ -601,6 +616,21 @@ class DeclarationIn(BaseModel):
 
 # --- derivations ------------------------------------------------------------------------
 
+def _suggested_variant(tooth: int, curated: Optional[str],
+                       detection: Optional[DetectionRecord]
+                       ) -> Tuple[Optional[str], Optional[str]]:
+    """(suggested_variant, suggested_variant_source): the CURATED value (sites.json)
+    when present, else the DETECTION-MEASURED proposal (client escalation
+    2026-08-09) — a suggestion strong enough to prefill a declaration must say
+    where it came from, so the chip can render "measured" honestly instead of
+    borrowing the curated wording for a fact the scan derived on its own."""
+    if curated is not None:
+        return curated, "curated"
+    measured = (detection.site_proposed_variant.get(str(tooth))
+               if detection is not None else None)
+    return (measured, "measured") if measured is not None else (None, None)
+
+
 def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
     """Worker-suggested sites overlaid with session state; session-only sites (a later
     slice can add one at Declare) still render. Capture verdicts join from the session's
@@ -611,11 +641,14 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
     for s in case.suggested_sites:
         tooth = int(s["tooth"])
         sess = session.sites.get(str(tooth))
+        suggested, suggested_source = _suggested_variant(
+            tooth, s.get("declared_variant"), session.detection)
         views[tooth] = SiteView(
             tooth=tooth,
             status=(sess.status.value if sess else SiteStatus.DETECTED.value),
             declared_variant=(sess.declared_variant if sess else None),
-            suggested_variant=s.get("declared_variant"),
+            suggested_variant=suggested,
+            suggested_variant_source=suggested_source,
             # the operator's mark WINS over the case's suggestion, the same precedence
             # the run itself applies (application.run) — one rule, stated in both
             # places rather than the surface and the run disagreeing about the centre
@@ -952,6 +985,12 @@ def _detection_record(result: DetectionResult) -> DetectionRecord:
         ) for p in result.proposals],
         site_capture={str(s.tooth): s.capture for s in result.suggested},
         jaw_reading=result.jaw_reading,
+        # the client escalation's raw evidence (2026-08-09): the honest height
+        # reading + the variant it independently suggests, keyed like site_capture
+        site_measured_height_mm={str(s.tooth): s.measured_cap_height_mm
+                                 for s in result.suggested},
+        site_proposed_variant={str(s.tooth): s.proposed_variant
+                               for s in result.suggested},
     )
 
 
@@ -962,6 +1001,8 @@ def _detection_view(session: CaseSession) -> Optional[DetectionView]:
         proposals=[DetectedProposalView(**p.model_dump())
                   for p in session.detection.proposals],
         jaw_reading=session.detection.jaw_reading,
+        site_measured_height_mm=session.detection.site_measured_height_mm,
+        site_proposed_variant=session.detection.site_proposed_variant,
     )
 
 

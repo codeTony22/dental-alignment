@@ -76,6 +76,15 @@ export interface VariantCard {
    * operator moves down the queue.
    */
   readonly suggested: boolean;
+  /**
+   * WHERE the suggestion came from (client escalation 2026-08-09): the BFF's
+   * `SiteView.suggested_variant_source` — "curated" (the case's own sites.json
+   * fact) or "measured" (detection's own honest height+diameter proposal, the
+   * fix for a TALL variant once declared over a visibly SHORT cap because
+   * nothing checked height at all). null exactly when `suggested` is false —
+   * this module makes no comparison, it only carries the server's word.
+   */
+  readonly suggestedSource: "curated" | "measured" | null;
   /** The SERVED top-view thumbnail URL (client 2026-08-09: the cards show the
    *  part), from the catalog row's own `top_url` — this app never assembles a
    *  library path. null = the catalog serves none; the chip renders no image. */
@@ -119,6 +128,7 @@ export function variantShelves(
   const effective = detail.system.effective_model;
   const group = declarableGroups(detail).find((g) => g.model === effective);
   const proposed = site?.suggested_variant ?? null;
+  const proposedSource = site?.suggested_variant_source ?? null;
   const cards = (group?.variants ?? []).flatMap((row): VariantCard[] => {
     const id = row["id"];
     if (typeof id !== "string") return []; // no id = not declarable; drop, not lie
@@ -126,6 +136,7 @@ export function variantShelves(
     const flags = Array.isArray(row["flags"]) ? row["flags"] : [];
     const dia = row["rim_diameter_mm"];
     const height = row["height_mm"];
+    const suggested = proposed !== null && id === proposed;
     return [
       {
         id,
@@ -135,7 +146,8 @@ export function variantShelves(
           typeof height === "number" ? height : null,
         ),
         superseded: flags.includes("superseded"),
-        suggested: proposed !== null && id === proposed,
+        suggested,
+        suggestedSource: suggested ? (proposedSource ?? "curated") : null,
         topUrl: typeof row["top_url"] === "string" ? row["top_url"] : null,
       },
     ];

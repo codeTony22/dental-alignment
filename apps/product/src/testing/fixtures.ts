@@ -65,6 +65,10 @@ export function siteView(overrides: Partial<SiteView> = {}): SiteView {
     status: "detected",
     declared_variant: null,
     suggested_variant: "RP",
+    // the pre-existing fixture default is a CURATED fact (sites.json), same as
+    // every existing test built before the measured proposal existed — pass
+    // `suggested_variant_source: "measured"` explicitly to exercise that path
+    suggested_variant_source: "curated",
     center: [1.0, 2.0, 3.0],
     capture: null,
     // the preview's seat facts: honestly absent until a preview has run (the BFF

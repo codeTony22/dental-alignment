@@ -11,6 +11,7 @@ field slipped into a legitimate write) cannot arrive unnoticed.
 """
 from __future__ import annotations
 
+import dataclasses
 import threading
 
 import pytest
@@ -396,6 +397,84 @@ class TestDetect:
         persisted = SessionStore(settings.product_root).load("neodent-gm")
         assert persisted.detection is not None
         assert persisted.choices.complete is True
+
+
+class TestMeasuredVariantSuggestion:
+    """Client escalation 2026-08-09 (cap 297589851-neodent-gm tooth 20): detection
+    measured the rim DIAMETER per site and nothing about HEIGHT, so a site with no
+    CURATED suggestion served ``suggested_variant: None`` with no cross-check at
+    all — an operator declared a TALL variant over a visibly SHORT cap and the
+    preview seated a 5.4mm barrel onto a ~3.4mm cap. This resource's job is
+    precedence (curated beats measured, same door as the jaw reading above) and
+    honest attribution — the worker's own proposal (test_detection.py pins the
+    physics), never a comparison this layer invents."""
+
+    def _client_detected_with(self, settings, monkeypatch, result):
+        def stub(case):
+            return result
+
+        monkeypatch.setattr(case_sessions, "detect", stub)
+        client = TestClient(create_app(settings))
+        client.post("/api/case-sessions/neodent-gm/detect")
+        return client
+
+    def test_a_measured_proposal_serves_when_no_curated_value_exists(
+            self, settings, monkeypatch):
+        result = dataclasses.replace(stub_detection(), suggested=(
+            SuggestedSiteCapture(tooth=4, center=(1.0, 2.0, 3.0), capture=CAP_PASS,
+                                 measured_cap_height_mm=None, proposed_variant=None),
+            SuggestedSiteCapture(tooth=13, center=(4.0, 5.0, 6.0), capture=CAP_RESCAN,
+                                 measured_cap_height_mm=3.6, proposed_variant="5020"),
+        ))
+        client = self._client_detected_with(settings, monkeypatch, result)
+        sites = {s["tooth"]: s
+                for s in client.get("/api/case-sessions/neodent-gm").json()["sites"]}
+        assert sites[13]["suggested_variant"] == "5020"
+        assert sites[13]["suggested_variant_source"] == "measured"
+        # nothing measured for tooth 4 -> honestly absent, not a stale carry-over
+        assert sites[4]["suggested_variant"] is None
+        assert sites[4]["suggested_variant_source"] is None
+
+    def test_the_curated_value_wins_over_a_conflicting_measured_proposal(
+            self, tmp_path, product_root, monkeypatch):
+        from conftest import make_data_tree
+        from bff.config import Settings
+        data = make_data_tree(tmp_path / "data3", declared=("6020", None))
+        settings = Settings(data_root=data, product_root=product_root)
+        result = dataclasses.replace(stub_detection(), suggested=(
+            SuggestedSiteCapture(tooth=4, center=(1.0, 2.0, 3.0), capture=CAP_PASS,
+                                 measured_cap_height_mm=5.1, proposed_variant="9999"),
+            SuggestedSiteCapture(tooth=13, center=(4.0, 5.0, 6.0), capture=CAP_RESCAN),
+        ))
+        client = self._client_detected_with(settings, monkeypatch, result)
+        sites = {s["tooth"]: s
+                for s in client.get("/api/case-sessions/neodent-gm").json()["sites"]}
+        # the case's own curation stands even though detection measured something else
+        assert sites[4]["suggested_variant"] == "6020"
+        assert sites[4]["suggested_variant_source"] == "curated"
+
+    def test_neither_curated_nor_measured_is_honestly_absent(
+            self, settings, monkeypatch):
+        client = self._client_detected_with(settings, monkeypatch, stub_detection())
+        sites = {s["tooth"]: s
+                for s in client.get("/api/case-sessions/neodent-gm").json()["sites"]}
+        assert sites[4]["suggested_variant"] is None
+        assert sites[4]["suggested_variant_source"] is None
+        assert sites[13]["suggested_variant"] is None
+        assert sites[13]["suggested_variant_source"] is None
+
+    def test_the_raw_height_and_proposal_ride_the_detection_view(
+            self, settings, monkeypatch):
+        result = dataclasses.replace(stub_detection(), suggested=(
+            SuggestedSiteCapture(tooth=4, center=(1.0, 2.0, 3.0), capture=CAP_PASS,
+                                 measured_cap_height_mm=None, proposed_variant=None),
+            SuggestedSiteCapture(tooth=13, center=(4.0, 5.0, 6.0), capture=CAP_RESCAN,
+                                 measured_cap_height_mm=3.6, proposed_variant="5020"),
+        ))
+        client = self._client_detected_with(settings, monkeypatch, result)
+        body = client.get("/api/case-sessions/neodent-gm").json()
+        assert body["detection"]["site_measured_height_mm"] == {"4": None, "13": 3.6}
+        assert body["detection"]["site_proposed_variant"] == {"4": None, "13": "5020"}
 
 
 class TestJawReadingCrossCheck:

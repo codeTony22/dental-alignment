@@ -23,8 +23,8 @@ from case_prep.application.cases import CaseRecord, discover_cases
 from case_prep.application.detection import (CaptureContext, DetectionResult,
                                              FALLBACK_RIM_RADIUS_MM, ScanUnreadable,
                                              capture_context, detect,
-                                             jaw_from_crown_axis, site_capture_inputs,
-                                             tooth_guess_for)
+                                             jaw_from_crown_axis, measured_cap_height_mm,
+                                             site_capture_inputs, tooth_guess_for)
 
 REAL = Path(__file__).resolve().parents[1] / "data" / "real"
 real_only = pytest.mark.skipif(not (REAL / "library").is_dir(),
@@ -154,6 +154,56 @@ class TestToothGuess:
         assert tooth_guess_for([0.0, 0.0, 0.0], ({"tooth": 4},)) is None
 
 
+class TestMeasuredCapHeight:
+    """The missing second axis (client escalation 2026-08-09, cap
+    297589851-neodent-gm tooth 20): detection measured the rim DIAMETER per site
+    and nothing about HEIGHT, so nothing could catch a TALL variant declared over a
+    visibly SHORT cap. Reuses the capture gate's own collar reading rather than a
+    new sampler — the site's height and its capture verdict can never disagree
+    about where the collar sits."""
+
+    def _known_cap(self, collar_z: float, apex_h: float, footprint_r: float = 2.5):
+        """A flat sheet plus a KNOWN cap: a level ring of points at ``collar_z``
+        (the collar) and one point at the true apex, ``apex_h`` above it — both
+        within ``footprint_r`` of the origin, so the expected reading is exact."""
+        rng = np.random.default_rng(4)
+        ring = np.array([[footprint_r * 0.9 * np.cos(a), footprint_r * 0.9 * np.sin(a),
+                          collar_z]
+                         for a in np.linspace(0, 2 * np.pi, 40, endpoint=False)])
+        filler = np.c_[rng.uniform(-1, 1, 30), rng.uniform(-1, 1, 30),
+                       np.full(30, collar_z + apex_h * 0.6)]
+        apex = np.array([[0.0, 0.0, collar_z + apex_h]])
+        sheet = np.c_[rng.uniform(-20, 20, 100), rng.uniform(-20, 20, 100),
+                      np.zeros(100)]  # surrounding tissue, well outside the footprint
+        return _identity_ctx(np.vstack([ring, filler, apex, sheet]))
+
+    def test_a_known_cap_measures_exactly_its_own_height_above_the_collar(self):
+        ctx = self._known_cap(collar_z=0.5, apex_h=2.1)
+        height = measured_cap_height_mm(ctx, [0.0, 0.0], 2.5, collar_z=0.5)
+        assert height == pytest.approx(2.1, abs=1e-9)
+
+    def test_a_taller_known_cap_measures_taller(self):
+        ctx = self._known_cap(collar_z=0.5, apex_h=4.3)
+        height = measured_cap_height_mm(ctx, [0.0, 0.0], 2.5, collar_z=0.5)
+        assert height == pytest.approx(4.3, abs=1e-9)
+
+    def test_no_collar_reading_means_no_height(self):
+        # the same starved-site refusal assess_capture already gives (rim_z=None)
+        ctx = self._known_cap(collar_z=0.5, apex_h=2.1)
+        assert measured_cap_height_mm(ctx, [0.0, 0.0], 2.5, collar_z=None) is None
+
+    def test_a_footprint_with_too_few_points_is_unmeasurable(self):
+        # a footprint radius so small it excludes everything but the lone apex point
+        ctx = self._known_cap(collar_z=0.5, apex_h=2.1)
+        assert measured_cap_height_mm(ctx, [0.0, 0.0], 0.01, collar_z=0.5) is None
+
+    def test_a_non_positive_reading_is_never_served(self):
+        # the footprint's own top does not clear the collar it sits on — noise, not
+        # a cap; never guessed at as a height
+        ctx = self._known_cap(collar_z=2.0, apex_h=2.1)
+        assert measured_cap_height_mm(ctx, [0.0, 0.0], 2.5, collar_z=5.0) is None
+
+
 class TestDetectRefuses:
     def test_an_unreadable_scan_raises_with_a_human_sentence(self, tmp_path):
         empty = tmp_path / "scans" / "doctor-x" / "upper.stl"
@@ -182,6 +232,10 @@ class TestDetectOnTheRealTree:
         assert [s.tooth for s in result.suggested] == [4, 13]
         for s in result.suggested:
             assert s.capture["verdict"] in ("pass", "marginal", "rescan")
+            # honest types on real geometry: a float or None, never a guess wearing
+            # a number's clothes — see TestMeasuredCapHeight for the geometry pin
+            assert s.measured_cap_height_mm is None or s.measured_cap_height_mm > 0.0
+            assert s.proposed_variant is None or isinstance(s.proposed_variant, str)
         assert len(result.crown_axis) == 3
         assert result.jaw_reading in (None, "upper", "lower")
 
@@ -190,6 +244,43 @@ class TestDetectOnTheRealTree:
         a, b = detect(case), detect(case)
         assert [p.center for p in a.proposals] == [p.center for p in b.proposals]
         assert [s.capture for s in a.suggested] == [s.capture for s in b.suggested]
+        assert ([s.measured_cap_height_mm for s in a.suggested]
+                == [s.measured_cap_height_mm for s in b.suggested])
+        assert ([s.proposed_variant for s in a.suggested]
+                == [s.proposed_variant for s in b.suggested])
+
+
+@real_only
+@pytest.mark.slow  # parses the real scan and runs the detector end to end
+class TestMeasuredHeightOnTheEscalationCase:
+    """The client escalation itself (2026-08-09): case 297589851-neodent-gm tooth 20
+    served ``suggested_variant: None`` with NO height fact behind it at all, an
+    operator declared the SUPERSEDED, TALL ``superseded-2026-07-13--5030`` over a
+    visibly SHORT cap, and the preview seated a 5.4mm barrel onto a ~3.4mm cap (DEV
+    RMS 2.065).
+
+    This pins the fix's HONESTY on the real regression scan, not a guess at its
+    outcome: the site now carries a real, positive height reading where the old
+    code measured nothing — but the diameter this scan reads (a documented
+    characteristic of THIS data: marks/rim are cut from the VISIBLE, submerged rim,
+    which under-reads a cap's native size — sites.json's own note) sits within
+    ``classify_diameter``'s own honesty margin of two rival Ø classes on the
+    CURRENT neodent-gm shelf, so the proposal correctly REFUSES rather than pick a
+    family by coin flip. None is still strictly better than the old silence: the
+    height fact now on the wire is real evidence an operator can weigh, where
+    before there was nothing to catch the mismatch at all."""
+
+    def test_tooth_20_carries_a_real_height_and_refuses_to_guess_the_family(self):
+        case = next(c for c in discover_cases(REAL) if c.id == "297589851-neodent-gm")
+        result = detect(case)
+        (site,) = result.suggested
+        assert site.tooth == 20
+        assert site.measured_cap_height_mm is not None
+        assert site.measured_cap_height_mm > 0.0
+        assert site.proposed_variant is None
+        # the SUPERSEDED variant the operator was driven to declare must never be
+        # what this catalog-current-shelf proposal could answer, even by accident
+        assert site.proposed_variant != "5030"
 
 
 @real_only

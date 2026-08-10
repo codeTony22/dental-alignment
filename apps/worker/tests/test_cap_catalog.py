@@ -13,6 +13,7 @@ from case_prep.domain.cap_catalog import (
     CapSpec,
     CapType,
     classify_diameter,
+    propose_variant,
     resolve_sites,
     variant_flags,
 )
@@ -168,3 +169,49 @@ class TestDeclaredVsMeasuredGate:
         flags = variant_flags("5020", "5020", 6.8, cls, len(table),
                               seat_confirms_declared=True)
         assert any("verify before construction" in f for f in flags)
+
+
+class TestProposeVariant:
+    """The client escalation (2026-08-09, cap 297589851-neodent-gm tooth 20): a
+    diameter class groups every collar HEIGHT sharing that Ø (``DiameterClass.
+    variants`` — see ``classify_diameter``'s own test above, where the Ø-7 class
+    already holds BOTH 7020 and 7030), so nothing picked between them and a TALL
+    variant was declared, unmeasured, over a visibly SHORT cap. ``propose_variant``
+    is the missing second axis: height breaks the tie ``classify_diameter`` was
+    never asked to resolve."""
+
+    TABLE = {  # variant label -> (diameter_mm, height_mm) — the CURRENT-shelf-only
+        "5020": (5.49, 3.69), "5030": (5.45, 5.43),  # table propose_variant is given
+        "6020": (6.22, 3.81), "6030": (6.17, 5.39),
+        "7020": (7.20, 3.75), "7030": (7.26, 5.38),
+    }
+
+    def test_a_short_measured_cap_picks_the_20_family(self):
+        assert propose_variant(7.22, 3.80, self.TABLE) == "7020"
+
+    def test_a_tall_measured_cap_at_the_same_diameter_picks_the_30_family(self):
+        assert propose_variant(7.22, 5.35, self.TABLE) == "7030"
+
+    def test_a_missing_diameter_never_guesses(self):
+        assert propose_variant(None, 3.80, self.TABLE) is None
+
+    def test_a_missing_height_never_guesses(self):
+        assert propose_variant(7.22, None, self.TABLE) is None
+
+    def test_an_ambiguous_diameter_class_refuses_regardless_of_height(self):
+        # dead between the 6.2 and 7.2 classes, per classify_diameter's own test
+        assert propose_variant(6.7, 3.80, self.TABLE) is None
+
+    def test_a_coin_flip_height_refuses_rather_than_pick_a_side(self):
+        # equidistant between 3.75 (7020) and 5.38 (7030): 4.565 exactly
+        assert propose_variant(7.22, 4.565, self.TABLE) is None
+
+    def test_an_empty_table_has_nothing_to_propose_against(self):
+        assert propose_variant(7.22, 3.80, {}) is None
+
+    def test_a_single_height_class_needs_no_height_tie_break(self):
+        # a shelf carrying only one height family per Ø: height still required
+        # (never absent), but there is no family to break a tie between
+        one_height = {"5020": (5.49, 3.69), "7020": (7.20, 3.75)}
+        assert propose_variant(7.22, 3.80, one_height) == "7020"
+        assert propose_variant(7.22, None, one_height) is None
