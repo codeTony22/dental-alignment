@@ -36,7 +36,7 @@
  */
 
 /** The three part roles a composite view can be built from. */
-export type PartRole = "arch" | "cap" | "construction";
+export type PartRole = "arch" | "cap" | "construction" | "socket";
 
 /** A single STL to load and tint as part of a composite view, all in one shared world frame. */
 export interface CompositePartSpec {
@@ -54,12 +54,17 @@ export const PALETTE: Readonly<Record<PartRole, number>> = {
   cap: 0x2fa75f, // green; distinct from brush-paint #2fd070 but same family —
   // intentional: "human marks green, machine's cap is green"
   construction: 0x7d93b8, // steel blue
+  socket: 0xb9ab84, // the CUT surface (client 2026-08-09: "can't see depth at
+  // all") — the socket liner emitted as its own preview layer so the recess
+  // reads against the arch. Same warm family as the scan, one step darker and
+  // greyer: contrast enough to see the dish, never a colour that shouts.
 };
 
 export const ROLE_LABEL: Readonly<Record<PartRole, string>> = {
   arch: "Doctor's scan",
   cap: "Healing cap (aligned)",
   construction: "Construction",
+  socket: "Socket (derived)",
 };
 
 /** CSS hex string ("#rrggbb") for a role's PALETTE color, for DOM/CSS consumers (e.g. the legend swatch). */

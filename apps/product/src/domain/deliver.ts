@@ -1323,7 +1323,7 @@ export function constructionChangeWords(
  *  PartRole values, carried by NAME rather than imported: this module stays
  *  framework-free (no dependency on the three.js-backed viewer package), and the
  *  caller indexes its own palette with the string. */
-export type PreviewMeshRole = "arch" | "cap" | "construction";
+export type PreviewMeshRole = "arch" | "cap" | "construction" | "socket";
 
 /** One mesh of a tab's scene, with the role that colours it. */
 export interface PreviewLayer {
@@ -1381,6 +1381,18 @@ export function previewTabs(
   // the composite base both arch tabs share — the scan with clean holes where the
   // parts sit, so the part layers never fight the triangles underneath them
   const capless = packageFiles.find((f) => f.endsWith(CAPLESS_SUFFIX));
+  // THE TINTED SOCKET (client 2026-08-09 night: "can't see depth at all"):
+  // when the run wrote the socket as its own layer beside the socketless
+  // arch, tabs 4/5 compose them so the CUT surface reads against the gum —
+  // the downloads keep the merged solids the lab expects. Old packages
+  // (no layer files) keep the merged single-layer render.
+  const socketless = packageFiles.find((f) =>
+    f.endsWith("-arch-socketless.stl"),
+  );
+  const socketDish = packageFiles.find((f) => f.endsWith("-socket-dish.stl"));
+  const socketPlatform = packageFiles.find((f) =>
+    f.endsWith("-socket-platform.stl"),
+  );
   const composed = (
     merged: string,
     parts: readonly string[],
@@ -1443,7 +1455,13 @@ export function previewTabs(
       label: "4 · Arch alone",
       filename: capless,
       tooth: null,
-      layers: [{ filename: capless, role: "arch" }],
+      layers:
+        socketless !== undefined && socketDish !== undefined
+          ? [
+              { filename: socketless, role: "arch" },
+              { filename: socketDish, role: "socket" },
+            ]
+          : [{ filename: capless, role: "arch" }],
     });
   }
   // THE FIFTH TAB (client 2026-08-09: the platform-level floor, "do the
@@ -1458,7 +1476,13 @@ export function previewTabs(
       label: "5 · Arch — platform",
       filename: platform,
       tooth: null,
-      layers: [{ filename: platform, role: "arch" }],
+      layers:
+        socketless !== undefined && socketPlatform !== undefined
+          ? [
+              { filename: socketless, role: "arch" },
+              { filename: socketPlatform, role: "socket" },
+            ]
+          : [{ filename: platform, role: "arch" }],
     });
   }
   return tabs;
@@ -1709,6 +1733,16 @@ export function analysisClipboardText(
   doctor: string,
   jaw: string | null,
   assurance: AssuranceView,
+  extras?: {
+    /** the package's artifact names, when the listing has loaded */
+    readonly files?: readonly string[];
+    /** the standing confirmation seal, when one exists */
+    readonly confirmation?: {
+      readonly at: string;
+      readonly evidence_sha256: string;
+      readonly terms_version?: string | null;
+    } | null;
+  },
 ): string {
   const head = [
     `# Case analysis digest — ${caseId}`,
@@ -1719,6 +1753,40 @@ export function analysisClipboardText(
     "## Sites (served worst-first)",
   ];
   const blocks = assurance.sites.map(_siteBlock);
+  // THE RELIEF BLOCK, VERBATIM (client 2026-08-09: "expose all of these
+  // information") — the served gingival_relief record carries the clamp story
+  // and the by-tooth trail exactly as the run recorded them.
+  const reliefLines: string[] = [];
+  const relief = assurance.relief;
+  if (relief !== null && Object.keys(relief).length > 0) {
+    reliefLines.push("", "## Relief (served record, verbatim)");
+    for (const [key, value] of Object.entries(relief)) {
+      reliefLines.push(
+        `- ${key}: ${
+          typeof value === "object" && value !== null
+            ? JSON.stringify(value)
+            : String(value)
+        }`,
+      );
+    }
+  }
+  const fileLines: string[] = [];
+  if (extras?.files !== undefined && extras.files.length > 0) {
+    fileLines.push("", "## Package files");
+    for (const name of extras.files) fileLines.push(`- ${name}`);
+  }
+  const sealLines: string[] = [];
+  if (extras?.confirmation != null) {
+    sealLines.push(
+      "",
+      "## Confirmation seal",
+      `sealed at ${extras.confirmation.at}`,
+      `evidence ${extras.confirmation.evidence_sha256}` +
+        (extras.confirmation.terms_version != null
+          ? ` · terms ${extras.confirmation.terms_version}`
+          : ""),
+    );
+  }
   const tail = [
     "",
     "## For the reviewer",
@@ -1728,5 +1796,7 @@ export function analysisClipboardText(
     "clamp or production note explains an operator complaint; what the rotation",
     "evidence kind was when a fit needed rework.",
   ];
-  return [...head, ...blocks, ...tail].join("\n");
+  return [
+    ...head, ...blocks, ...reliefLines, ...fileLines, ...sealLines, ...tail,
+  ].join("\n");
 }

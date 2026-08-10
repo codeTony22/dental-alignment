@@ -296,6 +296,26 @@ def cap_imprint_holes(arch: trimesh.Trimesh,
     environment, and scan shells are open meshes where booleans are fragile —
     face-culling against the watertight envelope plus the envelope's own surface
     achieves the subtraction, robustly."""
+    kept_arch, socket, notes = cap_imprint_parts(
+        arch, sites, visible_depth_mm=visible_depth_mm, top_floor=top_floor)
+    if socket is None:
+        return kept_arch, notes
+    return trimesh.util.concatenate([kept_arch, socket]), notes
+
+
+def cap_imprint_parts(arch: trimesh.Trimesh,
+                      sites: Sequence[Tuple[trimesh.Trimesh, np.ndarray,
+                                            float, float]],
+                      visible_depth_mm: Optional[float] =
+                      _SOCKET_VISIBLE_DEPTH_MM,
+                      top_floor: bool = False
+                      ) -> Tuple[trimesh.Trimesh, Optional[trimesh.Trimesh],
+                                 list]:
+    """``cap_imprint_holes`` with the pieces kept apart (client 2026-08-09:
+    "can't see depth at all"): the culled arch and the socket liner as separate
+    meshes, so the preview can tint the CUT surface its own colour while the
+    download still ships the merged solid. Same fallback contract; the fallback
+    site's cylinder socket rides the socket mesh like every liner piece."""
     out = arch
     notes: list = []
     liners = []
@@ -392,19 +412,27 @@ def cap_imprint_holes(arch: trimesh.Trimesh,
             # the floor itself: one flat fan at the visible depth, radius from
             # the envelope's own profile there — the lathe's bottom disc is
             # below the axial filter, so this is the ONE floor either way
-            r_floor = float(np.interp(floor_axial, zs_p, prof_p))
-            f_seg = 64
-            f_theta = np.linspace(0.0, 2.0 * np.pi, f_seg, endpoint=False)
-            xl0 = R @ np.array([1.0, 0.0, 0.0])
-            yl0 = R @ np.array([0.0, 1.0, 0.0])
-            ring = (origin[None, :] + axis[None, :] * floor_axial
-                    + np.outer(np.cos(f_theta) * r_floor, xl0)
-                    + np.outer(np.sin(f_theta) * r_floor, yl0))
-            f_verts = np.vstack([origin + axis * floor_axial, ring])
-            f_faces = [[0, 1 + j, 1 + (j + 1) % f_seg] for j in range(f_seg)]
-            site_liners.append(trimesh.Trimesh(f_verts,
-                                               np.asarray(f_faces, int),
-                                               process=False))
+            # whether the platform clamp fired: a proud cap's floor becomes a
+            # SAUCER on the collar's own inner ring (built after the collar,
+            # which owns that ring) — a flat disc perpendicular to a tilted
+            # axis stood proud of the gum on one side with a see-through
+            # sliver beneath the collar (client 2026-08-09 screenshots)
+            platform_clamped = top_floor and floor_axial < float(zs_p[-1])
+            if not platform_clamped:
+                r_floor = float(np.interp(floor_axial, zs_p, prof_p))
+                f_seg = 64
+                f_theta = np.linspace(0.0, 2.0 * np.pi, f_seg, endpoint=False)
+                xl0 = R @ np.array([1.0, 0.0, 0.0])
+                yl0 = R @ np.array([0.0, 1.0, 0.0])
+                ring = (origin[None, :] + axis[None, :] * floor_axial
+                        + np.outer(np.cos(f_theta) * r_floor, xl0)
+                        + np.outer(np.sin(f_theta) * r_floor, yl0))
+                f_verts = np.vstack([origin + axis * floor_axial, ring])
+                f_faces = [[0, 1 + j, 1 + (j + 1) % f_seg]
+                           for j in range(f_seg)]
+                site_liners.append(trimesh.Trimesh(f_verts,
+                                                   np.asarray(f_faces, int),
+                                                   process=False))
             # THE COLLAR ANNULUS (client 2026-08-09: "we cannot leave the empty
             # space there"): the any-vertex cull opens the scan up to one
             # triangle-edge WIDER than the wall, leaving an annular moat between
@@ -443,6 +471,18 @@ def cap_imprint_holes(arch: trimesh.Trimesh,
             collar = trimesh.Trimesh(np.vstack([inner_pts, outer_pts]),
                                      np.asarray(collar_faces, int),
                                      process=False)
+            if platform_clamped:
+                # THE SAUCER (client 2026-08-09): the clamped platform floor is
+                # a shallow dish whose RIM IS the collar's inner ring — the
+                # same vertices, so the seam cannot gap — and whose centre
+                # drops 0.3mm below the fitted gum plane. It follows the gum's
+                # tilt instead of standing proud of it.
+                centre_pt = (origin + axis * (a0 - 0.30))
+                s_verts = np.vstack([centre_pt[None, :], inner_pts])
+                s_faces = [[0, 1 + j, 1 + (j + 1) % seg] for j in range(seg)]
+                site_liners.append(trimesh.Trimesh(s_verts,
+                                                   np.asarray(s_faces, int),
+                                                   process=False))
             # the site lands ATOMICALLY: nothing joins the output until every
             # piece of it exists — a late exception must reach the fallback with
             # no half-liner already in the list
@@ -461,4 +501,5 @@ def cap_imprint_holes(arch: trimesh.Trimesh,
                                     half_height_mm=(_HOLE_DEPTH_MM + span_up) / 2.0)
             liners.append(_hole_bore(pose, rim_radius_mm + _REGION_MARGIN_MM,
                                      collar, _HOLE_DEPTH_MM))
-    return trimesh.util.concatenate([out] + liners), notes
+    socket = trimesh.util.concatenate(liners) if liners else None
+    return out, socket, notes

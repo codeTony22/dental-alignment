@@ -1967,4 +1967,32 @@ describe("analysisClipboardText — the paste-ready case digest (client 2026-08-
     expect(text).toContain("relief clamp: the 0.20mm gingival relief");
     expect(text).not.toContain("requested 0.2 mm");
   });
+
+  it("the digest carries the relief record, the files and the seal when given", () => {
+    const withRelief = {
+      ...assurance,
+      relief: {
+        gingival_offset_requested_mm: 0.2,
+        gingival_offset_applied_mm: 0.08,
+        clamped: true,
+        note: "the requested 0.20mm relief is NOT safe on 1 of 1 site(s)",
+      },
+    };
+    const text = analysisClipboardText("c", "d", null, withRelief as never, {
+      files: ["c-arch-capless.stl", "c-arch-platform.stl", "invoice"],
+      confirmation: {
+        at: "2026-08-10T00:48:41+00:00",
+        evidence_sha256: "bd8d05b9".padEnd(64, "0"),
+        terms_version: "placeholder-v2",
+      },
+    });
+    expect(text).toContain("## Relief (served record, verbatim)");
+    expect(text).toContain("gingival_offset_applied_mm: 0.08");
+    expect(text).toContain("NOT safe on 1 of 1 site(s)");
+    expect(text).toContain("## Package files");
+    expect(text).toContain("- c-arch-platform.stl");
+    expect(text).toContain("## Confirmation seal");
+    expect(text).toContain("terms placeholder-v2");
+  });
 });
+

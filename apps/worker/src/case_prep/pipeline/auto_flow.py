@@ -32,6 +32,7 @@ from case_prep.domain.island import segment_island
 from case_prep.domain.pose_confidence import confidence_grade, pose_spread
 from case_prep.domain.poses import Retention
 from case_prep.pipeline.deliverables import (arch_with_parts, cap_imprint_holes,
+                                              cap_imprint_parts,
                                               remove_cap_region)
 from case_prep.pipeline.final_product import (DEFAULT_GINGIVAL_OFFSET_MM,
                                               DEFAULT_SCREW_RADIUS_MM,
@@ -2485,7 +2486,11 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                               sp.tooth, gingival_offset_mm)))
                 imprint_sites.append((tmpl, sp.pose_matrix, offset,
                                       float(dia_h[0]) / 2.0))
-            arch_removed, imprint_notes = cap_imprint_holes(scan, imprint_sites)
+            arch_socketless, socket_dish, imprint_notes = cap_imprint_parts(
+                scan, imprint_sites)
+            arch_removed = (trimesh.util.concatenate(
+                [arch_socketless, socket_dish])
+                if socket_dish is not None else arch_socketless)
             for note in imprint_notes:
                 tooth = package_sites[
                     int(note.split(":", 1)[0].split()[1]) - 1][0].tooth
@@ -2494,12 +2499,26 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                     target.setdefault("production", {})["imprint_note"] = note
             arch_capless_path = _P(out_dir) / f"{case_id}-arch-capless.stl"
             arch_removed.export(arch_capless_path)
-            # THE FIFTH ARTIFACT (client 2026-08-09): the same socket at FULL
-            # depth — floor at the cap's offset base, the implant's top space
-            arch_platform, _ = cap_imprint_holes(scan, imprint_sites,
-                                                 top_floor=True)
+            # THE FIFTH ARTIFACT (client 2026-08-09): the platform socket —
+            # and both sockets as their own layer files for the tinted preview
+            _, socket_platform, _pn = cap_imprint_parts(scan, imprint_sites,
+                                                        top_floor=True)
+            arch_platform = (trimesh.util.concatenate(
+                [arch_socketless, socket_platform])
+                if socket_platform is not None else arch_socketless)
             (_P(out_dir) / f"{case_id}-arch-platform.stl").write_bytes(
                 arch_platform.export(file_type="stl"))
+            (_P(out_dir) / f"{case_id}-arch-socketless.stl").write_bytes(
+                arch_socketless.export(file_type="stl"))
+            _layer_names = [f"{case_id}-arch-socketless.stl"]
+            if socket_dish is not None:
+                (_P(out_dir) / f"{case_id}-socket-dish.stl").write_bytes(
+                    socket_dish.export(file_type="stl"))
+                _layer_names.append(f"{case_id}-socket-dish.stl")
+            if socket_platform is not None:
+                (_P(out_dir) / f"{case_id}-socket-platform.stl").write_bytes(
+                    socket_platform.export(file_type="stl"))
+                _layer_names.append(f"{case_id}-socket-platform.stl")
 
             cons_posed = [(final_products[sp.tooth] if final_products else cons, sp.pose_matrix)
                           for sp, _t, cons in package_sites]
@@ -2549,6 +2568,7 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
         "package_files": [f.name for f in manifest.files] + (
             [arch_caps_path.name, arch_capless_path.name,
              f"{case_id}-arch-platform.stl", arch_cons_path.name]
+            + _layer_names
             + viewer_file if emit_package else []),
     }
     # emit_case_package used to create out_dir as a side effect; a preview skips it,

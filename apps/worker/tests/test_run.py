@@ -151,8 +151,20 @@ class TestRunOnTheRealTree:
         assert ours[13]["guidance"]["level"] in ("ready", "attention", "action-needed")
 
         # the emission landed in THE CALLER'S directory, file-for-file what the
-        # summary claims (names relative to the run dir)
-        assert set(summary["package_files"]) == set(demo_summary["package_files"])
+        # summary claims (names relative to the run dir). The demo's set is a
+        # FLOOR, not the whole truth: the product deliberately grew artifacts the
+        # frozen demo can never emit (§10-AR.4 the platform arch, §10-AR.11 the
+        # socket layer files) — those additions are named EXACTLY, so an
+        # unrecorded new artifact still fails here rather than drifting in.
+        ours_files = set(summary["package_files"])
+        demo_files = set(demo_summary["package_files"])
+        assert demo_files <= ours_files, demo_files - ours_files
+        assert ours_files - demo_files == {
+            "neodent-gm-arch-platform.stl",
+            "neodent-gm-arch-socketless.stl",
+            "neodent-gm-socket-dish.stl",
+            "neodent-gm-socket-platform.stl",
+        }
         for name in summary["package_files"]:
             assert (out_dir / name).is_file(), name
 

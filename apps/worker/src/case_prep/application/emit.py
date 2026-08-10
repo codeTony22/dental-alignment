@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
+import trimesh
 
 from case_prep.adapters import construction_catalog
 from case_prep.adapters.output_package import (SitePackageSpec, emit_case_package,
@@ -52,7 +53,9 @@ from case_prep.domain.channel import channel_from_boundary_loops
 # that re-implemented either would drift from the thing it claims to re-emit.
 from case_prep.pipeline.auto_flow import _crowns_frame, _relief_summary
 from case_prep.pipeline.auto_flow import delivered_channel_offsets
-from case_prep.pipeline.deliverables import arch_with_parts, cap_imprint_holes
+from case_prep.pipeline.deliverables import (arch_with_parts,
+                                             cap_imprint_holes,
+                                             cap_imprint_parts)
 from case_prep.pipeline.final_product import (DEFAULT_SCREW_RADIUS_MM,
                                               build_final_product,
                                               resolve_gingival_offset)
@@ -281,19 +284,38 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
             else float(_relief_ask(sp.tooth))
         imprint_sites.append((tmpl, sp.pose_matrix, offset,
                               float(dia_h[0]) / 2.0))
-    arch_removed, imprint_notes = cap_imprint_holes(scan, imprint_sites)
+    arch_socketless, socket_dish, imprint_notes = cap_imprint_parts(
+        scan, imprint_sites)
+    arch_removed = (trimesh.util.concatenate([arch_socketless, socket_dish])
+                    if socket_dish is not None else arch_socketless)
     for note in imprint_notes:
         # "site N: …" — N is 1-based package_sites order; land it on that row
         tooth = package_sites[int(note.split(":", 1)[0].split()[1]) - 1][0].tooth
         rows_by_tooth[tooth].setdefault("production", {})["imprint_note"] = note
     arch_capless_path = out_dir / f"{case.id}-arch-capless.stl"
     arch_removed.export(arch_capless_path)
-    # THE FIFTH ARTIFACT (client 2026-08-09): the same socket at FULL depth —
-    # walls all the way down, floor at the cap's offset base, the implant's top
-    # space. The shallow dish above stays the default capless artifact.
-    arch_platform, _ = cap_imprint_holes(scan, imprint_sites, top_floor=True)
+    # THE FIFTH ARTIFACT (client 2026-08-09): the platform socket. Both
+    # sockets also land as their OWN layer files beside the socketless arch,
+    # so the preview can tint the cut surface (the downloads keep the merged
+    # solids the lab expects).
+    _, socket_platform, _pnotes = cap_imprint_parts(scan, imprint_sites,
+                                                    top_floor=True)
+    arch_platform = (trimesh.util.concatenate([arch_socketless,
+                                               socket_platform])
+                     if socket_platform is not None else arch_socketless)
     arch_platform_path = out_dir / f"{case.id}-arch-platform.stl"
     arch_platform.export(arch_platform_path)
+    arch_socketless_path = out_dir / f"{case.id}-arch-socketless.stl"
+    arch_socketless.export(arch_socketless_path)
+    layer_names = [arch_socketless_path.name]
+    if socket_dish is not None:
+        pth = out_dir / f"{case.id}-socket-dish.stl"
+        socket_dish.export(pth)
+        layer_names.append(pth.name)
+    if socket_platform is not None:
+        pth = out_dir / f"{case.id}-socket-platform.stl"
+        socket_platform.export(pth)
+        layer_names.append(pth.name)
 
     cons_posed = [(final_products[sp.tooth], sp.pose_matrix)
                   for sp, _t, _cons in package_sites]
@@ -347,6 +369,7 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
         "package_files": [f.name for f in manifest.files]
         + [arch_caps_path.name, arch_capless_path.name,
            arch_platform_path.name, arch_cons_path.name]
+        + layer_names
         + viewer_file,
     }
     out_dir.mkdir(parents=True, exist_ok=True)

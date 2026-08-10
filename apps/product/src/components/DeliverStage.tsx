@@ -1557,6 +1557,13 @@ export function DeliverStageView({
                       detail.case.doctor,
                       detail.case.jaw ?? null,
                       assurance.data,
+                      {
+                        files:
+                          artifacts?.kind === "ok"
+                            ? artifacts.data.files.map((f) => f.name)
+                            : undefined,
+                        confirmation: detail.session.confirmation,
+                      },
                     );
                     void navigator.clipboard?.writeText(text).then(() => {
                       setAnalysisCopied(true);

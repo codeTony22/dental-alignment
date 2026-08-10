@@ -390,6 +390,43 @@ class TestCapImprintHoles:
         assert not flaps.any(), \
             f"{int(flaps.sum())} scan vertices still stand in the seat's throat"
 
+    def test_a_proud_platform_floor_is_a_saucer_on_the_gum(self):
+        """THE SAUCER (client 2026-08-09 screenshots: the clamped platform
+        disc stood proud of the tilted gum with a see-through sliver). When
+        the clamp fires, the floor's rim IS the collar's inner ring — shared
+        vertices, no gap — and nothing of the floor may stand above the local
+        gum plane."""
+        from case_prep.pipeline.deliverables import cap_imprint_holes
+
+        # tilted single-surface gum (z = 0.25x) and a PROUD tall cap
+        xs, ys = np.meshgrid(np.linspace(-8, 8, 40), np.linspace(-8, 8, 40))
+        pts = np.column_stack([xs.ravel(), ys.ravel(),
+                               (0.25 * xs).ravel()])
+        faces = []
+        for i in range(39):
+            for j in range(39):
+                a = i * 40 + j
+                faces.append([a, a + 1, a + 41])
+                faces.append([a, a + 41, a + 40])
+        sheet = trimesh.Trimesh(pts, np.asarray(faces), process=False)
+        tall = trimesh.creation.cylinder(radius=2.0, height=10.0)
+        out, notes = cap_imprint_holes(sheet, [(tall, _pose_at(0, 0, 5.0),
+                                                0.2, 2.0)],
+                                       top_floor=True)
+        assert notes == []
+        v = np.asarray(out.vertices, float)
+        r = np.linalg.norm(v[:, :2], axis=1)
+        sock = r < 2.3
+        # nothing of the floor stands proud of the LOCAL gum (0.25x) by more
+        # than the collar tuck
+        proud = v[sock][:, 2] - 0.25 * v[sock][:, 0]
+        assert float(proud.max()) < 0.25, \
+            f"platform floor stands {proud.max():.2f}mm proud of the gum"
+        # and the saucer is a floor: a down-ray from inside the mouth hits it
+        down = out.ray.intersects_any(ray_origins=[[0.0, 0.0, 2.0]],
+                                      ray_directions=[[0.0, 0.0, -1.0]])
+        assert bool(down[0]), "the saucer still needs to close the mouth"
+
     def test_a_tall_cap_socket_stops_just_below_the_gum(self):
         """THE VISIBLE-DEPTH CAP (client 2026-08-09, on 276794487's 6030): a tall
         cap's base sits ~4mm below the gum, and a socket lined all the way down
