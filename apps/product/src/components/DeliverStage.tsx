@@ -98,6 +98,7 @@ import {
   type DispositionMap,
   qcPreviews,
   prefillAcknowledged,
+  analysisClipboardText,
 } from "../domain/deliver";
 
 export type DeliverPhase = "idle" | "confirming" | "resetting" | "releasing";
@@ -844,6 +845,8 @@ export function DeliverStageView({
   const packageFiles = runFacts?.kind === "ok" ? runFacts.data.package_files : [];
   // Escape closes the full-report modal.
   useDialogEscape(reportOpen, onCloseReport);
+  // the analysis-digest copy's transient confirmation (client 2026-08-09)
+  const [analysisCopied, setAnalysisCopied] = useState(false);
   // Focus moves in, is trapped, and comes back on close (§10-O.8) — see useDialogFocus.
   const reportDialogRef = useRef<HTMLElement | null>(null);
   useDialogFocus(reportOpen, reportDialogRef);
@@ -1508,16 +1511,43 @@ export function DeliverStageView({
                   disposition/expand controls render after this one, and the modal
                   footer holds "Confirm over this evidence" — a control this dialog
                   must never land the operator's very next Enter keypress on. */}
-              <button
-                type="button"
-                data-role="report-close"
-                data-autofocus=""
-                className="button button--ghost button--small"
-                onClick={onCloseReport}
-                title="Close the report (Esc)"
-              >
-                ✕ close
-              </button>
+              <div className="decode-dialog__header-acts">
+                {/* THE ANALYSIS DIGEST (client 2026-08-09): the whole report as
+                    paste-ready text — served sentences verbatim — for feeding a
+                    case to an outside reviewer or an LLM. Composed client-side
+                    from the same payload this table renders; copying discloses
+                    nothing the dialog does not already show. */}
+                <button
+                  type="button"
+                  data-role="copy-analysis"
+                  className="button button--ghost button--small"
+                  onClick={() => {
+                    const text = analysisClipboardText(
+                      detail.case.id,
+                      detail.case.doctor,
+                      detail.case.jaw ?? null,
+                      assurance.data,
+                    );
+                    void navigator.clipboard?.writeText(text).then(() => {
+                      setAnalysisCopied(true);
+                      window.setTimeout(() => setAnalysisCopied(false), 2000);
+                    });
+                  }}
+                  title="Copy the whole report as paste-ready analysis text"
+                >
+                  {analysisCopied ? "Copied ✓" : "Copy for analysis"}
+                </button>
+                <button
+                  type="button"
+                  data-role="report-close"
+                  data-autofocus=""
+                  className="button button--ghost button--small"
+                  onClick={onCloseReport}
+                  title="Close the report (Esc)"
+                >
+                  ✕ close
+                </button>
+              </div>
             </header>
             <div className="decode-dialog__body decode-dialog__body--column-collapsed">
               <div className="assurance-table-fit">

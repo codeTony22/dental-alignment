@@ -1330,3 +1330,14 @@ describe("the tolerance-bands line", () => {
     expect(html).not.toContain('data-role="tolerance-bands"');
   });
 });
+
+describe("the report dialog's copy-for-analysis act (client 2026-08-09)", () => {
+  it("the open report offers Copy for analysis beside close", () => {
+    const html = view({ reportOpen: true });
+    const dialog = html.indexOf('data-role="report-dialog"');
+    const copy = html.indexOf('data-role="copy-analysis"');
+    expect(dialog).toBeGreaterThan(-1);
+    expect(copy).toBeGreaterThan(dialog);
+    expect(html).toContain("Copy for analysis");
+  });
+});

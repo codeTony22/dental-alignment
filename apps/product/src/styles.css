@@ -7936,3 +7936,10 @@ button.package-files__link:hover {
   display: grid;
   gap: 4px;
 }
+
+/* the report dialog's header acts: copy-for-analysis beside close (2026-08-09) */
+.decode-dialog__header-acts {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
