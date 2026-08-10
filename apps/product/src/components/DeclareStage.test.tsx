@@ -851,3 +851,31 @@ describe("the strip reads a PREVIEW's figures honestly, before any run", () => {
     expect(html).toContain("DEV RMS (preview)");
   });
 });
+
+describe("the re-run act on Alignment (client 2026-08-09: 'I want the re-run in the alignment page')", () => {
+  it("a done run offers Re-run the alignment beside the fork", () => {
+    const html = view({
+      onRerunAlignment: () => undefined,
+      runRows: [{ tooth: 19, deviation_rms_mm: 0.184 }],
+      runPhase: "idle",
+    });
+    expect(html).toContain('data-role="rerun-alignment"');
+    expect(html).toContain("Re-run the alignment");
+  });
+
+  it("no handler, no button", () => {
+    expect(view({ runRows: [{ tooth: 19, deviation_rms_mm: 0.184 }] })).not.toContain(
+      'data-role="rerun-alignment"',
+    );
+  });
+
+  it("while firing it says so and disables", () => {
+    const html = view({
+      onRerunAlignment: () => undefined,
+      runRows: [{ tooth: 19, deviation_rms_mm: 0.184 }],
+      runPhase: "firing",
+    });
+    expect(html).toMatch(/data-role="rerun-alignment"[^>]*disabled/);
+    expect(html).toContain("Re-running");
+  });
+});

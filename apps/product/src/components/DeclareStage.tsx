@@ -644,6 +644,11 @@ export interface DeclareStageViewProps {
   readonly cautionsOpen?: boolean;
   readonly onOpenCautions?: () => void;
   readonly onCloseCautions?: () => void;
+  /** THE RE-RUN ON ALIGNMENT (client 2026-08-09: "I want the re-run in the
+   *  alignment page"). The same full authorized run the confirm act fires,
+   *  offered again once a run's rows exist — §10-AD re-applies the operator's
+   *  evidence after the automation. Null/omitted = no button. */
+  readonly onRerunAlignment?: (() => void) | null;
   /** THE SUPERSEDED SHELF, OUT OF FLOW (client 2026-08-09: opening it "shrinks the
    *  panels — the panels need to be always the main center of attention and size
    *  should not change"). A prop for the same reason `cautionsOpen` is one: a static
@@ -685,6 +690,7 @@ export function DeclareStageView({
   cautionsOpen = false,
   onOpenCautions = () => undefined,
   onCloseCautions = () => undefined,
+  onRerunAlignment = null,
   archiveOpen = false,
   onOpenArchive = () => undefined,
   onCloseArchive = () => undefined,
@@ -844,6 +850,22 @@ export function DeclareStageView({
             data-role="declare-advance"
             className="workbench__work-footer panel__actions panel__actions--advance"
           >
+            {/* THE RE-RUN ON ALIGNMENT (client 2026-08-09) — offered whenever a
+                run's rows exist, blocked fork or not: the automation may simply
+                be asked to try again, and §10-AD re-applies the operator's
+                evidence after it. */}
+            {onRerunAlignment !== null && runRows.length > 0 && (
+              <button
+                type="button"
+                data-role="rerun-alignment"
+                className="button button--ghost button--small"
+                disabled={runPhase === "firing" || forkSaving !== "idle"}
+                title="Fire the full alignment again — your marks, pairs and best fits re-apply after the automation"
+                onClick={onRerunAlignment}
+              >
+                {runPhase === "firing" ? "Re-running…" : "Re-run the alignment"}
+              </button>
+            )}
             {forkOpen ? (
               <>
                 <ul data-role="attestation-summary" className="attestation-summary">
@@ -1437,6 +1459,7 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
       linked={linked}
       onToggleLinked={handleToggleLinked}
       cautionsOpen={cautionsOpen}
+      onRerunAlignment={() => fireRun(runKey ?? "manual")}
       onOpenCautions={() => setCautionsOpen(true)}
       onCloseCautions={() => setCautionsOpen(false)}
       archiveOpen={archiveOpen}

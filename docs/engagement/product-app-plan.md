@@ -2372,3 +2372,12 @@ confirmation, payment & release". The seal is respected rather than silently
 broken: while a confirmation stands the button disables with its reason in the
 title ("withdraw the confirmation first — the seal covers the current run's
 evidence"); with no seal standing it is live. Pinned three ways; product 1443.
+
+**AR.9 — the re-run on Alignment too (client 2026-08-09: "I want the re-run in
+the alignment page — I don't see it now").** The button now stands in three
+places, one act: the Alignment advance footer (whenever a run's rows exist,
+blocked fork or not — reusing the page's own fireRun machinery), the Adjustment
+queue panel (AR.5), and Delivery's header beside the door back (AR.8, seal
+respected). On Alignment it hides honestly when NO run exists — the demo reset
+had put the client's test case back to detected, which is why they "didn't see
+it"; a case with a landed run shows it. Product 1446.
