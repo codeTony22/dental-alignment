@@ -95,13 +95,11 @@ export type { RouteInputs, RouteTarget, StageSubject } from "./viewer/siteRoutin
 
 // The composite/marker colour code.
 export {
-  CAP_SCAN_COLOR,
   FEATURE_COLOR,
   FREE_POINT_COLOR,
   GHOST_POINT_COLOR,
   PALETTE,
   ROLE_LABEL,
-  capScanHex,
   featureHex,
   freePointHex,
   paletteHex,

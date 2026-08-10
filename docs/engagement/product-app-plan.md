@@ -2459,3 +2459,14 @@ proposal fills only the gap, and `suggested_variant_source` says which, so the
 Alignment chip reads "measured" instead of wearing curated clothes. BFF 663;
 the arch-upload case live-checks the honest `None` — its cap read too flat to
 classify, and the chip stays silent rather than guessing.
+
+**AS.5 — the panes' scan wears the scan's own tan again (client 2026-08-10,
+holding a Delivery screenshot: "this should be the color of the scan panels in
+the middle in adjustment and alignment pages").** Reverses §10-AO's bone-white
+(2026-08-06, the client's own earlier ask) — the reversal is recorded, not
+papered over. The cap-crop layer in panes 2 and 3 now binds to PALETTE.arch
+ITSELF rather than a matching copy: the separate CAP_SCAN_COLOR constant is
+retired from the viewer's API, so a future retune of the scan tone moves the
+panes and the Delivery previews together instead of leaving a twin to drift.
+One mesh, one colour, one home. Viewer 137, product 1452, typecheck clean;
+verified live on 276794487's Adjustment workspace.

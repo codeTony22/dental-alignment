@@ -1,25 +1,24 @@
 /**
- * THE CAP-CROP COLOR (§10-AO, client 2026-08-06: "the scanned healing cap renders white").
- * Panes 2/3's tight cap crop must read bone-white — never pure white (kills Lambert
- * shading) and never the whole-arch tan (PALETTE.arch), which those surfaces keep.
+ * THE CAP-CROP COLOR — one colour, one home. §10-AO (client 2026-08-06) made the
+ * pane crop bone-white; §10-AS.5 (client 2026-08-10, over a Delivery screenshot:
+ * "this should be the color of the scan panels in the middle") reversed it — the
+ * crop wears PALETTE.arch itself, so a future retune of the scan tone follows
+ * automatically. The separate CAP_SCAN_COLOR constant is retired; this pin
+ * guards the binding's home and that the tan stays a shade Lambert can shade.
  */
 import { describe, expect, it } from "vitest";
-import { CAP_SCAN_COLOR, PALETTE, capScanHex } from "./palette";
+import { PALETTE, paletteHex } from "./palette";
 
-describe("CAP_SCAN_COLOR — bone-white, not pure white", () => {
-  it("is the pinned bone-white hex", () => {
-    expect(CAP_SCAN_COLOR).toBe(0xf2f1ec);
+describe("the scan tan — the panes' crop colour IS the arch colour", () => {
+  it("is the pinned scan tan", () => {
+    expect(PALETTE.arch).toBe(0xf2e3a6);
   });
 
   it("is not pure white — Lambert shading needs value headroom to shade into", () => {
-    expect(CAP_SCAN_COLOR).not.toBe(0xffffff);
-  });
-
-  it("is distinct from the whole-arch tan the arch surfaces keep", () => {
-    expect(CAP_SCAN_COLOR).not.toBe(PALETTE.arch);
+    expect(PALETTE.arch).not.toBe(0xffffff);
   });
 
   it("serves the same hex through its CSS accessor, for legend swatches", () => {
-    expect(capScanHex()).toBe("#f2f1ec");
+    expect(paletteHex("arch")).toBe("#f2e3a6");
   });
 });

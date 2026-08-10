@@ -130,23 +130,10 @@ export function freePointHex(): string {
   return `#${FREE_POINT_COLOR.toString(16).padStart(6, "0")}`;
 }
 
-/**
- * THE CAP-CROP LAYER'S COLOR (client 2026-08-06, §10-AO: "the scanned healing cap renders
- * white"). Panes 2/3's scan crop is the same doctor's-scan mesh as the whole-arch surfaces
- * (Arch context dialog, Delivery previews, worklist), but tightened to just the cap
- * (declare.ts scanPaneRadiusMm) the arch's usual cream/tan (PALETTE.arch, #f2e3a6) reads as
- * an unnaturally warm, almost golden cap rather than a scanned tooth surface — the client's
- * literal complaint was that a healing cap this tight should read close to its own material,
- * bone-white. NOT PALETTE.arch, and NOT a new PartRole entry: the cap-crop mesh never goes
- * through the composite STL loader (it is a client-cropped VerifyLayerGeometry, set directly
- * in SitePanes.tsx), and the whole-arch surfaces above keep PALETTE.arch untouched. NOT pure
- * white (#ffffff) — flat white kills the scene's Lambert shading (no surface has anywhere left
- * to go darker, so the crop reads as a shadowless cutout instead of a scanned solid); #f2f1ec
- * is bone-white with just enough value headroom for shading to read.
- */
-export const CAP_SCAN_COLOR = 0xf2f1ec;
-
-/** CSS hex string for the cap-crop layer's color — legend swatches must match the mesh. */
-export function capScanHex(): string {
-  return `#${CAP_SCAN_COLOR.toString(16).padStart(6, "0")}`;
-}
+// HISTORY, so the reversal is legible: a CAP_SCAN_COLOR bone-white (#f2f1ec)
+// lived here 2026-08-06..10 (§10-AO, "the scanned healing cap renders white")
+// for panes 2/3's tight cap crop. §10-AS.5 retired it — the client, holding a
+// Delivery screenshot: "this should be the color of the scan panels in the
+// middle in adjustment and alignment pages." The crop now binds to
+// PALETTE.arch ITSELF (SitePanes.tsx), so retuning the scan tone moves every
+// scan surface together instead of leaving a matching copy to drift.
