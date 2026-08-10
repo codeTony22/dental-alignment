@@ -295,6 +295,47 @@ class TestCapImprintHoles:
         assert float(proud.max()) < 0.25, \
             f"wall stands {proud.max():.2f}mm proud of the local gum"
 
+    def test_the_collar_drapes_onto_curved_gum_no_floating_crescents(self):
+        """THE TINTED COLLAR EXPOSED THE PLANE (client 2026-08-10, on 276794487's
+        platform tab: "the arch-platform artifact looks terrible"): the collar
+        annulus rode the FITTED PLANE, and wherever the real gum curves away
+        from that plane the ring floated free — invisible while it wore the
+        arch's own tan, dark crescent blades once §10-AR.11 tinted the socket.
+        The collar's outer rings now DRAPE onto the local scan surface, bearing
+        by bearing. On a ridge-curved sheet (z = -0.12*y², a crest along x) the
+        plane fit is honestly wrong by over a millimetre at the side bearings —
+        no collar vertex may float above the local gum by more than the seam
+        slack."""
+        from case_prep.pipeline.deliverables import cap_imprint_parts
+
+        xs, ys = np.meshgrid(np.linspace(-8, 8, 40), np.linspace(-8, 8, 40))
+        zs = -0.12 * ys**2
+        pts = np.column_stack([xs.ravel(), ys.ravel(), zs.ravel()])
+        faces = []
+        for i in range(39):
+            for j in range(39):
+                a = i * 40 + j
+                faces.append([a, a + 1, a + 41])
+                faces.append([a, a + 41, a + 40])
+        sheet = trimesh.Trimesh(pts, np.asarray(faces), process=False)
+        # the cap SUNK a millimetre (pose z=1.0, base at -1): the ridge's fitted
+        # plane sits at ~-0.9, and a base above it is honestly "wholly above the
+        # gum line" — this pin judges the collar, not that guard
+        out, socket, notes = cap_imprint_parts(
+            sheet, [(self._cap(), _pose_at(0, 0, 1.0), 0.2, 2.0)])
+        assert notes == []
+        assert socket is not None
+        v = np.asarray(socket.vertices, float)
+        r = np.linalg.norm(v[:, :2], axis=1)
+        # the collar band: outside the wall's mouth (~2.2), out to the cut edge
+        # bridge (~4.3). Judge every vertex there against the sheet's own local
+        # height — the old plane-riding ring floated ~1.1mm at the ±y bearings.
+        collar = (r > 2.6) & (r < 4.4)
+        assert collar.sum() >= 30, "no collar band to judge"
+        proud = v[collar, 2] - (-0.12 * v[collar, 1] ** 2)
+        assert float(proud.max()) < 0.30, \
+            f"collar floats {proud.max():.2f}mm above the local gum"
+
     def test_the_moat_between_wall_and_cut_edge_is_bridged(self):
         """THE EMPTY SPACE GOES (client 2026-08-09: "we cannot leave the empty
         space there, it looks weird"). The any-vertex cull opens the scan wider

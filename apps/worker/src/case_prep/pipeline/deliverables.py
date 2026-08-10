@@ -456,19 +456,56 @@ def cap_imprint_parts(arch: trimesh.Trimesh,
             # the collar reaches past the cut edge, which now sits a cull margin
             # farther out than the wall
             r_outer = r_mouth + 1.4 + _CULL_MARGIN_MM
-            ox = r_outer * np.cos(theta)
-            oy = r_outer * np.sin(theta)
-            outer_h = a0 + bx * ox + cy * oy
+            # THE DRAPE (client 2026-08-10, on the tinted platform: "the
+            # arch-platform artifact looks terrible"): riding the fitted PLANE,
+            # the annulus floated free wherever the real gum curves away from
+            # it — invisible in arch tan, dark crescent blades once §10-AR.11
+            # tinted the socket. The mid and outer rings now sit at the LOCAL
+            # surface: per bearing, the median axial height of the kept scan's
+            # own vertices within 0.9mm of the ring point, tucked 0.05 under so
+            # the scan wins wherever they coincide. The plane stays the honest
+            # fallback where no tissue is near, and a drape is bounded to
+            # 2.5mm of the plane so one stray sample can never throw a blade.
+            kv = np.asarray(kept.vertices, float) - origin
+            k_axial = kv @ axis
+            k_x = kv @ xl
+            k_y = kv @ yl
+            near_band = ((np.abs(k_axial) < 6.0)
+                         & (np.hypot(k_x, k_y) > float(np.min(r_mouth)) - 1.0)
+                         & (np.hypot(k_x, k_y) < float(np.max(r_outer)) + 1.5))
+            bx_s, by_s, bh_s = k_x[near_band], k_y[near_band], k_axial[near_band]
+
+            def _draped(radii: np.ndarray) -> np.ndarray:
+                px = radii * np.cos(theta)
+                py = radii * np.sin(theta)
+                plane_h = a0 + bx * px + cy * py
+                heights = plane_h.copy()
+                for j in range(seg):
+                    close = (bx_s - px[j]) ** 2 + (by_s - py[j]) ** 2 < 0.9 ** 2
+                    if close.sum() >= 3:
+                        h = float(np.median(bh_s[close])) - 0.05
+                        heights[j] = float(np.clip(h, plane_h[j] - 2.5,
+                                                   plane_h[j] + 2.5))
+                return heights
+
+            r_mid = (r_mouth + r_outer) / 2.0
+            mid_h = _draped(r_mid)
+            outer_h = _draped(r_outer)
             inner_pts = (origin[None, :] + dirs * r_mouth[:, None]
                          + np.outer(mouth_h, axis))
+            mid_pts = (origin[None, :] + dirs * r_mid[:, None]
+                       + np.outer(mid_h, axis))
             outer_pts = (origin[None, :] + dirs * r_outer[:, None]
                          + np.outer(outer_h, axis))
             collar_faces = []
-            for j in range(seg):
-                k = (j + 1) % seg
-                collar_faces.append([j, seg + j, seg + k])
-                collar_faces.append([j, seg + k, k])
-            collar = trimesh.Trimesh(np.vstack([inner_pts, outer_pts]),
+            for ring in (0, 1):  # inner→mid, mid→outer strips
+                base = ring * seg
+                for j in range(seg):
+                    k = (j + 1) % seg
+                    collar_faces.append([base + j, base + seg + j,
+                                         base + seg + k])
+                    collar_faces.append([base + j, base + seg + k, base + k])
+            collar = trimesh.Trimesh(np.vstack([inner_pts, mid_pts, outer_pts]),
                                      np.asarray(collar_faces, int),
                                      process=False)
             if platform_clamped:
