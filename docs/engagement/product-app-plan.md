@@ -2339,3 +2339,28 @@ marks, pairs and best fits re-apply after the automation — the receipts land
 below"). No handler, no button — a static render cannot offer a dead act.
 Pinned four ways; product 1437, typecheck clean; fired live on 295811960 —
 run 20260810-004113 landed from the button.
+
+**AR.6 — the platform floor is the channel-mouth plane (client 2026-08-09,
+third pass: "still too deep — just the gingival offset platform, the top of the
+library... like the channel mouth").** Tab 5's floor moves from the cap's base
+to THE CAP'S TOP + the relief — the plane the Ø2.2 channel mouth opens on —
+clamped just below the fitted gum plane when a cap stands proud (the footprint
+dish always shows) and never below the envelope's own bottom. Tab 4 keeps the
+1.8mm dish; the label shortens to "5 · Arch — platform". Pinned on a submerged
+tall cap over a single-surface gum sheet (the box slab's two faces made the
+fitted plane ambiguous — a fixture lesson worth keeping). Live on 276794487 run
+20260810-005832: dish floor −2.29, platform floor −1.08 along the axis.
+
+**AR.7 — the analysis digest (client 2026-08-09: "a tool on the open-full-report
+that I can copy to the clipboard and feed the case and the report to the LLM, to
+make the code better and to understand what happened with each case").**
+`analysisClipboardText` (domain/deliver) composes the WHOLE report as paste-ready
+markdown from the same served payload the table renders — identities, the adjust
+fork, every site worst-first with cap agreement, seat, rotation, deviation, the
+gate's action sentences VERBATIM, the clamp's own words when clamped, production
+notes, stale-metric flags and the acceptance references with their cited sources
+— closing with the reviewer questions the client actually asks. A "Copy for
+analysis" button beside the report's close writes it to the clipboard with a
+transient "Copied ✓". Nothing is disclosed that the dialog does not already
+show; nothing is composed that was not served. Pinned: verbatim gate sentence,
+identities, clamp-sentence-over-numbers; the dialog markup pin. Product 1440.

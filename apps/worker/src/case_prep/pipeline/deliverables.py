@@ -267,7 +267,8 @@ def cap_imprint_holes(arch: trimesh.Trimesh,
                       sites: Sequence[Tuple[trimesh.Trimesh, np.ndarray,
                                             float, float]],
                       visible_depth_mm: Optional[float] =
-                      _SOCKET_VISIBLE_DEPTH_MM
+                      _SOCKET_VISIBLE_DEPTH_MM,
+                      top_floor: bool = False
                       ) -> Tuple[trimesh.Trimesh, list]:
     """THE SEAT IS THE CAP'S ENVELOPE SOCKET (client 2026-08-06 §10-AO; reshaped
     2026-08-09 on the client's competitor screenshot): the arch with each scanned
@@ -344,10 +345,17 @@ def cap_imprint_holes(arch: trimesh.Trimesh,
             # THE FLOOR STOPS JUST BELOW THE GUM (client 2026-08-09): the higher
             # of the cap's offset base and (collar − visible depth). A tall cap's
             # full tunnel hung out of the thin scan shell as a cylinder.
-            # None = FULL DEPTH (the fifth artifact, client 2026-08-09): walls
-            # all the way down, floor at the cap's offset base — the implant's
-            # top space. The default stays the shallow visible dish.
-            if visible_depth_mm is None:
+            # THE PLATFORM FLOOR, CORRECTED (client 2026-08-09, third pass:
+            # "still too deep — just the gingival offset platform, the top of
+            # the library"): top_floor puts the floor at the CAP'S TOP + the
+            # relief — the envelope's own top disc — clamped just below the
+            # gum so a proud cap still leaves its footprint dish rather than
+            # no socket at all. visible_depth_mm=None keeps the full-depth
+            # read; the default stays the shallow visible dish.
+            if top_floor:
+                floor_axial = max(min(float(zs_p[-1]), a0 - 0.05),
+                                  float(zs_p[0]))
+            elif visible_depth_mm is None:
                 floor_axial = float(zs_p[0])
             else:
                 floor_axial = max(float(zs_p[0]),

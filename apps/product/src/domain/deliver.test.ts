@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  analysisClipboardText,
   libraryPreviewCaption,
   libraryPreviewTab,
   libraryForwardLabel,
@@ -1530,7 +1531,7 @@ describe("previewTabs — the demo's three tabs, matched onto the run's own pack
     ]);
     expect(withPlatform[1]).toEqual({
       key: "arch-platform",
-      label: "5 · Arch — to the platform",
+      label: "5 · Arch — platform",
       filename: "case-a-arch-platform.stl",
       tooth: null,
       layers: [{ filename: "case-a-arch-platform.stl", role: "arch" }],
@@ -1896,5 +1897,74 @@ describe("toleranceBandsWords — the served bands, never a client verdict", () 
     const words = toleranceBandsWords([assuranceSite()]) ?? "";
     expect(words).not.toContain("in tolerance");
     expect(words).not.toContain("Case tolerance");
+  });
+});
+
+describe("analysisClipboardText — the paste-ready case digest (client 2026-08-09)", () => {
+  const site = {
+    tooth: 3,
+    status: "ready",
+    declared_variant: "superseded-2026-07-13--6030",
+    identified_variant: "6030",
+    variant_agreement: "match",
+    seat_method: "rim",
+    rim_agreement_mm: 0.55,
+    rotation: { applied_deg: -126.5, evidence: "recess" },
+    deviation_rms_mm: 0.253,
+    deviation_p90_mm: 0.355,
+    gate: {
+      level: "ready",
+      actions: [
+        "All checks agree (variant, measurement, seat). Advisory by policy: visually confirm the green cap covers the scanned cap in view 1, then accept.",
+      ],
+    },
+    clamp: { requested_mm: 0.2, applied_mm: 0.2, clamped: false, reason: null },
+    production_note: null,
+    disposition: "released",
+    stale_metrics: [],
+    qc_images: [],
+    references: {},
+  };
+  const assurance = {
+    case_id: "case-a",
+    run_id: "20260810-004712-0ff173",
+    relief: null,
+    adjustments: "adjust",
+    sites: [site],
+  };
+
+  it("carries the identities, the metrics and the served sentences VERBATIM", () => {
+    const text = analysisClipboardText(
+      "276794487-zimmer-4.5",
+      "Doctor 276794487",
+      "upper",
+      assurance as never,
+    );
+    expect(text).toContain("276794487-zimmer-4.5");
+    expect(text).toContain("run 20260810-004712-0ff173");
+    expect(text).toContain("upper jaw");
+    expect(text).toContain("Tooth 3 — ready");
+    expect(text).toContain("rim agreement 0.55 mm");
+    expect(text).toContain("RMS 0.253 mm");
+    expect(text).toContain(
+      "All checks agree (variant, measurement, seat). Advisory by policy:",
+    );
+    expect(text).toContain("adjust fork: adjust");
+  });
+
+  it("a clamped relief carries the clamp's own sentence instead of the numbers", () => {
+    const clamped = {
+      ...assurance,
+      sites: [{
+        ...site,
+        clamp: {
+          requested_mm: 0.2, applied_mm: 0.08, clamped: true,
+          reason: "the 0.20mm gingival relief the lab asked for is NOT safe",
+        },
+      }],
+    };
+    const text = analysisClipboardText("c", "d", null, clamped as never);
+    expect(text).toContain("relief clamp: the 0.20mm gingival relief");
+    expect(text).not.toContain("requested 0.2 mm");
   });
 });

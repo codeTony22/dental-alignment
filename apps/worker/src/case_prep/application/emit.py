@@ -291,8 +291,7 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
     # THE FIFTH ARTIFACT (client 2026-08-09): the same socket at FULL depth —
     # walls all the way down, floor at the cap's offset base, the implant's top
     # space. The shallow dish above stays the default capless artifact.
-    arch_platform, _ = cap_imprint_holes(scan, imprint_sites,
-                                         visible_depth_mm=None)
+    arch_platform, _ = cap_imprint_holes(scan, imprint_sites, top_floor=True)
     arch_platform_path = out_dir / f"{case.id}-arch-platform.stl"
     arch_platform.export(arch_platform_path)
 

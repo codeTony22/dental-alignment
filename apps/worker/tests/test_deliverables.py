@@ -322,30 +322,42 @@ class TestCapImprintHoles:
             assert bool(np.asarray(hits).all()), \
                 f"the moat at r={radius} still lets rays through"
 
-    def test_full_depth_reaches_the_platform_and_keeps_its_floor(self):
-        """THE FIFTH ARTIFACT (client 2026-08-09: 'the floor at the implant's
-        platform level — do the envelope walls'). ``visible_depth_mm=None``
-        lines the socket at FULL depth: walls all the way down, floor at the
-        cap's offset base — the implant's top space. The default stays the
-        shallow dish (its own pin above)."""
+    def test_the_platform_floor_sits_at_the_channel_mouth_plane(self):
+        """THE FIFTH ARTIFACT, THIRD PASS (client 2026-08-09: 'still too deep —
+        just the gingival offset platform, the top of the library... like the
+        channel mouth'). ``top_floor=True`` puts the floor at the CAP'S TOP —
+        the channel-mouth plane — plus the relief, clamped just below the gum
+        when the cap stands proud so the footprint dish always shows. Never
+        the base, never the 8mm bore."""
         from case_prep.pipeline.deliverables import cap_imprint_holes
 
+        # a single-surface gum sheet at z=0 (the box slab's two faces make the
+        # fitted plane ambiguous) and a SUBMERGED tall cap: top at world -0.8,
+        # base at -10.8. The floor must land at TOP + relief (-0.6) — not the
+        # base (-11.0), not the 1.8mm dish (-1.85).
+        xs, ys = np.meshgrid(np.linspace(-8, 8, 40), np.linspace(-8, 8, 40))
+        pts = np.column_stack([xs.ravel(), ys.ravel(), np.zeros(xs.size)])
+        faces = []
+        for i in range(39):
+            for j in range(39):
+                a = i * 40 + j
+                faces.append([a, a + 1, a + 41])
+                faces.append([a, a + 41, a + 40])
+        sheet = trimesh.Trimesh(pts, np.asarray(faces), process=False)
         tall = trimesh.creation.cylinder(radius=2.0, height=10.0)
-        arch = _arch_with_bump()
-        out, notes = cap_imprint_holes(arch, [(tall, _pose_at(0, 0, 5.0),
-                                               0.2, 2.0)],
-                                       visible_depth_mm=None)
+        out, notes = cap_imprint_holes(sheet, [(tall, _pose_at(0, 0, -5.8),
+                                                0.2, 2.0)],
+                                       top_floor=True)
         assert notes == []
         v = np.asarray(out.vertices, float)
         r = np.linalg.norm(v[:, :2], axis=1)
-        sock = r < 2.5
-        # the tall cap's offset base sits at -0.2 world; full depth reaches it
+        sock = (r < 2.5) & (v[:, 2] < 0.4)
         deepest = float(v[sock][:, 2].min())
-        assert deepest < -0.15, \
-            f"full depth stopped at {deepest} — the platform was not reached"
+        assert -0.75 < deepest < -0.45, \
+            f"platform floor at {deepest} — not the channel-mouth plane + relief"
         down = out.ray.intersects_any(ray_origins=[[0.0, 0.0, 0.3]],
                                       ray_directions=[[0.0, 0.0, -1.0]])
-        assert bool(down[0]), "the platform socket still needs its floor"
+        assert bool(down[0]), "the platform dish still needs its floor"
 
     def test_a_deviated_scanned_cap_leaves_no_flaps(self):
         """THE TORN-FLAP MECHANISM (client 2026-08-09, on 295811960: 'a lot of

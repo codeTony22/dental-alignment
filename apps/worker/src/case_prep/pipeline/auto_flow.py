@@ -2497,7 +2497,7 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
             # THE FIFTH ARTIFACT (client 2026-08-09): the same socket at FULL
             # depth — floor at the cap's offset base, the implant's top space
             arch_platform, _ = cap_imprint_holes(scan, imprint_sites,
-                                                 visible_depth_mm=None)
+                                                 top_floor=True)
             (_P(out_dir) / f"{case_id}-arch-platform.stl").write_bytes(
                 arch_platform.export(file_type="stl"))
 

@@ -1455,7 +1455,7 @@ export function previewTabs(
   if (platform !== undefined) {
     tabs.push({
       key: "arch-platform",
-      label: "5 · Arch — to the platform",
+      label: "5 · Arch — platform",
       filename: platform,
       tooth: null,
       layers: [{ filename: platform, role: "arch" }],
@@ -1639,4 +1639,94 @@ export function libraryPartPreviewCaption(label: string): string {
     `This is ${label} — the vendor's catalog part alone, in its own frame. It is ` +
     `not yet cut, seated, or measured for any site in this case.`
   );
+}
+
+// --- THE ANALYSIS DIGEST (client 2026-08-09: "on the open-full-report, a tool that
+// I can copy to the clipboard automatically and feed the case and the report to the
+// LLM, to make the code better and to understand what happened with each case").
+// Pure composition of SERVED facts — every sentence verbatim, every number the
+// row's own; nothing here measures or judges. ---------------------------------------
+
+function _num(v: number | null | undefined, unit = "mm"): string {
+  return v === null || v === undefined ? "n/a" : `${v} ${unit}`;
+}
+
+function _siteBlock(site: AssuranceSite): string {
+  const lines: string[] = [];
+  lines.push(`### Tooth ${site.tooth} — ${site.status ?? "no status"}`);
+  lines.push(
+    `- cap: declared ${site.declared_variant ?? "n/a"} · identified ` +
+      `${site.identified_variant ?? "n/a"} · agreement ` +
+      `${site.variant_agreement ?? "n/a"}`,
+  );
+  lines.push(
+    `- seat: ${site.seat_method ?? "n/a"} · rim agreement ` +
+      `${_num(site.rim_agreement_mm)}`,
+  );
+  const rotBits = Object.entries(
+    (site.rotation ?? {}) as unknown as Record<string, unknown>,
+  )
+    .filter(([, v]) => v !== null && v !== undefined)
+    .map(([k, v]) => `${k}=${String(v)}`);
+  if (rotBits.length > 0) lines.push(`- rotation: ${rotBits.join(" · ")}`);
+  lines.push(
+    `- deviation: RMS ${_num(site.deviation_rms_mm)} · p90 ` +
+      `${_num(site.deviation_p90_mm)}`,
+  );
+  lines.push(`- gate (${site.gate.level}${site.gate.stale ? ", STALE" : ""}):`);
+  for (const action of site.gate.actions) lines.push(`  > ${action}`);
+  if (site.clamp.clamped && site.clamp.reason !== null) {
+    lines.push(`- relief clamp: ${site.clamp.reason}`);
+  } else {
+    lines.push(
+      `- relief: requested ${_num(site.clamp.requested_mm)} · applied ` +
+        `${_num(site.clamp.applied_mm)}`,
+    );
+  }
+  if (site.production_note !== null) {
+    lines.push(`- production note: ${site.production_note}`);
+  }
+  if (site.stale_metrics.length > 0) {
+    lines.push(`- stale after rework: ${site.stale_metrics.join(", ")}`);
+  }
+  for (const ref of Object.values(site.references ?? {})) {
+    lines.push(
+      `- reference ${ref.label}: ${ref.display ?? String(ref.value)} ` +
+        `(band ${ref.band}; vs ${ref.industry_ref.value} — ` +
+        `${ref.industry_ref.source})`,
+    );
+  }
+  return lines.join("\n");
+}
+
+/**
+ * The paste-ready case digest for an outside reviewer (human or LLM): case and run
+ * identity, the fork, then every site's served facts worst-first, all sentences
+ * verbatim. Ends with the questions the client actually asks of it.
+ */
+export function analysisClipboardText(
+  caseId: string,
+  doctor: string,
+  jaw: string | null,
+  assurance: AssuranceView,
+): string {
+  const head = [
+    `# Case analysis digest — ${caseId}`,
+    `run ${assurance.run_id} · doctor ${doctor}` +
+      (jaw !== null ? ` · ${jaw} jaw` : ""),
+    `adjust fork: ${assurance.adjustments ?? "never faced"}`,
+    "",
+    "## Sites (served worst-first)",
+  ];
+  const blocks = assurance.sites.map(_siteBlock);
+  const tail = [
+    "",
+    "## For the reviewer",
+    "Every sentence above is the system's own served wording; every number is",
+    "the run's own measurement. Useful questions: which gate actions repeat",
+    "across cases; whether rim/RMS/p90 sit near their band edges; whether a",
+    "clamp or production note explains an operator complaint; what the rotation",
+    "evidence kind was when a fit needed rework.",
+  ];
+  return [...head, ...blocks, ...tail].join("\n");
 }
