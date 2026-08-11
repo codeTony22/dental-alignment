@@ -2792,3 +2792,20 @@ returned with it. Artifacts 1–5 remain open-arch — §10-AS.16's doctrine
 governs them unchanged; the closed model is the one deliberate exception,
 and the memory note now records both rulings. Worker narrow 45, fast 894,
 product 1469, bff deliver 116.
+
+**AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
+after the restore: 1128 green, 1 red —
+`test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.
+Diagnosed by measurement, §10-G style, not assumed: the synthetic case
+registers at 0.292–0.293mm inlier RMSE against the production 0.30mm
+ceiling, and the ICP moves that number ~1e-3 between identical runs — the
+gate margin is ~7 microns and the jitter is ~15% of it, so a loaded battery
+occasionally crosses. A same-process contamination check (the restore's
+files + test_stages serially in one interpreter) passed — the artifact-6
+change is not implicated; stage2 never touches the CSG stack. Fix in the
+recorded tradition (wall-clock flake → measure work): the test now gates
+with an explicit 0.35mm ceiling and a comment naming the measured margin —
+it certifies the registration MECHANICS; the slow lane's real-mesh suites
+own the production ceiling. Noted in passing: `open3d_engine.py` ROI math
+emits overflow/invalid matmul RuntimeWarnings even on passing runs — a
+numerical-hygiene item for workstream B.
