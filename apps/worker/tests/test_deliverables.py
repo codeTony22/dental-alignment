@@ -13,7 +13,9 @@ import numpy as np
 import pytest
 import trimesh
 
-from case_prep.pipeline.deliverables import arch_with_parts, remove_cap_region
+from case_prep.pipeline.deliverables import (arch_with_parts,
+                                              arch_with_parts_fused,
+                                              remove_cap_region)
 
 
 def _arch_with_bump(bump_center=(0.0, 0.0, 2.0)):
@@ -68,6 +70,117 @@ class TestArchWithParts:
         v = np.asarray(out.vertices, float)
         near = v[np.linalg.norm(v - [5.0, 0.0, 3.0], axis=1) < 2.5]
         assert len(near) > 0  # the part is present at its pose
+
+
+class TestArchWithPartsFused:
+    """§10-AT 3b: the downloadable composites become TRUE BOOLEAN UNIONS. Where a
+    part's pose buries part of its own volume inside the arch, ``arch_with_parts``'s
+    concatenation leaves that buried half standing in the file as an internal wall
+    the arch's own shell still surrounds; the true union merges the overlap so the
+    buried half is ordinary interior material, indistinguishable from the shell
+    around it — exactly what ``_csg_carve``'s own recess cut already proves for a
+    subtraction, now proven here for a union."""
+
+    def _sunk_part(self):
+        # a healing-cap-shaped part sunk HALF into the bump-slab fixture's own bump
+        # (radius 2.0, world z 0..4): a part radius of 1.0 stays fully inside the
+        # bump's footprint everywhere it is embedded, so the buried half is
+        # genuinely interior, not poking out the bump's own side wall. Posed so it
+        # spans z 2.5..5.5: 1.5mm buried inside the bump, 1.5mm standing proud of
+        # it — a real half-sink, not a token overlap.
+        arch = _arch_with_bump()
+        part = trimesh.creation.cylinder(radius=1.0, height=3.0)
+        pose = _pose_at(0.0, 0.0, 4.0)
+        return arch, part, pose
+
+    def test_the_true_union_leaves_no_interior_wall_standing(self):
+        from case_prep.pipeline.csg import solidified_shell_cached
+
+        arch, part, pose = self._sunk_part()
+        solid = solidified_shell_cached(arch)
+
+        # the fixture check: the part really is half-buried, or this pin proves
+        # nothing about what the union did
+        posed_part = part.copy()
+        posed_part.apply_transform(pose)
+        part_centroids = np.asarray(posed_part.triangles_center, float)
+        buried = solid.contains(part_centroids)
+        assert buried.sum() > 0.2 * len(part_centroids), \
+            "the fixture must genuinely bury part of the part"
+
+        fused, notes = arch_with_parts_fused(arch, [(part, pose)])
+        assert notes == []
+        inside = solid.contains(np.asarray(fused.triangles_center, float))
+        # numerical skin only: a boundary face's centroid can read either side of
+        # contains() by floating-point noise — the true union leaves NO deliberate
+        # interior wall the way the raw concatenation below does
+        assert inside.sum() <= 0.02 * len(fused.faces), \
+            "the true union must not leave an internal wall standing inside the slab"
+
+    def test_the_plain_concatenation_leaves_that_same_wall_standing(self):
+        """The comparison the pin above is FOR: on the identical fixture, the
+        concatenation (the thing this function replaces at the call sites) really
+        does ship the buried half untouched — proving the fused pin measures a real
+        difference, not an artifact of a fixture that was never buried at all."""
+        arch, part, pose = self._sunk_part()
+        from case_prep.pipeline.csg import solidified_shell_cached
+
+        solid = solidified_shell_cached(arch)
+        concatenated = arch_with_parts(arch, [(part, pose)])
+        posed_part = part.copy()
+        posed_part.apply_transform(pose)
+        part_centroids = np.asarray(posed_part.triangles_center, float)
+        buried = solid.contains(part_centroids)
+        assert buried.sum() > 0.2 * len(part_centroids)
+        # every one of those buried faces is still present, untouched, in the
+        # concatenated output — that is the wall the fused builder exists to erase
+        assert len(concatenated.faces) >= len(part.faces)
+
+    def test_the_scans_own_far_reaches_survive_and_the_base_stays_stripped(self):
+        arch, part, pose = self._sunk_part()
+        fused, notes = arch_with_parts_fused(arch, [(part, pose)])
+        assert notes == []
+        v = np.asarray(fused.vertices, float)
+        assert (np.abs(v[:, 0]) > 15).any(), \
+            "the sheet's far ends must survive the strip"
+        scan_floor = float(np.asarray(arch.vertices, float)[:, 2].min())
+        assert not (v[:, 2] < scan_floor - 0.2).any(), \
+            "nothing may ship below the scan's own deepest point — a fabricated " \
+            "base survived the strip"
+
+    def test_a_degenerate_part_falls_back_alone_while_the_rest_fuse(self):
+        arch, good_part, good_pose = self._sunk_part()
+        degenerate = trimesh.Trimesh()
+        fused, notes = arch_with_parts_fused(
+            arch, [(degenerate, _pose_at(0.0, 0.0, 0.0)), (good_part, good_pose)])
+        assert len(notes) == 1
+        assert notes[0].startswith("part 1")
+        assert "concatenated instead" in notes[0]
+        # the good part (index 2) still fused in — its exposed top survives
+        v = np.asarray(fused.vertices, float)
+        near = v[np.linalg.norm(v - [0.0, 0.0, 5.5], axis=1) < 1.5]
+        assert len(near) > 0, "the good part must still be present, fused"
+
+    def test_a_totally_unbuildable_arch_falls_open_to_the_whole_concatenation(self):
+        """The OTHER honest degradation: not a per-part failure but a whole-
+        composite one — nothing here can even solidify. Never a dead package."""
+        empty_arch = trimesh.Trimesh()
+        part = trimesh.creation.cylinder(radius=1.0, height=3.0)
+        pose = _pose_at(0.0, 0.0, 0.0)
+        fused, notes = arch_with_parts_fused(empty_arch, [(part, pose)])
+        assert len(notes) == 1
+        assert "concatenated instead" in notes[0]
+        assert not notes[0].startswith("part ")
+        # the fallback IS arch_with_parts — the part's own geometry still ships
+        assert len(fused.faces) >= len(part.faces)
+
+    def test_input_not_mutated(self):
+        arch, part, pose = self._sunk_part()
+        arch_faces_before = len(arch.faces)
+        part_faces_before = len(part.faces)
+        arch_with_parts_fused(arch, [(part, pose)])
+        assert len(arch.faces) == arch_faces_before
+        assert len(part.faces) == part_faces_before
 
 
 class TestArchWithCleanHoles:

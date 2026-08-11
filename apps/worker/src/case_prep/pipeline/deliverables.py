@@ -11,7 +11,7 @@ via the SDF engine is the follow-up if a manufacturer requires a single fused so
 """
 from __future__ import annotations
 
-from typing import Iterable, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import trimesh
@@ -41,13 +41,103 @@ def remove_cap_region(arch: trimesh.Trimesh, pose_matrix: np.ndarray,
 
 def arch_with_parts(arch: trimesh.Trimesh,
                     posed_parts: Sequence[Tuple[trimesh.Trimesh, np.ndarray]]) -> trimesh.Trimesh:
-    """The arch plus each part transformed by its pose — one composite deliverable mesh."""
+    """The arch plus each part transformed by its pose — one composite deliverable mesh.
+    A CONCATENATION, not a boolean: where a part's pose buries part of its own volume
+    inside the arch (§10-AS.11's dish, a construction shank seated past the gum), that
+    buried half stands in the file as an internal wall the arch's own shell still
+    surrounds. ``arch_with_parts_fused`` (§10-AT 3b) is the true-union deliverable now;
+    every call site prefers it, and this function survives ONLY as its fail-open
+    fallback — the honest degradation when a true union cannot be built at all."""
     placed = []
     for part, pose in posed_parts:
         p = part.copy()
         p.apply_transform(np.asarray(pose, float))
         placed.append(p)
     return trimesh.util.concatenate([arch.copy()] + placed)
+
+
+def arch_with_parts_fused(arch: trimesh.Trimesh,
+                          posed_parts: Sequence[Tuple[trimesh.Trimesh, np.ndarray]]
+                          ) -> Tuple[trimesh.Trimesh, List[str]]:
+    """THE COMPOSITE BECOMES A TRUE UNION (§10-AT 3b, on §10-AS.16/19's own doctrine:
+    the shipped artifact is the open arch, and ``arch_with_parts``'s concatenation left
+    a part's buried half standing in the file as an internal wall the shell still
+    surrounds — a real boolean seam for a lab's slicer to reason about, not a fact
+    about the case). Every downloadable composite call site now prefers this function;
+    ``arch_with_parts`` survives only as ITS fallback.
+
+    The mechanism: ``solidified_shell_cached`` gives the arch a momentary closed solid
+    to union against — the same call ``_csg_carve`` makes, and it needs the same
+    crowns-up axis for the same reason. Each part is posed as its own exact watertight
+    solid via ``exact_cap_punch(part, 0.0, pose)`` — a ZERO offset, which lids an open
+    bore and self-heals a creased dilation's self-intersection WITHOUT ever dilating a
+    millimetre: exactly "the part as a watertight solid at its pose", nothing grown. A
+    true manifold union of the arch solid with every part solid merges any overlap —
+    the buried half stops being a wall and becomes ordinary interior material,
+    indistinguishable from the shell around it. ``strip_fabricated`` then does its
+    usual job (the union needed the arch's fabricated base/skirt to have something to
+    close against, and that base is not the artifact) — except its keep test must ALSO
+    keep each part's own surface, which lies nowhere near the original scan and would
+    otherwise read as fabricated too: a dense surface sample of the part solids (the
+    same ``cKDTree`` + ``trimesh.sample.sample_surface`` idiom ``strip_fabricated``
+    already uses to keep a cut's own recess) feeds it as ``punch_regions_test``.
+
+    Two honest degradations, never a dead package: a single part that cannot be built
+    into a watertight solid (a degenerate template) falls back to CONCATENATING just
+    that part, with a note — the rest still fuse. Any other failure — the union itself
+    refusing, the arch failing to solidify — falls the WHOLE composite back to
+    ``arch_with_parts`` for every part, with its own note; the notes from any per-part
+    fallback that already happened are lost in that case, because the whole composite
+    it would have landed on no longer exists."""
+    import trimesh.boolean
+    from scipy.spatial import cKDTree
+
+    try:
+        solid = solidified_shell_cached(arch)
+        part_solids: List[trimesh.Trimesh] = []
+        fallback_parts: List[Tuple[trimesh.Trimesh, np.ndarray]] = []
+        notes: List[str] = []
+        for index, (part, pose) in enumerate(posed_parts, 1):
+            try:
+                part_solids.append(exact_cap_punch(part, 0.0, np.asarray(pose, float)))
+            except Exception as exc:  # noqa: BLE001 — per-part honest fallback;
+                # the rest of the parts still get the true union below
+                notes.append(f"part {index} could not be fused ({exc}) — "
+                            f"concatenated instead")
+                fallback_parts.append((part, pose))
+        fused = trimesh.boolean.union([solid] + part_solids, engine="manifold")
+        if len(fused.faces) == 0:
+            raise ValueError("the fused composite came back empty")
+        if part_solids:
+            # the dense sample lives on the PART solids, not the arch — these are the
+            # surfaces the strip below must keep even though they sit nowhere near the
+            # original scan (one tree over every part, same idiom as strip_fabricated's
+            # own arch sample)
+            surf_pts = np.vstack([
+                trimesh.sample.sample_surface(ps, 150_000)[0] for ps in part_solids])
+            d_part, _ = cKDTree(surf_pts).query(
+                np.asarray(fused.triangles_center, float))
+            inside_mask = d_part < 0.45
+        else:
+            inside_mask = np.zeros(len(fused.faces), bool)
+        keep = strip_fabricated(fused, arch, inside_mask)
+        F = np.asarray(fused.faces)
+        V = np.asarray(fused.vertices, float)
+        out = trimesh.Trimesh(V.copy(), F[keep].copy(), process=False)
+        out.remove_unreferenced_vertices()
+        if fallback_parts:
+            placed = []
+            for part, pose in fallback_parts:
+                p = part.copy()
+                p.apply_transform(np.asarray(pose, float))
+                placed.append(p)
+            out = trimesh.util.concatenate([out] + placed)
+        return out, notes
+    except Exception as exc:  # noqa: BLE001 — the fallback IS the containment; this
+        # function can never return nothing
+        return arch_with_parts(arch, posed_parts), [
+            f"the fused composite could not be built ({exc}) — the parts are "
+            f"concatenated instead"]
 
 
 def _hole_bore(pose_matrix: np.ndarray, radius_mm: float, collar_z_local: float,

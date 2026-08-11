@@ -31,7 +31,8 @@ from case_prep.domain.guidance import advisory_guidance
 from case_prep.domain.island import segment_island
 from case_prep.domain.pose_confidence import confidence_grade, pose_spread
 from case_prep.domain.poses import Retention
-from case_prep.pipeline.deliverables import (arch_with_parts, cap_imprint_holes,
+from case_prep.pipeline.deliverables import (arch_with_parts_fused,
+                                              cap_imprint_holes,
                                               cap_imprint_parts,
                                               remove_cap_region)
 from case_prep.pipeline.final_product import (DEFAULT_GINGIVAL_OFFSET_MM,
@@ -2462,9 +2463,23 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
             from pathlib import Path as _P
             dims = library.variant_dimensions()
             caps_posed = [(tmpl, sp.pose_matrix) for sp, tmpl, _ in package_sites]
-            arch_caps = arch_with_parts(scan, caps_posed)
+            arch_caps, caps_composite_notes = arch_with_parts_fused(scan, caps_posed)
             arch_caps_path = _P(out_dir) / f"{case_id}-arch-with-healingcaps.stl"
             arch_caps.export(arch_caps_path)
+            for note in caps_composite_notes:
+                # "part N …" — N is 1-based caps_posed/package_sites order; land it
+                # on that row. A WHOLE-COMPOSITE note (the fail-open fallback,
+                # §10-AT 3b — no "part " prefix) lands on every row: the
+                # degradation covered all of them.
+                if note.startswith("part "):
+                    teeth = [package_sites[int(note.split()[1]) - 1][0].tooth]
+                else:
+                    teeth = [sp.tooth for sp, _t, _c in package_sites]
+                for tooth in teeth:
+                    target = _rows_by_tooth_qc.get(tooth)
+                    if target is not None:
+                        target.setdefault("production", {})[
+                            "composite_note"] = note
 
             # THE SEAT IS THE CAP'S OWN IMPRINT (§10-AO, client 2026-08-06): each
             # hole is the healing cap's dilated surface — its exact footprint plus
@@ -2529,9 +2544,20 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                 _layer_names.append(f"{case_id}-socket-platform.stl")
             cons_posed = [(final_products[sp.tooth] if final_products else cons, sp.pose_matrix)
                           for sp, _t, cons in package_sites]
-            arch_cons = arch_with_parts(arch_removed, cons_posed)
+            arch_cons, cons_composite_notes = arch_with_parts_fused(
+                arch_removed, cons_posed)
             arch_cons_path = _P(out_dir) / f"{case_id}-arch-with-constructions.stl"
             arch_cons.export(arch_cons_path)
+            for note in cons_composite_notes:
+                if note.startswith("part "):
+                    teeth = [package_sites[int(note.split()[1]) - 1][0].tooth]
+                else:
+                    teeth = [sp.tooth for sp, _t, _c in package_sites]
+                for tooth in teeth:
+                    target = _rows_by_tooth_qc.get(tooth)
+                    if target is not None:
+                        target.setdefault("production", {})[
+                            "composite_note"] = note
 
             # view.html: the offline, no-install 3D viewer for the whole package (skipped with a
             # note when the standalone bundle has not been built on this machine)

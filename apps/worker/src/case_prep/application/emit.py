@@ -53,7 +53,7 @@ from case_prep.domain.channel import channel_from_boundary_loops
 # that re-implemented either would drift from the thing it claims to re-emit.
 from case_prep.pipeline.auto_flow import _crowns_frame, _relief_summary
 from case_prep.pipeline.auto_flow import delivered_channel_offsets
-from case_prep.pipeline.deliverables import (arch_with_parts,
+from case_prep.pipeline.deliverables import (arch_with_parts_fused,
                                              cap_imprint_holes,
                                              cap_imprint_parts)
 from case_prep.pipeline.final_product import (DEFAULT_SCREW_RADIUS_MM,
@@ -266,7 +266,20 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
     dims = library.variant_dimensions()
     caps_posed = [(tmpl, sp.pose_matrix) for sp, tmpl, _ in package_sites]
     arch_caps_path = out_dir / f"{case.id}-arch-with-healingcaps.stl"
-    arch_with_parts(scan, caps_posed).export(arch_caps_path)
+    arch_caps, caps_notes = arch_with_parts_fused(scan, caps_posed)
+    arch_caps.export(arch_caps_path)
+    for note in caps_notes:
+        # "part N …" — N is 1-based package_sites order (caps_posed's own order);
+        # land it on that row. A WHOLE-COMPOSITE note (the fail-open fallback,
+        # §10-AT 3b — no "part " prefix) lands on every row: the degradation
+        # covered all of them.
+        if note.startswith("part "):
+            teeth = [package_sites[int(note.split()[1]) - 1][0].tooth]
+        else:
+            teeth = [sp.tooth for sp, _t, _cons in package_sites]
+        for tooth in teeth:
+            rows_by_tooth[tooth].setdefault("production", {})[
+                "composite_note"] = note
 
     # THE SEAT IS THE CAP'S OWN IMPRINT (§10-AO, client 2026-08-06): each hole is
     # the healing cap's dilated surface — its exact footprint plus the relief the
@@ -327,7 +340,16 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
     cons_posed = [(final_products[sp.tooth], sp.pose_matrix)
                   for sp, _t, _cons in package_sites]
     arch_cons_path = out_dir / f"{case.id}-arch-with-constructions.stl"
-    arch_with_parts(arch_removed, cons_posed).export(arch_cons_path)
+    arch_cons, cons_notes = arch_with_parts_fused(arch_removed, cons_posed)
+    arch_cons.export(arch_cons_path)
+    for note in cons_notes:
+        if note.startswith("part "):
+            teeth = [package_sites[int(note.split()[1]) - 1][0].tooth]
+        else:
+            teeth = [sp.tooth for sp, _t, _cons in package_sites]
+        for tooth in teeth:
+            rows_by_tooth[tooth].setdefault("production", {})[
+                "composite_note"] = note
 
     viewer_file: List[str] = []
     try:

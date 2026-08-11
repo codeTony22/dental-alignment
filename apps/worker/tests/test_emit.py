@@ -179,7 +179,10 @@ class TestReEmitOnTheRealTree:
         assert row_b["seat_method"] == row_a["seat_method"]
         assert row_b["guidance"]["level"] == row_a["guidance"]["level"]
         assert row_b["production"]["gingival_offset_mm"] <= 0.1 + 1e-9
-        # the arch trio and the report are in the new package
-        for name in (f"{case.id}-arch-with-constructions.stl",
+        # the arch trio and the report are in the new package — the composite
+        # files land under the SAME names now that they are true boolean unions
+        # (§10-AT 3b), not the concatenations they used to be
+        for name in (f"{case.id}-arch-with-healingcaps.stl",
+                     f"{case.id}-arch-with-constructions.stl",
                      f"{case.id}-auto-report.json"):
             assert (out_dir / name).exists()
