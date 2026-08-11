@@ -2725,3 +2725,40 @@ the band catches nothing falls back to the width cut rather than blanking the
 pane. Measured on tooth 20: 31,550 (width) → 16,651 triangles (matched) — the
 tissue shoulder inside the cylinder was nearly half the crop. Viewer 148,
 product 1468, typecheck clean.
+
+**AT 3a/3c — the CSG machinery earns its own home, with self-healing
+punches.** pipeline/csg.py: solidify, the cached solidifier, punch_solid,
+exact_cap_punch (now unioned-with-self through manifold before any cut, so a
+creased dilation can never throw a site to the envelope fallback) and
+strip_fabricated — pure mechanism, zero product-policy constants;
+deliverables.py keeps the policy (900 → 614 lines). Nine csg unit pins
+including the open-bore lid. Honest caveat pinned with them: manifold 3.5.2
+tolerated every synthetic self-intersection, so the heal is a contract
+guarantee for the vendor-CAD topology class, not red-before-green. manifold
+has no native offset; minkowski_sum is the noted future dilation. Built in an
+isolated worktree while the full battery ran on main (baseline 1116 green).
+
+**AT 3b — the composites fuse for real.** arch-with-healingcaps and
+arch-with-constructions become TRUE UNIONS: solidify (internal) → union with
+each part posed as a zero-offset exact punch → strip the closure — open-arch
+composites with real manifold seams, no interpenetration walls.
+Volume-proved: the fixture's buried overlap (~4.7mm³) removed exactly; <2%
+of fused centroids read inside the solid vs >20% concatenated. Two honest
+degradations (per-part and whole-composite) fall back to concatenation with
+notes landing per-row as composite_note in both lanes. Real-fleet gates 45,
+fast lane 894.
+
+**AT 4b — every artifact says what it is.** The client's repeated "what is
+this file": a name-shape → sentence catalogue served on the artifact list
+(unknown names honestly undescribed), worn by the download rows and carried
+into the digest's Package files as "name — sentence". Visible after a
+release (the listing is release-gated by design). BFF 664, product 1468.
+
+**AT front 3 research — the boolean-engine plan.**
+docs/engagement/boolean-engine-plan.md: license-verified survey (MeshLib the
+one real contender, paid; OCC-CSG a dormant BREP mismatch; trueform young,
+paid; manifold — in use — Apache-2.0, commercially safe unconditionally) and
+the staged proprietary path: kernel seam + conformance corpus → package the
+clinical open-shell layer as "ArTech CSG" → a measured evaluation gate →
+only then the kernel decision, from-scratch honestly priced at 12–24
+person-months.
