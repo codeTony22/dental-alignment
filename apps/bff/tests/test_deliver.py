@@ -803,6 +803,27 @@ class TestArtifactsDisclose:
         # a full release ships the case-wide files: nothing withheld, nothing held
         assert body["withheld_case_files"] == []
 
+    def test_known_artifacts_carry_their_catalogue_sentence(
+            self, settings, product_root):
+        """§10-AT 4b (the client's repeated "what is this file"): every known
+        artifact shape serves ONE sentence, composed here so the download list
+        and the analysis digest speak identically; an unknown name serves
+        None — the surface renders nothing rather than a guess."""
+        client = self._released(settings, product_root)
+        files = {f["name"]: f for f in client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts").json()["files"]}
+        assert files["neodent-gm-upper.stl"]["description"] == \
+            "the doctor's scan, exactly as uploaded"
+        assert files["neodent-gm-manifest.json"]["description"] == \
+            "the package manifest — files, hashes, the relief record and production notes"
+        assert files["view.html"]["description"] == \
+            "a standalone browser view of this package"
+        assert files["invoice"]["description"] == \
+            "the service invoice for this release"
+        # the per-site aligned cap is not in the suffix table and carries no
+        # scanbody infix — honestly undescribed, never guessed
+        assert files["neodent-gm-4-healingcap-aligned.stl"]["description"] is None
+
     def test_each_listed_file_carries_its_size_and_its_site(
             self, settings, product_root):
         """Client 2026-07-27 #6 ("good UI for ... release of information /

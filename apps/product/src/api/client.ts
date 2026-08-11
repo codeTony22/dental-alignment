@@ -1197,6 +1197,9 @@ export interface ArtifactFile {
   name: string;
   size_bytes: number | null;
   tooth: number | null;
+  /** the served catalogue sentence (§10-AT 4b) — null for a name the server's
+   *  catalogue does not know; the surface renders nothing, never a guess */
+  description?: string | null;
 }
 
 export interface ArtifactsView {

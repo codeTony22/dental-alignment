@@ -1683,6 +1683,11 @@ class ArtifactFile(BaseModel):
     name: str
     size_bytes: Optional[int] = None
     tooth: Optional[int] = None   # None = case-wide (overlay, manifest, jaw scan)
+    # THE ARTIFACT CATALOGUE (§10-AT 4b, the client's repeated "what is this
+    # file"): one served sentence per known artifact shape, composed HERE so the
+    # download list and the analysis digest speak identically. None for a name
+    # this catalogue does not know — the surface renders nothing, never a guess.
+    description: Optional[str] = None
 
 
 class ArtifactsView(BaseModel):
@@ -1736,6 +1741,51 @@ _ARTIFACT_MEDIA = {".stl": "model/stl", ".json": "application/json",
                    ".html": "text/html"}
 
 
+
+
+# name-shape → the sentence (ordered; first match wins). Names are the emit
+# lanes' own stable contracts — a new artifact earns a row here in the same
+# change that starts emitting it.
+_ARTIFACT_SENTENCES: "list[tuple[str, str]]" = [
+    ("-arch-with-healingcaps.stl",
+     "the open arch fused with the aligned library caps — the alignment made solid"),
+    ("-arch-with-constructions.stl",
+     "the open arch fused with the chosen construction parts at their certified poses"),
+    ("-arch-capless.stl",
+     "the open arch with each cap replaced by its exact recess (the 1.8mm inspection dish)"),
+    ("-arch-platform.stl",
+     "the open arch with the shallow platform countersink — the floor showing the gingival offset"),
+    ("-arch-socketless.stl",
+     "preview layer: the arch without its recess faces (the tinted view's base)"),
+    ("-socket-dish.stl",
+     "preview layer: the dish recess surfaces alone, tinted in the preview"),
+    ("-socket-platform.stl",
+     "preview layer: the platform recess surfaces alone, tinted in the preview"),
+    ("-implant.json",
+     "the site's pose record — the certified matrix, identity and provenance"),
+    ("view.html",
+     "a standalone browser view of this package"),
+    ("manifest.json",
+     "the package manifest — files, hashes, the relief record and production notes"),
+    ("-upper.stl", "the doctor's scan, exactly as uploaded"),
+    ("-lower.stl", "the doctor's scan, exactly as uploaded"),
+]
+
+
+def artifact_description(name: str) -> Optional[str]:
+    """The catalogue sentence for a known artifact name-shape, else None. The
+    per-site construction/cap meshes match by their vendor/part infixes below
+    the suffix table; anything unrecognized is honestly undescribed."""
+    for suffix, sentence in _ARTIFACT_SENTENCES:
+        if name.endswith(suffix):
+            return sentence
+    if "-scanbody-" in name and name.endswith(".stl"):
+        return "the construction part at its certified pose, alone"
+    if name.endswith(".png"):
+        return "QC render — the run's own evidence image"
+    return None
+
+
 def _artifact_file(run_dir: Path, name: str, case_id: str,
                    teeth: List[int]) -> ArtifactFile:
     """One listed deliverable with the two facts the delivery surface needs beyond
@@ -1748,6 +1798,7 @@ def _artifact_file(run_dir: Path, name: str, case_id: str,
         name=name,
         size_bytes=(path.stat().st_size if path.is_file() else None),
         tooth=tooth_of_file(name, case_id, teeth),
+        description=artifact_description(name),
     )
 
 
@@ -1889,7 +1940,8 @@ def list_artifacts(case_id: str, request: Request) -> ArtifactsView:
     if session.payment_authorized:
         body, _payment = _invoice_document_for(case, session, run)
         files.append(ArtifactFile(name=INVOICE_ARTIFACT_NAME,
-                                  size_bytes=len(body.encode("utf-8")), tooth=None))
+                                  size_bytes=len(body.encode("utf-8")), tooth=None,
+                                  description="the service invoice for this release"))
     return ArtifactsView(run_id=run.run_id or run.job_id,
                          files=files,
                          withheld_teeth=withheld,

@@ -1302,6 +1302,14 @@ export function DeliverStageView({
                           >
                             {file.name}
                           </button>{" "}
+                          {file.description != null && (
+                            <span
+                              data-role="artifact-description"
+                              className="artifact-group__meta"
+                            >
+                              {file.description}
+                            </span>
+                          )}{" "}
                           <span className="artifact-group__size">
                             {formatBytes(file.size_bytes)}
                           </span>
@@ -1567,7 +1575,10 @@ export function DeliverStageView({
                       {
                         files:
                           artifacts?.kind === "ok"
-                            ? artifacts.data.files.map((f) => f.name)
+                            ? artifacts.data.files.map((f) =>
+                                f.description != null
+                                  ? `${f.name} — ${f.description}`
+                                  : f.name)
                             : undefined,
                         confirmation: detail.session.confirmation,
                         detection: detail.detection,
