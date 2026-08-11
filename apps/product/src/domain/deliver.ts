@@ -1485,10 +1485,20 @@ export function previewTabs(
           : [{ filename: platform, role: "arch" }],
     });
   }
-  // (§10-AS.19: the closed-model artifact and its tab are RETIRED — client
-  // 2026-08-10, "I do not need a model stl — just work with open arch". The
-  // solidify survives only inside the worker's boolean; old packages that
-  // still carry a -model-closed.stl get no tab pointing at it.)
+  // ARTIFACT 6 RETURNS (client 2026-08-11: "we lose the artifact 6 we had
+  // before") — §10-AS.19's retirement reversed by the client's own ask; the
+  // open-arch doctrine still governs tabs 1-5. Appears exactly when the run
+  // built it.
+  const modelClosed = packageFiles.find((f) => f.endsWith("-model-closed.stl"));
+  if (modelClosed !== undefined) {
+    tabs.push({
+      key: "model-closed",
+      label: "6 · Closed model",
+      filename: modelClosed,
+      tooth: null,
+      layers: [{ filename: modelClosed, role: "arch" }],
+    });
+  }
   return tabs;
 }
 

@@ -164,6 +164,7 @@ class TestRunOnTheRealTree:
             "neodent-gm-arch-socketless.stl",
             "neodent-gm-socket-dish.stl",
             "neodent-gm-socket-platform.stl",
+            "neodent-gm-model-closed.stl",
         }
         for name in summary["package_files"]:
             assert (out_dir / name).is_file(), name

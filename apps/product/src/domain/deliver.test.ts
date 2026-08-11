@@ -1541,6 +1541,17 @@ describe("previewTabs — the demo's three tabs, matched onto the run's own pack
     expect(without.map((t) => t.key)).toEqual(["arch-alone"]);
   });
 
+  it("the closed model rides tab six exactly when the run built it (restored 2026-08-11)", () => {
+    // "we lose the artifact 6 we had before" — §10-AS.19's retirement reversed
+    // by the client's own ask; absent on packages that never built it.
+    const withModel = previewTabs(
+      ["case-a-arch-capless.stl", "case-a-model-closed.stl"], [19]);
+    expect(withModel.map((t) => t.key)).toEqual(["arch-alone", "model-closed"]);
+    expect(withModel[1]!.label).toBe("6 · Closed model");
+    const without = previewTabs(["case-a-arch-capless.stl"], [19]);
+    expect(without.map((t) => t.key)).toEqual(["arch-alone"]);
+  });
+
   it("a tab whose file the package does not name is simply absent — no placeholder", () => {
     const tabs = previewTabs(["case-a-arch-with-healingcaps.stl"], [19]);
     expect(tabs).toEqual([

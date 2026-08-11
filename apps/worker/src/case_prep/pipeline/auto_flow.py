@@ -34,6 +34,7 @@ from case_prep.domain.poses import Retention
 from case_prep.pipeline.deliverables import (arch_with_parts_fused,
                                               cap_imprint_holes,
                                               cap_imprint_parts,
+                                              closed_model_with_recesses,
                                               remove_cap_region)
 from case_prep.pipeline.final_product import (DEFAULT_GINGIVAL_OFFSET_MM,
                                               DEFAULT_SCREW_RADIUS_MM,
@@ -2542,6 +2543,25 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                 (_P(out_dir) / f"{case_id}-socket-platform.stl").write_bytes(
                     socket_platform.export(file_type="stl"))
                 _layer_names.append(f"{case_id}-socket-platform.stl")
+
+            # ARTIFACT 6 RETURNS (client 2026-08-11): the closed model
+            _model_closed, _model_notes = closed_model_with_recesses(
+                scan, imprint_sites)
+            if _model_closed is not None:
+                (_P(out_dir) / f"{case_id}-model-closed.stl").write_bytes(
+                    _model_closed.export(file_type="stl"))
+                _layer_names.append(f"{case_id}-model-closed.stl")
+            for _note in _model_notes:
+                if _note.startswith("site "):
+                    _teeth = [package_sites[
+                        int(_note.split(":", 1)[0].split()[1]) - 1][0].tooth]
+                else:
+                    _teeth = [sp.tooth for sp, _t, _c in package_sites]
+                for _tooth in _teeth:
+                    _target = _rows_by_tooth_qc.get(_tooth)
+                    if _target is not None:
+                        _target.setdefault("production", {})[
+                            "model_note"] = _note
             cons_posed = [(final_products[sp.tooth] if final_products else cons, sp.pose_matrix)
                           for sp, _t, cons in package_sites]
             arch_cons, cons_composite_notes = arch_with_parts_fused(

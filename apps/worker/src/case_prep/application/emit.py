@@ -55,7 +55,8 @@ from case_prep.pipeline.auto_flow import _crowns_frame, _relief_summary
 from case_prep.pipeline.auto_flow import delivered_channel_offsets
 from case_prep.pipeline.deliverables import (arch_with_parts_fused,
                                              cap_imprint_holes,
-                                             cap_imprint_parts)
+                                             cap_imprint_parts,
+                                             closed_model_with_recesses)
 from case_prep.pipeline.final_product import (DEFAULT_SCREW_RADIUS_MM,
                                               build_final_product,
                                               resolve_gingival_offset)
@@ -337,6 +338,22 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
         pth = out_dir / f"{case.id}-socket-platform.stl"
         socket_platform.export(pth)
         layer_names.append(pth.name)
+    # ARTIFACT 6 RETURNS (client 2026-08-11): the closed model, base and all
+    model_closed, model_notes = closed_model_with_recesses(scan, imprint_sites)
+    if model_closed is not None:
+        pth = out_dir / f"{case.id}-model-closed.stl"
+        model_closed.export(pth)
+        layer_names.append(pth.name)
+    for note in model_notes:
+        if note.startswith("site "):
+            teeth = [package_sites[
+                int(note.split(":", 1)[0].split()[1]) - 1][0].tooth]
+        else:
+            teeth = [sp.tooth for sp, _t, _cons in package_sites]
+        for tooth in teeth:
+            rows_by_tooth[tooth].setdefault("production", {})[
+                "model_note"] = note
+
     cons_posed = [(final_products[sp.tooth], sp.pose_matrix)
                   for sp, _t, _cons in package_sites]
     arch_cons_path = out_dir / f"{case.id}-arch-with-constructions.stl"

@@ -702,3 +702,40 @@ def _press_carve(arch: trimesh.Trimesh,
                                  process=False)
         socket.remove_unreferenced_vertices()
     return out, socket, notes
+
+
+def closed_model_with_recesses(scan: trimesh.Trimesh,
+                               sites: Sequence[Tuple[trimesh.Trimesh,
+                                                     np.ndarray, float,
+                                                     float]]
+                               ) -> Tuple[Optional[trimesh.Trimesh], list]:
+    """ARTIFACT 6 RETURNS (client 2026-08-11: "we lose the artifact 6 we had
+    before"), rebuilt thin on the csg machinery: the solidified lab model —
+    base kept, this is its whole point — with every site's EXACT cap + offset
+    cut out by one manifold difference. §10-AS.19's retirement is reversed by
+    the client's own ask; §10-AS.16's open-arch doctrine still governs every
+    OTHER artifact. FAIL-OPEN as a whole: additive artifact, so any refusal
+    returns (None, [why]) and the package ships without it."""
+    try:
+        solid = solidified_shell_cached(scan)
+        tools = []
+        notes: list = []
+        for index, (template, pose, offset_mm, rim_radius_mm) in enumerate(
+                sites, 1):
+            pose = np.asarray(pose, float)
+            try:
+                tools.append(exact_cap_punch(template, float(offset_mm), pose))
+            except Exception as exc:  # noqa: BLE001 — the envelope stands in
+                zs_p, prof_p = _envelope_profile(template, float(offset_mm))
+                tools.append(punch_solid(zs_p, prof_p, float(zs_p[0]), pose))
+                notes.append(f"site {index}: the exact cap could not be cut "
+                             f"in the closed model ({exc}) — its envelope "
+                             f"was used instead")
+        import trimesh.boolean
+        model = trimesh.boolean.difference([solid] + tools, engine="manifold")
+        if not model.is_watertight:
+            raise ValueError("the boolean result is not watertight")
+        return model, notes
+    except Exception as exc:  # noqa: BLE001 — honest absence
+        return None, [f"the closed model could not be built ({exc}) — "
+                      f"the package ships without it"]

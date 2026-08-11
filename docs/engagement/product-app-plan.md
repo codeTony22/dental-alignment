@@ -2762,3 +2762,33 @@ the staged proprietary path: kernel seam + conformance corpus → package the
 clinical open-shell layer as "ArTech CSG" → a measured evaluation gate →
 only then the kernel decision, from-scratch honestly priced at 12–24
 person-months.
+
+**AT front 1 correction — the isolation must not cut the cap's own recess
+(client 2026-08-11 evening: "Scanned cap now has a big hole in it … cut the
+gum or soft tissue out of the view. Not the healing cap").** The band test
+alone dropped the SCANNED screw-recess interior — real cap surface whose
+template counterpart is the bore the scanner cannot see into, so no template
+point sits within 0.6mm of it (the registry's own note had named this class:
+"points the template bore cannot cover"). `cropCapIsolation` replaces the
+raw band crop: within a core radius (catalog/measured rim − 1.0mm, floor
+1.2mm) triangles are KEPT UNCONDITIONALLY — the cap's footprint is already
+established by the width cut, and inside it everything belongs to the cap;
+the template band only trims the periphery, which is exactly where tissue
+shoulders in. Live: tooth 3's ring-with-a-hole became the full cap (38,731
+triangles). Viewer 150, product 1468.
+
+**AT 4-r — the closed model returns as artifact 6, exact-cut (client
+2026-08-11: "This is wrong & we lose the artifact 6 we had before — they
+all need to improve").** Reverses §10-AS.19's retirement, by the same
+authority that ordered it. The artifact is rebuilt on the AT stack rather
+than restored from the demo lane: `closed_model_with_recesses` (deliverables)
+= the solidified arch MINUS the exact-cap punches at zero extra clearance
+beyond each site's gingival offset — no envelope, no strip (this artifact IS
+the closed printable form), watertight-checked, fail-open per site (envelope
+punch with a note) and fail-open whole (absent with the reason on every
+row). Both lanes emit `{case}-model-closed.stl`; the demo-fidelity extras
+pin, the Delivery tab ("6 · Closed model") and the served catalogue sentence
+returned with it. Artifacts 1–5 remain open-arch — §10-AS.16's doctrine
+governs them unchanged; the closed model is the one deliberate exception,
+and the memory note now records both rulings. Worker narrow 45, fast 894,
+product 1469, bff deliver 116.
