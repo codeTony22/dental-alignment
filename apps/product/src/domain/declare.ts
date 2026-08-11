@@ -471,6 +471,15 @@ export function scanPaneRadiusMm(
  * effective variant (declared, else suggested) serves BOTH dimensions; null
  * keeps the spherical band — the pane never claims a cap it cannot measure.
  */
+/**
+ * THE TEMPLATE-MATCH BAND (§10-AT front 1): how far a scan vertex may sit from
+ * the POSED library cap's surface and still count as "the surface at the cap".
+ * The site's relief (0.2) + the fleet's seat deviation p90 (~0.36, §10-AR.3's
+ * measurement) + tessellation sampling slack. Display-only, like every pane
+ * bound — §10-I.3 stands: no client band ever reaches the aligner.
+ */
+export const CAP_MATCH_BAND_MM = 0.6;
+
 export function scanPaneCapCylinder(
   detail: CaseSessionDetail,
   declaredVariant: string | null = null,

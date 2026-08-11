@@ -47,8 +47,11 @@ import {
   computePartFrame,
   contactsGradientCss,
   contactsTickLabels,
+  buildSurfaceGrid,
   cropTrianglesInCylinder,
   cropTrianglesNear,
+  cropTrianglesNearSurface,
+  posePositions,
   deviationGradientCss,
   deviationTickLabels,
   loadStlPositions,
@@ -75,6 +78,7 @@ import {
   indicesFrom,
   partCameraFrame,
   unifiedPaneRadiusMm,
+  CAP_MATCH_BAND_MM,
   scanPaneCapCylinder,
   scanPaneRadiusMm,
   positionsFrom,
@@ -116,9 +120,19 @@ export function scanPaneCaption(
 }
 
 /** The cap-only crop's own words (§10-AS.15) — no band number: the crop is the
- *  cap's cylinder, and printing a radius would misread as a display band. */
+ *  cap's cylinder, and printing a radius would misread as a display band.
+ *  Since §10-AT front 1 this caption belongs to the TEMPLATE-MATCHED rung —
+ *  the strongest isolation claim the pane can make. */
 export function capOnlyPaneCaption(tooth: number | null, triangles: number): string {
   const measured = `${triangles.toLocaleString()} triangles · the healing cap only`;
+  return tooth === null ? measured : `Tooth ${tooth} · ${measured}`;
+}
+
+/** The WIDTH-CUT rung's words (§10-AT front 1): a cylinder at the cap's own
+ *  diameter, honest before any pose exists — the pane never claims a match it
+ *  has not measured. */
+export function capWidthPaneCaption(tooth: number | null, triangles: number): string {
+  const measured = `${triangles.toLocaleString()} triangles · the healing cap · by width`;
   return tooth === null ? measured : `Tooth ${tooth} · ${measured}`;
 }
 
@@ -1324,17 +1338,42 @@ export function useSitePaneScene(
     posePresented !== null && posePresented.axis.length === 3
       ? [posePresented.axis[0]!, posePresented.axis[1]!, posePresented.axis[2]!]
       : occlusal;
+  // TEMPLATE-MATCHED ISOLATION (§10-AT front 1, client 2026-08-10: "just take
+  // out the mesh of the healing cap"): once a measured pose stands, the crop
+  // keeps only triangles within the band of the POSED library cap's surface —
+  // tissue pressed against the cap IS the surface at the cap and survives;
+  // tissue shouldering away drops. The ladder is honest and the caption says
+  // which rung is active: matched → width cut (no pose yet) → spherical band
+  // (no variant dimensions).
+  const posedTemplate = useMemo(() => {
+    if (partPositions === null || posePresented === null) return null;
+    return posePositions(partPositions, posePresented);
+  }, [partPositions, posePresented]);
+  const templateGrid = useMemo(
+    () => (posedTemplate !== null ? buildSurfaceGrid(posedTemplate) : null),
+    [posedTemplate],
+  );
   const capOnly = capCylinder !== null && cropAxis !== null;
+  const capMatched = capOnly && templateGrid !== null;
   const scanCrop = useMemo(() => {
     if (scanPositions === null || siteCenter === null) return null;
     if (capCylinder !== null && cropAxis !== null) {
-      return cropTrianglesInCylinder(scanPositions, siteCenter, cropAxis,
-                                     capCylinder.radiusMm, capCylinder.aboveMm,
-                                     capCylinder.belowMm);
+      const cyl = cropTrianglesInCylinder(scanPositions, siteCenter, cropAxis,
+                                          capCylinder.radiusMm,
+                                          capCylinder.aboveMm,
+                                          capCylinder.belowMm);
+      if (templateGrid !== null) {
+        const matched = cropTrianglesNearSurface(cyl, templateGrid,
+                                                 CAP_MATCH_BAND_MM);
+        // a pose so wrong the band catches nothing falls back to the width
+        // cut rather than blanking the pane — absence would read as "no scan"
+        if (matched.length > 0) return matched;
+      }
+      return cyl;
     }
     return cropTrianglesNear(scanPositions, siteCenter, scanRadiusMm);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scanPositions, siteCenter, scanRadiusMm,
+  }, [scanPositions, siteCenter, scanRadiusMm, templateGrid,
       JSON.stringify(capCylinder), JSON.stringify(cropAxis)]);
 
   // CAP-CROP COLOUR (§10-AO, client 2026-08-06): the SAME cropped mesh feeds pane
@@ -1472,10 +1511,12 @@ export function useSitePaneScene(
     scanEmpty: scanCrop !== null && scanCrop.length === 0,
     scanCaption:
       scanCrop !== null && scanCrop.length > 0
-        ? (capOnly
+        ? (capMatched
             ? capOnlyPaneCaption(site?.tooth ?? null, triangleCount(scanCrop))
-            : scanPaneCaption(site?.tooth ?? null, triangleCount(scanCrop),
-                              scanRadiusMm))
+            : capOnly
+              ? capWidthPaneCaption(site?.tooth ?? null, triangleCount(scanCrop))
+              : scanPaneCaption(site?.tooth ?? null, triangleCount(scanCrop),
+                                scanRadiusMm))
         : null,
     layers,
     onToggleLayer,

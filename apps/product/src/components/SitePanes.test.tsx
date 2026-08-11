@@ -39,6 +39,7 @@ import {
   paneColumns,
   planPaneLayout,
   capOnlyPaneCaption,
+  capWidthPaneCaption,
   scanPaneCaption,
   siteAxisLabel,
   useSitePaneScene,
@@ -476,6 +477,15 @@ describe("capOnlyPaneCaption — the cap-only crop's words (§10-AS.15)", () => 
       "Tooth 20 · 41,091 triangles · the healing cap only",
     );
     expect(capOnlyPaneCaption(null, 12)).toBe("12 triangles · the healing cap only");
+  });
+});
+
+describe("capWidthPaneCaption — the width rung says it is not a match (§10-AT front 1)", () => {
+  it("carries the honest qualifier before a pose exists", () => {
+    expect(capWidthPaneCaption(20, 31550)).toBe(
+      "Tooth 20 · 31,550 triangles · the healing cap · by width",
+    );
+    expect(capWidthPaneCaption(null, 9)).toBe("9 triangles · the healing cap · by width");
   });
 });
 

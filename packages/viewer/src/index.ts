@@ -78,6 +78,12 @@ export {
   triangleCount,
 } from "./viewer/meshCrop";
 export {
+  buildSurfaceGrid,
+  cropTrianglesNearSurface,
+  posePositions,
+} from "./viewer/meshDistance";
+export type { SurfaceGrid } from "./viewer/meshDistance";
+export {
   CONTACTS_MAX_MM,
   UNMEASURED_COLOR_HEX,
   buildDeviationColors,

@@ -2685,3 +2685,43 @@ and AS.16 strips the closure from every artifact. Old packages that still
 carry the file get no tab pointing at it. The standing doctrine (open arch
 always, exact cap + offset only, solidify internal-only) is saved to the
 assistant's persistent memory as asked, beside this ledger.
+
+## §10-AT — the four-front plan: isolation, alignment, booleans, deliverables (2026-08-11)
+
+The client's morning direction, planned and approved as four fronts (the plan
+file's decisions: template-matched isolation; true-union composites;
+operator tooling leads the alignment work). Executed as slices:
+
+**AT front 0 — the Numbers & log panel anchors to the toolbar row.** The panel
+anchored right:0 to its BUTTON and grew 400px leftward — off-screen since
+§10-AN moved the button left ("comes up completely cut off"). The toolbar row
+is now the containing block and the panel spans min(400px, the row) — a box
+that is always on-glass. Verified at the client's own width.
+
+**AT A1 — one observation cannot cross-check itself, and the drawer says so.**
+The sealed fact (cross_checked: false, residual null) rendered as honest
+silence — which read as "fine" through four looping one-pair fits on tooth 20
+(−120°/+8°/+1°/−2°). `fitCrossCheckCaution` composes the standing caution from
+the sealed fact alone; both fit widgets wear it in the established amber.
+Silent for cross-checked fits and for rows predating the fact.
+
+**AT A2 — buried codes speak on the rotation row itself.** Code band below its
+gates AND rotation standing on no evidence → the rotation metric's note names
+the connection and the two honest paths ("place 2+ point pairs on visible
+features, or re-capture chairside"). Composed once in the acceptance registry;
+workspace numbers, digest and Delivery inherit the sentence. Recess-fallback
+sites keep their own words. Live on tooth 20's row.
+
+**AT front 1 — template-matched isolation: pane 2 keeps the surface AT the
+cap.** Once a measured pose stands (preview's held pose or the seated pose),
+the crop keeps only triangles within CAP_MATCH_BAND_MM (0.6 = relief + seat
+deviation p90 + tessellation slack) of the POSED library cap's surface —
+`buildSurfaceGrid`/`cropTrianglesNearSurface` (viewer meshDistance, soup
+vertices + centroids on a grid hash, nothing moved, nothing sliced) over
+`posePositions` (the ghost math's own basis). The ladder is honest and the
+caption names the rung: "the healing cap only" (matched) → "the healing cap ·
+by width" (no pose yet) → the spherical band (no dimensions); a pose so wrong
+the band catches nothing falls back to the width cut rather than blanking the
+pane. Measured on tooth 20: 31,550 (width) → 16,651 triangles (matched) — the
+tissue shoulder inside the cylinder was nearly half the crop. Viewer 148,
+product 1468, typecheck clean.
