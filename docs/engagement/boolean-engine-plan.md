@@ -1,4 +1,4 @@
-# The boolean engine: survey and proprietary plan
+# The boolean engine: first principles, the industry, and the implementation plan
 
 2026-08-11 · research + engineering plan, requested by the client alongside §10-AT
 front 3 ("booleans"). Two questions answered in order: **(a)** what exists in the
@@ -14,6 +14,86 @@ ships. Any engine that cannot express that choreography is disqualified no
 matter its license.
 
 ---
+
+## 0 · First principles — what the operation is, and where the hardness lives
+
+**A boolean is a statement about volumes, not meshes.** Solid A minus solid B is
+defined pointwise: a point is in the result iff it is in A and not in B. A mesh
+is only the BOUNDARY of a volume. So every mesh boolean, in every engine ever
+shipped, is the same five moves:
+
+1. find the intersection curves where ∂A crosses ∂B;
+2. split the faces of both meshes along those curves;
+3. classify every resulting patch — inside, outside, or on the other solid;
+4. keep patches per the operation's truth table (difference keeps A-outside-B
+   and B-inside-A flipped; union keeps both outsides; intersection both insides);
+5. stitch the kept patches into a closed, manifold boundary again.
+
+All the difficulty in fifty years of this field lives in moves 1 and 3, for one
+reason: **floating-point geometry lies near degeneracy**. Two faces that are
+exactly coplanar (our bore lids on machined floors), edges that graze
+(a floor clip at exactly the cap's base), triangles a scanner emitted with
+near-zero area — a naive implementation gets a predicate wrong by 1e-16 and the
+classification flips, and the output is a non-manifold shred. The industry has
+exactly four families of answer:
+
+| family | idea | cost | exemplars |
+|---|---|---|---|
+| **Exact arithmetic / arrangements** | evaluate every predicate in rational or expansion arithmetic so it can never lie; degeneracy handled by symbolic perturbation | slow; enormous implementation burden; the gold standard for correctness | CGAL Nef & corefinement, Blender's exact solver (Zhou 2016), trueform |
+| **ε-consistent floating point with topological guarantees** | track error intervals, weld within ε, and construct the output so manifoldness is guaranteed by the algorithm, not checked after | fast, parallel, robust in practice; ε is a modelling admission | **manifold (ours)**, Smith & Dodgson's method it descends from |
+| **Plane-based / BSP** | represent geometry as plane arrangements; booleans become logic on half-spaces | exact for few planes; wrong tool for 400k-triangle curved scans | QuickCSG, classic CSG kernels |
+| **Volumetric / SDF** | sample both solids into signed-distance grids; boolean = per-voxel min/max; re-extract a surface | unconditionally robust; RESOLUTION-LIMITED — the exact cap surface is resampled away | OpenVDB, Meshmixer-era tools, MeshLib's voxel path |
+
+**How the dental industry itself does it:** the big CAD suites (3Shape, exocad)
+embed licensed BREP/hybrid kernels or long-lived proprietary mesh kernels, and
+lab-side mesh tools historically used the volumetric route for repair because it
+cannot fail. Nobody publishes an open-shell clinical boolean; the closest
+published primitive (MCUT's open-surface cuts) is LGPL/commercial-dual.
+
+**Our requirements, derived from the product's goals rather than from any
+library** (each traces to a shipped behaviour or a client ruling):
+
+1. **Difference** — the recess: the exact cap + gingival offset out of the arch
+   (§10-AS.14 "we should not be inferring anything here").
+2. **Union** — fused composites and punch self-healing (§10-AT 3b).
+3. **Intersection** — the visible-depth floor clip, only ever shallowing.
+4. **Offset/dilation** — the gingival offset itself, today vertex-normal + heal,
+   tomorrow Minkowski-sphere.
+5. **On OPEN SHELLS against closed CAD parts** — the defining constraint. Scans
+   are boundaries of nothing; caps are watertight but bore-open, coplanar-heavy,
+   feature-dense.
+6. **Never a dead package** — every operation carries a fallback ladder with a
+   manifest note (the §10 doctrine of honest degradation).
+7. **The claim must be exact where it is clinical** — the cut surface is the
+   cap's own; ε lives in welding, never in the tool's shape.
+8. **Deterministic and attestable** — same inputs, same artifact, hashable into
+   the manifest the confirmation seals.
+9. **Interactive re-emit** — seconds, not minutes, on a 400k-triangle arch
+   (§10-AC's ~1s promise stretched, not broken).
+
+**The open-shell reduction — our own first principle.** Set theory needs
+volumes, and a scan has none. Our answer (invented here, now in
+`pipeline/csg.py`) is a reduction we can state precisely, and it is the thing
+worth owning:
+
+> **The shell-boolean contract.** For an open shell S and solid tools T₁…Tₙ,
+> choose a canonical closure S̄ (skirt + base + lids). Compute the solid result
+> R = S̄ op T₁ … Tₙ. Ship ∂R **restricted to** (surfaces of S) ∪ (surfaces of
+> the tools) — the closure is scaffolding and never ships.
+>
+> Properties the corpus must hold forever: **locality** (far from every tool,
+> the shipped surface is bit-identical to the scan); **conservativity** (no
+> shipped triangle originates from the closure); **clinical exactness** (every
+> shipped cut triangle lies on a tool's true surface).
+
+Everything in Part III is an improvement to how faithfully and robustly we
+implement this contract; Part II is what the rest of the world offers us to
+build it on.
+
+---
+
+# Part II — what exists, and what it may legally do
+
 
 ## 1 · What ArTech runs today
 
@@ -249,6 +329,78 @@ rather than on a rebuilt commodity, and the kernel question converts from a
 blocking bet into a swappable, measurable decision.
 
 ---
+
+# Part III — the implementation plan: improving OUR boolean operations
+
+Derived from the contract's properties and this week's measured pain, ordered by
+leverage. Each workstream names its acceptance criterion; all of them run on the
+Stage-0 conformance corpus below, and nothing ships without the fleet battery
+and `make rehearse`.
+
+### W1 · Provenance replaces proximity in the strip (highest leverage)
+
+**Measured today:** `strip_fabricated` decides "fabricated vs real" by distance
+to a 150k-point sample of the original scan (0.35 mm) — it mis-stripped coarse
+fixtures until the sampling was densified, and its threshold is a modelling
+admission. **Verified this session:** the manifold Python binding exposes
+`Manifold.original_id` / `as_original` / `reserve_ids` — face PROVENANCE that
+survives booleans. Tag the closure, the scan surface, and each tool with
+reserved ids before the cut; after it, keep faces whose provenance is scan or
+tool, drop closure faces **by identity, not by distance**. The contract's
+conservativity property becomes exact rather than sampled.
+*Acceptance:* the corpus's strip pins pass with the distance fallback deleted;
+locality becomes bit-identity on untouched regions (hash-compared).
+
+### W2 · Minkowski-sphere offset replaces vertex-normal dilation
+
+The gingival offset is clinical; its implementation today can self-intersect at
+concave creases and leans on the union-with-self heal. `minkowski_sum` with an
+icosphere of radius = the offset is a true morphological dilation that cannot
+self-intersect by construction. The heal remains as a belt-and-braces wrapper.
+*Acceptance:* every catalog cap × offset ∈ {0.1..0.5} yields a watertight punch
+with no heal fired (log the heal's firings; corpus asserts zero on catalog
+parts); cap6030 stays the sentinel.
+
+### W3 · The degeneracy battery
+
+The corpus gains the cases that break naive engines, because they are OUR
+everyday geometry: exactly-coplanar bore lid on a machined floor; the floor
+clip at exactly the cap's base plane; duplicate/zero-area scan triangles
+(pre-welded, with a logged count); two adjacent sites whose punches touch;
+a punch tangent to the skirt. Each is a named corpus case with the expected
+manifold-and-contract outcome.
+*Acceptance:* all pass on the current kernel; any future kernel candidate must
+pass the same battery to enter Stage 2.
+
+### W4 · Determinism and attestation
+
+Same inputs must yield the same artifact bytes (the confirmation seals hashes).
+Pin the environment (worker deps frozen — closes the standing unpinned-env
+risk); assert corpus outputs are hash-stable across two runs and across
+`-n auto` workers; if the kernel introduces nondeterminism, canonicalize
+(sorted faces, welded order) before export.
+*Acceptance:* a corpus job runs the full artifact set twice and diffs hashes.
+
+### W5 · Open-shell robustness
+
+The solidify walker assumes clean boundary cycles; a figure-8 junction or a
+non-manifold scan edge would confuse it. Harden: boundary extraction via edge
+multiplicity with explicit junction handling, refusal notes naming the loop;
+multi-loop scans covered by corpus cases built from real-fleet boundary shapes.
+*Acceptance:* every fleet scan solidifies with loop counts logged; a synthetic
+figure-8 refuses with its named note rather than mis-skirting.
+
+### W6 · The performance budget
+
+Emit currently pays one solidify (cached) + up to three cuts. Budget: ≤ 5 s
+added per emit on the fleet's largest arch, measured in the corpus as a
+regression bound; batched punches stay one difference call; preview meshes may
+decimate, downloads never.
+*Acceptance:* a timed corpus case fails if the budget is exceeded.
+
+The strategic stages below stand as the frame around these workstreams: W1–W6
+are Stage 1's concrete content; Stage 0 builds the corpus they run on; Stages
+2–3 remain the measured kernel decision.
 
 ## 6 · The staged plan
 
