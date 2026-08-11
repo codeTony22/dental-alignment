@@ -1573,6 +1573,29 @@ describe("scanPaneRadiusMm — the cap-tight display band", () => {
     expect(scanPaneCapCylinder(caseSessionDetail(), "5020", null)).toBeNull();
   });
 
+  it("matches an ARCHIVED declaration by its full id (client 2026-08-10, tooth 3's 4.7mm gum window)", () => {
+    // superseded rows serve id "superseded-…--6030" but variant "6030"; a site
+    // declared on the archive's own id fell through BOTH matchers to the
+    // widest-rim fallback — the very gum window the cap-only crop exists to end
+    const archived = caseSessionDetail({
+      catalog: {
+        groups: [{
+          model: "conical-4x4",
+          variants: [
+            { id: "superseded-2026-07-13--6030", variant: "6030",
+              label: "6030", rim_diameter_mm: 6.2, height_mm: 5.4,
+              flags: ["superseded"] },
+          ],
+        }],
+        constructions: [],
+      },
+    });
+    expect(scanPaneRadiusMm(archived, "superseded-2026-07-13--6030"))
+      .toBeCloseTo(3.7, 5);
+    expect(scanPaneCapCylinder(archived, "superseded-2026-07-13--6030", null))
+      .toEqual({ radiusMm: 3.5, aboveMm: 1.5, belowMm: 6.9 });
+  });
+
   it("falls back to the standing band when the catalog serves no dimensions", () => {
     expect(scanPaneRadiusMm(caseSessionDetail())).toBe(11);
   });

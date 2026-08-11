@@ -443,7 +443,12 @@ export function scanPaneRadiusMm(
       const dia = record["rim_diameter_mm"];
       if (typeof dia !== "number" || !Number.isFinite(dia)) continue;
       diameters.push(dia);
-      if (target !== null && record["variant"] === target) {
+      // by id OR variant code: an ARCHIVED declaration carries the full
+      // "superseded-…--NNNN" id while the row's variant field is the bare
+      // code — matching only the code sent archived sites to the widest-rim
+      // fallback (client 2026-08-10, tooth 3's 4.7mm gum window)
+      if (target !== null
+          && (record["variant"] === target || record["id"] === target)) {
         declaredDia = dia;
       }
     }
@@ -476,7 +481,8 @@ export function scanPaneCapCylinder(
   for (const group of declarableGroups(detail)) {
     for (const row of group.variants ?? []) {
       const record = row as Record<string, unknown>;
-      if (record["variant"] !== target) continue;
+      // id OR variant code — archived declarations carry the full id
+      if (record["variant"] !== target && record["id"] !== target) continue;
       const dia = record["rim_diameter_mm"];
       const height = record["height_mm"];
       if (typeof dia !== "number" || !Number.isFinite(dia)) return null;
