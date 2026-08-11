@@ -43,7 +43,7 @@ import {
   useSitePaneScene,
   type SitePanesViewProps,
 } from "./SitePanes";
-import { armedViewerClassName, paletteHex } from "viewer";
+import { armedViewerClassName, capScanHex, paletteHex } from "viewer";
 import { newPairDraft, paneArming, withPick } from "../domain/adjust";
 import type { PreviewPose } from "../api/client";
 import { caseSessionDetail, sitePreviewPayload, siteView } from "../testing/fixtures";
@@ -604,15 +604,14 @@ describe("useSitePaneScene — the cap-crop layers (§10-AO)", () => {
     return JSON.parse(decodeURIComponent(match![1]!));
   }
 
-  it("panes 2 and 3's scan layers both wear the scan's own tan — one mesh, one colour", () => {
-    // §10-AS.5 (client 2026-08-10, over a Delivery screenshot: "this should be
-    // the color of the scan panels in the middle in adjustment and alignment
-    // pages") — superseding §10-AO's bone-white. The binding is to PALETTE.arch
-    // ITSELF, not a matching copy: retune the scan tone and the panes follow.
+  it("panes 2 and 3's scan layers both wear capScanHex — one mesh, one colour", () => {
     const html = renderToStaticMarkup(<LayersProbe />);
     const layers = layersOf(html);
-    expect(layers.scan[0]!.swatch).toBe(paletteHex("arch"));
-    expect(layers.union[0]!.swatch).toBe(paletteHex("arch"));
+    expect(layers.scan[0]!.swatch).toBe(capScanHex());
+    expect(layers.union[0]!.swatch).toBe(capScanHex());
+    // never the whole-arch tan those layers used to share with the arch surfaces
+    expect(layers.scan[0]!.swatch).not.toBe(paletteHex("arch"));
+    expect(layers.union[0]!.swatch).not.toBe(paletteHex("arch"));
   });
 
   it("the library pane's part layer is untouched — still the cap-part green", () => {

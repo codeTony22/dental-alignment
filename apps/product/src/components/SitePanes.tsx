@@ -34,12 +34,14 @@ import {
   type ReactNode,
 } from "react";
 import {
+  CAP_SCAN_COLOR,
   CONTACTS_MAX_MM,
   OrbitLinkGroup,
   PALETTE,
   UNMEASURED_COLOR_HEX,
   VerifyViewer,
   buildScaleColors,
+  capScanHex,
   clampNoteFor,
   computeAnatomyFrame,
   computePartFrame,
@@ -1291,16 +1293,13 @@ export function useSitePaneScene(
     return cropTrianglesNear(scanPositions, siteCenter, scanRadiusMm);
   }, [scanPositions, siteCenter, scanRadiusMm]);
 
-  // CAP-CROP COLOUR (§10-AS.5, client 2026-08-10 over a Delivery screenshot:
-  // "this should be the color of the scan panels in the middle") — the SAME
-  // cropped mesh feeds pane 2's scan layer AND the union pane's scan underlay
-  // below: one mesh, one colour, and that colour is PALETTE.arch ITSELF so the
-  // panes and the Delivery previews can never drift apart. Supersedes §10-AO's
-  // bone-white.
+  // CAP-CROP COLOUR (§10-AO, client 2026-08-06): the SAME cropped mesh feeds pane
+  // 2's scan layer AND the union pane's scan underlay below — one mesh, one colour,
+  // never PALETTE.arch (the whole-arch tan those surfaces keep).
   const scanGeometry: VerifyLayerGeometry | null = useMemo(
     () =>
       scanCrop && scanCrop.length > 0
-        ? { positions: scanCrop, color: PALETTE.arch }
+        ? { positions: scanCrop, color: CAP_SCAN_COLOR }
         : null,
     [scanCrop],
   );
@@ -1371,7 +1370,7 @@ export function useSitePaneScene(
       {
         id: "scan",
         label: "scanned cap",
-        swatch: paletteHex("arch"),
+        swatch: capScanHex(),
         ...toggleOf("scan", "scan"),
         available: scanGeometry !== null,
       },
@@ -1380,7 +1379,7 @@ export function useSitePaneScene(
       {
         id: "scan",
         label: "scan",
-        swatch: paletteHex("arch"),
+        swatch: capScanHex(),
         ...toggleOf("union", "scan"),
         available: scanGeometry !== null,
       },
