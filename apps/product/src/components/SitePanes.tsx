@@ -48,9 +48,9 @@ import {
   contactsGradientCss,
   contactsTickLabels,
   buildSurfaceGrid,
+  cropCapIsolation,
   cropTrianglesInCylinder,
   cropTrianglesNear,
-  cropTrianglesNearSurface,
   posePositions,
   deviationGradientCss,
   deviationTickLabels,
@@ -1363,8 +1363,14 @@ export function useSitePaneScene(
                                           capCylinder.aboveMm,
                                           capCylinder.belowMm);
       if (templateGrid !== null) {
-        const matched = cropTrianglesNearSurface(cyl, templateGrid,
-                                                 CAP_MATCH_BAND_MM);
+        // the CORE always survives (client 2026-08-11: "a big hole in it —
+        // cut the gum out of the view, NOT the healing cap"): the scanned
+        // screw-recess void has no template counterpart within any honest
+        // band, so template distance only trims the PERIPHERY; everything
+        // within the rim minus a wall's width is the cap by construction
+        const matched = cropCapIsolation(
+          cyl, templateGrid, CAP_MATCH_BAND_MM, siteCenter, cropAxis,
+          Math.max(capCylinder.radiusMm - 1.0, 1.2));
         // a pose so wrong the band catches nothing falls back to the width
         // cut rather than blanking the pane — absence would read as "no scan"
         if (matched.length > 0) return matched;

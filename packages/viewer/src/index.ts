@@ -79,6 +79,7 @@ export {
 } from "./viewer/meshCrop";
 export {
   buildSurfaceGrid,
+  cropCapIsolation,
   cropTrianglesNearSurface,
   posePositions,
 } from "./viewer/meshDistance";

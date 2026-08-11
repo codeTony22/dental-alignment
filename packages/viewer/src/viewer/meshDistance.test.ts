@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSurfaceGrid,
+  cropCapIsolation,
   cropTrianglesNearSurface,
   posePositions,
 } from "./meshDistance";
@@ -72,5 +73,30 @@ describe("posePositions — canonical template into the world frame", () => {
     expect(posePositions(new Float32Array(3), {
       origin: [0, 0], axis: [0, 0, 1], x_axis: [1, 0, 0],
     })).toBeNull();
+  });
+});
+
+describe("cropCapIsolation — the corrected keep rule (client 2026-08-11: 'a big hole in it')", () => {
+  // template = a ring wall at radius 3 (no surface near the axis — the sealed
+  // bore the scan's recess void has no counterpart in)
+  const wall = new Float32Array([3, 0, 0, 3, 0.1, 0.1, 3.1, 0, 0]);
+  const grid = buildSurfaceGrid(wall);
+
+  it("the cap's own recess interior survives regardless of template distance", () => {
+    // a scan triangle at the AXIS, far from the ring template — the scanned
+    // screw-recess void; a pure band would drop it (the client's hole)
+    const recessVoid = new Float32Array([0, 0, -1, 0.1, 0, -1, 0, 0.1, -1]);
+    expect(cropTrianglesNearSurface(recessVoid, grid, 0.6)).toHaveLength(0);
+    const kept = cropCapIsolation(recessVoid, grid, 0.6, [0, 0, 0], [0, 0, 1], 2.0);
+    expect(kept).toHaveLength(9);
+  });
+
+  it("peripheral tissue outside the core still needs the template band", () => {
+    const onWall = new Float32Array([3.2, 0, 0, 3.3, 0, 0, 3.2, 0.1, 0]);
+    const shoulder = new Float32Array([5, 0, 0, 5.1, 0, 0, 5, 0.1, 0]);
+    const both = new Float32Array([...onWall, ...shoulder]);
+    const kept = cropCapIsolation(both, grid, 0.6, [0, 0, 0], [0, 0, 1], 2.0);
+    expect(kept).toHaveLength(9);
+    expect([...kept.slice(0, 3)]).toEqual([Math.fround(3.2), 0, 0]);
   });
 });

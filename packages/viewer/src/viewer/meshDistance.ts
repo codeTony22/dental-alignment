@@ -108,6 +108,59 @@ export function cropTrianglesNearSurface(
   return new Float32Array(kept);
 }
 
+/**
+ * THE CAP-ISOLATION KEEP RULE (§10-AT front 1 corrected, client 2026-08-11:
+ * "scanned cap now has a big hole in it — we need it to cut the gum out of
+ * the view, NOT the healing cap"). A pure template-distance band dropped the
+ * scanned cap's own screw-recess interior — the registry's own words: scan
+ * recess points sit where "the template bore cannot cover". The rule is
+ * therefore two-part, matching the anatomy: everything within the CORE
+ * radius of the axis IS the cap (its recess void included) and always
+ * survives; outside the core, only surface within the template band survives
+ * (the tissue trim the match exists for). Same contract: nothing moved,
+ * nothing sliced, any-vertex keeps.
+ */
+export function cropCapIsolation(
+  positions: ArrayLike<number>,
+  grid: SurfaceGrid,
+  bandMm: number,
+  center: readonly [number, number, number],
+  axis: readonly [number, number, number],
+  coreRadiusMm: number,
+): Float32Array {
+  const norm = Math.hypot(axis[0], axis[1], axis[2]) || 1;
+  const ax = axis[0] / norm;
+  const ay = axis[1] / norm;
+  const az = axis[2] / norm;
+  const core2 = coreRadiusMm * coreRadiusMm;
+  const triangles = Math.floor(positions.length / 9);
+  const kept: number[] = [];
+  for (let t = 0; t < triangles; t += 1) {
+    const b = t * 9;
+    let keep = false;
+    for (let v = 0; v < 3 && !keep; v += 1) {
+      const x = positions[b + v * 3] as number;
+      const y = positions[b + v * 3 + 1] as number;
+      const z = positions[b + v * 3 + 2] as number;
+      const dx = x - center[0];
+      const dy = y - center[1];
+      const dz = z - center[2];
+      const a = dx * ax + dy * ay + dz * az;
+      const rx = dx - a * ax;
+      const ry = dy - a * ay;
+      const rz = dz - a * az;
+      if (rx * rx + ry * ry + rz * rz <= core2) {
+        keep = true;
+        break;
+      }
+      keep = nearSurface(grid, x, y, z, bandMm);
+    }
+    if (!keep) continue;
+    for (let i = 0; i < 9; i += 1) kept.push(positions[b + i] as number);
+  }
+  return new Float32Array(kept);
+}
+
 /** The pane's pose convention (domain/adjust's ghost math, verbatim): a basis
  *  of z = the seated axis, x = the pose's own x_axis, y = z×x, about origin.
  *  null on any malformed triple — a camera or a crop must never guess. */
