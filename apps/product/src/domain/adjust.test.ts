@@ -96,6 +96,7 @@ import {
   autoMarkToolStateWords,
   dockToolGood,
   pairSlotStrip,
+  fitCrossCheckCaution,
   scatterWords,
   scatterFillFraction,
   autoMarkDotPositions,
@@ -2328,6 +2329,13 @@ describe("pairSlotStrip — eight slots, one PairDraft each (§10-AN)", () => {
 describe("the scatter meter — a served number only, never a tolerance band (§10-AN)", () => {
   it("absent with no served residual", () => {
     expect(scatterWords(null)).toBeNull();
+  });
+
+  it("fitCrossCheckCaution speaks on false alone — true and null both stay silent", () => {
+    expect(fitCrossCheckCaution(false)).toContain("ONE observation");
+    expect(fitCrossCheckCaution(true)).toBeNull();
+    expect(fitCrossCheckCaution(null)).toBeNull();
+    expect(fitCrossCheckCaution(undefined)).toBeNull();
     expect(scatterFillFraction(null)).toBeNull();
   });
 

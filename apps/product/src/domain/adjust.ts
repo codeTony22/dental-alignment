@@ -2223,6 +2223,29 @@ export function scatterWords(residualRmsMm: number | null): string | null {
 }
 
 /**
+ * THE SINGLE-OBSERVATION CAUTION (§10-AT A1, client's tooth-20 night: four
+ * one-pair fits looped −120°/+8°/+1°/−2° with no convergence signal). The
+ * server already seals the FACT — `cross_checked: false` means the fit stood
+ * on one observation, exactly determined, nothing to disagree with — and the
+ * drawer's meter honestly shows no number. But an absence is easy to read as
+ * fine; this composes the standing caution from that sealed fact so the
+ * drawer SAYS it. null when there is no outcome, or when the fit was
+ * genuinely cross-checked (true), or when the row predates the fact (null —
+ * "assume it was checked" is exactly what the wire comment forbids claiming
+ * either way, so no caution is asserted).
+ */
+export function fitCrossCheckCaution(
+  crossChecked: boolean | null | undefined,
+): string | null {
+  if (crossChecked !== false) return null;
+  return (
+    "this fit stands on ONE observation — it fixed the rotation exactly, and " +
+    "nothing could disagree with it. Add a second pair on another visible " +
+    "feature: two observations earn the agreement number."
+  );
+}
+
+/**
  * THE METER'S FILL, against a FIXED DISPLAY CEILING — never a tolerance. This product
  * has no single case tolerance to colour-grade against (`deliver.ts`'s own standing
  * doctrine: "there is no single case tolerance in this product"), so the fill is

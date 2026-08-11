@@ -354,6 +354,37 @@ describe("the tool-refusal modal — opens on a NEW refusal, no effect required 
   });
 });
 
+describe("the single-observation caution (§10-AT A1)", () => {
+  // the client's tooth-20 night: four one-pair fits looped −120°/+8°/+1°/−2°
+  // with no convergence signal — the meter's honest silence read as "fine".
+  // The sealed fact (cross_checked: false) now SAYS it in the drawer.
+  it("renders when the last fit stood on one observation", () => {
+    const html = view({
+      tool: "fit-by-points",
+      lastOutcome: { applied: true, detail: "x", cross_checked: false,
+                     residual_rms_mm: null, pairs: [] } as unknown as AdjustOutcomeView,
+    });
+    expect(html).toContain('data-role="fit-single-observation-caution"');
+    expect(html).toContain("ONE observation");
+    expect(html).toContain("Add a second pair");
+  });
+
+  it("stays silent for a cross-checked fit, and for a row that predates the fact", () => {
+    const checked = view({
+      tool: "fit-by-points",
+      lastOutcome: { applied: true, detail: "x", cross_checked: true,
+                     residual_rms_mm: 0.12, pairs: [] } as unknown as AdjustOutcomeView,
+    });
+    expect(checked).not.toContain('data-role="fit-single-observation-caution"');
+    const unknown = view({
+      tool: "fit-by-points",
+      lastOutcome: { applied: true, detail: "x", cross_checked: null,
+                     residual_rms_mm: null, pairs: [] } as unknown as AdjustOutcomeView,
+    });
+    expect(unknown).not.toContain('data-role="fit-single-observation-caution"');
+  });
+});
+
 describe("the rotation gauge widget", () => {
   it("renders the pending-angle input, the step chips and the reset", () => {
     const html = view({ tool: "rotation" });

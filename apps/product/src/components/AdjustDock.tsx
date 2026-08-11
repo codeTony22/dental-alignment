@@ -80,6 +80,7 @@ import {
   rotationToolStateWords,
   rotationTrenchTickDeg,
   scatterFillFraction,
+  fitCrossCheckCaution,
   scatterWords,
   spanSplitRecoveryHint,
   splitSpanDraft,
@@ -800,6 +801,7 @@ function FitByPointsWidget({
   onClearPairs,
   ghostsActive,
   residualRmsMm,
+  crossChecked = null,
 }: {
   readonly drafts: readonly PairDraft[];
   readonly busy: boolean;
@@ -813,6 +815,8 @@ function FitByPointsWidget({
   readonly onClearPairs: () => void;
   readonly ghostsActive: boolean;
   readonly residualRmsMm: number | null;
+  /** the sealed cross-check fact — false renders the single-observation caution */
+  readonly crossChecked?: boolean | null;
 }) {
   const openDraft = drafts.find((d) => !isComplete(d)) ?? null;
   return (
@@ -885,6 +889,11 @@ function FitByPointsWidget({
         clearLabel="Clear all pairs"
       />
       <ScatterMeter residualRmsMm={residualRmsMm} />
+      {fitCrossCheckCaution(crossChecked) !== null && (
+        <p data-role="fit-single-observation-caution" className="adjust-pairs__caution">
+          ⚠ {fitCrossCheckCaution(crossChecked)}
+        </p>
+      )}
     </div>
   );
 }
@@ -930,6 +939,7 @@ function AutoMarkWidget({
   onClearPairs,
   ghostsActive,
   residualRmsMm,
+  crossChecked = null,
 }: {
   readonly autoMarkLandmarks: readonly LandmarkView[];
   readonly autoMarkPhase: SeatedPhase;
@@ -945,6 +955,8 @@ function AutoMarkWidget({
   readonly onClearPairs: () => void;
   readonly ghostsActive: boolean;
   readonly residualRmsMm: number | null;
+  /** the sealed cross-check fact — false renders the single-observation caution */
+  readonly crossChecked?: boolean | null;
 }) {
   return (
     <div data-role="auto-mark-widget">
@@ -991,6 +1003,11 @@ function AutoMarkWidget({
         sourceLabelFor={(draft) => autoMarkSourceLabel(draft, autoMarkLandmarks)}
       />
       <ScatterMeter residualRmsMm={residualRmsMm} />
+      {fitCrossCheckCaution(crossChecked) !== null && (
+        <p data-role="fit-single-observation-caution" className="adjust-pairs__caution">
+          ⚠ {fitCrossCheckCaution(crossChecked)}
+        </p>
+      )}
     </div>
   );
 }
@@ -1346,6 +1363,7 @@ export function AdjustDock({
                 onClearPairs={onClearPairs}
                 ghostsActive={ghostsActive}
                 residualRmsMm={lastOutcome?.residual_rms_mm ?? null}
+                crossChecked={lastOutcome?.cross_checked ?? null}
               />
             )}
             {tool === "auto-mark" && (
@@ -1364,6 +1382,7 @@ export function AdjustDock({
                 onClearPairs={onClearPairs}
                 ghostsActive={ghostsActive}
                 residualRmsMm={lastOutcome?.residual_rms_mm ?? null}
+                crossChecked={lastOutcome?.cross_checked ?? null}
               />
             )}
           </div>
