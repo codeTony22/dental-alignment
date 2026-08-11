@@ -159,16 +159,26 @@ class TestCapImprintHoles:
         sheet_near = (r > 2.5) & (r < 3.4) & (np.abs(v[:, 2]) < 0.6)
         assert sheet_near.sum() >= 5, "the gum beside the cap must survive"
 
-    def test_the_liner_walls_are_the_offset_cap_below_the_gum_line(self):
+    def test_the_recess_is_pressed_to_the_floor_never_a_bore(self):
+        """The carve (§10-AS.10): everything inside the rim lies AT the floor —
+        the scanned cap is pressed flat, nothing stands in the recess, and
+        there is no synthetic 8mm bore underneath."""
         from case_prep.pipeline.deliverables import cap_imprint_holes
 
         arch = _arch_with_bump()
         out, _ = cap_imprint_holes(arch, [self._site()])
         v = np.asarray(out.vertices, float)
         r = np.linalg.norm(v[:, :2], axis=1)
-        # imprint wall at the dilated radius, below the collar (sheet top ~0.5)
-        wall = (np.abs(r - 2.2) < 0.15) & (v[:, 2] < 0.7) & (v[:, 2] > -0.5)
-        assert wall.sum() >= 20, "no imprint wall at the offset surface"
+        # the fixture cap's vertices live on its r=2.0 rim — the band must
+        # cover them, not just the sparse sheet points near the axis
+        inside = r < 2.2
+        assert inside.sum() >= 20, "no recess vertices to judge"
+        # dish depth 1.8 below the ~0.3 gum clamps at the envelope base -0.2
+        assert float(v[inside, 2].max()) < 0.1, \
+            "the scanned cap must be pressed down, nothing stands in the recess"
+        # the fixture bump's own base ring sits at exactly -0.5, below the
+        # floor — real data under the floor is kept, never invented away
+        assert float(v[inside, 2].min()) > -0.6, "the floor is the envelope base"
         # and NOT the old 8mm synthetic bore: nothing deep under the seat
         assert not ((r < 2.5) & (v[:, 2] < -2.0)).any(), \
             "the seat must be the cap's own depth, not a synthetic bore"
@@ -189,23 +199,26 @@ class TestCapImprintHoles:
                                     ray_directions=[[0.0, 0.0, 1.0]])
         assert not bool(up[0]), "the seat's mouth must be open at the gum line"
 
-    def test_liner_faces_the_void(self):
+    def test_the_floor_faces_up_into_the_seat(self):
+        """The carve preserves the shell's own orientation: pressed floor faces
+        keep facing UP into the recess. Judged on real-area faces only — a cap
+        side wall squashed onto the floor is a zero-area sliver whose normal is
+        numerical noise and whose render is no pixels at all."""
         from case_prep.pipeline.deliverables import cap_imprint_holes
 
         arch = _arch_with_bump()
         out, _ = cap_imprint_holes(arch, [self._site()])
         n = np.asarray(out.face_normals, float)
         c = np.asarray(out.triangles_center, float)
+        area = np.asarray(out.area_faces, float)
         r = np.linalg.norm(c[:, :2], axis=1)
-        floor = (r < 1.6) & (np.abs(c[:, 2] + 0.2) < 0.15)
-        assert floor.sum() >= 10, "no floor faces found"
-        assert n[floor, 2].mean() > 0.9, "the floor must face UP into the seat"
-        wall = (np.abs(r - 2.2) < 0.15) & (c[:, 2] < 0.4) & (c[:, 2] > -0.1)
-        if wall.sum() >= 5:  # a shallow collar may leave few wall faces
-            radial = c[wall, :2] / np.linalg.norm(c[wall, :2], axis=1,
-                                                  keepdims=True)
-            assert (n[wall, :2] * radial).sum(axis=1).mean() < -0.5, \
-                "imprint walls must face inward"
+        # the fixture's cap is a CLOSED cylinder, so its bottom disc presses
+        # onto the floor too (coplanar, down-facing) — a real scan's cap
+        # region is one open sheet with no second layer. The guarantee to
+        # hold: an up-facing floor EXISTS (a fold-over would erase it).
+        floor = (r < 1.6) & (np.abs(c[:, 2] + 0.2) < 0.15) & (area > 0.05) \
+            & (n[:, 2] > 0.9)
+        assert floor.sum() >= 10, "no up-facing floor faces found"
 
     def test_no_kept_face_touches_the_inside_of_the_envelope(self):
         """THE FRINGE KILL (client 2026-08-09, screenshot): the centroid cull kept
@@ -279,21 +292,71 @@ class TestCapImprintHoles:
         assert notes == []
         v = np.asarray(out.vertices, float)
         r = np.linalg.norm(v[:, :2], axis=1)
-        # judged ABOVE the floor ring only (floor at cap base - offset = -0.2):
-        # the flat floor legitimately emerges from the downhill tissue on a
-        # steep slope — the physical cap protruded there too. What must never
-        # stand proud is the WALL above it, which is what the client's
-        # screenshot showed as a crescent out of the gum.
-        wall = (np.abs(r - 2.2) < 0.12) & (v[:, 2] > 0.0)
-        assert wall.sum() >= 10, "no wall to judge"
-        w = v[wall]
-        # every wall vertex stays near the LOCAL tissue height at its own
-        # bearing (0.25*x here) — the median-collar bug put the low side's
-        # wall ~0.6mm proud; the fitted plane + face-top clip bounds it by
-        # the 0.15 tuck plus across-face slope slop
-        proud = w[:, 2] - 0.25 * w[:, 0]
+        # THE CARVE'S FORM OF THIS GUARANTEE: pressing only ever moves
+        # vertices DOWN, so nothing near the site can stand proud of the
+        # local tissue (0.25*x here) — the crescent bug class is structurally
+        # impossible, and this pin holds it so
+        near = r < 3.5
+        assert near.sum() >= 30, "no site neighbourhood to judge"
+        proud = v[near, 2] - 0.25 * v[near, 0]
         assert float(proud.max()) < 0.25, \
-            f"wall stands {proud.max():.2f}mm proud of the local gum"
+            f"something stands {proud.max():.2f}mm proud of the local gum"
+
+    def test_the_carve_moves_vertices_and_never_makes_new_geometry(self):
+        """THE CARVE (client 2026-08-10, §10-AS.10: "look like the second
+        picture — there is a floor and the floor is lower by the gum"): the
+        recess is pressed into the scan's OWN vertices — no liner, no collar,
+        no seams, and structurally NO new geometry that could ever float or
+        show a backface. Socketless + socket tile the carved arch exactly."""
+        from case_prep.pipeline.deliverables import cap_imprint_parts
+
+        arch = _arch_with_bump()
+        out, socket, notes = cap_imprint_parts(arch, [self._site()])
+        assert notes == []
+        assert socket is not None
+        total_faces = len(out.faces) + len(socket.faces)
+        assert total_faces == len(arch.faces), \
+            "the carve must re-home every input face, never add or drop one"
+
+    def test_the_floor_follows_the_gum_at_the_countersink_depth(self):
+        """THE GUM-FOLLOWING FLOOR (client 2026-08-10): on the ridge-curved
+        sheet (z = -0.12*y**2) the platform recess floor must sit the
+        countersink depth below the LOCAL gum at every bearing — a shallow
+        draped dish that shows the offset, never a planar pocket whose wall
+        towers out of the low side."""
+        from case_prep.pipeline.deliverables import cap_imprint_parts
+
+        xs, ys = np.meshgrid(np.linspace(-8, 8, 40), np.linspace(-8, 8, 40))
+        zs = -0.12 * ys**2
+        pts = np.column_stack([xs.ravel(), ys.ravel(), zs.ravel()])
+        faces = []
+        for i in range(39):
+            for j in range(39):
+                a = i * 40 + j
+                faces.append([a, a + 1, a + 41])
+                faces.append([a, a + 41, a + 40])
+        sheet = trimesh.Trimesh(pts, np.asarray(faces), process=False)
+        out, socket, notes = cap_imprint_parts(
+            sheet, [(self._cap(), _pose_at(0, 0, 1.0), 0.2, 2.0)],
+            top_floor=True)
+        assert notes == []
+        assert socket is not None
+        v = np.asarray(socket.vertices, float)
+        r = np.linalg.norm(v[:, :2], axis=1)
+        # judged AT THE RIM'S EDGE, where the countersink is what the eye
+        # reads: near-rim floor vertices sit a shallow step below their own
+        # local gum. (Mid-recess the floor legitimately deepens under a crest —
+        # a coherent floor through curved anatomy cannot hug it everywhere.)
+        near_rim = (r > 1.7) & (r < 2.7) & (v[:, 2] < 0.5)
+        assert near_rim.sum() >= 10, "no rim-edge floor to judge"
+        local_gum = -0.12 * v[near_rim, 1] ** 2
+        depth = local_gum - v[near_rim, 2]
+        assert float(np.median(depth)) > 0.2, "floor must sit BELOW the gum"
+        assert float(np.percentile(depth, 90)) < 1.2, \
+            f"rim-edge floor digs {np.percentile(depth, 90):.2f}mm — a pocket"
+        # and NOTHING stands above the local gum inside the recess
+        proud = v[:, 2] - (-0.12 * v[:, 1] ** 2)
+        assert float(proud.max()) < 0.3
 
     def test_the_collar_drapes_onto_curved_gum_no_floating_crescents(self):
         """THE TINTED COLLAR EXPOSED THE PLANE (client 2026-08-10, on 276794487's
@@ -498,7 +561,10 @@ class TestCapImprintHoles:
                                       ray_directions=[[0.0, 0.0, -1.0]])
         assert bool(down[0]), "the capped socket still needs its floor"
 
-    def test_a_degenerate_template_falls_back_to_the_cylinder_socket(self):
+    def test_a_degenerate_template_carves_a_cylinder_recess(self):
+        """A template that cannot make an envelope profile still gets its
+        site cut — as a CYLINDER recess at the rim radius, said so in the
+        notes. An honest degradation, never a dead package."""
         from case_prep.pipeline.deliverables import cap_imprint_holes
 
         arch = _arch_with_bump()
@@ -507,8 +573,12 @@ class TestCapImprintHoles:
         assert len(notes) == 1 and "cylinder" in notes[0]
         v = np.asarray(out.vertices, float)
         r = np.linalg.norm(v[:, :2], axis=1)
-        wall = v[(np.abs(r - 3.6) < 0.2) & (v[:, 2] > -9.0)]
-        assert len(wall) >= 40, "the fallback must be the old floored socket"
+        # the recess exists: everything inside the cylinder rim (3.0 + margin
+        # + clearance) is pressed to the floor; the bump is gone
+        inside = r < 3.4
+        assert inside.sum() >= 20, "no recess to judge"
+        assert float(v[inside, 2].max()) < 0.1, \
+            "the fallback must still clear the site"
 
     def test_input_not_mutated(self):
         from case_prep.pipeline.deliverables import cap_imprint_holes
@@ -561,25 +631,28 @@ class TestCapImprintOnARealCase:
         out, notes = cap_imprint_holes(scan, [(template, pose, offset, rim_r)])
         assert notes == [], f"real template must not fall back: {notes}"
 
-        posed = template.copy()
-        posed.apply_transform(pose)
+        from case_prep.pipeline.deliverables import _collar_z_local
+
         v = np.asarray(out.vertices, float)
         origin, axis = pose[:3, 3], pose[:3, :3] @ np.array([0.0, 0.0, 1.0])
         rel = v - origin
         axial = rel @ axis
         radial = np.linalg.norm(rel - np.outer(axial, axis), axis=1)
-        # (a) THE GUM SURVIVES where the cylinder used to eat it: output vertices
-        # exist between the cap's rim and the old cull cylinder (rim+0.6),
-        # near the gum line
-        ring = (radial > rim_r + offset + 0.15) & (radial < rim_r + 0.6) \
-            & (np.abs(axial) < 2.0)
-        assert ring.sum() >= 25, "the gum the cylinder used to eat must survive"
-        # (b) the imprint's wall hugs the cap: output vertices whose distance to
-        # the cap surface is ~the offset (within +0.3mm tolerance for mesh
-        # resolution), inside the footprint band
-        near_seat = v[(radial < rim_r + offset + 0.1) & (np.abs(axial) < 4.0)]
-        if len(near_seat) > 400:
-            near_seat = near_seat[:: len(near_seat) // 400]
-        d = np.abs(tm.proximity.signed_distance(posed, near_seat))
-        assert float(np.median(d)) <= offset + 0.3, \
-            f"the seat must hug the cap: median {float(np.median(d)):.3f}mm"
+        gum = _collar_z_local(np.asarray(scan.vertices, float), pose, rim_r)
+        # (a) THE GUM SURVIVES UNMOVED just past the recess rim (the old
+        # cylinder overcut ate rim+0.6 and beyond; the carve touches nothing
+        # outside the rim + clearance): vertices near the gum line exist there
+        ring = (radial > rim_r + offset + 0.8) & (radial < rim_r + 1.4) \
+            & (np.abs(axial - gum) < 1.2)
+        assert ring.sum() >= 25, "the gum just past the rim must survive unmoved"
+        # (b) THE SCANNED CAP IS ERASED: nothing stands above the local gum
+        # line inside the recess — the cap that used to dome out of the arch
+        # is pressed onto the floor
+        standing = (radial < rim_r - 0.2) & (axial > gum + 0.4)
+        assert int(standing.sum()) == 0, \
+            f"{int(standing.sum())} vertices still stand in the recess"
+        # (c) THE FLOOR IS THERE: straight down through the mouth, geometry
+        down = out.ray.intersects_any(
+            ray_origins=[origin + axis * (gum + 4.0)],
+            ray_directions=[-axis])
+        assert bool(np.asarray(down)[0]), "the recess needs its floor"

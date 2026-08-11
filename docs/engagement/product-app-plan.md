@@ -2520,3 +2520,30 @@ pair fits' "marks agree to X mm RMS", the re-apply receipts, the retirements).
 The reviewer note now says to read the log oldest-first for the causal chain.
 Delivery fetches the activity beside the assurance so the copy is whole the
 moment the dialog can open. Product 1459, typecheck clean.
+
+**AS.10 — the carve: the recess is pressed into the scan itself (client
+2026-08-10, over the competitor's screenshot: "look like the second picture —
+there is a floor and the floor is lower by the gum, which shows the gingival
+offset"; approved as options 1+2).** The liner architecture — envelope solid,
+fitted-plane clip, draped collar, saucer (§10-AO..AS.7) — decorated an open
+hole with floating geometry, and every pass fixed one viewing angle: the
+client's saddle-ridge site still read as a dark leaf from the low side (the
+wall's backfaces spanning a 2.6mm gum swing). Replaced whole:
+`cap_imprint_parts` now PRESSES every scan vertex inside the cap's envelope
+(+ the deviation clearance) straight down onto the recess floor. One
+continuous shell — no seams, no moat, no collar, and no backface can ever
+show. THE FLOOR FOLLOWS THE GUM: per bearing, the ring's own low-quartile
+height (the low quartile because a median read +3.2mm of "gum" off a
+neighbouring CROWN on cap6030 — clamped one-sided at median+1.5, and a high
+read never narrows the rim either, or the cap's flank survives standing —
+113 vertices, measured), blended to the circular mean at the centre; the
+platform's countersink is max(the site's relief, 0.5mm legibility), the dish
+keeps 1.8mm, and a degenerate template carves a cylinder recess at its rim
+radius with a note. The socket tint survives: recess faces split into the
+socket layer files, socketless + socket tile the carve exactly. Pins rewritten
+to the carve's truths (topology preserved, floor draped at depth, nothing
+proud, up-facing floor, real-case: gum unmoved past the rim + the scanned cap
+erased + the floor under the mouth). Deliverables 25 + emit 5, fast lane 876;
+live on 276794487 run 20260811-001602 — the site reads as a shallow
+countersink set into the ridge from every angle. Option 3 (solidify + true
+boolean via manifold) queued as the closed-model upgrade for the downloads.
