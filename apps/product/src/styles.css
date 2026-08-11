@@ -3700,6 +3700,10 @@ button.package-files__link:hover {
   flex: 0 0 auto;
   display: flex;
   gap: 8px;
+  /* the Numbers & log panel's containing block (§10-AT front 0): the panel
+     anchors to the TOOLBAR ROW, not its button, so it can never hang off
+     either viewport edge wherever the button happens to sit */
+  position: relative;
 }
 
 /* The arch dialog is a STAGE, not a document: the card takes most of the viewport and
@@ -6061,7 +6065,11 @@ button.package-files__link:hover {
    toolbar's row exactly like the arch-open button beside it — not a block that
    forces a wrap the strip does not otherwise need. */
 .workspace-insight {
-  position: relative;
+  /* static ON PURPOSE (§10-AT front 0): the disclosure panel positions against
+     the toolbar row (the nearest positioned ancestor), not this button wrapper —
+     a button-anchored panel hung off whichever viewport edge the button was
+     nearest (client screenshot 2026-08-11: "comes up completely cut off"). */
+  position: static;
   display: inline-flex;
 }
 
@@ -6080,9 +6088,17 @@ button.package-files__link:hover {
 .workspace-insight__panel {
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
+  /* left, not right (§10-AT front 0, client 2026-08-11 screenshot: "numbers &
+     log comes up completely cut off"): right:0 grew the panel 400px LEFTWARD,
+     correct when the button lived at the toolbar's right end, off-screen since
+     the §10-AN rework moved the button to the toolbar's left region. Growing
+     rightward from the button's left edge keeps it on-glass at every width the
+     toolbar renders the button at. */
+  left: 0;
   z-index: 20;
-  width: min(400px, 88vw);
+  /* never wider than the toolbar row it anchors to — the row is always fully
+     on-glass, so the panel is too, at every viewport and rail width */
+  width: min(400px, 100%);
   /* was 60vh — a panel whose last visible row is sliced mid-line reads as "a modal
      cut off" (client 2026-08-06), not as scrollable; nearly the full viewport under
      the toolbar leaves the cut for genuinely long content only */
