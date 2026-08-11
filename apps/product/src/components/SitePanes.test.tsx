@@ -38,6 +38,7 @@ import {
   SitePanesView,
   paneColumns,
   planPaneLayout,
+  capOnlyPaneCaption,
   scanPaneCaption,
   siteAxisLabel,
   useSitePaneScene,
@@ -466,6 +467,15 @@ describe("siteAxisLabel", () => {
     expect(siteAxisLabel({ axis: [0, 1], x_axis: [1, 0, 0], origin: [0, 0, 0] })).toBe(
       "the occlusal proxy",
     );
+  });
+});
+
+describe("capOnlyPaneCaption — the cap-only crop's words (§10-AS.15)", () => {
+  it("names the cap, never a band number the crop is not drawing", () => {
+    expect(capOnlyPaneCaption(20, 41091)).toBe(
+      "Tooth 20 · 41,091 triangles · the healing cap only",
+    );
+    expect(capOnlyPaneCaption(null, 12)).toBe("12 triangles · the healing cap only");
   });
 });
 

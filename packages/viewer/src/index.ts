@@ -70,7 +70,13 @@ export {
   rawFromFeature,
 } from "./viewer/partFrame";
 export type { PartFrame, Point3 } from "./viewer/partFrame";
-export { CAP_REGION_RADIUS_MM, centroidOf, cropTrianglesNear, triangleCount } from "./viewer/meshCrop";
+export {
+  CAP_REGION_RADIUS_MM,
+  centroidOf,
+  cropTrianglesInCylinder,
+  cropTrianglesNear,
+  triangleCount,
+} from "./viewer/meshCrop";
 export {
   CONTACTS_MAX_MM,
   UNMEASURED_COLOR_HEX,

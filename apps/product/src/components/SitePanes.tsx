@@ -47,6 +47,7 @@ import {
   computePartFrame,
   contactsGradientCss,
   contactsTickLabels,
+  cropTrianglesInCylinder,
   cropTrianglesNear,
   deviationGradientCss,
   deviationTickLabels,
@@ -74,6 +75,7 @@ import {
   indicesFrom,
   partCameraFrame,
   unifiedPaneRadiusMm,
+  scanPaneCapCylinder,
   scanPaneRadiusMm,
   positionsFrom,
   presetFraming,
@@ -110,6 +112,13 @@ export function scanPaneCaption(
   radiusMm: number,
 ): string {
   const measured = `${triangles.toLocaleString()} triangles within ${radiusMm} mm of the site's centre`;
+  return tooth === null ? measured : `Tooth ${tooth} · ${measured}`;
+}
+
+/** The cap-only crop's own words (§10-AS.15) — no band number: the crop is the
+ *  cap's cylinder, and printing a radius would misread as a display band. */
+export function capOnlyPaneCaption(tooth: number | null, triangles: number): string {
+  const measured = `${triangles.toLocaleString()} triangles · the healing cap only`;
   return tooth === null ? measured : `Tooth ${tooth} · ${measured}`;
 }
 
@@ -1288,10 +1297,39 @@ export function useSitePaneScene(
   const scanRadiusMm = scanPaneRadiusMm(detail, site?.declared_variant ?? null,
                                         site?.suggested_variant ?? null);
 
+  const occlusal = useMemo(() => {
+    if (scanPositions === null) return null;
+    return (computeAnatomyFrame(scanPositions)?.occlusal ?? null) as Vec3 | null;
+  }, [scanPositions]);
+  /* ONE pose for frame AND axis label (the 1375 rule extended): the payload's own,
+     else the held one — never the proxy while a measured axis is still in hand. */
+  const posePresented = payload?.pose ?? options.heldPose ?? null;
+
+  // THE CAP-ONLY CROP (§10-AS.15, client 2026-08-10: "just take out the mesh of
+  // the healing cap"): when the effective variant serves its dimensions, pane 2
+  // crops the cap's OWN cylinder — its rim + a whisker, about the same axis the
+  // frame aims down (the measured pose when one stands, else the occlusal
+  // proxy) — because a sphere cannot separate a submerged cap from the gum
+  // standing at the same height. Without the dimensions or an axis, the
+  // spherical band stands: the pane never claims a cap it cannot measure.
+  const capCylinder = scanPaneCapCylinder(detail, site?.declared_variant ?? null,
+                                          site?.suggested_variant ?? null);
+  const cropAxis: Vec3 | null =
+    posePresented !== null && posePresented.axis.length === 3
+      ? [posePresented.axis[0]!, posePresented.axis[1]!, posePresented.axis[2]!]
+      : occlusal;
+  const capOnly = capCylinder !== null && cropAxis !== null;
   const scanCrop = useMemo(() => {
     if (scanPositions === null || siteCenter === null) return null;
+    if (capCylinder !== null && cropAxis !== null) {
+      return cropTrianglesInCylinder(scanPositions, siteCenter, cropAxis,
+                                     capCylinder.radiusMm, capCylinder.aboveMm,
+                                     capCylinder.belowMm);
+    }
     return cropTrianglesNear(scanPositions, siteCenter, scanRadiusMm);
-  }, [scanPositions, siteCenter, scanRadiusMm]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanPositions, siteCenter, scanRadiusMm,
+      JSON.stringify(capCylinder), JSON.stringify(cropAxis)]);
 
   // CAP-CROP COLOUR (§10-AO, client 2026-08-06): the SAME cropped mesh feeds pane
   // 2's scan layer AND the union pane's scan underlay below — one mesh, one colour,
@@ -1344,13 +1382,6 @@ export function useSitePaneScene(
   }, [partBase, paneRadiusMm, viewPreset]);
   const partFrame = partFraming.frame;
 
-  const occlusal = useMemo(() => {
-    if (scanPositions === null) return null;
-    return (computeAnatomyFrame(scanPositions)?.occlusal ?? null) as Vec3 | null;
-  }, [scanPositions]);
-  /* ONE pose for frame AND axis label (the 1375 rule extended): the payload's own,
-     else the held one — never the proxy while a measured axis is still in hand. */
-  const posePresented = payload?.pose ?? options.heldPose ?? null;
   const siteFrameBase = siteFrameFor(siteCenter, posePresented, occlusal,
                                      paneRadiusMm);
   const siteFraming = presetFraming(siteFrameBase, viewPreset);
@@ -1435,7 +1466,10 @@ export function useSitePaneScene(
     scanEmpty: scanCrop !== null && scanCrop.length === 0,
     scanCaption:
       scanCrop !== null && scanCrop.length > 0
-        ? scanPaneCaption(site?.tooth ?? null, triangleCount(scanCrop), scanRadiusMm)
+        ? (capOnly
+            ? capOnlyPaneCaption(site?.tooth ?? null, triangleCount(scanCrop))
+            : scanPaneCaption(site?.tooth ?? null, triangleCount(scanCrop),
+                              scanRadiusMm))
         : null,
     layers,
     onToggleLayer,

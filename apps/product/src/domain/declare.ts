@@ -457,6 +457,41 @@ export function scanPaneRadiusMm(
 }
 
 /**
+ * THE CAP-ONLY CYLINDER (§10-AS.15, client 2026-08-10: "in the mesh of the arch
+ * we have the gum and the healing cap... just take out the mesh of the healing
+ * cap"). Pane 2's crop becomes the cap's OWN cylinder — its rim radius plus a
+ * 0.4mm whisker, about its own axis, spanning from just above the top-centre
+ * down past the cap's own height — because a sphere cannot separate a
+ * SUBMERGED cap from gum standing at the same height. Named only when the
+ * effective variant (declared, else suggested) serves BOTH dimensions; null
+ * keeps the spherical band — the pane never claims a cap it cannot measure.
+ */
+export function scanPaneCapCylinder(
+  detail: CaseSessionDetail,
+  declaredVariant: string | null = null,
+  suggestedVariant: string | null = null,
+): { radiusMm: number; aboveMm: number; belowMm: number } | null {
+  const target = declaredVariant ?? suggestedVariant;
+  if (target === null) return null;
+  for (const group of declarableGroups(detail)) {
+    for (const row of group.variants ?? []) {
+      const record = row as Record<string, unknown>;
+      if (record["variant"] !== target) continue;
+      const dia = record["rim_diameter_mm"];
+      const height = record["height_mm"];
+      if (typeof dia !== "number" || !Number.isFinite(dia)) return null;
+      if (typeof height !== "number" || !Number.isFinite(height)) return null;
+      return {
+        radiusMm: Math.round((dia / 2 + 0.4) * 10) / 10,
+        aboveMm: 1.5,
+        belowMm: Math.round((height + 1.5) * 10) / 10,
+      };
+    }
+  }
+  return null;
+}
+
+/**
  * THE SEATED FALLBACK (§10-AE): a site the ladder will not preview — flagged or
  * adjusted — with a DONE run still has a fit the server knows: the shipped one,
  * served by GET .../sites/{tooth}/seated (a read; no rung moves). Declare's panes

@@ -60,6 +60,50 @@ export function cropTrianglesNear(
   return new Float32Array(kept);
 }
 
+/**
+ * THE CAP-ONLY CROP (client 2026-08-10: "just take out the mesh of the healing
+ * cap"). A sphere cannot separate a SUBMERGED cap from the gum standing at the
+ * same height — only the cap's own rim radius about its own axis can. Keeps
+ * triangles with ANY vertex inside the cylinder: radial distance to the axis
+ * line ≤ radiusMm, axial offset within [-belowMm, +aboveMm] of the centre
+ * (the centre is the cap's top-centre, so `below` spans the cap's height).
+ * Same contract as cropTrianglesNear: nothing moved, nothing sliced.
+ */
+export function cropTrianglesInCylinder(
+  positions: ArrayLike<number>,
+  center: readonly [number, number, number],
+  axis: readonly [number, number, number],
+  radiusMm: number,
+  aboveMm: number,
+  belowMm: number,
+): Float32Array {
+  const norm = Math.hypot(axis[0], axis[1], axis[2]) || 1;
+  const ax = axis[0] / norm;
+  const ay = axis[1] / norm;
+  const az = axis[2] / norm;
+  const r2 = radiusMm * radiusMm;
+  const triangleCountN = Math.floor(positions.length / 9);
+  const kept: number[] = [];
+  for (let t = 0; t < triangleCountN; t += 1) {
+    const base = t * 9;
+    let near = false;
+    for (let v = 0; v < 3 && !near; v += 1) {
+      const dx = (positions[base + v * 3] as number) - center[0];
+      const dy = (positions[base + v * 3 + 1] as number) - center[1];
+      const dz = (positions[base + v * 3 + 2] as number) - center[2];
+      const a = dx * ax + dy * ay + dz * az;
+      if (a > aboveMm || a < -belowMm) continue;
+      const rx = dx - a * ax;
+      const ry = dy - a * ay;
+      const rz = dz - a * az;
+      near = rx * rx + ry * ry + rz * rz <= r2;
+    }
+    if (!near) continue;
+    for (let i = 0; i < 9; i += 1) kept.push(positions[base + i] as number);
+  }
+  return new Float32Array(kept);
+}
+
 /** How many triangles a crop result holds — the panel's own "N triangles in this region" note. */
 export function triangleCount(positions: ArrayLike<number>): number {
   return Math.floor(positions.length / 9);

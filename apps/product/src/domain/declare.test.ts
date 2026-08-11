@@ -33,6 +33,7 @@ import {
   poseHeldBy,
   positionsFrom,
   previewKeyFor,
+  scanPaneCapCylinder,
   scanPaneRadiusMm,
   seatedReadWanted,
   siteFrameFor,
@@ -1556,6 +1557,20 @@ describe("scanPaneRadiusMm — the cap-tight display band", () => {
     expect(scanPaneRadiusMm(twoVariants, null, "5020")).toBeCloseTo(3.7, 5);
     // a declaration always beats the suggestion — the pane shows THIS cap
     expect(scanPaneRadiusMm(twoVariants, "7030", "5020")).toBeCloseTo(4.7, 5);
+  });
+
+  it("names the cap-only cylinder when the effective variant carries its dimensions (client 2026-08-10: 'just take out the mesh of the healing cap')", () => {
+    // rim Ø6.2, height 3.4 → radius 6.2/2 + 0.4 whisker, span from just above
+    // the top-centre down past the cap's own base
+    const cyl = scanPaneCapCylinder(twoVariants, "5020", null);
+    expect(cyl).toEqual({ radiusMm: 3.5, aboveMm: 1.5, belowMm: 4.9 });
+    // suggestion fills in when nothing is declared; declared wins otherwise
+    expect(scanPaneCapCylinder(twoVariants, null, "5020")).toEqual(cyl);
+  });
+
+  it("makes no cylinder claim without the cap's own height — the spherical band stands", () => {
+    expect(scanPaneCapCylinder(twoVariants, null, null)).toBeNull();
+    expect(scanPaneCapCylinder(caseSessionDetail(), "5020", null)).toBeNull();
   });
 
   it("falls back to the standing band when the catalog serves no dimensions", () => {
