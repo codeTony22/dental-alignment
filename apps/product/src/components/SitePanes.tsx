@@ -1337,7 +1337,7 @@ export function useSitePaneScene(
   const scanGeometry: VerifyLayerGeometry | null = useMemo(
     () =>
       scanCrop && scanCrop.length > 0
-        ? { positions: scanCrop, color: CAP_SCAN_COLOR }
+        ? { positions: scanCrop, color: CAP_SCAN_COLOR, glossy: true }
         : null,
     [scanCrop],
   );

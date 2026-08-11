@@ -8,7 +8,8 @@ import { CAP_SCAN_COLOR, PALETTE, capScanHex } from "./palette";
 
 describe("CAP_SCAN_COLOR — bone-white, not pure white", () => {
   it("is the pinned bone-white hex", () => {
-    expect(CAP_SCAN_COLOR).toBe(0xf2f1ec);
+    // brightened one step 2026-08-10 ("we need more glossy white here")
+    expect(CAP_SCAN_COLOR).toBe(0xf7f6f2);
   });
 
   it("is not pure white — Lambert shading needs value headroom to shade into", () => {
@@ -20,6 +21,6 @@ describe("CAP_SCAN_COLOR — bone-white, not pure white", () => {
   });
 
   it("serves the same hex through its CSS accessor, for legend swatches", () => {
-    expect(capScanHex()).toBe("#f2f1ec");
+    expect(capScanHex()).toBe("#f7f6f2");
   });
 });

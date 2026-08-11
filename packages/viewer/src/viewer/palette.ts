@@ -144,7 +144,10 @@ export function freePointHex(): string {
  * to go darker, so the crop reads as a shadowless cutout instead of a scanned solid); #f2f1ec
  * is bone-white with just enough value headroom for shading to read.
  */
-export const CAP_SCAN_COLOR = 0xf2f1ec;
+// 0xf2f1ec → 0xf7f6f2 (client 2026-08-10: "we need more glossy white here") —
+// one step whiter, still not pure white, and the crop layer now renders with
+// a SPECULAR material (VerifyLayerGeometry.glossy) so the cap reads polished.
+export const CAP_SCAN_COLOR = 0xf7f6f2;
 
 /** CSS hex string for the cap-crop layer's color — legend swatches must match the mesh. */
 export function capScanHex(): string {

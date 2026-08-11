@@ -125,11 +125,15 @@ export interface VerifyLayerGeometry {
   readonly colors?: Float32Array;
   /** Flat colour when `colors` is absent. */
   readonly color?: number;
+  /** A SPECULAR material instead of the matte Lambert (client 2026-08-10 on
+   *  pane 2's cap: "we need more glossy white here") — a healing cap is
+   *  polished titanium/PEEK, and gloss is what reads as material truth. */
+  readonly glossy?: boolean;
 }
 
 interface Layer {
   readonly mesh: THREE.Mesh;
-  readonly material: THREE.MeshLambertMaterial;
+  readonly material: THREE.MeshLambertMaterial | THREE.MeshPhongMaterial;
 }
 
 /**
@@ -522,11 +526,19 @@ export class VerifyScene {
     if (geometry.colors) geo.setAttribute("color", new THREE.BufferAttribute(geometry.colors, 3));
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
-    const material = new THREE.MeshLambertMaterial({
-      color: geometry.colors ? 0xffffff : (geometry.color ?? 0xf2e3a6),
-      vertexColors: geometry.colors !== undefined,
-      side: THREE.DoubleSide,
-    });
+    const material = geometry.glossy
+      ? new THREE.MeshPhongMaterial({
+          color: geometry.colors ? 0xffffff : (geometry.color ?? 0xf2e3a6),
+          vertexColors: geometry.colors !== undefined,
+          side: THREE.DoubleSide,
+          specular: 0x777777,
+          shininess: 60,
+        })
+      : new THREE.MeshLambertMaterial({
+          color: geometry.colors ? 0xffffff : (geometry.color ?? 0xf2e3a6),
+          vertexColors: geometry.colors !== undefined,
+          side: THREE.DoubleSide,
+        });
     const mesh = new THREE.Mesh(geo, material);
     this.scene.add(mesh);
     this.layers.set(id, { mesh, material });
