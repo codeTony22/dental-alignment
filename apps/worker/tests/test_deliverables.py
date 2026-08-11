@@ -746,45 +746,16 @@ class TestCapImprintHoles:
         cap_imprint_holes(arch, [self._site()])
         assert len(arch.faces) == before
 
-
-class TestSolidifyShell:
-    """§10-AS.19 (client 2026-08-10: "I do not need a model stl — just work
-    with open arch"): the solidified model is INTERNAL machinery only — the
-    boolean needs a solid for the one instant of the cut, and §10-AS.16 strips
-    the fabricated closure from every artifact. These pins hold the internal
-    solidify honest; the closed-model ARTIFACT and its tab are retired."""
-
-    @staticmethod
-    def _open_sheet():
-        # a genuinely OPEN single-surface sheet — the box fixture is already
-        # watertight, which is not what a real scan shell is
-        xs, ys = np.meshgrid(np.linspace(-8, 8, 24), np.linspace(-8, 8, 24))
-        pts = np.column_stack([xs.ravel(), ys.ravel(), 0.02 * xs.ravel() ** 2])
-        faces = []
-        for i in range(23):
-            for j in range(23):
-                a = i * 24 + j
-                faces.append([a, a + 1, a + 25])
-                faces.append([a, a + 25, a + 24])
-        return trimesh.Trimesh(pts, np.asarray(faces), process=False)
-
-    def test_solidify_makes_a_watertight_model(self):
-        from case_prep.pipeline.deliverables import solidify_shell
-
-        sheet = self._open_sheet()
-        assert not sheet.is_watertight
-        solid = solidify_shell(sheet, np.array([0.0, 0.0, 1.0]))
-        assert solid.is_watertight, "the skirted model must close"
-        assert float(solid.volume) > 0.0
-
-    def test_an_already_closed_mesh_passes_through(self):
-        from case_prep.pipeline.deliverables import solidify_shell
-
-        box = trimesh.creation.box(extents=[10, 10, 5])
-        solid = solidify_shell(box, np.array([0.0, 0.0, 1.0]))
-        assert solid.is_watertight
-
     def test_the_imprint_hugs_the_cap_and_the_gum_survives(self):
+        """§10-AS.19 (client 2026-08-10: "I do not need a model stl — just
+        work with open arch"): the solidified model is INTERNAL machinery
+        only (now ``case_prep.pipeline.csg``) — the boolean needs a solid
+        for the one instant of the cut, and §10-AS.16 strips the fabricated
+        closure from every artifact. This pin (moved out of the retired
+        ``TestSolidifyShell`` grouping — §10-AT front 3 split the CSG
+        mechanism into its own module, and this test is a full
+        ``cap_imprint_holes`` pin, not a ``solidify_shell`` one) holds the
+        real-fleet CSG path honest end to end."""
         import json
         from pathlib import Path
 
