@@ -532,8 +532,30 @@ def evaluate_acceptance(row: dict) -> Dict[str, Any]:
         counts[band] += 1
         if band == MISSING:
             missing.append(spec.key)
-        metrics.append({**_spec_payload(spec),
-                        "value": value, "display": display, "band": band})
+        payload = {**_spec_payload(spec),
+                   "value": value, "display": display, "band": band}
+        # THE BURIED-CODES ADVISORY (§10-AT A2, the client's tooth 20): when the
+        # coded band reads below its gates AND rotation stands on no evidence at
+        # all, the rotation row itself names the connection and the two honest
+        # paths — otherwise the operator reads two unrelated FAILs and hunts
+        # rotation by hand against a scan that cannot answer (four looping
+        # one-pair fits, measured). Composed HERE, once, so the workspace
+        # numbers, the digest and Delivery all speak the same sentence.
+        if spec.key == "rotation_deg":
+            clocking = row.get("clocking") if isinstance(row.get("clocking"), dict) else {}
+            corr = _as_finite(clocking.get("notch_corr"))
+            prom = _as_finite(clocking.get("notch_prominence"))
+            codes_buried = (corr is not None and prom is not None
+                            and (corr < CODE_GATE_MIN_CORR
+                                 or prom < CODE_GATE_MIN_PROMINENCE))
+            if codes_buried and (clocking.get("evidence") or "none") == "none":
+                advisory = ("the coded band is unreadable on this scan (below "
+                            "gates), so rotation has no automated evidence — "
+                            "place 2+ point pairs on visible features, or "
+                            "re-capture chairside")
+                payload["note"] = (f"{spec.note} — {advisory}"
+                                   if spec.note else advisory)
+        metrics.append(payload)
     measured = [m["band"] for m in metrics if m["band"] != MISSING]
     overall_band = (max(measured, key=lambda b: _BAND_SEVERITY[b])
                     if measured else MISSING)

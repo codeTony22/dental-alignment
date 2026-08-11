@@ -155,6 +155,30 @@ class TestRotationBands:
         out = evaluate_acceptance(_row(clocking=None))
         assert _metric(out, "rotation_deg")["band"] == MISSING
 
+    def test_buried_codes_with_no_evidence_speaks_the_advisory(self):
+        """§10-AT A2 (the client's tooth 20): code band below gates AND rotation
+        standing on nothing — the rotation row itself names the connection and
+        the two honest paths, or the operator reads two unrelated FAILs and
+        hunts rotation by hand against a scan that cannot answer."""
+        out = evaluate_acceptance(_row(clocking=self._clock(
+            notch_corr=0.42, notch_prominence=0.06, evidence="none",
+            rotation_unverified=True)))
+        note = _metric(out, "rotation_deg")["note"]
+        assert "coded band is unreadable" in note
+        assert "2+ point pairs" in note and "re-capture" in note
+        # the standing spec caveat survives in front of it
+        assert note.startswith("pass needs codes evidence")
+
+    def test_readable_codes_keep_the_standing_note_alone(self):
+        out = evaluate_acceptance(_row(clocking=self._clock(notch_shift_deg=-1.9)))
+        note = _metric(out, "rotation_deg")["note"]
+        assert "coded band is unreadable" not in note
+        # recess-fallback sites keep it too: the advisory is for NO evidence only
+        out2 = evaluate_acceptance(_row(clocking=self._clock(
+            notch_corr=0.2, notch_prominence=0.02, evidence="recess",
+            notch_shift_deg=0.5)))
+        assert "coded band is unreadable" not in _metric(out2, "rotation_deg")["note"]
+
     def test_consistency_routes_attention_at_the_shipped_rule(self):
         out = evaluate_acceptance(
             _row(clocking=self._clock(consistency_deg=24.0)))
