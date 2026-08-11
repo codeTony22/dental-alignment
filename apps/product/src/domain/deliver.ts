@@ -1485,6 +1485,10 @@ export function previewTabs(
           : [{ filename: platform, role: "arch" }],
     });
   }
+  // (§10-AS.19: the closed-model artifact and its tab are RETIRED — client
+  // 2026-08-10, "I do not need a model stl — just work with open arch". The
+  // solidify survives only inside the worker's boolean; old packages that
+  // still carry a -model-closed.stl get no tab pointing at it.)
   return tabs;
 }
 

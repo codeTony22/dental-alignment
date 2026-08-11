@@ -307,7 +307,342 @@ def cap_imprint_holes(arch: trimesh.Trimesh,
     return trimesh.util.concatenate([kept_arch, socket]), notes
 
 
+def _punch_solid(zs_p: np.ndarray, prof_p: np.ndarray, floor_a: float,
+                 pose: np.ndarray) -> trimesh.Trimesh:
+    """The CUT TOOL (§10-AS.12): the envelope profile lathed from ``floor_a``
+    up, with a flat bottom disc AT the floor — so a boolean difference leaves
+    a smooth wall and a machined flat floor — and the top row extended 2mm
+    past the profile's end (the scanned cap's apex can stand a deviation
+    proud of the template's own top; without the extension a sliver of dome
+    survived the cut as a floating crown)."""
+    zs = np.asarray(zs_p, float)
+    prof = np.asarray(prof_p, float)
+    keep = zs > floor_a
+    r_floor = float(np.interp(floor_a, zs, prof))
+    z_rows = np.concatenate([[floor_a], zs[keep],
+                             [float(zs[keep][-1]) + 2.0] if keep.any()
+                             else [floor_a + 2.0]])
+    r_rows = np.concatenate([[r_floor], prof[keep],
+                             [float(prof[keep][-1])] if keep.any()
+                             else [r_floor]])
+    seg = 64
+    ang = np.linspace(0.0, 2.0 * np.pi, seg, endpoint=False)
+    ca, sa = np.cos(ang), np.sin(ang)
+    rings = np.concatenate([
+        np.column_stack([rr * ca, rr * sa, np.full(seg, zz)])
+        for rr, zz in zip(r_rows, z_rows)])
+    verts = np.vstack([rings, [[0.0, 0.0, z_rows[0]]],
+                       [[0.0, 0.0, z_rows[-1]]]])
+    faces = []
+    bins = len(z_rows)
+    for i in range(bins - 1):
+        a0, b0 = i * seg, (i + 1) * seg
+        for j in range(seg):
+            k = (j + 1) % seg
+            faces.append([a0 + j, a0 + k, b0 + k])
+            faces.append([a0 + j, b0 + k, b0 + j])
+    bot, top = len(verts) - 2, len(verts) - 1
+    last = (bins - 1) * seg
+    for j in range(seg):
+        k = (j + 1) % seg
+        faces.append([bot, k, j])
+        faces.append([top, last + j, last + k])
+    punch = trimesh.Trimesh(verts, np.asarray(faces, int), process=False)
+    punch.apply_transform(np.asarray(pose, float))
+    return punch
+
+
+# one emit solidifies the same scan for the dish, the platform and the closed
+# model — cache it for the life of the mesh object (key carries a content
+# checksum so a recycled id can never serve another mesh's solid)
+_SOLID_CACHE: dict = {}
+
+
+def _solidified(arch: trimesh.Trimesh) -> trimesh.Trimesh:
+    from case_prep.adapters.cap_detection import crown_up_axis
+
+    v = np.asarray(arch.vertices, float)
+    key = (id(arch), len(v), float(v[:: max(1, len(v) // 97)].sum()))
+    hit = _SOLID_CACHE.get(key)
+    if hit is not None:
+        return hit
+    up = crown_up_axis(v, np.asarray(arch.face_normals, float))
+    solid = solidify_shell(arch, up)
+    if not solid.is_watertight:
+        raise ValueError("the solidified shell is not watertight")
+    _SOLID_CACHE.clear()
+    _SOLID_CACHE[key] = solid
+    return solid
+
+
+def _lid_boundary_loops(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    """Fan-close every boundary loop of ``mesh`` with a flat centroid lid —
+    the same idiom ``solidify_shell`` uses for a scan's small holes, applied
+    here to a vendor CAD cap. Most healing-cap STLs export the
+    implant-interface bore OPEN (the physical part is genuinely hollow
+    there) — an honest closure of a KNOWN loop, not an inferred shape, so
+    it does not violate §10-AS.14's "we should not be inferring anything
+    here": without it the exact-cut route would never run on real vendor
+    files at all. A mesh with no boundary passes through unchanged."""
+    import collections
+
+    V = np.asarray(mesh.vertices, float)
+    F = np.asarray(mesh.faces)
+    cnt = collections.Counter(map(tuple, mesh.edges_sorted))
+    boundary = [e for e, n in cnt.items() if n == 1]
+    if not boundary:
+        return mesh.copy()
+    adj = collections.defaultdict(list)
+    for a, b in boundary:
+        adj[a].append(b)
+        adj[b].append(a)
+    seen: set = set()
+    loops = []
+    for start in adj:
+        if start in seen:
+            continue
+        loop = [start]
+        seen.add(start)
+        prev, cur = None, start
+        while True:
+            nxts = [n for n in adj[cur] if n != prev and n not in seen]
+            if not nxts:
+                break
+            prev, cur = cur, nxts[0]
+            seen.add(cur)
+            loop.append(cur)
+        if len(loop) >= 3:
+            loops.append(loop)
+    new_verts = [V]
+    new_faces = [F]
+    nv = len(V)
+    for loop in loops:
+        centre = V[loop].mean(axis=0)
+        new_verts.append(centre[None, :])
+        ci = nv
+        nv += 1
+        new_faces.append(np.asarray(
+            [[ci, loop[i], loop[(i + 1) % len(loop)]] for i in range(len(loop))],
+            int))
+    out = trimesh.Trimesh(np.vstack(new_verts), np.vstack(new_faces), process=False)
+    trimesh.repair.fix_normals(out)
+    return out
+
+
+def _exact_cap_punch(template: trimesh.Trimesh, offset_mm: float,
+                     pose: np.ndarray,
+                     floor_a: Optional[float] = None) -> trimesh.Trimesh:
+    """THE EXACT CUT TOOL (§10-AS.14, client 2026-08-10: "this needs to be
+    exact of the healing cap... the gum is gonna heal around the healing cap
+    ... subtraction is the exact, we should not be inferring anything here").
+    The cap's OWN CAD solid at its aligned pose, grown only by the site's
+    gingival offset along its vertex normals — the offset is the operator's
+    chosen parameter, the one dilation that is not inference. The revolute
+    envelope and the deviation clearance are gone from the cut; the envelope
+    survives only as this tool's per-site fallback. When a visible depth
+    applies, the tool is clipped below ``floor_a`` by a box intersection so
+    the dish/platform artifacts keep their shallow reads.
+
+    Most vendor healing-cap STLs are not watertight as exported — the
+    implant-interface bore is open, since the physical part is hollow
+    there — so a not-yet-closed template gets ONE honest closure attempt
+    (``_lid_boundary_loops``) before this tool gives up on it."""
+    if len(template.faces) == 0:
+        raise ValueError("the cap template is not a watertight solid")
+    src = template if template.is_watertight else _lid_boundary_loops(template)
+    if not src.is_watertight:
+        raise ValueError("the cap template is not a watertight solid")
+    punch = src.copy()
+    if float(offset_mm) > 0:
+        n = np.asarray(punch.vertex_normals, float)
+        punch.vertices = (np.asarray(punch.vertices, float)
+                          + n * float(offset_mm))
+    punch.apply_transform(np.asarray(pose, float))
+    if floor_a is not None:
+        import trimesh.boolean
+        box = trimesh.creation.box(extents=[60.0, 60.0, 60.0])
+        box.apply_translation([0.0, 0.0, 30.0 + float(floor_a)])
+        box.apply_transform(np.asarray(pose, float))
+        clipped = trimesh.boolean.intersection([punch, box], engine="manifold")
+        if len(clipped.faces) > 0:
+            punch = clipped
+        # "the clip only limits depth, never extends it": a submerged cap
+        # whose own dilated top sits BELOW the visible-floor target (the
+        # countersink wants to open at the gum, but the cap's own material
+        # never reaches that high) has nothing for the clip to keep — the
+        # clip is then a no-op, and the WHOLE cap is the cut, exactly as
+        # ``depth=None`` would give it. Never an empty tool, never a
+        # manufactured extension past the cap's own true shape.
+    return punch
+
+
+def _csg_carve(arch: trimesh.Trimesh,
+               sites: "Sequence[Tuple[trimesh.Trimesh, np.ndarray, float, float]]",
+               visible_depth_mm: Optional[float],
+               top_floor: bool
+               ) -> Tuple[trimesh.Trimesh, Optional[trimesh.Trimesh], list]:
+    import trimesh.boolean
+
+    solid = _solidified(arch)
+    V = np.asarray(arch.vertices, float)
+    punches = []
+    regions = []
+    notes: list = []
+    for index, (template, pose, offset_mm, rim_radius_mm) in enumerate(sites, 1):
+        pose = np.asarray(pose, float)
+        origin = pose[:3, 3]
+        R = pose[:3, :3]
+        axis = R @ np.array([0.0, 0.0, 1.0])
+        xl = R @ np.array([1.0, 0.0, 0.0])
+        yl = R @ np.array([0.0, 1.0, 0.0])
+        try:
+            # relief-only: the profile bounds the exact cap (max radius per
+            # height) — it feeds the tint region test, the ring band and the
+            # per-site FALLBACK tool. The deviation clearance is gone from
+            # the cut (§10-AS.14: "we should not be inferring anything here")
+            zs_p, prof_p = _envelope_profile(template, float(offset_mm))
+            profile_ok = True
+        except Exception as exc:  # noqa: BLE001 — cut on, honestly
+            zs_p = np.array([-_HOLE_DEPTH_MM, _HOLE_DEPTH_MM])
+            prof_p = np.full(2, rim_radius_mm + _REGION_MARGIN_MM)
+            profile_ok = False
+            notes.append(f"site {index}: the cap envelope could not be built "
+                         f"({exc}) — a cylinder recess was cut at the rim "
+                         f"radius instead")
+        rel = V - origin
+        a = rel @ axis
+        r = np.hypot(rel @ xl, rel @ yl)
+        r_ref = float(np.max(prof_p))
+        band = (r > r_ref + 0.1) & (r < r_ref + 1.2) & (np.abs(a) < 6.0)
+        if int(band.sum()) < 8:
+            raise ValueError(f"no gum ring around site {index}")
+        # the LOW quartile: a median once read a neighbouring crown as
+        # +3.2mm of gum; the lowest surface in the ring is the gingiva
+        h_low = float(np.percentile(a[band], 25))
+        if top_floor:
+            depth = max(float(offset_mm), _PLATFORM_COUNTERSINK_MIN_MM)
+        elif visible_depth_mm is not None:
+            depth = float(visible_depth_mm)
+        else:
+            depth = None
+        floor_a = (float(zs_p[0]) if depth is None
+                   else max(h_low - depth, float(zs_p[0])))
+        if depth is not None:
+            # the floor stays INSIDE the solid: on a thin model a punch that
+            # reaches past the underside cuts a through-hole, not a seat.
+            # A raw OPEN scan carries no "underside" of its own (it is one
+            # surface, not a slab) — reading the footprint's raw vertices
+            # for a "thin material" signal found only the SAME top surface
+            # again and pushed the floor above the gum entirely on a real
+            # single-sheet scan. The SOLIDIFIED shell (skirt + base) is the
+            # honest source: a ray straight down the pose axis, probed at
+            # the footprint's centre and a few off-axis points, finds the
+            # model's true material limit directly beneath this site —
+            # exactly the box fixture's own -0.5mm underside where one
+            # genuinely exists, and the base plate far below on an open
+            # single-sheet scan where none does.
+            probes = [origin + axis * 100.0]
+            if r_ref > 0:
+                for ang in (0.0, np.pi / 2, np.pi, 3 * np.pi / 2):
+                    probes.append(origin + axis * 100.0
+                                  + (xl * np.cos(ang) + yl * np.sin(ang))
+                                  * (r_ref * 0.6))
+            hits, *_ = solid.ray.intersects_location(
+                ray_origins=probes,
+                ray_directions=[-axis] * len(probes))
+            if len(hits):
+                base_a = float(((hits - origin) @ axis).min())
+                floor_a = max(floor_a, base_a + 0.3)
+        try:
+            punches.append(_exact_cap_punch(
+                template, float(offset_mm), pose,
+                floor_a if depth is not None else None))
+        except Exception as exc:  # noqa: BLE001 — per-site honest fallback
+            if profile_ok:  # a degenerate template already told its story
+                notes.append(f"site {index}: the exact cap could not be cut "
+                             f"({exc}) — its envelope was used instead")
+            punches.append(_punch_solid(zs_p, prof_p, floor_a, pose))
+        # the tint's own floor: when the visible-floor clip on the exact cap
+        # was a no-op (the cap's own top never reached the nominal target),
+        # the punch actually reaches all the way to the cap's own base —
+        # the SOCKET/OUT split must follow the punch it was actually given,
+        # not the unmet nominal target, or the split misplaces the whole cut
+        punch_a = (np.asarray(punches[-1].vertices, float) - origin) @ axis
+        actual_floor_a = float(punch_a.min()) if len(punch_a) else floor_a
+        regions.append((origin, axis, xl, yl, zs_p, prof_p, actual_floor_a,
+                        h_low))
+    cut = trimesh.boolean.difference([solid] + punches, engine="manifold")
+    if not cut.is_watertight:
+        raise ValueError("the boolean result is not watertight")
+    # the tint split: faces on any site's cut surface go to the socket layer
+    C = np.asarray(cut.triangles_center, float)
+    inside = np.zeros(len(C), bool)
+    for origin, axis, xl, yl, zs_p, prof_p, floor_a, h_low in regions:
+        rel = C - origin
+        a = rel @ axis
+        r = np.hypot(rel @ xl, rel @ yl)
+        rmax = np.interp(np.clip(a, float(zs_p[0]), float(zs_p[-1])),
+                         zs_p, prof_p)
+        inside |= (r < rmax + 0.05) & (a > floor_a - 0.05) & (a < h_low + 3.0)
+    # THE OPEN ARCH COMES BACK (§10-AS.16, client 2026-08-10: "why did we
+    # build a dental model — we need to work with the open arch"): the
+    # solidify base and skirt exist ONLY so the boolean has a solid to cut.
+    # The artifact is the SCAN. A face survives if it lies on a cut surface
+    # (the recess) or on the original shell itself; the fabricated closure —
+    # base plate, skirt, anything the scan never contained — is stripped.
+    # Tab 6's closed model keeps its base; that is its whole point.
+    from scipy.spatial import cKDTree
+
+    # judged against a dense SURFACE sample, not the vertices alone: a scan's
+    # 0.3mm vertex spacing hides the difference, but a coarse mesh's mid-face
+    # centroids sit a full edge from any vertex and were stripped as if
+    # fabricated (measured on the 2.5mm-spaced fixtures)
+    surf_pts, _ = trimesh.sample.sample_surface(arch, 150_000)
+    d_scan, _ = cKDTree(np.vstack([V, surf_pts])).query(C)
+    keep = inside | (d_scan < 0.35)
+    F = np.asarray(cut.faces)
+    Vc = np.asarray(cut.vertices, float)
+    out = trimesh.Trimesh(Vc.copy(), F[keep & ~inside].copy(), process=False)
+    out.remove_unreferenced_vertices()
+    socket: Optional[trimesh.Trimesh] = None
+    if bool(inside.any()):
+        socket = trimesh.Trimesh(Vc.copy(), F[inside].copy(), process=False)
+        socket.remove_unreferenced_vertices()
+    return out, socket, notes
+
+
 def cap_imprint_parts(arch: trimesh.Trimesh,
+                      sites: "Sequence[Tuple[trimesh.Trimesh, np.ndarray, float, float]]",
+                      visible_depth_mm: Optional[float] =
+                      _SOCKET_VISIBLE_DEPTH_MM,
+                      top_floor: bool = False
+                      ) -> Tuple[trimesh.Trimesh, Optional[trimesh.Trimesh],
+                                 list]:
+    """THE RECESS, CUT FOR REAL (§10-AS.12, client 2026-08-10 on the pressed
+    carve's floor: "not smooth at all, and hole in the middle?"). The scan is
+    SOLIDIFIED (skirt + base + hole lids — which is what fills the scan's own
+    hole inside the cap's recess) and every site's punch — the relief envelope
+    plus the deviation clearance, flat-bottomed at the local gum's low
+    quartile minus the countersink — is subtracted in ONE manifold boolean.
+    The result is watertight: machined wall, machined floor, no backface
+    possible from any angle. Faces on the cut surface split into the SOCKET
+    piece for the preview tint; concatenating the two pieces rebuilds the cut
+    solid exactly. When the CSG route cannot run (an unclosable shell, a
+    boolean refusal) the one-shell PRESS carve (§10-AS.10) takes over with a
+    note — an honest degradation, never a dead package."""
+    try:
+        return _csg_carve(arch, sites, visible_depth_mm, top_floor)
+    except Exception as exc:  # noqa: BLE001 — the fallback IS the containment
+        out, socket, notes = _press_carve(arch, sites,
+                                          visible_depth_mm=visible_depth_mm,
+                                          top_floor=top_floor)
+        return out, socket, [f"the true-boolean recess could not be cut "
+                             f"({exc}) — the pressed carve was used instead"
+                             ] + notes
+
+
+
+def _press_carve(arch: trimesh.Trimesh,
                       sites: Sequence[Tuple[trimesh.Trimesh, np.ndarray,
                                             float, float]],
                       visible_depth_mm: Optional[float] =
@@ -315,7 +650,12 @@ def cap_imprint_parts(arch: trimesh.Trimesh,
                       top_floor: bool = False
                       ) -> Tuple[trimesh.Trimesh, Optional[trimesh.Trimesh],
                                  list]:
-    """THE CARVE (client 2026-08-10, §10-AS.10, over the competitor's screenshot:
+    """THE PRESS FALLBACK (§10-AS.12 demoted it from the front line): the
+    one-shell carve that presses scan vertices onto the floor. Kept whole as
+    the honest degradation when the CSG route cannot run — it can never die,
+    but its floor is pressed scan debris and a scan hole in the cap's own
+    recess survives as a hole in the floor (the client's screenshot).
+    Original charter (client 2026-08-10, §10-AS.10, over the competitor's screenshot:
     "look like the second picture — there is a floor and the floor is lower by
     the gum, which shows the gingival offset"). The recess is pressed into the
     scan's OWN vertices: every vertex standing inside the cap's relief envelope
@@ -446,3 +786,90 @@ def cap_imprint_parts(arch: trimesh.Trimesh,
                                  process=False)
         socket.remove_unreferenced_vertices()
     return out, socket, notes
+
+
+# --- THE CLOSED MODEL (§10-AS.11, client 2026-08-10, approved option 3) --------
+# The competitor's screenshot is not a raw scan: it is a MODEL — the shell
+# solidified with a base, holes closed, and the cap recess cut by a real
+# boolean. A closed solid can never show a backface. manifold3d supplies the
+# CSG; the solidify is the lab's own idiom: skirt the open boundary down to a
+# base plane away from the crowns, lid the small holes.
+
+def solidify_shell(shell: trimesh.Trimesh, crowns_up: np.ndarray,
+                   base_margin_mm: float = 1.5) -> trimesh.Trimesh:
+    """The open scan shell as a closed lab model. The LONGEST boundary loop is
+    the shell's outer edge: it gets a skirt extruded away from the crowns to a
+    flat base plane ``base_margin_mm`` past the deepest point, and the base is
+    fanned closed. Every other loop is a small scan hole and gets a planar
+    lid. A mesh with no boundary is already a solid and passes through."""
+    import collections
+
+    V = np.asarray(shell.vertices, float)
+    F = np.asarray(shell.faces)
+    up = np.asarray(crowns_up, float)
+    up = up / np.linalg.norm(up)
+    cnt = collections.Counter(map(tuple, shell.edges_sorted))
+    boundary = [e for e, n in cnt.items() if n == 1]
+    if not boundary:
+        out = shell.copy()
+        trimesh.repair.fix_normals(out)
+        return out
+    adj = collections.defaultdict(list)
+    for a, b in boundary:
+        adj[a].append(b)
+        adj[b].append(a)
+    seen: set = set()
+    loops = []
+    for start in adj:
+        if start in seen:
+            continue
+        loop = [start]
+        seen.add(start)
+        prev, cur = None, start
+        while True:
+            nxts = [n for n in adj[cur] if n != prev and n not in seen]
+            if not nxts:
+                break
+            prev, cur = cur, nxts[0]
+            seen.add(cur)
+            loop.append(cur)
+        if len(loop) >= 3:
+            loops.append(loop)
+    if not loops:
+        raise ValueError("boundary edges form no loop")
+    loops.sort(key=len, reverse=True)
+    base_h = float((V @ up).min()) - float(base_margin_mm)
+    new_verts = [V]
+    new_faces = [F]
+    nv = len(V)
+    outer = loops[0]
+    ring = V[outer]
+    proj = ring - np.outer((ring @ up) - base_h, up)
+    base_idx = np.arange(nv, nv + len(outer))
+    new_verts.append(proj)
+    nv += len(outer)
+    m = len(outer)
+    skirt = []
+    for i in range(m):
+        j = (i + 1) % m
+        skirt.append([outer[i], outer[j], base_idx[j]])
+        skirt.append([outer[i], base_idx[j], base_idx[i]])
+    new_faces.append(np.asarray(skirt, int))
+    centre = proj.mean(axis=0)
+    new_verts.append(centre[None, :])
+    ci = nv
+    nv += 1
+    new_faces.append(np.asarray(
+        [[ci, base_idx[(i + 1) % m], base_idx[i]] for i in range(m)], int))
+    for loop in loops[1:]:
+        lid_centre = V[loop].mean(axis=0)
+        new_verts.append(lid_centre[None, :])
+        li = nv
+        nv += 1
+        new_faces.append(np.asarray(
+            [[li, loop[i], loop[(i + 1) % len(loop)]]
+             for i in range(len(loop))], int))
+    solid = trimesh.Trimesh(np.vstack(new_verts), np.vstack(new_faces),
+                            process=False)
+    trimesh.repair.fix_normals(solid)
+    return solid

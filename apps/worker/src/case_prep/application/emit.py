@@ -289,9 +289,17 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
     arch_removed = (trimesh.util.concatenate([arch_socketless, socket_dish])
                     if socket_dish is not None else arch_socketless)
     for note in imprint_notes:
-        # "site N: …" — N is 1-based package_sites order; land it on that row
-        tooth = package_sites[int(note.split(":", 1)[0].split()[1]) - 1][0].tooth
-        rows_by_tooth[tooth].setdefault("production", {})["imprint_note"] = note
+        # "site N: …" — N is 1-based package_sites order; land it on that row.
+        # A WHOLE-CARVE note (the CSG route's fallback sentence, §10-AS.12 —
+        # no site prefix) lands on every row: the degradation covered all.
+        if note.startswith("site "):
+            teeth = [package_sites[
+                int(note.split(":", 1)[0].split()[1]) - 1][0].tooth]
+        else:
+            teeth = [sp.tooth for sp, _t, _cons in package_sites]
+        for tooth in teeth:
+            rows_by_tooth[tooth].setdefault("production", {})[
+                "imprint_note"] = note
     arch_capless_path = out_dir / f"{case.id}-arch-capless.stl"
     arch_removed.export(arch_capless_path)
     # THE FIFTH ARTIFACT (client 2026-08-09): the platform socket. Both
@@ -316,7 +324,6 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
         pth = out_dir / f"{case.id}-socket-platform.stl"
         socket_platform.export(pth)
         layer_names.append(pth.name)
-
     cons_posed = [(final_products[sp.tooth], sp.pose_matrix)
                   for sp, _t, _cons in package_sites]
     arch_cons_path = out_dir / f"{case.id}-arch-with-constructions.stl"

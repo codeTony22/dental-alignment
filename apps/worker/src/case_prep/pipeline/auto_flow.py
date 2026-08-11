@@ -2492,11 +2492,19 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                 [arch_socketless, socket_dish])
                 if socket_dish is not None else arch_socketless)
             for note in imprint_notes:
-                tooth = package_sites[
-                    int(note.split(":", 1)[0].split()[1]) - 1][0].tooth
-                target = _rows_by_tooth_qc.get(tooth)
-                if target is not None:
-                    target.setdefault("production", {})["imprint_note"] = note
+                # "site N: …" lands on that row; a WHOLE-CARVE note (the CSG
+                # route's fallback sentence, §10-AS.12 — no site prefix)
+                # lands on every row: the degradation covered all of them
+                if note.startswith("site "):
+                    teeth = [package_sites[
+                        int(note.split(":", 1)[0].split()[1]) - 1][0].tooth]
+                else:
+                    teeth = [sp.tooth for sp, _t, _c in package_sites]
+                for tooth in teeth:
+                    target = _rows_by_tooth_qc.get(tooth)
+                    if target is not None:
+                        target.setdefault("production", {})[
+                            "imprint_note"] = note
             arch_capless_path = _P(out_dir) / f"{case_id}-arch-capless.stl"
             arch_removed.export(arch_capless_path)
             # THE FIFTH ARTIFACT (client 2026-08-09): the platform socket —
@@ -2519,7 +2527,6 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                 (_P(out_dir) / f"{case_id}-socket-platform.stl").write_bytes(
                     socket_platform.export(file_type="stl"))
                 _layer_names.append(f"{case_id}-socket-platform.stl")
-
             cons_posed = [(final_products[sp.tooth] if final_products else cons, sp.pose_matrix)
                           for sp, _t, cons in package_sites]
             arch_cons = arch_with_parts(arch_removed, cons_posed)
