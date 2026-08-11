@@ -475,6 +475,7 @@ export function scanPaneCapCylinder(
   detail: CaseSessionDetail,
   declaredVariant: string | null = null,
   suggestedVariant: string | null = null,
+  measuredDiameterMm: number | null = null,
 ): { radiusMm: number; aboveMm: number; belowMm: number } | null {
   const target = declaredVariant ?? suggestedVariant;
   if (target === null) return null;
@@ -487,8 +488,21 @@ export function scanPaneCapCylinder(
       const height = record["height_mm"];
       if (typeof dia !== "number" || !Number.isFinite(dia)) return null;
       if (typeof height !== "number" || !Number.isFinite(height)) return null;
+      // THE SOFT-TISSUE SEPARATOR (§10-AS.18, client 2026-08-10: "remove the
+      // soft tissue... just the healing cap"): on a submerged cap the tissue
+      // heals OVER the flanks, and the catalog rim honestly includes that
+      // overgrowth — the detector's own measured VISIBLE rim tightens the
+      // crop to what the scanner actually saw of the cap. It only ever
+      // tightens: a measured read wider than the catalog is overgrowth
+      // context, not a bigger cap.
+      const catalogR = dia / 2 + 0.4;
+      const measuredR =
+        measuredDiameterMm !== null && Number.isFinite(measuredDiameterMm)
+          ? measuredDiameterMm / 2 + 0.3
+          : null;
+      const r = measuredR !== null ? Math.min(catalogR, measuredR) : catalogR;
       return {
-        radiusMm: Math.round((dia / 2 + 0.4) * 10) / 10,
+        radiusMm: Math.round(r * 10) / 10,
         aboveMm: 1.5,
         belowMm: Math.round((height + 1.5) * 10) / 10,
       };

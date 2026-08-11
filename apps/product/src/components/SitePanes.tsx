@@ -1312,8 +1312,14 @@ export function useSitePaneScene(
   // proxy) — because a sphere cannot separate a submerged cap from the gum
   // standing at the same height. Without the dimensions or an axis, the
   // spherical band stands: the pane never claims a cap it cannot measure.
-  const capCylinder = scanPaneCapCylinder(detail, site?.declared_variant ?? null,
-                                          site?.suggested_variant ?? null);
+  const capCylinder = scanPaneCapCylinder(
+    detail,
+    site?.declared_variant ?? null,
+    site?.suggested_variant ?? null,
+    site !== undefined && site !== null
+      ? detail.detection?.site_measured_diameter_mm?.[String(site.tooth)] ?? null
+      : null,
+  );
   const cropAxis: Vec3 | null =
     posePresented !== null && posePresented.axis.length === 3
       ? [posePresented.axis[0]!, posePresented.axis[1]!, posePresented.axis[2]!]

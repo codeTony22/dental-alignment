@@ -278,6 +278,8 @@ class DetectionRecord(BaseModel):
     # rather than refusing.
     site_measured_height_mm: Dict[str, Optional[float]] = Field(default_factory=dict)
     site_proposed_variant: Dict[str, Optional[str]] = Field(default_factory=dict)
+    # the VISIBLE cap's own rim (§10-AS.18): the panes' soft-tissue separator
+    site_measured_diameter_mm: Dict[str, Optional[float]] = Field(default_factory=dict)
 
 
 class RunSession(BaseModel):

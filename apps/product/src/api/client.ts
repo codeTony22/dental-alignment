@@ -172,6 +172,10 @@ export interface DetectionView {
    *  reason `jaw_reading` is — the BFF always sends both. */
   site_measured_height_mm?: Record<string, number | null>;
   site_proposed_variant?: Record<string, string | null>;
+  /** The VISIBLE cap's own rim, read off the scan (§10-AS.18) — the panes'
+   *  soft-tissue separator: on a submerged cap tissue heals over the flanks,
+   *  and the catalog rim honestly includes that overgrowth. */
+  site_measured_diameter_mm?: Record<string, number | null>;
 }
 
 /** One case-level choice as the automation consumes it (the SystemView pattern

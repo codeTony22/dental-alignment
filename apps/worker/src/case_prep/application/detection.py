@@ -100,6 +100,11 @@ class SuggestedSiteCapture:
     capture: dict
     measured_cap_height_mm: Optional[float] = None
     proposed_variant: Optional[str] = None
+    # the VISIBLE cap's own rim, read fresh off the scan (§10-AS.18, client
+    # 2026-08-10: "remove the soft tissue... just the healing cap") — on a
+    # submerged cap tissue heals OVER the flanks, and the catalog rim would
+    # honestly include that overgrowth; this is the separator the panes crop by
+    measured_rim_diameter_mm: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -295,6 +300,7 @@ def detect(case: CaseRecord) -> DetectionResult:
             capture=cap,
             measured_cap_height_mm=height,
             proposed_variant=propose_variant(measured_dia, height, variant_table),
+            measured_rim_diameter_mm=measured_dia,
         ))
 
     axis = tuple(float(c) for c in ctx.frame[:, 2])  # _crowns_frame's third column -- expose, don't recompute

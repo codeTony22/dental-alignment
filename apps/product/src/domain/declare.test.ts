@@ -1573,6 +1573,18 @@ describe("scanPaneRadiusMm — the cap-tight display band", () => {
     expect(scanPaneCapCylinder(caseSessionDetail(), "5020", null)).toBeNull();
   });
 
+  it("the measured VISIBLE rim tightens the cylinder — never widens it (§10-AS.18)", () => {
+    // "remove the soft tissue... just the healing cap": tissue heals over a
+    // submerged cap's flanks, and the detector's own visible-rim read is the
+    // only honest separator. Catalog Ø6.2 → 3.5; measured Ø4.0 → 2.3.
+    expect(scanPaneCapCylinder(twoVariants, "5020", null, 4.0))
+      .toEqual({ radiusMm: 2.3, aboveMm: 1.5, belowMm: 4.9 });
+    // a measured read WIDER than the catalog is overgrowth context, not a
+    // bigger cap — the catalog rim stands
+    expect(scanPaneCapCylinder(twoVariants, "5020", null, 9.0))
+      .toEqual({ radiusMm: 3.5, aboveMm: 1.5, belowMm: 4.9 });
+  });
+
   it("matches an ARCHIVED declaration by its full id (client 2026-08-10, tooth 3's 4.7mm gum window)", () => {
     // superseded rows serve id "superseded-…--6030" but variant "6030"; a site
     // declared on the archive's own id fell through BOTH matchers to the

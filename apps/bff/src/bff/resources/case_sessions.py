@@ -203,6 +203,7 @@ class DetectionView(BaseModel):
     # verbatim evidence.
     site_measured_height_mm: Dict[str, Optional[float]] = Field(default_factory=dict)
     site_proposed_variant: Dict[str, Optional[str]] = Field(default_factory=dict)
+    site_measured_diameter_mm: Dict[str, Optional[float]] = Field(default_factory=dict)
 
 
 class EffectiveChoiceView(BaseModel):
@@ -991,6 +992,9 @@ def _detection_record(result: DetectionResult) -> DetectionRecord:
                                  for s in result.suggested},
         site_proposed_variant={str(s.tooth): s.proposed_variant
                                for s in result.suggested},
+        site_measured_diameter_mm={
+            str(s.tooth): getattr(s, "measured_rim_diameter_mm", None)
+            for s in result.suggested},
     )
 
 
@@ -1003,6 +1007,7 @@ def _detection_view(session: CaseSession) -> Optional[DetectionView]:
         jaw_reading=session.detection.jaw_reading,
         site_measured_height_mm=session.detection.site_measured_height_mm,
         site_proposed_variant=session.detection.site_proposed_variant,
+        site_measured_diameter_mm=session.detection.site_measured_diameter_mm,
     )
 
 

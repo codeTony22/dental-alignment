@@ -469,12 +469,15 @@ class TestMeasuredVariantSuggestion:
             SuggestedSiteCapture(tooth=4, center=(1.0, 2.0, 3.0), capture=CAP_PASS,
                                  measured_cap_height_mm=None, proposed_variant=None),
             SuggestedSiteCapture(tooth=13, center=(4.0, 5.0, 6.0), capture=CAP_RESCAN,
-                                 measured_cap_height_mm=3.6, proposed_variant="5020"),
+                                 measured_cap_height_mm=3.6, proposed_variant="5020",
+                                 measured_rim_diameter_mm=4.9),
         ))
         client = self._client_detected_with(settings, monkeypatch, result)
         body = client.get("/api/case-sessions/neodent-gm").json()
         assert body["detection"]["site_measured_height_mm"] == {"4": None, "13": 3.6}
         assert body["detection"]["site_proposed_variant"] == {"4": None, "13": "5020"}
+        # §10-AS.18: the visible rim rides too — the panes' soft-tissue separator
+        assert body["detection"]["site_measured_diameter_mm"] == {"4": None, "13": 4.9}
 
 
 class TestJawReadingCrossCheck:
