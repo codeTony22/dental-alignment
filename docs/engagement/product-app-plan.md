@@ -2547,3 +2547,141 @@ erased + the floor under the mouth). Deliverables 25 + emit 5, fast lane 876;
 live on 276794487 run 20260811-001602 — the site reads as a shallow
 countersink set into the ridge from every angle. Option 3 (solidify + true
 boolean via manifold) queued as the closed-model upgrade for the downloads.
+
+**AS.11 — the closed model: solidify + true boolean (client-approved option 3,
+2026-08-10 "confirm and then do 3").** The blocker of record — no boolean
+backend on the unpinned Python 3.9 venv — fell to a measurement: manifold3d
+ships a 3.9 wheel (now a declared dependency). `solidify_shell` closes the
+open scan the lab's own way: the LONGEST boundary loop (276794487's shell has
+exactly one, 557 edges) is skirted away from the crowns to a flat base plane
+3mm past the deepest point and fanned closed; every smaller loop is a scan
+hole and gets a planar lid; a mesh with no boundary is already a solid and
+passes through. `closed_model_with_recesses` then subtracts every site's
+relief envelope in ONE manifold difference — measured on the client's case:
+watertight in (37,123mm³), watertight out, the volume drop is the recess.
+FAIL-OPEN as a whole: the artifact is additive, so an unclosable shell or a
+boolean refusal ships the package without it and says why in the manifest.
+Both emit lanes write `{case}-model-closed.stl` into package_files; Delivery
+gains tab `6 · Closed model` exactly when the run built it. A closed solid
+can never show a backface — the property the whole liner saga was chasing,
+now held by construction in the download itself. Deliverables 29 + emit,
+fast lane 880, product 1460, typecheck clean; live on 276794487 run
+20260811-002850.
+
+**AS.12 — everything becomes a boolean cut (client 2026-08-10, on AS.10's
+pressed floor: "not smooth at all, and hole in the middle?... So we got all
+of these wrong").** Four measured causes, one conclusion. The hole: the
+scanner cannot see inside the healing cap's own recess, so the SCAN has a
+hole there — no vertex-pressing can fill data that does not exist; the
+solidify step's hole lids can. The streaks: the pressed floor was scan
+debris. The tab-6 crater ring: the cut tool was the exact envelope with no
+deviation clearance (AR.3's lesson, relearned). The "gum block": the base
+was cut 3mm past the deepest palate point (now 1.5). So the CSG route moves
+to the FRONT for every recess artifact: `cap_imprint_parts` solidifies the
+shell and subtracts per-site PUNCHES — the relief envelope + the deviation
+clearance, flat-bottomed at the ring's low-quartile gum height minus the
+countersink, top-extended 2mm so a deviating apex cannot survive as a
+floating crown — in one manifold difference. Machined wall, machined floor,
+watertight from every angle; the tint split (socket = faces on any punch's
+surface) and the two-piece contract are unchanged, so the emit lanes did not
+move. Floors clamp INSIDE the solid (a ray-probe against the solidified
+shell — a thin model must never get a through-hole; the raw-vertex probe
+mis-read open sheets, found and fixed by the reconciliation agent). The
+PRESS carve (AS.10) stays as the automatic fallback with a manifest note —
+and a whole-carve note (no "site N" prefix) now lands on every row instead
+of crashing the note parser, which the demo suite caught. One solidify per
+scan is cached across the dish/platform/model cuts. Pins re-aimed to CSG
+truths (watertight two-piece tile, flat countersink vs the ring's own
+height, void-empty, thicker fixture for the closed model's unclamped
+full-depth cut). Deliverables 29 + emit, fast lane 880; live on 276794487
+run 20260811-011651 — tabs 4/5/6 all render solid lab models.
+
+**AS.13 — the cap-crop wears bone-white again (client 2026-08-10, over a
+pane-2 screenshot: "change the middle panel back to the white we had
+before").** Undoes AS.5's binding to the arch tan — the third decision on
+this colour (§10-AO white → AS.5 tan → white), each recorded. CAP_SCAN_COLOR
+(#f2f1ec) and its legend accessor return to the viewer's API; the AS.6
+effective-cap band keying is untouched. Viewer 138, product 1460.
+
+**AS.14 — the cut is the healing cap itself (client 2026-08-10, over tab 1's
+gap ring: "why is the hole bigger than the healing cap — this needs to be
+exact... the gum is gonna heal around the healing cap... subtraction is the
+exact, we should not be inferring anything here").** The revolute envelope
+and the 0.5mm deviation clearance leave the cut tools entirely: the punch is
+the cap's OWN CAD solid at its aligned pose, grown only by the site's
+gingival offset along its vertex normals — the one dilation that is a chosen
+parameter, not an inference. The recess floor is therefore the cap's own
+base; the dish/platform clips only ever make it shallower (a box
+intersection that degrades to a no-op when it would erase the tool). Vendor
+templates ship the implant-interface bore OPEN — fan-lidded before the cut
+(the reconciliation agent's find: without it every real template fell back
+to the envelope). Two honest consequences, accepted with the ruling: a
+scanned cap's excursions beyond template+offset survive as a bounded SOLID
+lip (measured to ~1.9mm on cap6030's feature-rich rim — larger than the
+0.36mm p90 first assumed), and a deeply submerged cap's recess may not open
+a mouth the cap itself never reached. The envelope punch survives only as
+the per-site fallback, with its note. §10-AO's envelope doctrine and AR.3's
+clearance are both superseded here; the doctrine pin inverted with them.
+
+**AS.15 — pane 2 shows the healing cap alone (client 2026-08-10: "in the
+mesh of the arch we have the gum and the healing cap... just take out the
+mesh of the healing cap").** The spherical display band always dragged the
+gum ring in — and for a SUBMERGED cap no sphere can separate cap from gum
+standing at the same height. The crop becomes the cap's OWN CYLINDER: rim
+radius + a 0.4mm whisker, about the same axis the frame aims down (the
+measured pose when one stands, else the occlusal proxy), spanning from just
+above the top-centre down past the cap's own height — `cropTrianglesInCylinder`
+(viewer, same nothing-moved/nothing-sliced contract) driven by
+`scanPaneCapCylinder` (declare: the effective variant's rim + height, null
+without both — the pane never claims a cap it cannot measure, and the
+spherical band stands as the fallback). The caption says what it does:
+"N triangles · the healing cap only" — no band number a cylinder is not
+drawing. Verified live on 297589851 tooth 20: 41,091 → 38,825 triangles,
+the gum ring gone. Viewer 142, product 1463, typecheck clean.
+
+**AS.16 — the artifact is the open arch again (client 2026-08-10: "why did
+we build a dental model — we need to work with the open arch on the boolean
+differentials and additions").** The solidified base and skirt were the
+means (a boolean needs a solid), never the deliverable. After the cut,
+every face that is neither on a cut surface nor on the original shell —
+judged against a dense surface sample, since coarse meshes hide a full edge
+between vertices — is STRIPPED: what ships and previews on tabs 4/5 is the
+scan itself with the machined cap-width recesses, nothing the scan never
+contained. AS.12's machined floor and filled scan-hole survive on the cut
+surfaces; the whole-artifact watertightness claim is deliberately returned
+(the artifact is open exactly where the scan is). Tab 6's closed model keeps
+its base — that is its whole point. Deliverables 29 + emit 5, fast lane 880;
+live on 276794487 run 20260811-023512 — tab 1's green cap sits flush in a
+cap-width hole on the open arch.
+
+**AS.17 — the scanned cap turns glossy white (client 2026-08-10: "we need
+more glossy white here").** `VerifyLayerGeometry.glossy`: the cap-crop layer
+renders with a specular Phong material (specular 0x777777, shininess 60)
+instead of the matte Lambert, and CAP_SCAN_COLOR brightens one step
+(#f2f1ec → #f7f6f2) — still never pure white, so the highlights have
+somewhere to live. Viewer 142, product 1464.
+
+**AS.18 — the visible rim rides the wire (client 2026-08-10: "remove the
+soft tissue... just the healing cap").** Detection's own
+`measured_rim_diameter_mm` — already computed for the AS.4 proposal — now
+travels SuggestedSiteCapture → DetectionRecord/View
+(`site_measured_diameter_mm`, additive like the height) → the product, where
+`scanPaneCapCylinder` tightens the cap-only crop to min(catalog rim,
+measured visible rim): a partially submerged cap crops to what the scanner
+actually saw of it, and a measured read WIDER than the catalog never widens
+the crop (overgrowth is context, not a bigger cap). The un-removable
+remainder is stated for the record: within the cap's own footprint the scan
+is ONE surface — tissue healed over the cap top IS the surface there, and no
+geometric crop can peel it off the cap; the detect route's `?fresh=1` is how
+an old record gains the new field. Worker detection 26, bff 663, product
+1465.
+
+**AS.19 — the closed-model artifact retires (client 2026-08-10:
+"Construction — I do not need a model stl — just work with open arch, and
+save it in memory all around").** `model-closed.stl`, its tab and
+`closed_model_with_recesses` are gone; `solidify_shell` survives as INTERNAL
+machinery only — the boolean needs a solid for the one instant of the cut,
+and AS.16 strips the closure from every artifact. Old packages that still
+carry the file get no tab pointing at it. The standing doctrine (open arch
+always, exact cap + offset only, solidify internal-only) is saved to the
+assistant's persistent memory as asked, beside this ledger.
