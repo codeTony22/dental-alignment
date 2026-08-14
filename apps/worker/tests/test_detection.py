@@ -20,8 +20,10 @@ import pytest
 from scipy.spatial import cKDTree
 
 from case_prep.application.cases import CaseRecord, discover_cases
-from case_prep.application.detection import (CaptureContext, DetectionResult,
-                                             FALLBACK_RIM_RADIUS_MM, ScanUnreadable,
+from case_prep.application.detection import (CaptureContext, DetectedSite,
+                                             DetectionResult, FALLBACK_RIM_RADIUS_MM,
+                                             ScanUnreadable, SuggestedSiteCapture,
+                                             candidate_evidence_for,
                                              capture_context, detect,
                                              jaw_from_crown_axis, measured_cap_height_mm,
                                              site_capture_inputs, tooth_guess_for)
@@ -154,6 +156,62 @@ class TestToothGuess:
         assert tooth_guess_for([0.0, 0.0, 0.0], ({"tooth": 4},)) is None
 
 
+class TestCandidateEvidenceFor:
+    """Stage-1 slice 1a (clinical-pipeline-plan.md): the discriminator evidence that
+    justified a PROPOSAL must reach a CURATED site too, so Intake can say WHY —
+    but only when the density stack actually found something there. The reverse
+    of ``tooth_guess_for`` (there a proposal inherits a site's tooth; here a site
+    borrows a proposal's numbers) with the same one-cap-width radius and the same
+    honesty rule: a site the automatic pass never proposed (human-marked, or a
+    recall miss) has no ring density to show, and a nearby but DISTINCT candidate's
+    numbers are never borrowed in its place."""
+
+    PROPOSALS = (
+        DetectedSite(center=(0.0, 0.0, 0.0), void_ratio=0.10, rim_below_cusps_mm=6.0,
+                    tooth_guess=None, capture={}),
+        DetectedSite(center=(3.0, 0.0, 0.0), void_ratio=0.50, rim_below_cusps_mm=5.0,
+                    tooth_guess=None, capture={}),
+    )
+
+    def test_a_curated_site_near_a_proposal_borrows_its_evidence(self):
+        below, ratio = candidate_evidence_for([0.5, 0.0, 0.0], self.PROPOSALS)
+        assert below == pytest.approx(6.0)
+        assert ratio == pytest.approx(0.10)
+
+    def test_the_nearest_proposal_wins(self):
+        below, ratio = candidate_evidence_for([1.0, 0.0, 0.0], self.PROPOSALS)
+        # 1.0mm from the first proposal, 2.0mm from the second -- the first wins
+        assert below == pytest.approx(6.0)
+        assert ratio == pytest.approx(0.10)
+
+    def test_beyond_the_radius_there_is_no_evidence(self):
+        assert candidate_evidence_for([50.0, 50.0, 0.0], self.PROPOSALS) == (None, None)
+
+    def test_no_proposals_no_evidence(self):
+        assert candidate_evidence_for([0.0, 0.0, 0.0], ()) == (None, None)
+
+    def test_a_site_without_a_center_borrows_nothing(self):
+        assert candidate_evidence_for(None, self.PROPOSALS) == (None, None)
+
+
+class TestSuggestedSiteCaptureEvidenceFields:
+    """1a: the fields default to None -- an old persisted detection record (written
+    before this slice) still constructs the dataclass unchanged, the same
+    additivity ``measured_rim_diameter_mm`` already relies on -- and round-trip the
+    given value otherwise."""
+
+    def test_the_evidence_fields_default_to_none(self):
+        site = SuggestedSiteCapture(tooth=4, center=(0.0, 0.0, 0.0), capture={})
+        assert site.rim_below_cusps_mm is None
+        assert site.void_ratio is None
+
+    def test_the_evidence_fields_round_trip_when_given(self):
+        site = SuggestedSiteCapture(tooth=4, center=(0.0, 0.0, 0.0), capture={},
+                                    rim_below_cusps_mm=6.1, void_ratio=0.12)
+        assert site.rim_below_cusps_mm == pytest.approx(6.1)
+        assert site.void_ratio == pytest.approx(0.12)
+
+
 class TestMeasuredCapHeight:
     """The missing second axis (client escalation 2026-08-09, cap
     297589851-neodent-gm tooth 20): detection measured the rim DIAMETER per site
@@ -236,6 +294,10 @@ class TestDetectOnTheRealTree:
             # a number's clothes — see TestMeasuredCapHeight for the geometry pin
             assert s.measured_cap_height_mm is None or s.measured_cap_height_mm > 0.0
             assert s.proposed_variant is None or isinstance(s.proposed_variant, str)
+            # 1a: a curated site the detector also proposed borrows that proposal's
+            # own discriminator evidence -- honestly None when it never proposed one
+            assert s.rim_below_cusps_mm is None or isinstance(s.rim_below_cusps_mm, float)
+            assert s.void_ratio is None or isinstance(s.void_ratio, float)
         assert len(result.crown_axis) == 3
         assert result.jaw_reading in (None, "upper", "lower")
 
@@ -248,6 +310,10 @@ class TestDetectOnTheRealTree:
                 == [s.measured_cap_height_mm for s in b.suggested])
         assert ([s.proposed_variant for s in a.suggested]
                 == [s.proposed_variant for s in b.suggested])
+        assert ([s.rim_below_cusps_mm for s in a.suggested]
+                == [s.rim_below_cusps_mm for s in b.suggested])
+        assert ([s.void_ratio for s in a.suggested]
+                == [s.void_ratio for s in b.suggested])
 
 
 @real_only

@@ -2800,6 +2800,15 @@ recomposition and the construction unlock → the artifact set with each
 file's reason — is `docs/engagement/clinical-pipeline-plan.md`, written to
 be read beside the boolean-engine plan whose workstreams it sequences.
 
+**AT pipeline 1a — the detector's evidence rides to the product
+(2026-08-13).** The two discriminators that FOUND each site —
+`rim_below_cusps_mm` and `void_ratio` — now travel the measured-diameter
+path: capture → detection record → BFF view maps, dict-by-tooth. A curated
+site borrows the NEAREST proposal's evidence within one cap-width (5mm) and
+otherwise serves honest None — a hand-marked site has no ring density and
+never wears a neighbour's. Records predating the fields serve empty maps
+(schema additivity, pinned). Worker detection 33, bff 666.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

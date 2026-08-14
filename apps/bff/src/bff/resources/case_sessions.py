@@ -204,6 +204,12 @@ class DetectionView(BaseModel):
     site_measured_height_mm: Dict[str, Optional[float]] = Field(default_factory=dict)
     site_proposed_variant: Dict[str, Optional[str]] = Field(default_factory=dict)
     site_measured_diameter_mm: Dict[str, Optional[float]] = Field(default_factory=dict)
+    # Stage 1 slice 1a (clinical-pipeline-plan.md): the discriminator evidence
+    # behind a proposal -- WHY, not just what -- keyed by tooth like the pair
+    # above. These are MEASUREMENTS, not a status/verdict, so serving them
+    # server-derived breaks no trust rule (rule 8: disclose what the worker knows).
+    site_rim_below_cusps_mm: Dict[str, Optional[float]] = Field(default_factory=dict)
+    site_void_ratio: Dict[str, Optional[float]] = Field(default_factory=dict)
 
 
 class EffectiveChoiceView(BaseModel):
@@ -995,6 +1001,15 @@ def _detection_record(result: DetectionResult) -> DetectionRecord:
         site_measured_diameter_mm={
             str(s.tooth): getattr(s, "measured_rim_diameter_mm", None)
             for s in result.suggested},
+        # 1a: WHY a site was proposed -- the density stack's own evidence,
+        # borrowed from the matching proposal (application.detection.
+        # candidate_evidence_for), honestly None for a site it never proposed
+        site_rim_below_cusps_mm={
+            str(s.tooth): getattr(s, "rim_below_cusps_mm", None)
+            for s in result.suggested},
+        site_void_ratio={
+            str(s.tooth): getattr(s, "void_ratio", None)
+            for s in result.suggested},
     )
 
 
@@ -1008,6 +1023,8 @@ def _detection_view(session: CaseSession) -> Optional[DetectionView]:
         site_measured_height_mm=session.detection.site_measured_height_mm,
         site_proposed_variant=session.detection.site_proposed_variant,
         site_measured_diameter_mm=session.detection.site_measured_diameter_mm,
+        site_rim_below_cusps_mm=session.detection.site_rim_below_cusps_mm,
+        site_void_ratio=session.detection.site_void_ratio,
     )
 
 

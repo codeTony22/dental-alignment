@@ -105,6 +105,17 @@ class SuggestedSiteCapture:
     # submerged cap tissue heals OVER the flanks, and the catalog rim would
     # honestly include that overgrowth; this is the separator the panes crop by
     measured_rim_diameter_mm: Optional[float] = None
+    # THE DISCRIMINATOR EVIDENCE (clinical-pipeline-plan.md Stage 1, slice 1a):
+    # ``cap_detection.CapSiteCandidate``'s own core/ring density read and its
+    # rim-below-cusps depth, borrowed from the nearest matching PROPOSAL (see
+    # ``candidate_evidence_for``) so Intake can say WHY a site was proposed —
+    # not recomputed independently, so a curated site can never disagree with
+    # the proposal that found it about its own numbers. None when the
+    # automatic pass never proposed this site at all (a human mark, or a
+    # recall miss): there is no ring density to show, and it is never
+    # invented from a nearby but distinct candidate.
+    rim_below_cusps_mm: Optional[float] = None
+    void_ratio: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -164,6 +175,28 @@ def tooth_guess_for(center, suggested_sites: Sequence[Dict],
         if d <= max_mm and d < best[0]:
             best = (d, int(s["tooth"]))
     return best[1]
+
+
+def candidate_evidence_for(center, proposals: Sequence[DetectedSite],
+                           max_mm: float = TOOTH_GUESS_RADIUS_MM
+                           ) -> Tuple[Optional[float], Optional[float]]:
+    """The nearest detector PROPOSAL's own (rim_below_cusps_mm, void_ratio) for a
+    CURATED site, when the density stack actually found something within one
+    cap-width of it — the reverse of ``tooth_guess_for`` (there a proposal
+    inherits a site's tooth; here a site borrows a proposal's WHY). (None, None)
+    when no proposal lands this close: a human-marked or manually confirmed site
+    the automatic pass never proposed has no ring density to show, and a nearby
+    but DISTINCT candidate's numbers are never borrowed in its place — the same
+    'a guess is labelled a guess' discipline ``tooth_guess_for`` already keeps."""
+    if center is None:
+        return None, None
+    c = np.asarray(center, float)
+    best: Tuple[float, Optional[float], Optional[float]] = (float("inf"), None, None)
+    for p in proposals:
+        d = float(np.linalg.norm(np.asarray(p.center, float) - c))
+        if d <= max_mm and d < best[0]:
+            best = (d, p.rim_below_cusps_mm, p.void_ratio)
+    return best[1], best[2]
 
 
 def jaw_from_crown_axis(axis) -> Optional[str]:
@@ -294,6 +327,7 @@ def detect(case: CaseRecord) -> DetectionResult:
         height = (measured_cap_height_mm(ctx, centre_xy, measured_dia / 2.0,
                                          cap.get("rim_z_mm"))
                  if measured_dia is not None else None)
+        below, ratio = candidate_evidence_for(center, proposals)
         suggested.append(SuggestedSiteCapture(
             tooth=int(s["tooth"]),
             center=(tuple(float(c) for c in center) if center is not None else None),
@@ -301,6 +335,8 @@ def detect(case: CaseRecord) -> DetectionResult:
             measured_cap_height_mm=height,
             proposed_variant=propose_variant(measured_dia, height, variant_table),
             measured_rim_diameter_mm=measured_dia,
+            rim_below_cusps_mm=below,
+            void_ratio=ratio,
         ))
 
     axis = tuple(float(c) for c in ctx.frame[:, 2])  # _crowns_frame's third column -- expose, don't recompute

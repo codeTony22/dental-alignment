@@ -280,6 +280,14 @@ class DetectionRecord(BaseModel):
     site_proposed_variant: Dict[str, Optional[str]] = Field(default_factory=dict)
     # the VISIBLE cap's own rim (§10-AS.18): the panes' soft-tissue separator
     site_measured_diameter_mm: Dict[str, Optional[float]] = Field(default_factory=dict)
+    # THE DISCRIMINATOR EVIDENCE (clinical-pipeline-plan.md Stage 1, slice 1a):
+    # ``application.detection.SuggestedSiteCapture.rim_below_cusps_mm``/
+    # ``void_ratio`` verbatim, keyed by tooth like the pair above -- WHY a site
+    # was proposed, not just that it was. ADDITIVE, same discipline as
+    # ``site_measured_diameter_mm``: a document written before this pair
+    # existed loads with both honestly empty.
+    site_rim_below_cusps_mm: Dict[str, Optional[float]] = Field(default_factory=dict)
+    site_void_ratio: Dict[str, Optional[float]] = Field(default_factory=dict)
 
 
 class RunSession(BaseModel):

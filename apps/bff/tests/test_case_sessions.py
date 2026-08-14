@@ -479,6 +479,46 @@ class TestMeasuredVariantSuggestion:
         # §10-AS.18: the visible rim rides too — the panes' soft-tissue separator
         assert body["detection"]["site_measured_diameter_mm"] == {"4": None, "13": 4.9}
 
+    def test_the_discriminator_evidence_rides_the_detection_view(
+            self, settings, monkeypatch):
+        # Stage 1 slice 1a (clinical-pipeline-plan.md): WHY a site was proposed —
+        # the same dict-by-tooth shape as site_measured_diameter_mm, honestly
+        # None for a site the automatic pass never proposed (tooth 4 here).
+        result = dataclasses.replace(stub_detection(), suggested=(
+            SuggestedSiteCapture(tooth=4, center=(1.0, 2.0, 3.0), capture=CAP_PASS,
+                                 rim_below_cusps_mm=None, void_ratio=None),
+            SuggestedSiteCapture(tooth=13, center=(4.0, 5.0, 6.0), capture=CAP_RESCAN,
+                                 rim_below_cusps_mm=6.1, void_ratio=0.12),
+        ))
+        client = self._client_detected_with(settings, monkeypatch, result)
+        body = client.get("/api/case-sessions/neodent-gm").json()
+        assert body["detection"]["site_rim_below_cusps_mm"] == {"4": None, "13": 6.1}
+        assert body["detection"]["site_void_ratio"] == {"4": None, "13": 0.12}
+
+    def test_a_record_predating_the_evidence_fields_serves_them_empty(
+            self, settings):
+        # An old persisted session, written before this slice, has no
+        # site_rim_below_cusps_mm/site_void_ratio keys at all -- the schema-
+        # additivity discipline every other detection field here already keeps:
+        # a document missing the field loads with it honestly EMPTY, not refused.
+        import json
+
+        path = settings.product_root / "neodent-gm" / "session.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "case_id": "neodent-gm",
+            "detection": {
+                "proposals": [], "site_capture": {}, "jaw_reading": None,
+                "site_measured_height_mm": {}, "site_proposed_variant": {},
+                "site_measured_diameter_mm": {},
+                # no site_rim_below_cusps_mm / site_void_ratio key at all
+            },
+        }))
+        client = TestClient(create_app(settings))
+        body = client.get("/api/case-sessions/neodent-gm").json()
+        assert body["detection"]["site_rim_below_cusps_mm"] == {}
+        assert body["detection"]["site_void_ratio"] == {}
+
 
 class TestJawReadingCrossCheck:
     """§10-AM built: the jaw reads itself off the scan. ``application.detection``
