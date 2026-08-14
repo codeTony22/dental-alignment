@@ -1422,6 +1422,8 @@ class TestSeatConfidence:
 
     def _curated(self, tmp_path):
         root = Path(__file__).parents[1] / "data/real"
+        if not (root / "scans/doctor-295811960-neodent-gm/sites.json").exists():
+            pytest.skip("real arch not present")
         s = json.loads((root / "scans/doctor-295811960-neodent-gm/sites.json"
                         ).read_text())["suggested_sites"][0]
         return s.get("center_mark"), s.get("rim_mark")

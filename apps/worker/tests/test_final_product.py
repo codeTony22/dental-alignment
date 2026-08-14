@@ -388,6 +388,8 @@ def test_the_real_run_records_the_achieved_clearance_not_just_the_ask(tmp_path):
     from case_prep.pipeline.auto_flow import ConfirmedSite, run_auto_case
 
     root = Path(__file__).resolve().parents[1] / "data/real"
+    if not (root / "scans/doctor-295811960-neodent-gm").exists():
+        pytest.skip("real arch not present")
     out = tmp_path / "out"
     summary = run_auto_case(
         case_id="clr", scan=trimesh.load(
