@@ -26,29 +26,14 @@ import trimesh
 from case_prep.pipeline.kernel import default_kernel
 
 
-def solidify_shell(shell: trimesh.Trimesh, crowns_up: np.ndarray,
-                   base_margin_mm: float = 1.5) -> trimesh.Trimesh:
-    """The open scan shell as a closed lab model. The LONGEST boundary loop is
-    the shell's outer edge: it gets a skirt extruded away from the crowns to a
-    flat base plane ``base_margin_mm`` past the deepest point, and the base is
-    fanned closed. Every other loop is a small scan hole and gets a planar
-    lid. A mesh with no boundary is already a solid and passes through."""
-    import collections
-
-    V = np.asarray(shell.vertices, float)
-    F = np.asarray(shell.faces)
-    up = np.asarray(crowns_up, float)
-    up = up / np.linalg.norm(up)
-    cnt = collections.Counter(map(tuple, shell.edges_sorted))
-    boundary = [e for e, n in cnt.items() if n == 1]
-    if not boundary:
-        out = shell.copy()
-        trimesh.repair.fix_normals(out)
-        return out
-    adj = collections.defaultdict(list)
-    for a, b in boundary:
-        adj[a].append(b)
-        adj[b].append(a)
+def _simple_boundary_loops(adj: dict) -> list:
+    """The ORIGINAL walker (§10-AT front 3a/3c), unchanged: a plain vertex-DFS
+    that is correct exactly when every boundary vertex has degree <= 2 — a
+    disjoint union of simple cycles, which is what a healthy scan shell's
+    boundary always is. Kept byte-for-byte so every healthy input (raw scans,
+    carved arches, closed inputs) takes this SAME route and produces the SAME
+    solid it always has — the junction-safe walker below is a new branch, not
+    a replacement of this one."""
     seen: set = set()
     loops = []
     for start in adj:
@@ -66,6 +51,187 @@ def solidify_shell(shell: trimesh.Trimesh, crowns_up: np.ndarray,
             loop.append(cur)
         if len(loop) >= 3:
             loops.append(loop)
+    return loops
+
+
+def _junction_safe_boundary_loops(V: np.ndarray, F: np.ndarray, boundary: list
+                                  ) -> list:
+    """The boundary decomposition for a shell with at least one JUNCTION — a
+    boundary vertex where more than one patch of the shell meets at a single
+    point (the seam ``cap_imprint_parts``'s per-face mask leaves at zero
+    gingival relief, §10-AT front 5/W5: 58 of them on the real failure case).
+    The plain vertex-DFS above assumes a disjoint union of simple cycles and
+    silently mangles a junction instead: fragments shorter than 3 vertices
+    get dropped, and a still-open chain gets fanned shut as if it had
+    closed — fabricating an edge that either stays open (not watertight) or
+    collides with an interior one (multiplicity 3).
+
+    Here the walk is EDGE-wise — a ``used`` set of edge INDICES, never a
+    global vertex ``seen`` set, so two patches meeting at one point are never
+    folded into one messier walk. At a junction, the incident triangles split
+    into WEDGES — connected components of "shares a non-boundary edge through
+    this vertex" — and each wedge's own two boundary edges continue each
+    other: the FACE FAN decides the pairing, not iteration order (measured to
+    mis-pair a wedge and move the resulting volume by over a cubic
+    millimetre). A path-stack + position map decomposes the walk into simple
+    cycles: a walk that revisits a vertex still on its own path closes the
+    sub-cycle there rather than growing a self-crossing loop (the thing that
+    would otherwise double a lid spoke to multiplicity 4). A chain that runs
+    out of pairing before it closes is NEVER fanned shut — it is left for the
+    caller to refuse on, loudly, rather than leaking an unclosed "solid"."""
+    import collections
+
+    edge_faces: dict = collections.defaultdict(list)
+    for fi, f in enumerate(F):
+        for k in range(3):
+            e = tuple(sorted((int(f[k]), int(f[(k + 1) % 3]))))
+            edge_faces[e].append(fi)
+    vertex_faces: dict = collections.defaultdict(list)
+    for fi, f in enumerate(F):
+        for v in f:
+            vertex_faces[int(v)].append(fi)
+    vertex_edges: dict = collections.defaultdict(list)
+    for idx, (a, b) in enumerate(boundary):
+        vertex_edges[a].append(idx)
+        vertex_edges[b].append(idx)
+
+    # pair[(edge_idx, vertex)] -> the boundary edge that CONTINUES edge_idx
+    # when the walk arrives at ``vertex`` along it
+    pair: dict = {}
+    for v, eidxs in vertex_edges.items():
+        if len(eidxs) == 2:
+            i0, i1 = eidxs
+            pair[(i0, v)] = i1
+            pair[(i1, v)] = i0
+            continue
+        # a junction: split the faces incident to v into wedges by face
+        # adjacency THROUGH v. A well-formed mesh edge is shared by at most
+        # two faces, so each face has at most two neighbours here — a wedge
+        # is always an open FAN (a path, never a branching tree) with
+        # exactly two free (boundary) ends, which is why this pairs cleanly
+        # two-and-two; a non-manifold EDGE (multiplicity >= 3) can leave a
+        # wedge with an ODD boundary-edge count, and the leftover edge is
+        # deliberately left unpaired below — it becomes the dead end a
+        # non-closing chain is refused on.
+        fan_adj: dict = collections.defaultdict(list)
+        for fi in vertex_faces[v]:
+            f = F[fi]
+            for k in range(3):
+                a, b = int(f[k]), int(f[(k + 1) % 3])
+                if v not in (a, b):
+                    continue
+                for fj in edge_faces[tuple(sorted((a, b)))]:
+                    if fj != fi:
+                        fan_adj[fi].append(fj)
+        wedge_of: dict = {}
+        seen_f: set = set()
+        n_wedges = 0
+        for fi in vertex_faces[v]:
+            if fi in seen_f:
+                continue
+            stack = [fi]
+            seen_f.add(fi)
+            while stack:
+                c = stack.pop()
+                wedge_of[c] = n_wedges
+                for d in fan_adj[c]:
+                    if d not in seen_f:
+                        seen_f.add(d)
+                        stack.append(d)
+            n_wedges += 1
+        by_wedge: dict = collections.defaultdict(list)
+        for eidx in eidxs:
+            face = edge_faces[boundary[eidx]][0]
+            by_wedge[wedge_of[face]].append(eidx)
+        for wedge_eidxs in by_wedge.values():
+            for k in range(0, len(wedge_eidxs) - 1, 2):
+                i0, i1 = wedge_eidxs[k], wedge_eidxs[k + 1]
+                pair[(i0, v)] = i1
+                pair[(i1, v)] = i0
+
+    used: set = set()
+    loops: list = []
+    open_chains: list = []
+    for start in range(len(boundary)):
+        if start in used:
+            continue
+        a0, b0 = boundary[start]
+        used.add(start)
+        path = [a0, b0]
+        pos = {a0: 0, b0: 1}
+        cur_edge, cur_v = start, b0
+        while True:
+            nxt = pair.get((cur_edge, cur_v))
+            if nxt is None or nxt in used:
+                break
+            used.add(nxt)
+            ea, eb = boundary[nxt]
+            nxt_v = eb if ea == cur_v else ea
+            if nxt_v in pos:
+                start_i = pos[nxt_v]
+                cycle = path[start_i:]
+                if len(cycle) >= 3:
+                    loops.append(cycle)
+                del path[start_i + 1:]
+                for stale in [x for x, p in pos.items() if p > start_i]:
+                    del pos[stale]
+                cur_edge, cur_v = nxt, nxt_v
+                continue
+            pos[nxt_v] = len(path)
+            path.append(nxt_v)
+            cur_edge, cur_v = nxt, nxt_v
+        if len(path) > 1:
+            open_chains.append(path)
+
+    if open_chains:
+        rep = open_chains[0]
+        coord = V[rep[len(rep) // 2]]
+        n_open_edges = sum(len(c) - 1 for c in open_chains)
+        raise ValueError(
+            f"the shell's boundary has {len(open_chains)} chain(s) that do "
+            f"not close ({n_open_edges} open edge(s) total; one runs "
+            f"through {tuple(round(float(x), 3) for x in coord)}) — it "
+            f"cannot be lidded without fabricating a closing edge")
+    return loops
+
+
+def solidify_shell(shell: trimesh.Trimesh, crowns_up: np.ndarray,
+                   base_margin_mm: float = 1.5) -> trimesh.Trimesh:
+    """The open scan shell as a closed lab model. The LONGEST boundary loop is
+    the shell's outer edge: it gets a skirt extruded away from the crowns to a
+    flat base plane ``base_margin_mm`` past the deepest point, and the base is
+    fanned closed. Every other loop is a small scan hole and gets a planar
+    lid. A mesh with no boundary is already a solid and passes through.
+
+    The boundary walk itself has two routes (§10-AT front 5/W5): a shell
+    whose boundary vertices are all degree <= 2 — every healthy input this
+    has ever seen — takes ``_simple_boundary_loops``, unchanged, byte for
+    byte. A shell with at least one JUNCTION vertex (boundary degree > 2 —
+    the seam ``cap_imprint_parts``'s per-face mask leaves at zero gingival
+    relief) takes ``_junction_safe_boundary_loops`` instead, which pairs a
+    junction's incident boundary edges by the face fan rather than assuming
+    a simple cycle, and refuses outright rather than fanning a chain shut
+    that never actually closed."""
+    import collections
+
+    V = np.asarray(shell.vertices, float)
+    F = np.asarray(shell.faces)
+    up = np.asarray(crowns_up, float)
+    up = up / np.linalg.norm(up)
+    cnt = collections.Counter(map(tuple, shell.edges_sorted))
+    boundary = [e for e, n in cnt.items() if n == 1]
+    if not boundary:
+        out = shell.copy()
+        trimesh.repair.fix_normals(out)
+        return out
+    adj = collections.defaultdict(list)
+    for a, b in boundary:
+        adj[a].append(b)
+        adj[b].append(a)
+    if all(len(ns) <= 2 for ns in adj.values()):
+        loops = _simple_boundary_loops(adj)
+    else:
+        loops = _junction_safe_boundary_loops(V, F, boundary)
     if not loops:
         raise ValueError("boundary edges form no loop")
     loops.sort(key=len, reverse=True)
@@ -123,7 +289,21 @@ def solidified_shell_cached(arch: trimesh.Trimesh) -> trimesh.Trimesh:
     up = crown_up_axis(v, np.asarray(arch.face_normals, float))
     solid = solidify_shell(arch, up)
     if not solid.is_watertight:
-        raise ValueError("the solidified shell is not watertight")
+        # §10-AT front 5/W5: name what and where, not just that — "not
+        # watertight" alone sent a debugging session hunting for the wrong
+        # thing (measured non-actionable). Multiplicity != 2 catches both a
+        # boundary edge left open (1) and one fabricated onto an interior
+        # edge by mistake (3+); a representative vertex locates it.
+        import collections
+
+        vcnt = collections.Counter(map(tuple, solid.edges_sorted))
+        bad_edges = [e for e, n in vcnt.items() if n != 2]
+        sv = np.asarray(solid.vertices, float)
+        near = tuple(round(float(x), 3) for x in sv[bad_edges[0][0]]) \
+            if bad_edges else None
+        raise ValueError(
+            f"the solidified shell is not watertight ({len(bad_edges)} "
+            f"open/non-manifold edge(s), one near {near})")
     _SOLID_CACHE.clear()
     _SOLID_CACHE[key] = solid
     return solid

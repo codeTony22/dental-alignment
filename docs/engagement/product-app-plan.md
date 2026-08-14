@@ -2836,6 +2836,25 @@ manifold3d) — the standing unpinned-env risk retires (plan W4/Stage 0).
 is_valid_solid is pinned but not yet load-bearing — the Stage-1 follow-up,
 flagged, not smuggled. Narrow 60, fast lane 916.
 
+**AT boolean W5 — the solidify walker learns junctions (2026-08-13).** The
+one real fused-composite fallback in the fleet (1 of 89: 276794487's
+re-emit at relief 0.00) was diagnosed to the edge: the boundary walker was
+a vertex-DFS assuming simple cycles, and the zero-relief carve mask makes
+BOWTIE junctions at the recess mouth (58 degree-4 boundary vertices —
+at 0.00 the punch is the raw CAD, the scanned cap deviates RMS 0.253 from
+it, and the revolute mask flips face-by-face across the crust). The walker
+dropped 42 fragments (126 unlidded edges), fanned 13 open chains shut (12
+phantom edges), one collision → multiplicity 3; predicted 138+1 defective
+edges, measured {1:138, 3:1} — exact. The fix: junction-free shells take
+the ORIGINAL path verbatim (byte-identity structural, not asserted);
+junctioned boundaries get an edge-walk with face-fan pairing, simple-cycle
+decomposition, and a named refusal for chains that cannot close — never a
+leaking solid, never a dropped fragment. Red-first on three synthetic
+fixtures matching the diagnosis's numbers exactly; the real-mesh pin runs
+the actual failing inputs and requires notes == []. Narrow 64, fast lane
+928. Deliberately NOT bundled (they change artifact shape): self-heal at
+zero offset; punch-surface inside-mask — queued as W2-adjacent follow-ups.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.
