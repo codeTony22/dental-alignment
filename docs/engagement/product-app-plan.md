@@ -2925,6 +2925,22 @@ and Minkowski doesn't (steady to 1e-7); convex delta between paths
 ≤0.06mm. Fast subset 103, fast lane 972; the real-catalog sweep is the
 slow-lane measurement.
 
+**AT boolean W4 — the seal covers what it exists for (2026-08-14).** Both
+lanes now call the one shared register_package_files over the boolean
+composites they actually wrote — the manifest seals all eight (or as many
+as the run emitted; absent files stay absent from the seal), same shape
+by construction. matplotlib pinned ==3.9.4 AND moved out of the dev
+extra where a runtime dependency had been hiding (its version string is
+embedded in two sealed PNGs); a text-matched pyproject pin test stands
+guard. clock_signature's id()-keyed memo — an address-reuse correctness
+hazard — replaced with a content key (count + sampled coordinate sum),
+with the lifetime-simulated pin. And the dormant strip-fallback draw is
+seeded, closing the last unseeded sample in the emission path. With the
+isolation seed earlier today, every file the package emits is
+deterministic and every kernel output is sealed. Narrow 75, fast lane
+988, bff deliver 116, the two real-data pins (manifest-seals + re-emit)
+green on the fleet.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

@@ -140,12 +140,28 @@ def _row_zero_mean(img: np.ndarray) -> np.ndarray:
 _SIG_CACHE: dict = {}
 
 
+def _template_cache_key(template: trimesh.Trimesh) -> Tuple[int, float]:
+    """Content-derived cache key for ``_SIG_CACHE``: vertex count plus a sampled
+    coordinate-sum checksum — the same cheap idiom ``pipeline.csg.solidified_shell_
+    cached`` keys its own bench with. NOT ``id(template)`` (the memo's key until
+    2026-08-14): a CPython object address is free to be reused once the object it
+    named is garbage-collected, and template caches DO evict — so an id-keyed cache
+    could hand a caller ANOTHER cap's memoized signature for a template that merely
+    happens to now sit at a freed address. Observed benign so far, but a correctness
+    hazard by construction; a content key retires it because two DIFFERENT templates
+    never collide on their own vertices."""
+    v = np.asarray(template.vertices, float)
+    n = len(v)
+    return (n, float(v[:: max(1, n // 97)].sum()))
+
+
 def template_signature(template: trimesh.Trimesh) -> TemplateSignature:
-    """Precompute (cached by mesh identity) the template's coded-relief signature.
-    The seeded surface sampling SAVES AND RESTORES the global RNG state — this may be
-    called mid run_auto_case, whose downstream stages depend on the pinned stream
-    (measured hazard, review 2026-07-20)."""
-    key = id(template)
+    """Precompute (cached by mesh CONTENT — see ``_template_cache_key``) the
+    template's coded-relief signature. The seeded surface sampling SAVES AND
+    RESTORES the global RNG state — this may be called mid run_auto_case, whose
+    downstream stages depend on the pinned stream (measured hazard, review
+    2026-07-20)."""
+    key = _template_cache_key(template)
     if key in _SIG_CACHE:
         return _SIG_CACHE[key]
     state = np.random.get_state()

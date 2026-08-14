@@ -392,6 +392,19 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
             rows_by_tooth[tooth].setdefault("production", {})[
                 "composite_note"] = note
 
+    # THE MANIFEST SEALS THE COMPOSITES (W4 boolean plan, 2026-08-14) — mirrored
+    # from auto_flow.py's run lane, so the two lanes produce the SAME manifest
+    # shape. The eight boolean-composite artifacts above are written straight to
+    # ``out_dir`` after ``emit_case_package`` already closed the manifest, so each
+    # is re-hashed IN by ``register_package_files`` exactly like the scanned-cap
+    # isolation above. Only names this re-emit actually produced ride the seal
+    # (``layer_names`` already carries only what was written): an absent socket
+    # layer or closed model is never hallucinated into the hash list.
+    composite_paths = [arch_caps_path, arch_capless_path, arch_platform_path,
+                       arch_cons_path]
+    composite_paths.extend(out_dir / name for name in layer_names)
+    register_package_files(manifest.path, composite_paths)
+
     viewer_file: List[str] = []
     try:
         scan_name = f"{case.id}-{jaw_label}.stl"

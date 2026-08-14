@@ -30,6 +30,7 @@ not safe on every catalog part) is a product decision, not a test-fixture proble
 """
 from __future__ import annotations
 
+import hashlib
 import json
 
 import numpy as np
@@ -91,6 +92,57 @@ def test_run_auto_case_emits_package_and_report(tmp_path):
     report = json.loads((out / "case-001-auto-report.json").read_text())
     assert report["mode"] == "propose+confirm"
     assert len(report["confirmed_sites"]) == 2
+
+
+# THE EIGHT BOOLEAN-COMPOSITE ARTIFACTS a run may write (client spec 2026-07-11
+# through 2026-08-11): the arch fused with caps/constructions, the two capless/
+# platform composites, their socketless/dish/platform layers, and the closed
+# model. Named here once so both the run-lane and re-emit-lane pins (test_emit.py)
+# check the same list.
+_COMPOSITE_SUFFIXES = ("arch-with-healingcaps", "arch-with-constructions",
+                      "arch-capless", "arch-platform", "arch-socketless",
+                      "socket-dish", "socket-platform", "model-closed")
+
+
+@pytest.mark.slow
+def test_manifest_seals_the_boolean_composites_the_run_emitted(tmp_path):
+    """W4 measurement (2026-08-14, ledgered in the product-app-plan): a fleet read
+    found 21 emitted files but a manifest that sealed only 10 of them — NONE of the
+    eight boolean composites the seal exists to attest. Pin, on a real run through
+    ``run_auto_case`` (not a hand-built manifest): every composite this run actually
+    wrote is in ``manifest['files']`` with a hash that verifies against the on-disk
+    bytes, and a composite this run did NOT write is absent from the seal too — the
+    seal must never claim a file that was never emitted."""
+    scan, lib, gt = _embedded_case(tmp_path)
+    confirmed = [ConfirmedSite(tooth=19 + i, center=tuple(map(float, p.position)))
+                 for i, p in enumerate(gt.poses)]
+
+    out = tmp_path / "out"
+    case_id = "case-050"
+    run_auto_case(
+        case_id=case_id, scan=scan, library=lib,
+        construction_mesh=make_scan_body_mesh(), vendor="dess",
+        gingival_offset_mm=0.0,  # stand-in body — see module note
+        confirmed=confirmed, jaw_label="upper", out_dir=out)
+
+    manifest = json.loads((out / f"{case_id}-manifest.json").read_text())
+    sealed = {f["name"]: f for f in manifest["files"]}
+    on_disk = {p.name for p in out.iterdir()}
+    composite_names = [f"{case_id}-{suffix}.stl" for suffix in _COMPOSITE_SUFFIXES]
+
+    emitted = [name for name in composite_names if name in on_disk]
+    assert emitted, "this run must exercise at least one boolean composite"
+    for name in emitted:
+        assert name in sealed, f"{name} is on disk but the manifest never sealed it"
+        assert sealed[name]["sha256"] == hashlib.sha256(
+            (out / name).read_bytes()).hexdigest()
+        assert sealed[name]["bytes"] == (out / name).stat().st_size
+
+    absent = [name for name in composite_names if name not in on_disk]
+    assert absent, "the fixture is expected to skip at least one composite"
+    for name in absent:
+        assert name not in sealed, \
+            f"{name} was never emitted — it must not be hallucinated into the seal"
 
 
 def test_run_auto_case_requires_confirmed_sites(tmp_path):

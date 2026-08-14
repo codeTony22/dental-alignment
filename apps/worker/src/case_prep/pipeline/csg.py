@@ -618,7 +618,11 @@ def strip_fabricated(cut: trimesh.Trimesh, original_arch: trimesh.Trimesh,
     # 0.3mm vertex spacing hides the difference, but a coarse mesh's mid-face
     # centroids sit a full edge from any vertex and were stripped as if
     # fabricated (measured on the 2.5mm-spaced fixtures)
-    surf_pts, _ = trimesh.sample.sample_surface(original_arch, 150_000)
+    # SEEDED (W4): dormant nondeterminism — this fallback branch never fired
+    # in 17 measured re-emits (the tracked strip takes over), but if it ever
+    # does, an unseeded draw here would make the fallback's output re-roll the
+    # way the isolation's did. Same remedy, same stream (the seed= parameter).
+    surf_pts, _ = trimesh.sample.sample_surface(original_arch, 150_000, seed=0)
     d_scan, _ = cKDTree(np.vstack([V, surf_pts])).query(C)
     return inside | (d_scan < 0.35)
 

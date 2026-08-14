@@ -18,6 +18,13 @@ dependencies = [
     "manifold3d==3.5.2",     # true boolean engine for the closed-model artifacts
     # (§10-AS.11 spike, 2026-08-11: solidified 276794487's scan skirt-to-base,
     # watertight, and cut the envelope recess by CSG — the competitor's route)
+    "matplotlib==3.9.4",      # RUNTIME dep, not dev-only (W4, 2026-08-14): adapters/
+    # qc_render.py imports it to render the per-site QC PNGs, and matplotlib stamps
+    # its OWN version string into every PNG it writes (the ``Software`` metadata
+    # tag) — both PNGs ride in the hashed manifest, so an unpinned matplotlib bump
+    # changes sealed hashes with no geometry change behind it. Pinned exact,
+    # same idiom as the four pins above (read via `.venv/bin/python -c "import
+    # matplotlib; print(matplotlib.__version__)"`, 2026-08-14).
     "pydantic>=2.0",
     "jinja2>=3.0",
     "open3d>=0.18",
@@ -29,7 +36,11 @@ dependencies = [
 # pytest-xdist is NOT optional tooling: the Makefile's lanes pass `-n auto --dist
 # loadfile`, so a venv without it fails on an unknown flag rather than merely running
 # slowly. It is declared here so `make install` produces a venv the Makefile can drive.
-dev = ["pytest>=7.0", "matplotlib>=3.7", "pytest-json-report>=1.5", "pytest-xdist>=3.5"]
+# matplotlib moved OUT of here (W4, 2026-08-14): it is a RUNTIME dependency
+# (adapters/qc_render.py imports it unconditionally), not dev tooling — see the
+# pinned entry in [project.dependencies] above. Leaving a second, looser bound
+# here would just be a second place for the pin to drift from.
+dev = ["pytest>=7.0", "pytest-json-report>=1.5", "pytest-xdist>=3.5"]
 
 [project.scripts]
 case-prep = "case_prep.cli:main"

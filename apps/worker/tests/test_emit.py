@@ -193,3 +193,26 @@ class TestReEmitOnTheRealTree:
         scanned_cap_name = f"{case.id}-{tooth}-scanned-cap.stl"
         assert scanned_cap_name in summary_b["package_files"]
         assert (out_dir / scanned_cap_name).is_file()
+
+        # 6. THE MANIFEST SEALS THE COMPOSITES (W4, 2026-08-14) — the re-emit lane
+        # mirrors the run lane exactly: every boolean composite this re-emit wrote
+        # is in the manifest's ``files`` with a hash that verifies against the
+        # on-disk bytes, and any of the eight names it did NOT write is absent from
+        # the seal too (never hallucinated in).
+        reemit_manifest = json.loads((out_dir / f"{case.id}-manifest.json").read_text())
+        sealed = {f["name"]: f for f in reemit_manifest["files"]}
+        composite_suffixes = ("arch-with-healingcaps", "arch-with-constructions",
+                              "arch-capless", "arch-platform", "arch-socketless",
+                              "socket-dish", "socket-platform", "model-closed")
+        composite_names = [f"{case.id}-{suffix}.stl" for suffix in composite_suffixes]
+        on_disk = {p.name for p in out_dir.iterdir()}
+        emitted = [name for name in composite_names if name in on_disk]
+        assert emitted, "this re-emit must exercise at least one boolean composite"
+        for name in emitted:
+            assert name in sealed, f"{name} is on disk but the manifest never sealed it"
+            assert sealed[name]["sha256"] == _sha256(out_dir / name)
+            assert sealed[name]["bytes"] == (out_dir / name).stat().st_size
+        for name in composite_names:
+            if name not in on_disk:
+                assert name not in sealed, \
+                    f"{name} was never emitted — it must not ride the seal"

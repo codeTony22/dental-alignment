@@ -12,7 +12,12 @@ The load-bearing properties under test:
 - Deep geometry OUTSIDE the coded band (gingival sulcus) must not move the peak.
 - Calling template_signature mid-pipeline must not perturb the global RNG stream
   (the pinned stream feeds later stages — measured hazard, review 2026-07-20).
+- The memo's cache key is CONTENT-derived, never ``id(template)`` (W4, 2026-08-14):
+  two different templates must never share a cached signature, even across object
+  lifetimes that do not overlap — an id-keyed cache would be exposed to CPython
+  address reuse once a template cache evicts.
 """
+import gc
 from pathlib import Path
 
 import numpy as np
@@ -20,8 +25,8 @@ import pytest
 import trimesh
 
 from case_prep.adapters.cap_library import CapLibrary
-from case_prep.domain.clock_signature import (NotchReading, notch_reading,
-                                              scan_rim_centre,
+from case_prep.domain.clock_signature import (NotchReading, _template_cache_key,
+                                              notch_reading, scan_rim_centre,
                                               template_signature, wrap_deg)
 
 ROOT = Path(__file__).parents[1] / "data/real/library/caps/zimmer-4.5"
@@ -122,9 +127,10 @@ class TestClockSignature:
 
     def test_template_signature_preserves_the_rng_stream(self):
         tmpl = _template()
-        # evict any cached signature so the sampling path actually runs
+        # evict any cached signature so the sampling path actually runs — keyed by
+        # CONTENT (W4, 2026-08-14), not by id(tmpl) (see TestSignatureCacheKey below)
         from case_prep.domain import clock_signature as cs
-        cs._SIG_CACHE.pop(id(tmpl), None)
+        cs._SIG_CACHE.pop(cs._template_cache_key(tmpl), None)
         np.random.seed(123)
         expected = np.random.rand(3)
         np.random.seed(123)
@@ -142,3 +148,54 @@ class TestClockSignature:
         r = notch_reading(junk, sig, np.zeros(2))
         assert isinstance(r, NotchReading)
         assert not r.has_evidence, "uniform noise must not clear the evidence gates"
+
+
+class TestSignatureCacheKey:
+    """The id()-keyed memo retires (W4, 2026-08-14): ``_SIG_CACHE`` used to key on
+    ``id(template)``, a CPython object address. Once a template cache evicts, that
+    address is free for the allocator to hand to an UNRELATED object — an id-keyed
+    cache would then serve a caller a DIFFERENT cap's memoized signature for a
+    template that merely landed at the freed address. Observed benign so far, but a
+    correctness hazard by construction. The fix is content-derived: same idiom as
+    ``pipeline.csg.solidified_shell_cached`` (vertex count + a sampled coordinate-sum
+    checksum), which never depends on where an object happens to live in memory."""
+
+    @staticmethod
+    def _cyl(radius: float, height: float, sections: int = 24) -> trimesh.Trimesh:
+        return trimesh.creation.cylinder(radius=radius, height=height,
+                                         sections=sections)
+
+    def test_the_key_function_gives_different_templates_different_keys(self):
+        a = self._cyl(radius=3.0, height=5.0)
+        b = self._cyl(radius=7.0, height=11.0)
+        assert _template_cache_key(a) != _template_cache_key(b)
+
+    def test_the_key_function_gives_identical_content_the_same_key(self):
+        a = self._cyl(radius=3.0, height=5.0)
+        b = a.copy()
+        assert a is not b, "the copy must be a distinct Python object"
+        assert _template_cache_key(a) == _template_cache_key(b)
+
+    def test_two_different_templates_never_share_a_signature_across_lifetimes(self):
+        """The id()-reuse hazard, simulated directly: compute A's signature, drop
+        every reference to A, then create and read B. An id-keyed cache would return
+        A's signature for B whenever the allocator happens to reuse A's freed
+        address for B (CPython does not guarantee this, so the test does not rely
+        on it happening — it asserts the outcome is correct EITHER way, which is
+        what the content key buys)."""
+        a = self._cyl(radius=3.0, height=5.0)
+        sig_a = template_signature(a)
+        addr_a = id(a)
+        del a
+        gc.collect()
+
+        b = self._cyl(radius=9.0, height=14.0)
+        sig_b = template_signature(b)
+
+        assert (sig_b.ztop, sig_b.rmax) != (sig_a.ztop, sig_a.rmax), \
+            "B must read its OWN geometry, never A's memoized signature"
+        if id(b) == addr_a:
+            # the hazard case the id()-keyed design was exposed to — pinned
+            # explicitly so a regression back to id() would fail HERE, not just
+            # "sometimes", the way an allocator-dependent bug otherwise would
+            assert sig_b is not sig_a

@@ -2607,6 +2607,21 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                         target.setdefault("production", {})[
                             "composite_note"] = note
 
+            # THE MANIFEST SEALS THE COMPOSITES (W4 boolean plan, 2026-08-14). The
+            # eight boolean-composite artifacts above are written straight to
+            # ``out_dir`` — ``emit_case_package`` had already closed the manifest
+            # before any of them existed — so, exactly like the scanned-cap isolation
+            # above, each is re-hashed IN by ``register_package_files``. Only names
+            # this run actually produced ride the seal: the two tinted-preview socket
+            # layers and the closed model are conditional (``_layer_names`` already
+            # carries only what was written), so a file the run never made is never
+            # hallucinated into the hash list.
+            composite_paths = [arch_caps_path, arch_capless_path,
+                               _P(out_dir) / f"{case_id}-arch-platform.stl",
+                               arch_cons_path]
+            composite_paths.extend(_P(out_dir) / name for name in _layer_names)
+            register_package_files(manifest.path, composite_paths)
+
             # view.html: the offline, no-install 3D viewer for the whole package (skipped with a
             # note when the standalone bundle has not been built on this machine)
             viewer_file = []
