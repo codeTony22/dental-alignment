@@ -97,8 +97,12 @@ export function detectedProposal(
 
 export function detectionView(
   proposals: DetectedProposalView[] = [detectedProposal()],
+  // Additive (pipeline 1a): the discriminator maps and everything else on
+  // DetectionView, layered over `proposals` so every existing call site keeps
+  // working unchanged.
+  overrides: Partial<Omit<DetectionView, "proposals">> = {},
 ): DetectionView {
-  return { proposals };
+  return { proposals, ...overrides };
 }
 
 /** A catalog entry row, shaped like adapters/library_catalog's serialized entries

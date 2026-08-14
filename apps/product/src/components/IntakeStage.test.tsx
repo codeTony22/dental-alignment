@@ -500,6 +500,34 @@ describe("the site rows carry what the server already knows (client 2026-07-31)"
   });
 });
 
+describe("the site row's discriminator line — the detector's own WHY (pipeline 1a)", () => {
+  it("renders under the row when both served maps carry this tooth", () => {
+    const html = view({
+      detail: caseSessionDetail({
+        sites: [siteView({ tooth: 19 })],
+        detection: detectionView([], {
+          site_rim_below_cusps_mm: { "19": 5.94 },
+          site_void_ratio: { "19": 0.314 },
+        }),
+      }),
+    });
+    expect(html).toContain('data-role="site-discriminator"');
+    expect(html).toContain(
+      "found by its rim ring: 5.9mm below the cusp line, core/ring density 0.31",
+    );
+  });
+
+  it("absent entirely for a hand-marked site the detector never proposed — no zeroed line", () => {
+    const html = view({
+      detail: caseSessionDetail({
+        sites: [siteView({ tooth: 19 })],
+        detection: detectionView([]),
+      }),
+    });
+    expect(html).not.toContain('data-role="site-discriminator"');
+  });
+});
+
 describe("picking a site by clicking it on the scan (client 2026-07-31)", () => {
   it("offers the door, closed, when nothing is armed", () => {
     const html = view();

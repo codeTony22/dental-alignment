@@ -1763,6 +1763,11 @@ export function analysisClipboardText(
       readonly jaw_reading?: string | null;
       readonly site_measured_height_mm?: Record<string, number | null>;
       readonly site_proposed_variant?: Record<string, string | null>;
+      /** Pipeline 1a: the discriminator evidence behind a proposal — legitimate
+       *  to compose here because, like the pair above, it is SERVED data (the
+       *  BFF's own `candidate_evidence_for` read), not a client-derived verdict. */
+      readonly site_rim_below_cusps_mm?: Record<string, number | null>;
+      readonly site_void_ratio?: Record<string, number | null>;
     } | null;
     /** the served case log — every act with its receipt, oldest first */
     readonly activity?: {
@@ -1830,13 +1835,26 @@ export function analysisClipboardText(
     }
     const heights = detection.site_measured_height_mm ?? {};
     const proposals = detection.site_proposed_variant ?? {};
+    // Pipeline 1a: the discriminator's own WHY, appended per tooth ONLY when
+    // both values are served — the same honest-absence rule the Intake
+    // sentence keeps (domain/intake.discriminatorEvidenceSentence), formatted
+    // identically (mm to 1 decimal, ratio to 2) so the two surfaces never
+    // spell the same measurement two different ways.
+    const rimBelowCusps = detection.site_rim_below_cusps_mm ?? {};
+    const voidRatios = detection.site_void_ratio ?? {};
     for (const tooth of Object.keys(heights)) {
       const h = heights[tooth];
       const p = proposals[tooth];
+      const rim = rimBelowCusps[tooth];
+      const voidRatio = voidRatios[tooth];
+      const discriminator =
+        rim != null && voidRatio != null
+          ? ` · discriminator: ${rim.toFixed(1)}mm below cusps, void ratio ${voidRatio.toFixed(2)}`
+          : "";
       detectionLines.push(
         `- tooth ${tooth}: measured cap height ${
           h != null ? `${h} mm` : "not measured"
-        } · measured-variant proposal ${p ?? "none"}`,
+        } · measured-variant proposal ${p ?? "none"}${discriminator}`,
       );
     }
     if (detectionLines.length === 1) detectionLines.length = 0;

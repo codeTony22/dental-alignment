@@ -45,6 +45,7 @@ import {
   rescanNotices,
   shouldAutoDetect,
   detectorDisagreement,
+  discriminatorEvidenceSentence,
   siteCentre,
   sitePickerOffered,
   siteEvidence,
@@ -332,46 +333,60 @@ function SiteList({
     <section data-role="intake-sites" className="panel">
       <h3 className="panel__title">Sites</h3>
       <ul className="decode-stepper__overview">
-        {detail.sites.map((site) => (
-          <li key={site.tooth} className="intake-site">
-            <button
-              type="button"
-              data-role="site-row"
-              data-tooth={site.tooth}
-              aria-pressed={site.tooth === activeTooth}
-              className={`decode-stepper__item intake-site__row${
-                site.tooth === activeTooth ? " decode-stepper__item--active" : ""
-              }`}
-              title="Frame this site on the scan"
-              onClick={() => onSelectSite(site.tooth)}
-            >
-              <span className="decode-stepper__position">
-                Tooth {site.tooth}{" "}
-                <span className="decode-stepper__tooth">{site.status}</span>
-              </span>
-              <span data-role="site-evidence" className="intake-site__evidence">
-                {siteEvidence(detail, site).map((fact) => (
-                  <span
-                    key={fact.key}
-                    data-fact={fact.key}
-                    className="intake-site__fact"
-                    title={fact.title}
-                  >
-                    {fact.text}
-                  </span>
-                ))}
-              </span>
-              <span
-                data-role="capture-chip"
-                data-verdict={site.capture?.verdict ?? "none"}
-                className={captureChipClass(site.capture?.verdict ?? null)}
-                title={site.capture?.checks.map((c) => c.message).join(" ") ?? undefined}
+        {detail.sites.map((site) => {
+          const discriminator = discriminatorEvidenceSentence(detail, site);
+          return (
+            <li key={site.tooth} className="intake-site">
+              <button
+                type="button"
+                data-role="site-row"
+                data-tooth={site.tooth}
+                aria-pressed={site.tooth === activeTooth}
+                className={`decode-stepper__item intake-site__row${
+                  discriminator !== null ? " decode-stepper__item--stacked" : ""
+                }${site.tooth === activeTooth ? " decode-stepper__item--active" : ""}`}
+                title="Frame this site on the scan"
+                onClick={() => onSelectSite(site.tooth)}
               >
-                {captureChipLabel(site.capture)}
-              </span>
-            </button>
-          </li>
-        ))}
+                <span className="decode-stepper__position">
+                  Tooth {site.tooth}{" "}
+                  <span className="decode-stepper__tooth">{site.status}</span>
+                </span>
+                <span data-role="site-evidence" className="intake-site__evidence">
+                  {siteEvidence(detail, site).map((fact) => (
+                    <span
+                      key={fact.key}
+                      data-fact={fact.key}
+                      className="intake-site__fact"
+                      title={fact.title}
+                    >
+                      {fact.text}
+                    </span>
+                  ))}
+                </span>
+                <span
+                  data-role="capture-chip"
+                  data-verdict={site.capture?.verdict ?? "none"}
+                  className={captureChipClass(site.capture?.verdict ?? null)}
+                  title={site.capture?.checks.map((c) => c.message).join(" ") ?? undefined}
+                >
+                  {captureChipLabel(site.capture)}
+                </span>
+                {/* THE DETECTOR'S OWN WHY (clinical-pipeline-plan.md 1a): the same
+                    full-width muted line Declare's queue uses for its state
+                    sentence — a third thing that belongs under the row, not
+                    squeezed into the evidence column's chips. Absent entirely for
+                    a hand-marked site or a record predating the fields, never a
+                    sentence built from a zeroed measurement. */}
+                {discriminator !== null && (
+                  <span data-role="site-discriminator" className="decode-stepper__state">
+                    {discriminator}
+                  </span>
+                )}
+              </button>
+            </li>
+          );
+        })}
       </ul>
       {active !== null && (
         <>

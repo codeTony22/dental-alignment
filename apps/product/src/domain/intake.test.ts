@@ -11,6 +11,7 @@ import {
   constructionOptions,
   defaultToothForMark,
   detectionMarkers,
+  discriminatorEvidenceSentence,
   EMPTY_MARK,
   markOnArmMark,
   markOnArmPick,
@@ -479,6 +480,59 @@ describe("siteEvidence — what the server already knows about a site", () => {
       detection: detectionView([detectedProposal({ tooth_guess: 19 })]),
     });
     expect(siteEvidence(detail, detail.sites[0]!).map((f) => f.key)).toEqual(["variant"]);
+  });
+});
+
+describe("discriminatorEvidenceSentence — the detector's WHY, served since 488cf75 (pipeline 1a)", () => {
+  it("composes the sentence from both served maps, mm to 1 decimal, ratio to 2", () => {
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: detectionView([], {
+        site_rim_below_cusps_mm: { "19": 5.94 },
+        site_void_ratio: { "19": 0.314 },
+      }),
+    });
+    expect(discriminatorEvidenceSentence(detail, detail.sites[0]!)).toBe(
+      "found by its rim ring: 5.9mm below the cusp line, core/ring density 0.31",
+    );
+  });
+
+  it("no detection record at all is honest absence, not a crash", () => {
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: null,
+    });
+    expect(discriminatorEvidenceSentence(detail, detail.sites[0]!)).toBeNull();
+  });
+
+  it("a record predating the fields (both maps absent from the payload) is honest absence too", () => {
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: detectionView([]),
+    });
+    expect(discriminatorEvidenceSentence(detail, detail.sites[0]!)).toBeNull();
+  });
+
+  it("EITHER value missing — a hand-marked site — is no sentence, never one built from a zero", () => {
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: detectionView([], {
+        site_rim_below_cusps_mm: { "19": 5.9 },
+        site_void_ratio: { "19": null },
+      }),
+    });
+    expect(discriminatorEvidenceSentence(detail, detail.sites[0]!)).toBeNull();
+  });
+
+  it("a different tooth's evidence never leaks onto this site's sentence", () => {
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: detectionView([], {
+        site_rim_below_cusps_mm: { "30": 5.9 },
+        site_void_ratio: { "30": 0.31 },
+      }),
+    });
+    expect(discriminatorEvidenceSentence(detail, detail.sites[0]!)).toBeNull();
   });
 });
 

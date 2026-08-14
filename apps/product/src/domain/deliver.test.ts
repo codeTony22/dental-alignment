@@ -2042,6 +2042,35 @@ describe("analysisClipboardText — the paste-ready case digest (client 2026-08-
     expect(text).not.toContain("## Detection");
     expect(text).not.toContain("## Case log");
   });
+
+  it("carries the discriminator's own numbers per tooth (pipeline 1a) — same served maps as Intake's sentence", () => {
+    const text = analysisClipboardText("c", "d", null, assurance as never, {
+      detection: {
+        site_measured_height_mm: { "3": 4.021 },
+        site_proposed_variant: { "3": null },
+        site_rim_below_cusps_mm: { "3": 5.94 },
+        site_void_ratio: { "3": 0.314 },
+      } as never,
+    });
+    expect(text).toContain(
+      "tooth 3: measured cap height 4.021 mm · measured-variant proposal none " +
+        "· discriminator: 5.9mm below cusps, void ratio 0.31",
+    );
+  });
+
+  it("a tooth missing either discriminator value carries no discriminator segment — honest absence", () => {
+    const text = analysisClipboardText("c", "d", null, assurance as never, {
+      detection: {
+        site_measured_height_mm: { "3": 4.021 },
+        site_proposed_variant: { "3": null },
+        site_rim_below_cusps_mm: { "3": 5.94 },
+        // void ratio never served for tooth 3 — a record predating the fields,
+        // or a site the automatic pass never proposed
+      } as never,
+    });
+    expect(text).toContain("tooth 3: measured cap height 4.021 mm · measured-variant proposal none");
+    expect(text).not.toContain("discriminator:");
+  });
 });
 
 describe("constructionSiteFrame — the library preview looks at the top of the construction site (client 2026-08-10)", () => {

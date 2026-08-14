@@ -2941,6 +2941,17 @@ deterministic and every kernel output is sealed. Narrow 75, fast lane
 988, bff deliver 116, the two real-data pins (manifest-seals + re-emit)
 green on the fleet.
 
+**AT pipeline 1a-r — the detector's evidence renders (2026-08-14).**
+The served maps (488cf75) reach eyes: Intake's suggested-site rows carry
+"found by its rim ring: N.Nmm below the cusp line, core/ring density
+0.NN" (data-role site-discriminator, existing muted-line classes), and
+the digest's per-tooth detection lines append the discriminator segment.
+Honest absence throughout: a hand-marked site or a pre-fields record
+renders nothing, never zeros. The exact-match proposal facts and the
+nearest-candidate discriminator stay SEPARATE lines by design — merging
+them client-side would blur which BFF derivation spoke. Product 1491
+(+9), typecheck clean.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

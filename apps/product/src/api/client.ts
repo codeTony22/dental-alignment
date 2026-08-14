@@ -176,6 +176,16 @@ export interface DetectionView {
    *  soft-tissue separator: on a submerged cap tissue heals over the flanks,
    *  and the catalog rim honestly includes that overgrowth. */
   site_measured_diameter_mm?: Record<string, number | null>;
+  /** Stage 1 slice 1a (clinical-pipeline-plan.md, served since 488cf75): the
+   *  discriminator evidence behind a proposal — WHY, not just what — keyed by
+   *  tooth like the pair above. Borrowed from the nearest matching PROPOSAL
+   *  (`candidate_evidence_for`, one cap-width), so it stands even where a site's
+   *  tooth was never the proposal's own `tooth_guess`. None for a site the
+   *  automatic pass never proposed (a hand mark), or a record predating the
+   *  fields (both keys simply absent) — never a zero standing in for a
+   *  measurement the detector never took. */
+  site_rim_below_cusps_mm?: Record<string, number | null>;
+  site_void_ratio?: Record<string, number | null>;
 }
 
 /** One case-level choice as the automation consumes it (the SystemView pattern

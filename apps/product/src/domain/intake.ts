@@ -657,6 +657,39 @@ export function siteEvidence(
   return facts;
 }
 
+/**
+ * THE DISCRIMINATOR'S OWN SENTENCE (clinical-pipeline-plan.md Stage 1 slice 1a) —
+ * served on `DetectionView.site_rim_below_cusps_mm`/`site_void_ratio` since 488cf75,
+ * rendered nowhere until now. Says WHY a site was proposed, not just what.
+ *
+ * This reads a DIFFERENT source than `siteEvidence`'s "recess"/"rim" facts above:
+ * those require an EXACT match (`proposal.tooth_guess === site.tooth`, a proposal
+ * that guessed THIS tooth); the two maps here are the BFF's own borrowed-from-the-
+ * nearest-candidate numbers (`application.detection.candidate_evidence_for`, one
+ * cap-width), so a curated site the detector proposed but never guessed the tooth
+ * for still gets its sentence. Two evidence sources, kept apart rather than merged,
+ * because a client-side "pick whichever exists" would silently blur which one
+ * actually spoke.
+ *
+ * Honest absence (client escalation doctrine, unchanged since siteEvidence): EITHER
+ * value missing — a hand-marked centre the automatic pass never proposed, or a
+ * session record that predates the fields (both maps simply absent from the wire) —
+ * is NO sentence, never one built from a zero standing in for an untaken measurement.
+ */
+export function discriminatorEvidenceSentence(
+  detail: CaseSessionDetail,
+  site: SiteView,
+): string | null {
+  const key = String(site.tooth);
+  const rim = detail.detection?.site_rim_below_cusps_mm?.[key];
+  const voidRatio = detail.detection?.site_void_ratio?.[key];
+  if (rim == null || voidRatio == null) return null;
+  return (
+    `found by its rim ring: ${rim.toFixed(1)}mm below the cusp line, ` +
+    `core/ring density ${voidRatio.toFixed(2)}`
+  );
+}
+
 /** The construction dropdown's rows, extracted from the worker-shaped catalog rows
  * (untyped on the wire until Declare gives them real shapes — slice 5a): a row without
  * a string path_id cannot be chosen and is dropped rather than rendered as a lie.
