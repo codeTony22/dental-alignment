@@ -2983,6 +2983,27 @@ triangles · open|closed" when a caller passes rich ArtifactFile objects
 after a small follow-up threads the objects (deliberate, recorded gap).
 Worker 43 narrow/996 fast, bff 120, product 1495, typecheck clean.
 
+**AT rider-b — the socket tint becomes face provenance (2026-08-14).**
+The fleet measurement (36 carves, 9 cases; scoreboarded in this entry's
+sibling report) convicted the revolute band: it covered as little as
+13.8% of the true machined surface (its authored +3.0mm ceiling
+truncates deep-seated recesses) and painted up to 44% scan as socket
+(gum and collar tinted as machined). The briefed proximity-ε candidate
+died honestly — boolean retriangulation puts scan slivers within 5µm of
+the tool surface; no ε separates them. The winner was already in the
+function: `inside = tracked.source >= base_groups` — manifold's face
+provenance, the same identity the strip trusts. The merged capless
+artifact's face set is UNCHANGED (36/36 measured, now the standing guard
+pin); this is a layer/tint relabelling, never a shape change. The band
+survives verbatim on the untracked fallback path only (changing it there
+moves keep — its own slice if ever needed). Four of seven red tests
+failed pre-change as predicted; the collar-drape pin's observation
+surface moved to the merged mesh (claim unchanged). Honest scope: the
+production-relief junction count drops 172→76 but does not reach zero —
+those are real tool/scan interlock; the manufactured-junction class dies
+only on the zero-relief lane (382→0). The junction-safe walker stays
+load-bearing.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

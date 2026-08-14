@@ -535,6 +535,7 @@ def _csg_carve(arch: trimesh.Trimesh,
     # result) falls back to the untracked engine + the distance strip, with
     # a note — the geometry falls back silently, the manifest never does.
     tracked_keep: Optional[np.ndarray] = None
+    tool_provenance: Optional[np.ndarray] = None
     try:
         fabricated = fabricated_face_mask(arch, solid)
         tracked = default_kernel().difference_tracked(
@@ -543,6 +544,21 @@ def _csg_carve(arch: trimesh.Trimesh,
         if not cut.is_watertight:
             raise ValueError("the tracked boolean result is not watertight")
         tracked_keep = strip_tracked(tracked)
+        # THE SOCKET IS FACE PROVENANCE (rider-b, fleet measurement 2026-08-14,
+        # 36 carves/9 cases): every face whose material came from a PUNCH
+        # operand (``source >= base_groups`` — a tool's own source is never
+        # below the base's own group count, by ``difference_tracked``'s own
+        # argument order) IS the socket, exactly, by construction — not a
+        # revolute band (radius/height box) approximating where a punch
+        # probably reached. The band was measured to mislabel 6.6-43.6% of
+        # its socket as scan (a face near the recess that never came from any
+        # punch) and to MISS 13.8-86.2% of the true machined surface on
+        # deep-seated sites (the band's ``h_low + 3.0`` ceiling truncating a
+        # wall that legitimately runs deeper); provenance carries neither
+        # failure, because it reads what the boolean actually built rather
+        # than re-deriving a guess about it from the site's own axis.
+        tool_provenance = (np.asarray(tracked.source)
+                           >= tracked.base_groups)
     except Exception as exc:  # noqa: BLE001 — fail-open to the untracked
         # engine and the distance strip
         cut = default_kernel().difference(solid, punches)
@@ -550,27 +566,48 @@ def _csg_carve(arch: trimesh.Trimesh,
             raise ValueError("the boolean result is not watertight")
         notes.append(f"the provenance-tracked strip could not run ({exc}) "
                      f"— the distance-based strip was used instead")
-    # the tint split: faces on any site's cut surface go to the socket layer
-    C = np.asarray(cut.triangles_center, float)
-    inside = np.zeros(len(C), bool)
-    for origin, axis, xl, yl, zs_p, prof_p, floor_a, h_low in regions:
-        rel = C - origin
-        a = rel @ axis
-        r = np.hypot(rel @ xl, rel @ yl)
-        rmax = np.interp(np.clip(a, float(zs_p[0]), float(zs_p[-1])),
-                         zs_p, prof_p)
-        inside |= (r < rmax + 0.05) & (a > floor_a - 0.05) & (a < h_low + 3.0)
-    # THE OPEN ARCH COMES BACK (§10-AS.16, client 2026-08-10: "why did we
-    # build a dental model — we need to work with the open arch"): the
-    # solidify base and skirt exist ONLY so the boolean has a solid to cut.
-    # The artifact is the SCAN. A face survives if it lies on a cut surface
-    # (the recess) or on the original shell itself; the fabricated closure —
-    # base plate, skirt, anything the scan never contained — is stripped,
-    # by provenance identity when the tracked cut ran, by the 0.35mm
-    # distance fallback when it did not. Tab 6's closed model keeps its
-    # base; that is its whole point.
-    keep = (tracked_keep if tracked_keep is not None
-           else strip_fabricated(cut, arch, inside))
+    if tool_provenance is not None:
+        assert tracked_keep is not None  # set together, above, in the same try
+        inside = tool_provenance
+        keep = tracked_keep
+        # THE STRUCTURAL GUARANTEE (rider-b): a tool's own source can never
+        # equal the closure's (source 1, dropped by ``strip_tracked`` only
+        # when the base was actually split) nor fall below ``base_groups``,
+        # so ``inside`` is a subset of ``keep`` by the two functions' own
+        # definitions, not by measurement — the fleet found it true 36/36
+        # under the OLD band predicate too (empirically, not structurally);
+        # this assertion is the cheap, permanent version of that finding for
+        # the predicate that now REPLACES the band.
+        assert not (inside & ~keep).any(), (
+            "a tool-provenance face was dropped by the tracked strip — "
+            "the socket must be a subset of keep by construction")
+    else:
+        # THE UNTRACKED FALLBACK, VERBATIM (rider-b deliberately leaves this
+        # branch untouched): when ``difference_tracked`` itself refused, no
+        # per-face provenance exists to read, so ``inside`` falls back to the
+        # revolute band this whole slice replaces on the tracked path — the
+        # fleet measurement's own recommendation was to leave keep-adjacent
+        # behaviour on this path alone (its own provenance-offset variant,
+        # v2@0.06, moves ``keep`` by up to 1,705 faces and needs its own
+        # pin); this asymmetry is deliberate, not an oversight.
+        C = np.asarray(cut.triangles_center, float)
+        inside = np.zeros(len(C), bool)
+        for origin, axis, xl, yl, zs_p, prof_p, floor_a, h_low in regions:
+            rel = C - origin
+            a = rel @ axis
+            r = np.hypot(rel @ xl, rel @ yl)
+            rmax = np.interp(np.clip(a, float(zs_p[0]), float(zs_p[-1])),
+                             zs_p, prof_p)
+            inside |= ((r < rmax + 0.05) & (a > floor_a - 0.05)
+                      & (a < h_low + 3.0))
+        # THE OPEN ARCH COMES BACK (§10-AS.16, client 2026-08-10: "why did we
+        # build a dental model — we need to work with the open arch"): the
+        # solidify base and skirt exist ONLY so the boolean has a solid to
+        # cut. The artifact is the SCAN. A face survives if it lies on a cut
+        # surface (the recess) or on the original shell itself; the
+        # fabricated closure — base plate, skirt, anything the scan never
+        # contained — is stripped by the 0.35mm distance fallback.
+        keep = strip_fabricated(cut, arch, inside)
     F = np.asarray(cut.faces)
     Vc = np.asarray(cut.vertices, float)
     out = trimesh.Trimesh(Vc.copy(), F[keep & ~inside].copy(), process=False)

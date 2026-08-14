@@ -9,6 +9,8 @@ composite; a watertight CSG variant can follow via the SDF engine when a vendor 
 """
 from __future__ import annotations
 
+import collections
+
 import numpy as np
 import pytest
 import trimesh
@@ -33,6 +35,83 @@ def _pose_at(x, y, z):
     m = np.eye(4)
     m[:3, 3] = [x, y, z]
     return m
+
+
+class _RecordingKernel:
+    """Wraps the process's real kernel (``case_prep.pipeline.kernel.
+    default_kernel()``), recording every ``TrackedResult`` a
+    ``difference_tracked`` call produces. This is the seam the provenance
+    pins below use to get at GROUND-TRUTH per-face ``source``/``base_groups``
+    — the same ``TrackedResult`` ``_csg_carve`` itself reads to decide
+    ``inside`` — without re-deriving any of ``_csg_carve``'s own internal
+    geometry (the gum ring, the floor depth, the punch) a second time."""
+
+    def __init__(self):
+        from case_prep.pipeline.kernel import default_kernel as _dk
+
+        self._inner = _dk()
+        self.tracked_results = []
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def difference_tracked(self, *args, **kwargs):
+        result = self._inner.difference_tracked(*args, **kwargs)
+        self.tracked_results.append(result)
+        return result
+
+
+def _true_tool_mask_for(piece, cut, true_tool):
+    """Maps every face of ``piece`` (a subset of ``cut``'s own faces, built
+    via ``cut.faces[mask]`` + ``remove_unreferenced_vertices()`` — exactly
+    ``_csg_carve``'s own ``out``/``socket`` idiom) back to its origin face in
+    ``cut`` by exact vertex-coordinate identity (``remove_unreferenced_
+    vertices`` only filters and re-indexes; it never moves a surviving
+    vertex), and returns the corresponding ``true_tool`` ground-truth value
+    per ``piece`` face — a ``len(piece.faces)`` bool array."""
+    Vc = np.asarray(cut.vertices, float)
+    Fc = np.asarray(cut.faces)
+    sig_to_idx = {}
+    for fi, f in enumerate(Fc):
+        sig = tuple(sorted(tuple(np.round(Vc[v], 6)) for v in f))
+        sig_to_idx[sig] = fi
+    Vp = np.asarray(piece.vertices, float)
+    Fp = np.asarray(piece.faces)
+    out = np.zeros(len(Fp), bool)
+    for i, f in enumerate(Fp):
+        sig = tuple(sorted(tuple(np.round(Vp[v], 6)) for v in f))
+        out[i] = true_tool[sig_to_idx[sig]]
+    return out
+
+
+def _ridge_sheet(n=40, extent=8.0):
+    """A ridge-curved open sheet (z = -0.12*y^2) — the same fixture several
+    ``TestCapImprintHoles`` pins already use for a real, non-flat gum
+    surface."""
+    xs, ys = np.meshgrid(np.linspace(-extent, extent, n),
+                         np.linspace(-extent, extent, n))
+    zs = -0.12 * ys ** 2
+    pts = np.column_stack([xs.ravel(), ys.ravel(), zs.ravel()])
+    faces = []
+    for i in range(n - 1):
+        for j in range(n - 1):
+            a = i * n + j
+            faces.append([a, a + 1, a + n + 1])
+            faces.append([a, a + n + 1, a + n])
+    return trimesh.Trimesh(pts, np.asarray(faces), process=False)
+
+
+def _flat_sheet(n=19, extent=8.0):
+    xs, ys = np.meshgrid(np.linspace(-extent, extent, n),
+                         np.linspace(-extent, extent, n))
+    pts = np.column_stack([xs.ravel(), ys.ravel(), np.zeros(xs.size)])
+    faces = []
+    for i in range(n - 1):
+        for j in range(n - 1):
+            a = i * n + j
+            faces.append([a, a + 1, a + n + 1])
+            faces.append([a, a + n + 1, a + n])
+    return trimesh.Trimesh(pts, np.asarray(faces), process=False)
 
 
 class TestRemoveCapRegion:
@@ -590,7 +669,21 @@ class TestCapImprintHoles:
         socket's own outer rim (2.15-2.5mm, where the CSG max radius is
         ~2.48 on this fixture), not the old draped annulus out past 2.6mm.
         The guarantee survives unchanged: nothing near the cut edge floats
-        above the local gum."""
+        above the local gum.
+
+        RE-AIMED (rider-b, fleet measurement 2026-08-14): this band sits just
+        OUTSIDE the exact cut's own wall — genuinely scan-provenance
+        geometry, since the punch never reached it. The band predicate used
+        to mislabel it into the SOCKET piece anyway (a radius/height box
+        does not know the difference); reading it there measured 28 collar
+        vertices. Under face provenance the band correctly reads as `out`
+        (0 socket vertices there — nothing wrongly relabelled survives),
+        so the OBSERVATION SURFACE moves to the MERGED piece
+        (``concat(out, socket)`` — ``TestTheMergedCaplessArtifactDoesNotMove``
+        pins that this concatenation is exactly ``keep``, unmoved by which
+        piece a face lands in). The clinical claim is unchanged — nothing
+        near the cut edge floats above the local gum — only which piece of
+        the split happens to carry the evidence."""
         from case_prep.pipeline.deliverables import cap_imprint_parts
 
         xs, ys = np.meshgrid(np.linspace(-8, 8, 40), np.linspace(-8, 8, 40))
@@ -610,7 +703,8 @@ class TestCapImprintHoles:
             sheet, [(self._cap(), _pose_at(0, 0, 1.0), 0.2, 2.0)])
         assert notes == []
         assert socket is not None
-        v = np.asarray(socket.vertices, float)
+        merged = trimesh.util.concatenate([out, socket])
+        v = np.asarray(merged.vertices, float)
         r = np.linalg.norm(v[:, :2], axis=1)
         # the collar-equivalent band: the socket's own outer rim, just past
         # the exact wall (~2.2) and short of its own max radius (~2.48) —
@@ -1041,3 +1135,311 @@ class TestTrackedStripFailsOpenToTheDistanceStrip:
         assert not (v[:, 2] < scan_floor - 0.2).any(), \
             "nothing may ship below the scan's own deepest point — a " \
             "fabricated base survived the strip"
+
+
+class TestSocketIsFaceProvenance:
+    """RIDER-B (fleet measurement 2026-08-14, 36 carves/9 cases — read-only,
+    already decided): ``_csg_carve``'s tracked-path ``inside`` predicate
+    becomes FACE PROVENANCE (``tracked.source >= tracked.base_groups`` —
+    the punch operands' own faces, already computed for ``strip_tracked``)
+    instead of a revolute band (radius/height box) around the site axis.
+    The band was measured to mislabel 6.6-43.6% of its socket as scan and to
+    miss 13.8-86.2% of the true machined surface on deep-seated sites."""
+
+    def test_the_socket_is_exactly_the_tool_surface(self, monkeypatch):
+        """Both configs the client actually ships: the DISH
+        (``visible_depth_mm=1.8``) and the PLATFORM (``top_floor=True``).
+        Every socket face must sit within 1e-3mm of the punch's own surface
+        (the boolean cannot manufacture material that was not in one of its
+        operands — a socket vertex off the punch by more than float
+        round-trip noise means the label is wrong, not just imprecise), and
+        every ground-truth tool-provenance face must land IN the socket —
+        neither dropped nor left stranded in ``out``. Fails today (the band)
+        in both directions: it both admits scan faces the punch never
+        touched and drops real punch faces the band's own thresholds miss."""
+        from case_prep.pipeline import deliverables as d
+
+        kernel = _RecordingKernel()
+        monkeypatch.setattr(d, "default_kernel", lambda: kernel)
+        real_exact_cap_punch = d.exact_cap_punch
+        captured_punches = []
+
+        def _capture_punch(*args, **kwargs):
+            punch = real_exact_cap_punch(*args, **kwargs)
+            captured_punches.append(punch.copy())
+            return punch
+
+        monkeypatch.setattr(d, "exact_cap_punch", _capture_punch)
+
+        sheet = _ridge_sheet()
+        cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
+        site = (cap, _pose_at(0, 0, 1.0), 0.2, 2.0)
+
+        for kwargs in ({"visible_depth_mm": 1.8}, {"top_floor": True}):
+            kernel.tracked_results.clear()
+            captured_punches.clear()
+            out, socket, notes = d.cap_imprint_parts(sheet, [site], **kwargs)
+            assert notes == [], f"{kwargs}: must exercise the tracked path: {notes}"
+            assert socket is not None
+            assert len(kernel.tracked_results) == 1
+            tracked = kernel.tracked_results[0]
+            source = np.asarray(tracked.source)
+            true_tool = source >= tracked.base_groups
+            n_tool = int(true_tool.sum())
+            assert n_tool > 0
+
+            mask_socket = _true_tool_mask_for(socket, tracked.mesh, true_tool)
+            mask_out = _true_tool_mask_for(out, tracked.mesh, true_tool)
+            assert mask_socket.all(), \
+                f"{kwargs}: a socket face is not truly tool-provenance"
+            assert not mask_out.any(), \
+                f"{kwargs}: a true tool-provenance face landed in `out`"
+            assert len(socket.faces) == n_tool, \
+                f"{kwargs}: socket has {len(socket.faces)} faces, ground " \
+                f"truth has {n_tool} tool-provenance faces"
+
+            assert len(captured_punches) == 1
+            punch = captured_punches[0]
+            _, dist, _ = punch.nearest.on_surface(
+                np.asarray(socket.vertices, float))
+            assert float(dist.max()) < 1e-3, \
+                f"{kwargs}: a socket vertex sits {float(dist.max()):.4f}mm " \
+                "off the punch's own surface"
+
+
+class TestDeepSeatedRecessKeepsItsWholeWall:
+    """The band's floor is a percentile read of the local gum ring, but its
+    CEILING was a flat ``h_low + 3.0mm`` above that same ring — fine for a
+    shallow dish, but a real wall can legitimately run deeper than 3mm
+    beneath material that stands tall at the site (a ridge, a healed collar,
+    a thick model). Provenance carries no such ceiling: the socket is
+    whatever the punch actually cut, however tall."""
+
+    @staticmethod
+    def _tall_bump_arch(bump_height=12.0, bump_radius=2.0):
+        sheet = trimesh.creation.box(extents=[40, 20, 1])
+        for _ in range(4):
+            sheet = sheet.subdivide()
+        bump = trimesh.creation.cylinder(radius=bump_radius,
+                                         height=bump_height, sections=48)
+        bump.apply_translation((0.0, 0.0, bump_height / 2.0))
+        return trimesh.util.concatenate([sheet, bump])
+
+    def test_a_deep_seated_recess_keeps_its_whole_wall(self, monkeypatch):
+        from case_prep.pipeline import deliverables as d
+
+        kernel = _RecordingKernel()
+        monkeypatch.setattr(d, "default_kernel", lambda: kernel)
+
+        arch = self._tall_bump_arch()
+        tall_cap = trimesh.creation.cylinder(radius=2.0, height=10.0)
+        site = (tall_cap, _pose_at(0, 0, 1.0), 0.2, 2.0)
+        out, socket, notes = d.cap_imprint_parts(arch, [site],
+                                                  visible_depth_mm=1.8)
+        assert notes == [], f"must exercise the tracked path: {notes}"
+        assert socket is not None
+        assert len(kernel.tracked_results) == 1
+        tracked = kernel.tracked_results[0]
+        source = np.asarray(tracked.source)
+        n_tool = int((source >= tracked.base_groups).sum())
+        assert n_tool > 0
+        coverage = len(socket.faces) / n_tool
+        assert coverage >= 0.99, \
+            f"socket carries {len(socket.faces)}/{n_tool} = {coverage:.1%} " \
+            "of the true machined wall — the old h_low+3.0 ceiling " \
+            "truncated it"
+
+
+class TestMaskNeverSplitsAUniformProvenanceFan:
+    """W5's own edge-degree census (``tests/test_csg.py::
+    TestJunctionSafeBoundary``), turned on the SOCKET piece: a boundary
+    JUNCTION (degree > 2) is only honest when it sits on a real seam between
+    two different materials. The band's geometric threshold can slice
+    through a run of faces that are all, in truth, the SAME provenance — a
+    manufactured junction, an artifact of the box/radius test rather than
+    anything the boolean actually cut along. At relief 0.00 this is
+    measured, not theoretical: the fleet's zero-relief lane carried 382 such
+    junctions under the band; provenance carries none, because a junction in
+    the socket's own boundary can only exist where ``inside`` (now the
+    ground truth itself) actually changes across an edge."""
+
+    def test_the_mask_never_splits_a_uniform_provenance_fan(self, monkeypatch):
+        from case_prep.pipeline import deliverables as d
+
+        kernel = _RecordingKernel()
+        monkeypatch.setattr(d, "default_kernel", lambda: kernel)
+
+        sheet = _flat_sheet(n=19, extent=8.0)
+        cap = trimesh.creation.cylinder(radius=1.8, height=4.0)
+        site = (cap, _pose_at(0, 0, 1.0), 0.0, 1.8)  # relief 0.00
+        out, socket, notes = d.cap_imprint_parts(sheet, [site],
+                                                  visible_depth_mm=1.8)
+        assert notes == [], f"must exercise the tracked path: {notes}"
+        assert socket is not None
+        assert len(kernel.tracked_results) == 1
+        tracked = kernel.tracked_results[0]
+        cut = tracked.mesh
+        source = np.asarray(tracked.source)
+        true_tool = source >= tracked.base_groups
+
+        cnt = collections.Counter(map(tuple, socket.edges_sorted))
+        boundary = [e for e, n in cnt.items() if n == 1]
+        adj = collections.defaultdict(list)
+        for a, b in boundary:
+            adj[a].append(b)
+            adj[b].append(a)
+        junctions = [v for v, ns in adj.items() if len(ns) > 2]
+
+        Vc = np.asarray(cut.vertices, float)
+        coord_to_idx = {tuple(np.round(v, 6)): i for i, v in enumerate(Vc)}
+        vertex_faces = collections.defaultdict(list)
+        Fc = np.asarray(cut.faces)
+        for fi, f in enumerate(Fc):
+            for vtx in f:
+                vertex_faces[int(vtx)].append(fi)
+
+        Vs = np.asarray(socket.vertices, float)
+        for jv in junctions:
+            coord = tuple(np.round(Vs[jv], 6))
+            cut_idx = coord_to_idx[coord]
+            incident = vertex_faces[cut_idx]
+            statuses = {bool(true_tool[fi]) for fi in incident}
+            assert len(statuses) > 1, \
+                f"junction at {coord} has a UNIFORM-provenance fan " \
+                f"({statuses}) — a manufactured split, not a real seam"
+
+
+class TestNoScanFaceShipsInTheSocketLayer:
+    def test_no_scan_face_ships_in_the_socket_layer(self, monkeypatch):
+        from case_prep.pipeline import deliverables as d
+
+        kernel = _RecordingKernel()
+        monkeypatch.setattr(d, "default_kernel", lambda: kernel)
+
+        sheet = _ridge_sheet()
+        cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
+        site = (cap, _pose_at(0, 0, 1.0), 0.0, 2.0)  # relief 0.00
+        out, socket, notes = d.cap_imprint_parts(sheet, [site],
+                                                  visible_depth_mm=1.8)
+        assert notes == [], f"must exercise the tracked path: {notes}"
+        assert socket is not None
+        assert len(kernel.tracked_results) == 1
+        tracked = kernel.tracked_results[0]
+        source = np.asarray(tracked.source)
+        true_tool = source >= tracked.base_groups
+
+        mask_socket = _true_tool_mask_for(socket, tracked.mesh, true_tool)
+        assert mask_socket.all(), \
+            f"{int((~mask_socket).sum())} scan-provenance face(s) shipped " \
+            "in the socket layer"
+
+
+class TestTheMergedCaplessArtifactDoesNotMove:
+    """THE GUARD: whatever ``inside`` is — a band, a provenance mask, ANY
+    per-face predicate at all — ``out = keep & ~inside`` and
+    ``socket = inside`` (the split ``_csg_carve`` always builds) satisfy
+    ``(keep & ~inside) | inside == keep`` exactly whenever ``inside`` is a
+    SUBSET of ``keep`` (a fact of plain set algebra, not of the predicate).
+    ``TestSocketIsFaceProvenance``'s structural assertion proves that
+    subset relation for the new provenance predicate; the fleet measurement
+    proved it empirically (36/36 carves) for the old band. So the concat of
+    the two pieces can never move: a predicate change is a RELABELLING —
+    which face is called socket vs out — never a reshape of the union. This
+    pin is predicate-independent by design; see the report for the argument
+    that it must also hold, unrun, on the old band build."""
+
+    def test_the_merged_capless_artifact_does_not_move(self, monkeypatch):
+        from case_prep.pipeline import deliverables as d
+        from case_prep.pipeline.csg import strip_tracked
+
+        kernel = _RecordingKernel()
+        monkeypatch.setattr(d, "default_kernel", lambda: kernel)
+
+        sheet = _ridge_sheet()
+        cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
+        site = (cap, _pose_at(0, 0, 1.0), 0.2, 2.0)
+        out, socket, notes = d.cap_imprint_parts(sheet, [site],
+                                                  visible_depth_mm=1.8)
+        assert notes == []
+        assert socket is not None
+        assert len(kernel.tracked_results) == 1
+        tracked = kernel.tracked_results[0]
+        cut = tracked.mesh
+        keep = strip_tracked(tracked)
+
+        def _sig_set(mesh):
+            V = np.asarray(mesh.vertices, float)
+            F = np.asarray(mesh.faces)
+            return {tuple(sorted(tuple(np.round(V[v], 6)) for v in f))
+                   for f in F}
+
+        merged = trimesh.util.concatenate([out, socket])
+        merged_sigs = _sig_set(merged)
+        Vc = np.asarray(cut.vertices, float)
+        Fc = np.asarray(cut.faces)[keep]
+        kept_sigs = {tuple(sorted(tuple(np.round(Vc[v], 6)) for v in f))
+                    for f in Fc}
+        assert merged_sigs == kept_sigs, \
+            "concat(out, socket) is no longer the same face set as keep"
+
+
+class TestRealFleetSocketCoverage:
+    """RIDER-B, exercised end to end on the real failure case the fleet
+    measurement itself named: cap7030-zimmer-4.5's landed run. Measured
+    worst case under the band was 45.3% coverage — well under the 99% the
+    provenance predicate guarantees structurally. SKIPS cleanly when the
+    gitignored real-fleet tree is absent (this worktree has none) —
+    exercised at integration."""
+
+    @pytest.mark.slow
+    def test_cap7030_socket_covers_the_kept_tool_provenance(self, monkeypatch):
+        import json
+        from pathlib import Path
+
+        import trimesh as tm
+
+        from case_prep.application.cases import discover_cases
+        from case_prep.application.catalog import _library_for
+        from case_prep.pipeline import deliverables as d
+
+        case_id = "cap7030-zimmer-4.5"
+        data = Path(__file__).resolve().parents[1] / "data" / "real"
+        product = (Path(__file__).resolve().parents[1] / "reports" / "product"
+                  / case_id / "runs")
+        if not data.is_dir() or not product.is_dir():
+            pytest.skip("real fleet not present (gitignored)")
+        run = next((r for r in sorted(product.iterdir(), reverse=True)
+                   if any(r.glob("*-implant.json"))), None)
+        if run is None:
+            pytest.skip(f"no landed run for {case_id}")
+        rec = json.loads(next(run.glob("*-implant.json")).read_text())
+        case = next((c for c in discover_cases(data) if c.id == case_id), None)
+        if case is None:
+            pytest.skip(f"{case_id} not present under data/real")
+        library = _library_for(case.data_root, rec["implant_model"],
+                               [rec["variant_code"]])
+        spec = next(s for s in library.specs
+                   if s.variant == rec["variant_code"])
+        template = library.template(spec)
+        pose = np.asarray(rec["pose_matrix"], float)
+        scan = tm.load(str(case.scan), force="mesh")
+        rim_r = float(np.percentile(
+            np.linalg.norm(np.asarray(template.vertices, float)[:, :2],
+                          axis=1), 97))
+        offset = 0.2
+
+        kernel = _RecordingKernel()
+        monkeypatch.setattr(d, "default_kernel", lambda: kernel)
+        out, socket, notes = d.cap_imprint_parts(
+            scan, [(template, pose, offset, rim_r)])
+        assert notes == [], f"real template must not fall back: {notes}"
+        assert socket is not None
+        assert len(kernel.tracked_results) == 1
+        tracked = kernel.tracked_results[0]
+        source = np.asarray(tracked.source)
+        n_tool = int((source >= tracked.base_groups).sum())
+        assert n_tool > 0
+        coverage = len(socket.faces) / n_tool
+        assert coverage >= 0.99, \
+            f"cap7030-zimmer-4.5 socket covers {coverage:.1%} of the true " \
+            "machined surface (measured 45.3% under the band predicate)"
