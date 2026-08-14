@@ -2793,6 +2793,13 @@ governs them unchanged; the closed model is the one deliberate exception,
 and the memory note now records both rulings. Worker narrow 45, fast 894,
 product 1469, bff deliver 116.
 
+**AT pipeline plan (2026-08-13).** The end-to-end connective plan —
+detection (the density discriminators, with their measured constants) →
+isolation ladder → alignment perfection (A/B workstreams) → boolean
+recomposition and the construction unlock → the artifact set with each
+file's reason — is `docs/engagement/clinical-pipeline-plan.md`, written to
+be read beside the boolean-engine plan whose workstreams it sequences.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.
