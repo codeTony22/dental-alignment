@@ -2904,6 +2904,27 @@ version string is embedded in two sealed PNGs), retire clock_signature's
 id()-keyed memo (an address-reuse correctness hazard), and seed
 strip_fabricated's dormant fallback draw.
 
+**AT boolean W2 — the Minkowski offset lands; the default stays, by
+measurement (2026-08-14).** The kernel gains minkowski_sphere (manifold's
+own morphological dilation; icosphere subdivision 3 chosen by chord-error
+arithmetic — 0.0017mm at r=0.5, first level under the 0.005 bound);
+exact_cap_punch grows offset_engine + diagnostics; the punch heal is now
+unconditional (zero-offset punches heal too — W5's rider). Two findings
+bigger than the slice: (1) **the self-heal had never healed anything** —
+union([punch]) short-circuits in trimesh's reduce_cascade and returns the
+input unchanged; §10-AT 3a's "contract guarantee" was a no-op since it
+shipped (fleet stayed green because manifold tolerated the creases —
+exactly 3a's own recorded caveat). Fixed with union([punch, punch]),
+verified on a genuinely self-intersecting fixture. (2) **Minkowski costs
+56–68s per catalog-sized punch** (floor ~10s even with a 20-face sphere —
+the cost is the cap's own face count), 10× the W6 emit budget, so the
+default remains vertex-normal + (now real) heal: measured, not presumed.
+The Minkowski path stands as the correct-by-construction reference: on
+the concave fixture the vertex path needs the heal (volume 66.55→64.07)
+and Minkowski doesn't (steady to 1e-7); convex delta between paths
+≤0.06mm. Fast subset 103, fast lane 972; the real-catalog sweep is the
+slow-lane measurement.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

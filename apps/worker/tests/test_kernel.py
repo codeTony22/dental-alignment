@@ -5,8 +5,15 @@ wraps the exact ``trimesh.boolean`` calls the codebase already made — these
 pins hold that wrapping honest with axis-aligned cubes, where the
 inclusion-exclusion volumes are exact and there is nothing to approximate:
 two 2x2x2 cubes shifted by 1mm along x share a 1x2x2=4 slab, so union=12,
-difference=4, intersection=4 by construction, not by measurement."""
+difference=4, intersection=4 by construction, not by measurement.
+
+W2 (boolean-engine plan, "Minkowski-sphere offset replaces vertex-normal
+dilation", 2026-08-14) adds ``minkowski_sphere`` pins at the bottom of this
+file, against a UNIT cube (not the 2x2x2 fixture above) — its Steiner
+volume formula is simplest at unit scale."""
 from __future__ import annotations
+
+import math
 
 import numpy as np
 import pytest
@@ -20,6 +27,10 @@ def _cube(shift=(0.0, 0.0, 0.0)) -> trimesh.Trimesh:
     box = trimesh.creation.box(extents=[2.0, 2.0, 2.0])
     box.apply_translation(shift)
     return box
+
+
+def _unit_cube() -> trimesh.Trimesh:
+    return trimesh.creation.box(extents=[1.0, 1.0, 1.0])
 
 
 def _open_box() -> trimesh.Trimesh:
@@ -217,3 +228,64 @@ class TestTrackedKernelPartOfTheProtocol:
         kernel = default_kernel()
         assert hasattr(kernel, "difference_tracked")
         assert hasattr(kernel, "union_tracked")
+
+
+class TestMinkowskiSphere:
+    """W2 (boolean-engine plan, 2026-08-14): the true morphological
+    dilation replacing ``exact_cap_punch``'s vertex-normal push. Pinned
+    against a UNIT cube's own closed-form Steiner volume, derived by direct
+    geometric decomposition (not fit against any reference run): the
+    dilated solid is the cube itself, plus a flat SLAB of thickness r on
+    each of its 6 unit-area faces (6 * 1 * r = 6r), plus a QUARTER-CYLINDER
+    of radius r and length 1 along each of its 12 edges
+    ((1/4) * pi * r^2 * 1 per edge = 3*pi*r^2 total), plus an EIGHTH-SPHERE
+    of radius r at each of its 8 corners ((1/8) * (4/3) * pi * r^3 per
+    corner = (4/3)*pi*r^3 total):
+
+        V(r) = 1 + 6r + 3*pi*r^2 + (4/3)*pi*r^3
+
+    The icosphere OPERAND is a polyhedral approximation INSCRIBED in the
+    true ball (every facet sits strictly inside the sphere it approximates),
+    so the measured sum always falls a little SHORT of this closed form,
+    never over — measured at r=0.3mm with the default subdivisions=3 sphere
+    (2026-08-14, this repo's own pin run): 0.005277mm short, comfortably
+    inside the 0.01mm tolerance below (measured shortfall at r=0.1:
+    0.000514mm; at r=0.5: 0.016584mm — it grows with r, as the chord-error
+    arithmetic in ``minkowski_sphere``'s own docstring predicts)."""
+
+    def test_on_a_unit_cube_matches_the_closed_form_steiner_volume(self):
+        kernel = ManifoldKernel()
+        r = 0.3
+        out = kernel.minkowski_sphere(_unit_cube(), r)
+        assert out.is_watertight
+        closed_form = 1.0 + 6 * r + 3 * math.pi * r**2 + (4.0 / 3.0) * math.pi * r**3
+        shortfall = closed_form - float(out.volume)
+        assert 0.0 < shortfall < 0.01, \
+            f"measured volume {out.volume:.6f} vs closed form " \
+            f"{closed_form:.6f} (shortfall {shortfall:.6f}) — an inscribed " \
+            "icosphere operand must fall a LITTLE short, never over, and " \
+            "never by much"
+
+    def test_at_radius_zero_is_identity(self):
+        kernel = ManifoldKernel()
+        out = kernel.minkowski_sphere(_unit_cube(), 0.0)
+        assert out.is_watertight
+        assert abs(float(out.volume) - 1.0) < 1e-9
+
+    def test_refuses_a_negative_radius(self):
+        kernel = ManifoldKernel()
+        with pytest.raises(ValueError):
+            kernel.minkowski_sphere(_unit_cube(), -0.1)
+
+    def test_refuses_a_non_watertight_operand(self):
+        """The verified binding behaviour this guards: an open shell
+        handed straight to ``manifold3d.Manifold()`` reads back
+        ``Error.NotManifold``, and ``minkowski_sum`` on that returns an
+        EMPTY mesh with no exception at all — the quietest possible wrong
+        answer. This pin holds that ``minkowski_sphere`` intercepts it."""
+        kernel = ManifoldKernel()
+        with pytest.raises(ValueError):
+            kernel.minkowski_sphere(_open_box(), 0.3)
+
+    def test_is_part_of_the_default_kernels_protocol(self):
+        assert hasattr(default_kernel(), "minkowski_sphere")

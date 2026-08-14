@@ -65,6 +65,38 @@ def _annulus_topped_cylinder(radius: float = 2.0, bore_radius: float = 0.6,
     return trimesh.Trimesh(verts, np.asarray(faces, int), process=False)
 
 
+def _notched_cylinder_cap(radius: float = 2.0, height: float = 4.0,
+                          slot_width: float = 0.15, slot_depth: float = 1.5,
+                          sections: int = 24, subdiv: int = 1
+                          ) -> trimesh.Trimesh:
+    """A cylinder standing in for a healing cap, with a flathead-
+    screwdriver slot cut into its TOP face (boolean-engine plan W2,
+    2026-08-14) — built via the kernel's own ``difference``, the same seam
+    ``exact_cap_punch`` itself calls, not a raw ``trimesh.boolean`` escape
+    hatch. The slot's two vertical walls face each other across
+    ``slot_width`` (0.15mm, well under twice any offset this file dilates
+    by); ``subdiv`` adds interior wall vertices whose normal is the wall's
+    OWN unblended face normal (measured: without it, a box notch's wall has
+    only its 4 corner vertices, and a corner's normal is blended with the
+    cylinder's curved side and the slot floor — never purely horizontal,
+    so a vertex-normal push never converges the walls at all; this is why
+    the plain fixtures elsewhere in this file do not exercise a REAL
+    self-intersection). At ``subdiv=1``/``sections=24`` this is 440 faces —
+    small enough that even the (measured-expensive) minkowski path costs
+    under a second here, not the ~60s a catalog-sized cap costs."""
+    from case_prep.pipeline.kernel import default_kernel
+
+    cyl = trimesh.creation.cylinder(radius=radius, height=height,
+                                    sections=sections)
+    notch = trimesh.creation.box(
+        extents=[slot_width, 2.2 * radius, slot_depth])
+    notch.apply_translation([0.0, 0.0, height / 2.0 - slot_depth / 2.0])
+    cut = default_kernel().difference(cyl, [notch])
+    for _ in range(subdiv):
+        cut = cut.subdivide()
+    return cut
+
+
 def _notched_prism() -> trimesh.Trimesh:
     """A block with a thin slot cut through it — narrower than twice the
     0.2mm relief offset the self-heal pin dilates by, so each wall of the
@@ -228,6 +260,71 @@ class TestExactCapPunch:
         with pytest.raises(ValueError):
             exact_cap_punch(trimesh.Trimesh(), 0.2, np.eye(4))
 
+    def test_minkowski_engine_is_watertight_on_a_closed_cylinder_cap(self):
+        from case_prep.pipeline.csg import exact_cap_punch
+
+        cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
+        punch = exact_cap_punch(cap, 0.2, np.eye(4), offset_engine="minkowski")
+        assert punch.is_watertight
+        assert float(punch.volume) > float(cap.volume), \
+            "the dilation must grow the cap, not shrink it"
+
+    def test_minkowski_engine_lids_the_bore_before_dilating(self):
+        """ORDER PIN (boolean-engine plan W2): a not-yet-closed template
+        must still work on the minkowski path — proof the lid
+        (``_lid_boundary_loops``) runs BEFORE ``minkowski_sphere``, never
+        after. Verified directly (kernel.py's own docstring): an open
+        shell handed to ``minkowski_sum`` comes back an EMPTY mesh, not a
+        raised error — so if lidding ran second, this would fail with a
+        confusing downstream watertightness error, not a clear refusal at
+        the source."""
+        from case_prep.pipeline.csg import exact_cap_punch
+
+        cap = _annulus_topped_cylinder()
+        assert not cap.is_watertight, \
+            "the fixture must start open, or this pin proves nothing"
+        punch = exact_cap_punch(cap, 0.2, np.eye(4), offset_engine="minkowski")
+        assert punch.is_watertight
+        assert len(punch.faces) > 0
+
+    def test_unknown_offset_engine_refuses_rather_than_guesses(self):
+        from case_prep.pipeline.csg import exact_cap_punch
+
+        cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
+        with pytest.raises(ValueError):
+            exact_cap_punch(cap, 0.2, np.eye(4), offset_engine="nonsense")
+
+
+class TestHealRunsUnconditionally:
+    """§ boolean-engine plan W5 rider (a), 2026-08-14: the heal used to be
+    gated on ``offset_mm > 0`` — a raw, zero-offset CAD punch was never
+    healed at all. It now runs every time, and on a CLEAN solid (no defect
+    to fix) it is measured to be an identity: the pin below is exactly
+    that measurement, not an assumption."""
+
+    def test_zero_offset_punch_is_watertight_and_the_heal_is_an_identity(self):
+        from case_prep.pipeline.csg import exact_cap_punch
+
+        cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
+        diagnostics: dict = {}
+        punch = exact_cap_punch(cap, 0.0, np.eye(4), diagnostics=diagnostics)
+
+        assert punch.is_watertight
+        assert abs(float(punch.volume) - float(cap.volume)) < 1e-3, \
+            "a zero-offset punch of a clean cap must stay the same shape"
+        assert diagnostics["heal_fired"] is False, \
+            "a clean solid's self-union must not read as a defect fix"
+        assert diagnostics["offset_engine"] == "vertex-normal"
+
+    def test_diagnostics_out_param_is_optional(self):
+        """The default caller (every existing call site) never passes
+        ``diagnostics`` — this must keep working exactly as before."""
+        from case_prep.pipeline.csg import exact_cap_punch
+
+        cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
+        punch = exact_cap_punch(cap, 0.0, np.eye(4))
+        assert punch.is_watertight
+
 
 class TestSelfHealingPunch:
     """§10-AT front 3a: vertex-normal dilation self-intersects at a concave
@@ -250,6 +347,96 @@ class TestSelfHealingPunch:
         box = trimesh.creation.box(extents=[20.0, 20.0, 20.0])
         out = trimesh.boolean.difference([box, punch], engine="manifold")
         assert len(out.faces) > 0
+
+
+class TestOffsetEngineComparison:
+    """The boolean-engine plan W2 acceptance criterion, on a fixture built
+    to actually exercise it: ``_notched_cylinder_cap``'s slot walls have
+    genuine unblended-normal interior vertices (unlike ``_notched_prism``,
+    whose box-notch walls have only 4 corner vertices each, blended with
+    neighbouring faces — measured, at this slice's own pin time, to NOT
+    self-intersect under a vertex-normal push at all, which is why that
+    older fixture's own pin only asserts "still usable", never
+    "heal_fired")."""
+
+    def test_the_concave_fixture_forces_a_real_self_intersection(self):
+        """A precondition pin for the two below: without a genuine
+        pre-heal self-intersection, "heal_fired differs by engine" would
+        be vacuous. Measured directly (this slice's own pin time): the
+        raw dilated vertex-normal punch's OWN signed volume (66.548mm^3 at
+        offset 0.2) overcounts the true material by exactly the doubled-up
+        overlap; the healed volume (64.074mm^3) is the true, smaller
+        figure — the two must differ by far more than the ~1e-6mm^3
+        float32 round-trip noise a clean solid's self-union carries."""
+        from case_prep.pipeline.csg import exact_cap_punch
+
+        fixture = _notched_cylinder_cap()
+        assert fixture.is_watertight
+
+        diagnostics: dict = {}
+        exact_cap_punch(fixture, 0.2, np.eye(4), diagnostics=diagnostics)
+        assert diagnostics["heal_fired"] is True
+
+    def test_vertex_normal_path_needs_the_heal_minkowski_path_does_not(self):
+        """THE ACCEPTANCE CRITERION ITSELF: at the SAME offset, on the SAME
+        concave fixture, the vertex-normal path's own dilation creates a
+        defect the heal must fix (``heal_fired`` True — "that's the defect
+        class") and the minkowski path's dilation never does
+        (``heal_fired`` False) — both watertight either way, because the
+        heal is belt-and-braces on both paths, not load-bearing on
+        neither."""
+        from case_prep.pipeline.csg import exact_cap_punch
+
+        fixture = _notched_cylinder_cap()
+        offset = 0.3
+
+        vn_diag: dict = {}
+        vn_punch = exact_cap_punch(fixture, offset, np.eye(4),
+                                   offset_engine="vertex-normal",
+                                   diagnostics=vn_diag)
+        assert vn_punch.is_watertight
+        assert vn_diag["heal_fired"] is True
+
+        mk_diag: dict = {}
+        mk_punch = exact_cap_punch(fixture, offset, np.eye(4),
+                                   offset_engine="minkowski",
+                                   diagnostics=mk_diag)
+        assert mk_punch.is_watertight
+        assert mk_diag["heal_fired"] is False
+
+    def test_convex_cap_both_paths_agree_within_a_small_wall_distance(self):
+        """A plain cylinder has no concave crease at all — both paths
+        should land close to the same wall, probed the way the corpus
+        probes a cut's own wall (``test_csg_corpus.py``'s
+        ``test_recess_mouth_diameter_matches...``). MEASURED (2026-08-14,
+        this slice's own pin run) at offset 0.2 on this exact fixture: the
+        vertex-normal path undershoots the intended radius by up to
+        0.054mm (its side-wall vertices are shared with the flat top/
+        bottom cap faces on a 2-ring cylinder, so their normal is a BLEND,
+        never purely radial — the same effect the golden corpus's own
+        tolerance already absorbs); the minkowski path overshoots by at
+        most 0.0008mm (bounded by ``minkowski_sphere``'s own chord-error
+        arithmetic). The two paths' own surfaces sit within ~0.06mm of
+        each other end to end — comfortably inside the 0.1mm bound below,
+        the same bound the golden corpus already uses for this class of
+        measurement."""
+        from case_prep.pipeline.csg import exact_cap_punch
+
+        cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
+        offset = 0.2
+
+        vn_punch = exact_cap_punch(cap, offset, np.eye(4),
+                                   offset_engine="vertex-normal")
+        mk_punch = exact_cap_punch(cap, offset, np.eye(4),
+                                   offset_engine="minkowski")
+        assert vn_punch.is_watertight and mk_punch.is_watertight
+
+        sample, _ = trimesh.sample.sample_surface(mk_punch, 2000)
+        _, delta, _ = vn_punch.nearest.on_surface(sample)
+        assert float(delta.max()) < 0.1, \
+            f"the two offset engines' walls differ by up to " \
+            f"{delta.max():.4f}mm on a convex cap — measured 0.0585mm at " \
+            "pin time"
 
 
 class TestStripFabricated:

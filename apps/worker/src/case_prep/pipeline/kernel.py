@@ -47,6 +47,28 @@ they only know "operand 0" and "operand 1..n", the same algebraic vocabulary
 intersection methods stay exactly as they are — every existing call site is
 untouched by default; the tracked ops are net-new surface, reached for only
 by the three strip consumers this plan names.
+
+W2 (§ boolean-engine plan, "Minkowski-sphere offset replaces vertex-normal
+dilation", 2026-08-14) adds a THIRD op: ``minkowski_sphere`` — a true
+morphological dilation via manifold3d's own ``Manifold.minkowski_sum``
+(present on the installed 3.5.2 binding; verified by ``dir()`` and its own
+``help()``, since the module carries no version string:
+``minkowski_sum(self, other: Manifold) -> Manifold``, "the morphological
+dilation of the manifold"). Unlike a vertex-normal push — every vertex
+walks along its OWN normal independently, so two walls of a concave crease
+(a screw slot, a coded cutout) can walk INTO each other — a Minkowski sum
+with a sphere sweeps that sphere's full solid volume across every point of
+the input and unions the result; the output can never self-intersect,
+because nothing in the construction ever asks two points of the input to
+separate. Both operands must already be SOLIDS: an open shell handed to
+``manifold3d.Manifold()`` reads back ``Error.NotManifold``, and
+``minkowski_sum`` on that returns an EMPTY (0-face) result rather than
+raising — verified empirically on an open half-box fixture at this slice's
+own pin time, 2026-08-14. ``minkowski_sphere`` below checks
+``is_valid_solid`` itself and RAISES with a named reason instead of
+silently handing a caller nothing; ``csg.py``'s own bore-lidding order
+(lid before dilate, always, never the reverse) is the choreography this
+guard exists to catch a violation of.
 """
 from __future__ import annotations
 
@@ -120,6 +142,10 @@ class BooleanKernel(Protocol):
     def union_tracked(self, meshes: Sequence[trimesh.Trimesh],
                       base_groups: Optional[np.ndarray] = None
                       ) -> TrackedResult:
+        ...
+
+    def minkowski_sphere(self, mesh: trimesh.Trimesh, radius: float,
+                        subdivisions: int = 3) -> trimesh.Trimesh:
         ...
 
 
@@ -300,6 +326,101 @@ class ManifoldKernel:
         return TrackedResult(mesh=_mesh_from_gl(out),
                              source=_source_from_runs(out, id_to_source),
                              base_groups=len(base_ids))
+
+    def minkowski_sphere(self, mesh: trimesh.Trimesh, radius: float,
+                        subdivisions: int = 3) -> trimesh.Trimesh:
+        """THE OFFSET OP (boolean-engine plan W2, 2026-08-14): ``mesh``
+        Minkowski-summed with an icosphere of the given ``radius`` —
+        manifold3d's own ``Manifold.minkowski_sum``, "the morphological
+        dilation of the manifold" per its own ``help()`` text. A true
+        dilation cannot self-intersect by construction, unlike
+        ``exact_cap_punch``'s vertex-normal push (every vertex walks its
+        OWN normal independently, so two walls of a concave crease can walk
+        into each other).
+
+        ``mesh`` must already be a watertight solid — checked here via
+        ``is_valid_solid`` and RAISED on, never silently passed through.
+        Verified at this slice's pin time: an open shell handed straight to
+        ``manifold3d.Manifold()`` comes back ``Error.NotManifold``, and
+        ``minkowski_sum`` on THAT returns an EMPTY (0-face) mesh with no
+        exception at all — the quietest possible wrong answer. This is
+        exactly why ``csg.py``'s bore-lidding (``_lid_boundary_loops``)
+        always runs BEFORE either offset path, never after: a not-yet-
+        lidded punch handed to this method would not raise here, it would
+        vanish, and the caller's next watertightness check would be the
+        first sign anything went wrong — three frames further from the
+        cause.
+
+        SPHERE SUBDIVISION — chosen by measurement, not guess. An
+        icosphere's longest edge subtends an angle ``theta_max`` on the
+        unit sphere (measured directly: ``arccos`` of the dot product
+        between every pair of vertices joined by an edge, taking the max —
+        not a symbolic formula), and the CHORD ERROR — how far short of the
+        true sphere's radius the flat facet between two adjacent vertices
+        falls — is the sagitta ``r * (1 - cos(theta_max / 2))``:
+
+            subdivisions | faces | theta_max | chord error at r=0.5mm
+            0             20      63.435°     0.0747mm
+            1             80      36.000°     0.0245mm
+            2             320     18.699°     0.0066mm  (over the bound)
+            3             1280    9.444°      0.0017mm  (first under it)
+
+        The bound is 0.005mm, checked at r=0.5mm — the top of W2's own
+        offset sweep ({0.1, 0.2, 0.3, 0.4, 0.5}), so the worst case in that
+        range is the one the bound is measured against (chord error is
+        linear in r for a fixed subdivision level, so every smaller offset
+        in the sweep clears the bound by MORE, not less). Level 2 misses
+        by 0.0016mm; level 3 is the coarsest level that clears it, and is
+        the default here.
+
+        WALL-CLOCK, measured on a ~30k-face catalog-sized synthetic
+        (2026-08-14, this slice's own pin run, lathed profile — the same
+        topology ``punch_solid`` builds, not a UV-sphere's degenerate polar
+        rings, which measured far slower still): subdivisions=3 costs on
+        the order of a MINUTE (56-68s across a convex and a non-convex
+        profile), not the ~5s W6 emit budget for an entire emit. Coarser
+        spheres are faster but still expensive at that face count (sub=0,
+        the cheapest possible operand, still cost ~9.8s) — the floor is
+        set by ``mesh``'s OWN face count, not the sphere's. This is exactly
+        why ``exact_cap_punch``'s default stays ``"vertex-normal"``; the
+        fleet measurement at integration is what would justify paying this
+        cost by default."""
+        if float(radius) < 0.0:
+            raise ValueError(
+                f"minkowski_sphere needs radius >= 0, got {radius}")
+        if not self.is_valid_solid(mesh):
+            raise ValueError(
+                "minkowski_sphere needs a watertight solid operand — an "
+                "open shell reads as Error.NotManifold to manifold3d and "
+                "minkowski_sum on it silently returns an EMPTY mesh rather "
+                "than raising; lid the shell (or bore) before calling here")
+        if float(radius) == 0.0:
+            # a zero-radius icosphere degenerates every vertex onto the
+            # origin — manifold3d would refuse THAT as non-manifold
+            # (duplicate, zero-area triangles), not hand back a true
+            # identity. The offset is genuinely a no-op at r=0 regardless
+            # (``exact_cap_punch``'s vertex-normal path skips its own push
+            # the same way, ``if offset_mm > 0``), so the honest answer is
+            # the input back, unchanged, rather than routing a degenerate
+            # sphere through the kernel to prove a point.
+            return mesh.copy()
+        sphere = trimesh.creation.icosphere(subdivisions=subdivisions,
+                                            radius=float(radius))
+        mesh_man = manifold3d.Manifold(manifold3d.Mesh(
+            vert_properties=np.asarray(mesh.vertices, dtype=np.float32),
+            tri_verts=np.asarray(mesh.faces, dtype=np.uint32)))
+        sphere_man = manifold3d.Manifold(manifold3d.Mesh(
+            vert_properties=np.asarray(sphere.vertices, dtype=np.float32),
+            tri_verts=np.asarray(sphere.faces, dtype=np.uint32)))
+        if sphere_man.status() != manifold3d.Error.NoError:
+            raise ValueError(
+                f"manifold3d rejected the sphere operand "
+                f"({sphere_man.status()}) — an unusual subdivisions value?")
+        result = mesh_man.minkowski_sum(sphere_man)
+        if result.status() != manifold3d.Error.NoError:
+            raise ValueError(
+                f"manifold3d minkowski_sum failed ({result.status()})")
+        return _mesh_from_gl(result.to_mesh())
 
 
 _default: Optional[BooleanKernel] = None

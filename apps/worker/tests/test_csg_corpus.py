@@ -164,6 +164,56 @@ class TestCarveGoldenMetrics:
             "more volume vanished than the tool itself ever occupied"
 
 
+class TestOffsetEngineDidNotFlipTheDefault:
+    """Boolean-engine plan W2, 2026-08-14: ``exact_cap_punch`` grew a
+    selectable ``offset_engine``, but the plan is explicit that the
+    default does NOT move in this slice — "the fleet measurement at
+    integration decides that". These two pins prove it rather than merely
+    relying on this class's own restraint: the DEFAULT call (no
+    ``offset_engine`` argument at all, exactly ``TestCarveGoldenMetrics``'s
+    own call shape, untouched above) still resolves to ``"vertex-normal"``,
+    and a MINKOWSKI-path variant of the golden mouth-diameter metric is
+    added ALONGSIDE the untouched default one, not in place of it."""
+
+    POSE = _pose_at(0.0, 0.0, 0.0)
+
+    def test_the_default_call_still_resolves_to_vertex_normal(self):
+        diagnostics: dict = {}
+        exact_cap_punch(_cap(), OFFSET_MM, self.POSE, diagnostics=diagnostics)
+        assert diagnostics["offset_engine"] == "vertex-normal"
+
+    def test_minkowski_path_recess_mouth_diameter_within_the_chord_error(self):
+        """The same carve ``TestCarveGoldenMetrics`` runs, ``offset_engine
+        ="minkowski"`` the only difference. MEASURED (2026-08-14, this
+        slice's own pin run): max probe deviation 0.00083mm, an order of
+        magnitude tighter than ``minkowski_sphere``'s own chord-error bound
+        at this radius (subdivisions=3's bound is linear in r; at
+        offset=0.2mm that scales to ~0.2/0.5 * 0.0017mm =~ 0.00068mm of
+        PURE sphere-facet error, before any boolean/retriangulation slop —
+        the measured 0.00083mm is consistent with that arithmetic, not a
+        surprise). The tolerance below (0.01mm) is roughly 12x the
+        measured figure — a margin, not a coin flip — and, not
+        incidentally, 10x TIGHTER than the vertex-normal path's own 0.1mm
+        bound above: the accuracy delta this slice's own report names."""
+        slab = _thick_slab()
+        solid = solidified_shell_cached(slab)
+        punch = exact_cap_punch(_cap(), OFFSET_MM, self.POSE,
+                                offset_engine="minkowski")
+        cut = default_kernel().difference(solid, [punch])
+        assert cut.is_watertight
+
+        expected_radius = RADIUS_MM + OFFSET_MM
+        angles = np.linspace(0.0, 2.0 * np.pi, 16, endpoint=False)
+        probes = np.column_stack([
+            expected_radius * np.cos(angles), expected_radius * np.sin(angles),
+            np.zeros(16)])
+        _, dist, _ = cut.nearest.on_surface(probes)
+        assert float(dist.max()) < 0.01, \
+            f"minkowski recess wall strays {dist.max():.4f}mm from " \
+            f"cap-rim+offset ({expected_radius:.2f}mm) — measured " \
+            "0.00083mm at pin time"
+
+
 class TestStripMaskGoldenMetric:
     """The fifth metric the plan names: strip mask face counts. Needs a
     genuinely OPEN shell so ``solidified_shell_cached`` actually fabricates
@@ -372,3 +422,77 @@ class TestRealFleetGoldenMetrics:
             f"recess wall median distance {np.median(dist):.2f}mm from " \
             f"cap-rim(p97)+offset ({expected_radius:.2f}mm) — measured 0.189 " \
             f"at pin time; ~2x headroom, not a coin flip"
+
+
+class TestRealCatalogSweepMinkowski:
+    """THE FLEET MEASUREMENT ITSELF (boolean-engine plan W2's own
+    acceptance criterion, 2026-08-14): "every catalog cap x offset in
+    {0.1..0.5} yields a watertight punch with no heal fired ... cap6030
+    stays the sentinel." SKIPS cleanly when the gitignored real-fleet tree
+    is absent (this worktree has none) — this sweep IS the measurement the
+    default-flip decision at integration needs, which is why it emits a
+    compact per-cap report line (printed, not just asserted) rather than
+    only a pass/fail. Marked slow, and deliberately not folded into the
+    routine ``make test-slow`` expectation the way the other real-fleet
+    pins in this repo are: dozens of caps, each x 5 offsets, each a
+    ``minkowski_sum`` — measured (``kernel.py``'s own docstring) to cost
+    seconds to over a minute PER CALL on a single catalog-sized cap; the
+    full sweep across every model in the catalog is an integration-time
+    run, not an inner-loop one."""
+
+    OFFSETS = (0.1, 0.2, 0.3, 0.4, 0.5)
+    SENTINEL_HINT = "6030"
+
+    @pytest.mark.slow
+    def test_every_catalog_cap_is_watertight_with_no_heal_firing(self):
+        from case_prep.adapters.cap_library import CapLibrary
+
+        caps_root = REAL / "library" / "caps"
+        if not REAL.is_dir() or not caps_root.is_dir():
+            pytest.skip("real fleet not present (gitignored)")
+
+        models = sorted(d.name for d in caps_root.iterdir() if d.is_dir())
+        assert models, \
+            "the real catalog must name at least one system, or this " \
+            "sweep proves nothing"
+
+        sentinel_seen = False
+        report_lines = []
+        pose = np.eye(4)
+        for model in models:
+            library = CapLibrary.load(caps_root / model)
+            for spec in library.specs:
+                template = library.template(spec)
+                sentinel_seen = sentinel_seen or (self.SENTINEL_HINT in spec.variant)
+
+                for offset in self.OFFSETS:
+                    mk_diag: dict = {}
+                    mk_punch = exact_cap_punch(template, offset, pose,
+                                               offset_engine="minkowski",
+                                               diagnostics=mk_diag)
+                    assert mk_punch.is_watertight, \
+                        f"{model}/{spec.variant} offset={offset}: " \
+                        "minkowski punch not watertight"
+                    assert mk_diag["heal_fired"] is False, \
+                        f"{model}/{spec.variant} offset={offset}: heal " \
+                        "fired on the minkowski path — a catalog cap " \
+                        "should never need it, by construction"
+
+                    # the per-cap report: how far the minkowski wall sits
+                    # from the vertex-normal path's own wall, axis-free
+                    # (sample one surface, nearest-query the other — no
+                    # assumption about which axis is the cap's own "up")
+                    vn_punch = exact_cap_punch(template, offset, pose,
+                                               offset_engine="vertex-normal")
+                    sample, _ = trimesh.sample.sample_surface(mk_punch, 500)
+                    _, wall_delta, _ = vn_punch.nearest.on_surface(sample)
+                    report_lines.append(
+                        f"{model}/{spec.variant} offset={offset:.1f}: "
+                        f"median wall delta vs vertex-normal = "
+                        f"{float(np.median(wall_delta)):.4f}mm "
+                        f"(max {float(wall_delta.max()):.4f}mm)")
+
+        assert sentinel_seen, \
+            "cap6030 must be present in the real catalog, or the " \
+            "sentinel pin is vacuous"
+        print("\n" + "\n".join(report_lines))

@@ -447,22 +447,96 @@ def _lid_boundary_loops(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
 
 def exact_cap_punch(template: trimesh.Trimesh, offset_mm: float,
                     pose: np.ndarray,
-                    floor_a: Optional[float] = None) -> trimesh.Trimesh:
+                    floor_a: Optional[float] = None,
+                    offset_engine: str = "vertex-normal",
+                    diagnostics: Optional[dict] = None) -> trimesh.Trimesh:
     """THE EXACT CUT TOOL (§10-AS.14, client 2026-08-10: "this needs to be
     exact of the healing cap... the gum is gonna heal around the healing cap
     ... subtraction is the exact, we should not be inferring anything here").
     The cap's OWN CAD solid at its aligned pose, grown only by the site's
-    gingival offset along its vertex normals — the offset is the operator's
-    chosen parameter, the one dilation that is not inference. The revolute
-    envelope and the deviation clearance are gone from the cut; the envelope
-    survives only as this tool's per-site fallback. When a visible depth
-    applies, the tool is clipped below ``floor_a`` by a box intersection so
-    the dish/platform artifacts keep their shallow reads.
+    gingival offset — the offset is the operator's chosen parameter, the
+    one dilation that is not inference. The revolute envelope and the
+    deviation clearance are gone from the cut; the envelope survives only
+    as this tool's per-site fallback. When a visible depth applies, the
+    tool is clipped below ``floor_a`` by a box intersection so the
+    dish/platform artifacts keep their shallow reads.
 
     Most vendor healing-cap STLs are not watertight as exported — the
     implant-interface bore is open, since the physical part is hollow
     there — so a not-yet-closed template gets ONE honest closure attempt
-    (``_lid_boundary_loops``) before this tool gives up on it."""
+    (``_lid_boundary_loops``) before this tool gives up on it. THIS LIDDING
+    ALWAYS RUNS FIRST, before either offset path below, and never after:
+    manifold3d's ``minkowski_sum`` needs a SOLID operand (verified —
+    ``kernel.minkowski_sphere``'s own docstring — an open shell reads back
+    ``Error.NotManifold`` and the sum on it silently returns an EMPTY mesh,
+    not an exception), so an unlidded bore handed to the minkowski path
+    would vanish rather than raise. Lidding before dilating, always, is
+    what keeps that failure mode unreachable from here.
+
+    THE OFFSET PATH (``offset_engine``, boolean-engine plan W2, 2026-08-14):
+    two ways to grow the lidded solid by ``offset_mm``, chosen by the
+    caller, same everything else after —
+
+    * ``"vertex-normal"`` (THE DEFAULT — unchanged by this slice; the fleet
+      measurement at integration decides whether that changes, per the
+      plan's own W2 acceptance criterion, not a guess made here): every
+      vertex walks along its OWN normal, independently. At a concave crease
+      — a screw slot, a coded cutout — the two walls meeting there converge
+      toward each other rather than opening a smooth notch, so the dilated
+      shell can self-intersect exactly at the features that make a real
+      vendor cap a real vendor cap.
+    * ``"minkowski"``: the lidded solid Minkowski-summed with a sphere of
+      radius ``offset_mm`` (``default_kernel().minkowski_sphere`` — see its
+      own docstring for the sphere's subdivision and the chord-error
+      arithmetic behind it). A true morphological dilation cannot
+      self-intersect by construction — nothing in the sweep ever asks two
+      points of the input to separate — so this path does not need the
+      heal below to produce a valid solid, though the heal still runs over
+      it (belt-and-braces, not a load-bearing step on this path). MEASURED
+      (2026-08-14, this slice's own timing run) far too slow for the W6
+      ~5s emit budget on a catalog-sized (~30k-face) cap — 56-68s at the
+      chosen subdivision, 9.8s even at the coarsest possible sphere,
+      because the cost floor is set by the CAP's own face count, not the
+      sphere's. This is why the default has not moved.
+
+    THE HEAL RUNS UNCONDITIONALLY (§ boolean-engine plan W5 rider (a),
+    2026-08-14 — previously gated on ``offset_mm > 0``, so a raw, zero-
+    offset CAD punch was never healed at all; the real case 276794487's
+    carve mask showed bowtie junctions from exactly an un-healed punch,
+    offset 0.0). A manifold union of the punch WITH ITSELF resolves any
+    self-intersection the shape carries — whether from the vertex-normal
+    dilation above, or baked into the vendor CAD/lidding itself — and it
+    changes nothing on a shape that was already clean (measured: a clean
+    solid's own self-union differs from the input by ~1e-6mm^3, float32
+    round-trip noise, not a real change).
+
+    A SUBTLE BUG THIS SLICE ALSO FIXES: the OLD self-heal call was
+    ``default_kernel().union([punch])`` — a ONE-ELEMENT list. Trimesh's own
+    ``reduce_cascade`` (the fan-in ``boolean_manifold`` uses for a union of
+    N meshes) returns ``items[0]`` UNCHANGED for a single-item input,
+    skipping the boolean call entirely — measured directly at this slice's
+    own pin time: unioning a genuinely self-intersecting fixture with
+    ``[punch]`` left it byte-for-byte the same self-intersecting shape,
+    while ``[punch, punch]`` (two independent conversions of the SAME
+    mesh, forcing the real pairwise manifold boolean) actually resolved
+    it. The self-heal has therefore never healed anything since it
+    shipped; this is the fix, not a refactor of working code.
+
+    DIAGNOSTICS (optional ``dict`` out-param, boolean-engine plan W2): when
+    given, filled with ``{"heal_fired": bool, "heal_changed_faces": bool,
+    "offset_engine": str}``. ``heal_changed_faces`` is the raw fact — did
+    the heal's own output carry a different face count — which fires even
+    on a CLEAN minkowski punch (the sum's own retriangulation merges
+    coincident/coplanar geometry the self-union then simplifies further,
+    measured moving face count by tens of percent with the volume steady
+    to ~1e-7mm^3): a fact, not a verdict. ``heal_fired`` is the verdict a
+    corpus can assert "no heal fired" against — true only when the punch's
+    own VOLUME measurably changed (a self-intersecting shape shrinks when
+    the overlap collapses to material counted once, not twice — measured
+    2.47mm^3 on this slice's own concave fixture, orders of magnitude
+    above the ~1e-6mm^3 noise floor), or when watertightness itself
+    flipped. A face-count-only change is retriangulation, not a defect
+    fix, and does not set ``heal_fired``."""
     if len(template.faces) == 0:
         raise ValueError("the cap template is not a watertight solid")
     src = template if template.is_watertight else _lid_boundary_loops(template)
@@ -470,37 +544,38 @@ def exact_cap_punch(template: trimesh.Trimesh, offset_mm: float,
         raise ValueError("the cap template is not a watertight solid")
     punch = src.copy()
     if float(offset_mm) > 0:
-        n = np.asarray(punch.vertex_normals, float)
-        punch.vertices = (np.asarray(punch.vertices, float)
-                          + n * float(offset_mm))
-        # SELF-HEALING PUNCH (§10-AT front 3a): vertex-normal dilation moves
-        # every vertex out along its OWN normal independently, and at a
-        # concave crease — the screw slot, a coded cutout — the two walls
-        # meeting there converge rather than opening a smooth notch, so the
-        # dilated shell can self-intersect exactly at the features that make
-        # a real vendor cap a real vendor cap. A manifold union of the punch
-        # WITH ITSELF resolves that: it is the same boolean machinery the
-        # later cut already trusts, run once more against itself, and it
-        # costs nothing when the shape was already clean. Without this a
-        # creased cap's punch carries the self-intersection into the site's
-        # own cut, that cut fails, and the site falls back to the envelope
-        # tool (``punch_solid``) — losing the exact cut this function exists
-        # to do. On failure here the UN-HEALED punch is kept — the site's
-        # own failure handling downstream still stands as the containment.
-        #
-        # (manifold3d 3.5.2, as installed: ``dir(manifold3d.Manifold)`` has
-        # no ``offset`` method. It does have ``minkowski_sum``, which is a
-        # true morphological offset if summed with a small sphere — a
-        # cleaner dilation than walking vertices along their own normals,
-        # since a Minkowski sum cannot self-intersect by construction. That
-        # is the candidate for a future slice; this one keeps the existing
-        # vertex-normal dilation and only adds the self-heal after it.)
-        try:
-            punch = default_kernel().union([punch])
-        except Exception:  # noqa: BLE001 — keep the un-healed punch; the
-            # cut's own per-site failure handling is the containment here,
-            # not this function refusing to return a shape at all
-            pass
+        if offset_engine == "vertex-normal":
+            n = np.asarray(punch.vertex_normals, float)
+            punch.vertices = (np.asarray(punch.vertices, float)
+                              + n * float(offset_mm))
+        elif offset_engine == "minkowski":
+            punch = default_kernel().minkowski_sphere(punch, float(offset_mm))
+        else:
+            raise ValueError(
+                f"exact_cap_punch: unknown offset_engine {offset_engine!r} "
+                "(expected 'vertex-normal' or 'minkowski')")
+    before_watertight = bool(punch.is_watertight)
+    before_faces = len(punch.faces)
+    before_volume = float(punch.volume) if before_watertight else None
+    heal_fired = False
+    heal_changed_faces = False
+    try:
+        healed = default_kernel().union([punch, punch])
+        heal_changed_faces = len(healed.faces) != before_faces
+        after_watertight = bool(healed.is_watertight)
+        if before_watertight and after_watertight:
+            heal_fired = abs(float(healed.volume) - before_volume) > 1e-3
+        else:
+            heal_fired = after_watertight != before_watertight
+        punch = healed
+    except Exception:  # noqa: BLE001 — keep the un-healed punch; the
+        # cut's own per-site failure handling is the containment here,
+        # not this function refusing to return a shape at all
+        pass
+    if diagnostics is not None:
+        diagnostics["heal_fired"] = heal_fired
+        diagnostics["heal_changed_faces"] = heal_changed_faces
+        diagnostics["offset_engine"] = offset_engine
     punch.apply_transform(np.asarray(pose, float))
     if floor_a is not None:
         box = trimesh.creation.box(extents=[60.0, 60.0, 60.0])
