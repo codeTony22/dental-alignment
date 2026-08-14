@@ -1561,6 +1561,10 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
           tooth={activeTooth}
           refreshKey={detail}
           stats={adjustToolbarStats}
+          /* THE ISOLATION STAT (plan Stage 2 slice 2b): `scene` already computed
+             it (useSitePaneScene above) — Adjust calls the hook directly, so
+             there is no report-effect hop to make, unlike Declare's container. */
+          isolationStat={scene.isolationStat}
         />
       }
     />

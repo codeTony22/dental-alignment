@@ -306,6 +306,13 @@ export interface DeclarePanesProps {
    * from the component they were written for. Facts only, and every one the server's.
    */
   readonly onPreviewFigures?: (figures: PreviewFigures | null) => void;
+  /** THE ISOLATION STAT, REPORTED UP (plan Stage 2 slice 2b) — the same pattern as
+   *  `onPreviewFigures` just above, for a fact `useSitePaneScene` computes but this
+   *  component's caller needs above the panes (the Numbers & log panel). UNLIKE
+   *  `onPreviewFigures` this one is not the server's — it is the crop's own triangle
+   *  counts, read client-side off the doctor's own bytes — which is exactly why it
+   *  is reported here rather than folded into the analysis digest's served facts. */
+  readonly onIsolationStat?: (stat: string | null) => void;
 }
 
 /** The container: the shared pane scene, the auto-fired preview slots, the tick's two
@@ -320,6 +327,7 @@ export function DeclarePanes({
   zoomLevel,
   linked,
   onPreviewFigures,
+  onIsolationStat,
 }: DeclarePanesProps) {
   const caseId = detail.case.id;
   const tooth = site?.tooth ?? null;
@@ -457,6 +465,15 @@ export function DeclarePanes({
         : null,
     );
   }, [onPreviewFigures, hasPayload, posePresent, rmsMm, p90Mm, statsSource]);
+
+  /* THE ISOLATION STAT, same reporting shape as onPreviewFigures just above —
+     `scene.isolationStat` is already a primitive string, so the effect keys on it
+     directly rather than manufacturing intermediate primitives for it. */
+  const isolationStat = scene.isolationStat;
+  useEffect(() => {
+    if (onIsolationStat === undefined) return;
+    onIsolationStat(isolationStat);
+  }, [onIsolationStat, isolationStat]);
 
   // THE TICK'S TWO REQUESTS — both body-less; the response detail replaces the
   // payload whole and the queue chip and rail react to it.

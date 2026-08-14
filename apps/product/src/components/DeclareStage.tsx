@@ -636,6 +636,12 @@ export interface DeclareStageViewProps {
   /** What the PREVIEW published for the active site, while no run has measured it
    *  (design review 2026-07-31) — see domain/declare.alignmentStats. */
   readonly previewFigures?: PreviewFigures | null;
+  /** THE ISOLATION STAT (plan Stage 2 slice 2b) — pane 2's own crop, read as "how
+   *  much tissue the cut removed". Client-measured, not the server's, so it rides
+   *  its own prop rather than joining `previewFigures`/`declareToolbarStats` and
+   *  renders in the Numbers & log panel only, never the analysis digest (which
+   *  prints served facts alone — see domain/workspace.workspaceAnalysisText). */
+  readonly isolationStat?: string | null;
   /** The three live panes + the review tick (5b) — the container passes the
    * DeclarePanes container; View tests may omit it (the panes have their own). */
   readonly panesSlot?: ReactNode;
@@ -693,6 +699,7 @@ export function DeclareStageView({
   linked,
   onToggleLinked,
   previewFigures = null,
+  isolationStat = null,
   panesSlot,
   cautionsOpen = false,
   onOpenCautions = () => undefined,
@@ -1021,6 +1028,7 @@ export function DeclareStageView({
               tooth={active?.tooth ?? null}
               refreshKey={detail}
               stats={declareToolbarStats}
+              isolationStat={isolationStat}
             />
           }
         >
@@ -1296,6 +1304,9 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
      printed "—" for the very RMS/p90 the union pane below was displaying. `setState`
      is a stable identity, so DeclarePanes' report effect does not re-subscribe. */
   const [previewFigures, setPreviewFigures] = useState<PreviewFigures | null>(null);
+  // THE ISOLATION STAT (plan Stage 2 slice 2b), reported up the same way — see
+  // DeclarePanesProps.onIsolationStat's own note on why it is a report, not a lift.
+  const [isolationStat, setIsolationStat] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -1496,8 +1507,10 @@ export function DeclareStage({ detail, onDetail }: DeclareStageProps) {
           zoomLevel={zoomLevel}
           linked={linked}
           onPreviewFigures={setPreviewFigures}
+          onIsolationStat={setIsolationStat}
         />
       }
+      isolationStat={isolationStat}
     />
   );
 }

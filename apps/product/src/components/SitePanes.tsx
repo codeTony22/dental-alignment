@@ -79,11 +79,14 @@ import {
   partCameraFrame,
   unifiedPaneRadiusMm,
   CAP_MATCH_BAND_MM,
+  CAP_RUNG_CAPTION_WORDS,
+  isolationStatLine,
   scanPaneCapCylinder,
   scanPaneRadiusMm,
   positionsFrom,
   presetFraming,
   siteFrameFor,
+  type CapIsolationRung,
   type ViewPresetId,
   variantMeshUrl,
 } from "../domain/declare";
@@ -124,7 +127,8 @@ export function scanPaneCaption(
  *  Since §10-AT front 1 this caption belongs to the TEMPLATE-MATCHED rung —
  *  the strongest isolation claim the pane can make. */
 export function capOnlyPaneCaption(tooth: number | null, triangles: number): string {
-  const measured = `${triangles.toLocaleString()} triangles · the healing cap only`;
+  const measured =
+    `${triangles.toLocaleString()} triangles · ${CAP_RUNG_CAPTION_WORDS.matched}`;
   return tooth === null ? measured : `Tooth ${tooth} · ${measured}`;
 }
 
@@ -132,7 +136,8 @@ export function capOnlyPaneCaption(tooth: number | null, triangles: number): str
  *  diameter, honest before any pose exists — the pane never claims a match it
  *  has not measured. */
 export function capWidthPaneCaption(tooth: number | null, triangles: number): string {
-  const measured = `${triangles.toLocaleString()} triangles · the healing cap · by width`;
+  const measured =
+    `${triangles.toLocaleString()} triangles · ${CAP_RUNG_CAPTION_WORDS.width}`;
   return tooth === null ? measured : `Tooth ${tooth} · ${measured}`;
 }
 
@@ -1066,6 +1071,19 @@ export interface SitePaneScene {
   readonly partMeshKnown: boolean;
   readonly scanEmpty: boolean;
   readonly scanCaption: string | null;
+  /** THE ISOLATION STAT (plan Stage 2 slice 2b): "how much tissue the cut
+   *  removed" as a sentence — the same rung `scanCaption` is naming, the
+   *  scan mesh's own pre-crop triangle count, and pane 2's post-crop count.
+   *  Null before either count exists (no mesh yet, or no site) — the same
+   *  gate `scanCaption` uses. UNLIKE `scanCaption`, it still prints on a
+   *  crop that isolated nothing ("0 of N kept" — `scanEmpty`'s own case):
+   *  that zero is itself the honest answer to "how much did the cut
+   *  remove", not an absence to hide. This has no server channel — the
+   *  counts are read off the doctor's own bytes in the browser
+   *  (`positions.length / 9`), so it never reaches the analysis digest
+   *  (which prints only served facts); callers surface it in the Numbers &
+   *  log panel instead (WorkspaceInsight's own Isolation row). */
+  readonly isolationStat: string | null;
   readonly layers: PaneLayers;
   readonly onToggleLayer: (pane: PaneId, layerId: string) => void;
   readonly onChangeOpacity: (pane: PaneId, layerId: string, opacity: number) => void;
@@ -1382,6 +1400,24 @@ export function useSitePaneScene(
   }, [scanPositions, siteCenter, scanRadiusMm, templateGrid,
       JSON.stringify(capCylinder), JSON.stringify(cropAxis)]);
 
+  // THE ISOLATION STAT (plan Stage 2 slice 2b): the SAME rung `scanCaption` below
+  // is naming, read as "how much tissue the cut removed" — the doctor's own scan
+  // mesh (pre-crop) against pane 2's own crop (post-crop). `scanCrop` is already
+  // whichever rung ran (matched → width → band), so this can never name a rung the
+  // pane itself is not showing.
+  const isolationRung: CapIsolationRung = capMatched ? "matched" : capOnly ? "width" : "band";
+  const isolationTooth = site?.tooth ?? null;
+  const isolationStat = useMemo(
+    () =>
+      isolationStatLine(
+        isolationTooth,
+        scanPositions !== null ? triangleCount(scanPositions) : null,
+        scanCrop !== null ? triangleCount(scanCrop) : null,
+        isolationRung,
+      ),
+    [isolationTooth, scanPositions, scanCrop, isolationRung],
+  );
+
   // CAP-CROP COLOUR (§10-AO, client 2026-08-06): the SAME cropped mesh feeds pane
   // 2's scan layer AND the union pane's scan underlay below — one mesh, one colour,
   // never PALETTE.arch (the whole-arch tan those surfaces keep).
@@ -1524,6 +1560,7 @@ export function useSitePaneScene(
               : scanPaneCaption(site?.tooth ?? null, triangleCount(scanCrop),
                                 scanRadiusMm))
         : null,
+    isolationStat,
     layers,
     onToggleLayer,
     onChangeOpacity,

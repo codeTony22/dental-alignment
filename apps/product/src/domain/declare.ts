@@ -520,6 +520,60 @@ export function scanPaneCapCylinder(
 }
 
 /**
+ * THE ISOLATION LADDER'S THREE RUNGS (plan §Stage 2), named once. `"matched"` and
+ * `"width"` are the two rungs pane 2's own captions already name
+ * (`CAP_RUNG_CAPTION_WORDS` below, consumed by `capOnlyPaneCaption` /
+ * `capWidthPaneCaption` in components/SitePanes.tsx); `"band"` is the spherical
+ * fallback, which has no cap-specific caption of its own — `scanPaneCaption` names
+ * a radius, not the cap.
+ */
+export type CapIsolationRung = "matched" | "width" | "band";
+
+/** THE TWO NAMED RUNGS' OWN WORDS — the single source pane 2's captions and
+ * `isolationStatLine` both read, so the digest can never name a rung something
+ * the pane itself does not say (client 2026-08-10's "just take out the mesh of
+ * the healing cap", carried through §10-AT front 1). Extracted here rather than
+ * left as string literals inside the two caption functions, which is where they
+ * lived until this rung also needed them. */
+export const CAP_RUNG_CAPTION_WORDS: Readonly<
+  Record<Exclude<CapIsolationRung, "band">, string>
+> = {
+  matched: "the healing cap only",
+  width: "the healing cap · by width",
+};
+
+/**
+ * THE ISOLATION STAT LINE (plan Stage 2 slice 2b): "how much tissue the cut
+ * removed" as one sentence the client can quote — the tooth, the rung the crop
+ * actually used, and the triangle counts before and after it ran.
+ *
+ * Rung wording is never invented here: `"matched"`/`"width"` reuse
+ * `CAP_RUNG_CAPTION_WORDS` verbatim — the exact phrase pane 2's own caption is
+ * printing at that same rung — and `"band"` reuses the ladder's own established
+ * name for the fallback (SitePanes' own rung comments; plan Stage 2 "3. Spherical
+ * band"), because that rung prints no cap-specific caption phrase to borrow.
+ *
+ * Absent counts (the scan mesh not yet loaded, or no site selected) print no
+ * line — `null`. This is a fact ABOUT a crop; before one exists there is nothing
+ * honest to report, and a placeholder count would misread as a measured zero
+ * (the same reason `alignmentStats` refuses a dash before a run exists).
+ */
+export function isolationStatLine(
+  tooth: number | null,
+  preCount: number | null,
+  postCount: number | null,
+  rung: CapIsolationRung,
+): string | null {
+  if (preCount === null || postCount === null) return null;
+  const words = rung === "band" ? "the spherical band" : CAP_RUNG_CAPTION_WORDS[rung];
+  const prefix = tooth === null ? "" : `Tooth ${tooth} · `;
+  return (
+    `${prefix}scanned-cap isolation: ${words} — ` +
+    `${postCount.toLocaleString()} of ${preCount.toLocaleString()} triangles kept`
+  );
+}
+
+/**
  * THE SEATED FALLBACK (§10-AE): a site the ladder will not preview — flagged or
  * adjusted — with a DONE run still has a fit the server knows: the shipped one,
  * served by GET .../sites/{tooth}/seated (a read; no rung moves). Declare's panes

@@ -337,3 +337,41 @@ describe("the Alignment section — the toolbar's former figures", () => {
     expect(view({ open: true })).not.toContain('data-role="insight-alignment"');
   });
 });
+
+/* THE ISOLATION SECTION (plan Stage 2 slice 2b): pane 2's own crop stat, "how much
+ * tissue the cut removed" — a fact this surface receives already built
+ * (domain/declare.isolationStatLine) rather than assembling itself, exactly like
+ * every other row on this panel (the anti-arithmetic rule above). It rides its OWN
+ * prop rather than joining `stats`, because unlike every figure in the Alignment
+ * section this one is not the server's — retargeted here to prove the two never
+ * share a section header. */
+describe("the Isolation section — pane 2's own crop stat, never the server's", () => {
+  const line =
+    "Tooth 19 · scanned-cap isolation: the healing cap only — 16,651 of 41,091 triangles kept";
+
+  it("renders the served sentence verbatim, on its own row, while open", () => {
+    const html = view({ open: true, isolationStat: line });
+    expect(html).toContain('data-role="insight-isolation"');
+    expect(html).toContain('data-role="isolation-stat"');
+    expect(html).toContain(line);
+  });
+
+  it("renders after the Alignment section — the same figures-before-verdicts order", () => {
+    const html = view({
+      open: true,
+      stats: [{ id: "variant", label: "VARIANT", value: "5020" }],
+      isolationStat: line,
+    });
+    expect(html.indexOf('data-role="insight-alignment"')).toBeLessThan(
+      html.indexOf('data-role="insight-isolation"'),
+    );
+  });
+
+  it("with no isolation stat the section is absent entirely — never an empty heading", () => {
+    expect(view({ open: true, isolationStat: null })).not.toContain(
+      'data-role="insight-isolation"',
+    );
+    // omitted defaults the same way as null — no site selected, or no crop yet
+    expect(view({ open: true })).not.toContain('data-role="insight-isolation"');
+  });
+});

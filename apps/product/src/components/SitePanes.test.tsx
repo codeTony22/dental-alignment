@@ -47,6 +47,7 @@ import {
 } from "./SitePanes";
 import { armedViewerClassName, capScanHex, paletteHex } from "viewer";
 import { newPairDraft, paneArming, withPick } from "../domain/adjust";
+import { CAP_RUNG_CAPTION_WORDS } from "../domain/declare";
 import type { PreviewPose } from "../api/client";
 import { caseSessionDetail, sitePreviewPayload, siteView } from "../testing/fixtures";
 
@@ -489,6 +490,17 @@ describe("capWidthPaneCaption — the width rung says it is not a match (§10-AT
   });
 });
 
+/* THE ISOLATION DIGEST STAT REUSES THESE SAME WORDS (plan Stage 2 slice 2b,
+ * domain/declare.isolationStatLine) — CAP_RUNG_CAPTION_WORDS is the single source
+ * both this file's captions and that domain function read, so a rung can never be
+ * named one way on the pane and another way in the Numbers & log panel. */
+describe("capOnlyPaneCaption / capWidthPaneCaption share their rung words with the isolation stat", () => {
+  it("prints the exact tail CAP_RUNG_CAPTION_WORDS names, for both rungs", () => {
+    expect(capOnlyPaneCaption(20, 41091)).toContain(CAP_RUNG_CAPTION_WORDS.matched);
+    expect(capWidthPaneCaption(20, 31550)).toContain(CAP_RUNG_CAPTION_WORDS.width);
+  });
+});
+
 describe("scanPaneCaption", () => {
   it("leads with the tooth — the only other place it shows is the rail, which scrolls", () => {
     expect(scanPaneCaption(19, 1234, 11)).toBe(
@@ -638,5 +650,35 @@ describe("useSitePaneScene — the cap-crop layers (§10-AO)", () => {
     const html = renderToStaticMarkup(<LayersProbe />);
     const layers = layersOf(html);
     expect(layers.library[0]!.swatch).toBe(paletteHex("cap"));
+  });
+});
+
+/* THE ISOLATION STAT (plan Stage 2 slice 2b) IS EXPOSED ON THE SCENE, honestly
+ * absent before the scan mesh has resolved — exactly the state a static render
+ * always sees, since the fetch that parses it never settles under
+ * `renderToStaticMarkup` (no DOM, no effect commit; the same reason `scanCaption`
+ * is null in every probe above). The domain function's own words are pinned in
+ * declare.test.ts; this file's job is only that the hook wires the field through
+ * at all, on the same gate `scanCaption` already uses. */
+describe("useSitePaneScene — the isolation stat field (plan Stage 2 slice 2b)", () => {
+  const detail = caseSessionDetail({
+    sites: [siteView({ tooth: 19, center: [1, 2, 3] })],
+  });
+
+  function IsolationProbe() {
+    const scene = useSitePaneScene(detail, detail.sites[0]!, null, {});
+    return (
+      <div
+        data-role="isolation-probe"
+        data-isolation-null={String(scene.isolationStat === null)}
+        data-caption-null={String(scene.scanCaption === null)}
+      />
+    );
+  }
+
+  it("is null before the scan mesh resolves, on the SAME gate as scanCaption — never a placeholder count", () => {
+    const html = renderToStaticMarkup(<IsolationProbe />);
+    expect(html).toContain('data-isolation-null="true"');
+    expect(html).toContain('data-caption-null="true"');
   });
 });

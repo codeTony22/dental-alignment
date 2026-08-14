@@ -2809,6 +2809,17 @@ otherwise serves honest None — a hand-marked site has no ring density and
 never wears a neighbour's. Records predating the fields serve empty maps
 (schema additivity, pinned). Worker detection 33, bff 666.
 
+**AT pipeline 2b — the isolation becomes a number (2026-08-13).** Numbers &
+log gains an Isolation section: "tooth N · scanned-cap isolation: <the
+rung's own caption words> — X of Y triangles kept", computed from the
+pane's own crop on the same rung driving the caption
+(CAP_RUNG_CAPTION_WORDS single-sources the wording for both surfaces). It
+lives in the panel, NOT the copy-for-analysis digest, by doctrine: the
+digest prints only served facts and these counts are client-measured — the
+one deliberate divergence from the pipeline plan's 2b wording, chosen over
+quietly breaking the digest's server-truth invariant. Product 1482 (+13),
+typecheck clean.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

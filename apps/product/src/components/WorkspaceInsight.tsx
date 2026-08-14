@@ -131,6 +131,32 @@ function AlignmentSection({ stats }: { readonly stats: readonly WorkspaceStat[] 
   );
 }
 
+/** THE ISOLATION STAT (plan Stage 2 slice 2b): "how much tissue the cut removed",
+ *  one sentence read off pane 2's own crop (domain/declare.isolationStatLine, fed
+ *  by SitePanes.useSitePaneScene's own triangle counts). UNLIKE the Alignment
+ *  section above, this number is not the server's — it is counted client-side off
+ *  the doctor's own scan bytes (`WorkspaceStat`'s own doc: "the NUMBER is the
+ *  server's", which this is deliberately not) — so it earns its own section
+ *  rather than joining those rows, and it never reaches the "Copy for analysis"
+ *  digest (`workspaceAnalysisText` prints only served facts; see that module's
+ *  own note). Renders nothing before a crop exists — no site selected, or the
+ *  scan mesh not yet loaded. */
+function IsolationSection({ stat }: { readonly stat: string | null }) {
+  if (stat === null) return null;
+  return (
+    <section
+      data-role="insight-isolation"
+      aria-label="This site's scanned-cap isolation"
+      className="workspace-insight__section"
+    >
+      <h4 className="workspace-insight__heading">Isolation</h4>
+      <p data-role="isolation-stat" className="workspace-insight__row">
+        {stat}
+      </p>
+    </section>
+  );
+}
+
 function AcceptanceSection({
   tooth,
   acceptance,
@@ -309,6 +335,11 @@ export interface WorkspaceInsightViewProps {
   /** The toolbar strip's former figures (domain/declare.alignmentStats) — rendered
    *  as this panel's first section since the one-row direction (2026-08-06). */
   readonly stats?: readonly WorkspaceStat[];
+  /** Pane 2's own isolation stat (plan Stage 2 slice 2b, domain/declare's
+   *  `isolationStatLine`) — see IsolationSection's own note on why it rides a
+   *  separate prop from `stats` rather than joining it. Null/omitted renders
+   *  nothing. */
+  readonly isolationStat?: string | null;
 }
 
 const PANEL_ID = "workspace-insight-panel";
@@ -326,6 +357,7 @@ export function WorkspaceInsightView({
   acceptance,
   activity,
   stats = [],
+  isolationStat = null,
 }: WorkspaceInsightViewProps): ReactNode {
   const wrapRef = useRef<HTMLSpanElement | null>(null);
   // the evidence copy's transient confirmation (client 2026-08-10)
@@ -404,6 +436,7 @@ export function WorkspaceInsightView({
             Close
           </button>
           <AlignmentSection stats={stats} />
+          <IsolationSection stat={isolationStat} />
           <AcceptanceSection tooth={tooth} acceptance={acceptance} />
           <ActivitySection activity={activity} />
         </section>
@@ -424,10 +457,18 @@ export interface WorkspaceInsightProps {
   readonly refreshKey?: unknown;
   /** See WorkspaceInsightViewProps.stats — passed through untouched. */
   readonly stats?: readonly WorkspaceStat[];
+  /** See WorkspaceInsightViewProps.isolationStat — passed through untouched. */
+  readonly isolationStat?: string | null;
 }
 
 /** The container: owns open/closed state and fetches both views on open. */
-export function WorkspaceInsight({ caseId, tooth, refreshKey, stats }: WorkspaceInsightProps) {
+export function WorkspaceInsight({
+  caseId,
+  tooth,
+  refreshKey,
+  stats,
+  isolationStat,
+}: WorkspaceInsightProps) {
   const [open, setOpen] = useState(false);
   const [acceptance, setAcceptance] = useState<FetchState<SiteAcceptanceView> | null>(null);
   const [activity, setActivity] = useState<FetchState<CaseActivityView>>({ kind: "loading" });
@@ -481,6 +522,7 @@ export function WorkspaceInsight({ caseId, tooth, refreshKey, stats }: Workspace
       acceptance={acceptance}
       activity={activity}
       stats={stats}
+      isolationStat={isolationStat}
     />
   );
 }

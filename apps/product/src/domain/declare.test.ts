@@ -56,6 +56,9 @@ import {
   presetFraming,
   siteIdentity,
   VIEW_PRESETS,
+  isolationStatLine,
+  CAP_RUNG_CAPTION_WORDS,
+  type CapIsolationRung,
   type PaneFrame,
   type PostPreviewFn,
   type PreviewSlots,
@@ -1633,5 +1636,65 @@ describe("scanPaneRadiusMm — the cap-tight display band", () => {
       },
     });
     expect(scanPaneRadiusMm(huge)).toBe(11);
+  });
+});
+
+describe("isolationStatLine — pane 2's own crop, as a number the client can quote (plan Stage 2 slice 2b)", () => {
+  it("names the TEMPLATE-MATCHED rung with the pane's own caption words, live counts (41,091 -> 16,651)", () => {
+    expect(isolationStatLine(20, 41091, 16651, "matched")).toBe(
+      "Tooth 20 · scanned-cap isolation: the healing cap only — " +
+        "16,651 of 41,091 triangles kept",
+    );
+    // the exact same tail phrase capOnlyPaneCaption prints at this rung —
+    // reused, never a second name for the same claim
+    expect(isolationStatLine(20, 41091, 16651, "matched")).toContain(
+      CAP_RUNG_CAPTION_WORDS.matched,
+    );
+  });
+
+  it("names the WIDTH-CUT rung with the pane's own caption words (no pose yet)", () => {
+    expect(isolationStatLine(20, 41091, 31550, "width")).toBe(
+      "Tooth 20 · scanned-cap isolation: the healing cap · by width — " +
+        "31,550 of 41,091 triangles kept",
+    );
+    expect(isolationStatLine(20, 41091, 31550, "width")).toContain(
+      CAP_RUNG_CAPTION_WORDS.width,
+    );
+  });
+
+  it("names the SPHERICAL-BAND rung — no variant dimensions, no cap-specific caption to borrow", () => {
+    expect(isolationStatLine(20, 41091, 38000, "band")).toBe(
+      "Tooth 20 · scanned-cap isolation: the spherical band — " +
+        "38,000 of 41,091 triangles kept",
+    );
+  });
+
+  it("drops the tooth prefix when there is no site — never prints 'Tooth null'", () => {
+    expect(isolationStatLine(null, 41091, 16651, "matched")).toBe(
+      "scanned-cap isolation: the healing cap only — 16,651 of 41,091 triangles kept",
+    );
+  });
+
+  it("prints no line when either count is absent — a fact about a crop that has not run", () => {
+    expect(isolationStatLine(20, null, 16651, "matched")).toBeNull();
+    expect(isolationStatLine(20, 41091, null, "matched")).toBeNull();
+    expect(isolationStatLine(20, null, null, "band")).toBeNull();
+  });
+
+  it("still prints on a crop that isolated NOTHING — the zero is the honest answer, not an absence", () => {
+    expect(isolationStatLine(20, 41091, 0, "matched")).toBe(
+      "Tooth 20 · scanned-cap isolation: the healing cap only — 0 of 41,091 triangles kept",
+    );
+  });
+
+  it("groups every count the way the operator reads triangle counts elsewhere", () => {
+    expect(isolationStatLine(3, 123456, 7890, "width")).toContain("7,890 of 123,456");
+  });
+
+  it("covers every rung the ladder has — a fourth would be a compile error, not a runtime gap", () => {
+    const rungs: readonly CapIsolationRung[] = ["matched", "width", "band"];
+    for (const rung of rungs) {
+      expect(isolationStatLine(1, 10, 5, rung)).not.toBeNull();
+    }
   });
 });
