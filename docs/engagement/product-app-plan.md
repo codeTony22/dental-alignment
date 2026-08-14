@@ -2952,6 +2952,21 @@ nearest-candidate discriminator stay SEPARATE lines by design — merging
 them client-side would blur which BFF derivation spoke. Product 1491
 (+9), typecheck clean.
 
+**AT boolean Stage 2 — the MeshLib scoreboard (2026-08-14).** The
+evaluation ran in full under their free tier (scratch venv; pinned env
+untouched): as a KERNEL, disqualified — silent no-op on exactly-coplanar
+contact, 101/200 seeded trials, undetectable except by comparing output
+to input (manifold: 0/200). As an OFFSET, decisively best-in-class:
+0.00136mm at 0.281s vs our Minkowski 0.00226mm at 18.6s. As an
+OPEN-SHELL boolean, the biggest win: cuts the raw scan in 0.05–0.09s,
+matching our whole solidify choreography to 2 nanometres while skipping
+its 16.8s cost. Stage 3's question is reframed: not "swap manifold" but
+"license MeshLib for the offset + open-shell lanes behind the seam, with
+a mandatory no-op guard". Owed before money: the fleet incidence of
+exact-coplanar contact. Scoreboard preserved at
+docs/engagement/meshlib-scoreboard-2026-08.md; Stage-2 results appended
+to the boolean plan.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

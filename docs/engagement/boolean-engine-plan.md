@@ -468,6 +468,43 @@ only if the IP strategy demands owning the arithmetic itself and the spike's
 numbers support the price. The seam makes any of the three a bounded swap, not
 a rewrite.
 
+### Stage 2 results — the MeshLib evaluation (2026-08-14, contender #2 run)
+
+Full scoreboard: `meshlib-scoreboard-2026-08.md` (meshlib 3.1.3.429, free
+evaluation tier, scratch venv — the pinned worker env untouched). Three
+verdicts, which REFRAME Stage 3:
+
+1. **As a kernel replacement: disqualified.** On the degeneracy battery's
+   coplanar-bore-lid case — our everyday geometry — MeshLib's mesh boolean
+   SILENTLY NO-OPS: 101/200 seeded clockings (CI 43.6–57.4%) return the
+   input unchanged with `valid()=True`, empty error state, watertight
+   output. manifold: 0/200. The failure is a ±1e-7 knife-edge around exact
+   coplanarity and is not detectable by MeshLib's own defect queries — only
+   by the caller comparing output to input. Its voxel path fails the
+   battery outright and does not compose across sequential subtractions.
+2. **As an offset provider: decisively better than everything we have.**
+   sharpOffset at 0.025mm voxel pitch: 0.00136mm max error at 0.281s —
+   vs our Minkowski reference 0.00226mm at 18.6s and vertex-normal's
+   0.49mm worst-case crease shortfall at ~0s. End-to-end offset+cut:
+   0.738s vs 29.4s, agreeing to 0.034mm³. (Voxel-pitch-conditional:
+   halving pitch halves error.)
+3. **As an open-shell boolean: the largest single win.** It cuts the raw
+   262k-face open scan in 0.05–0.09s, boundary preserved, matching the
+   incumbent solidify→cut→strip route to 1.8e-6mm symmetric Hausdorff —
+   while skipping the 16.8s solidify entirely. (Its voxel path on the same
+   shell returns watertight garbage — mesh path only.)
+
+**The reframed Stage 3 question** is no longer "swap manifold" but:
+license MeshLib for the OFFSET and OPEN-SHELL lanes behind the seam, keep
+manifold as the kernel, and wrap every MeshLib boolean in a mandatory
+no-op guard (output-equals-input comparison — cheap, and the failure mode
+is exactly detectable that way). Honest limitations: n=1 cap, n=1 scan,
+single host, wall-clocks order-of-magnitude. **The one measurement owed
+before any money conversation: the fleet incidence of exact-coplanar
+contact in production geometry** — the no-op failure is frequent
+conditional on that contact; its unconditional rate on real cases is
+unmeasured.
+
 ### Verification, per stage
 
 | stage | proof |
