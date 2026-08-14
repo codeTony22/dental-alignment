@@ -106,6 +106,19 @@ class TestIsolateScannedCap:
             "matched": matched[0], "outside": outside[0],
         }
 
+    def test_two_isolations_of_the_same_inputs_are_byte_identical(self):
+        """W4's measured defect (2026-08-14): the unseeded template surface
+        draw made face MEMBERSHIP re-roll on 22% of real re-emits (50% on the
+        worst site) — the one nondeterministic file in the package, and the
+        manifest sealed it. The draw is seeded now; two isolations must agree
+        to the byte, not merely to the same shape."""
+        scan, template, pose, _ = self._fixture()
+        a = isolate_scanned_cap(scan, template, pose, RIM_R)
+        b = isolate_scanned_cap(scan, template, pose, RIM_R)
+        assert a is not None and b is not None
+        assert np.array_equal(a.vertices, b.vertices)
+        assert np.array_equal(a.faces, b.faces)
+
     def test_core_keep_survives_far_from_the_template(self):
         scan, template, pose, patches = self._fixture()
         result = isolate_scanned_cap(scan, template, pose, RIM_R)

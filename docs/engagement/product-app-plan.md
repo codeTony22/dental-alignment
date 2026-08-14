@@ -2885,6 +2885,25 @@ pins prove the ladder); strip_fabricated survives as that fallback.
 closed_model untouched (it keeps its base by design). Narrow 94, fast
 lane 956.
 
+**AT boolean W4 measurement + the one seed (2026-08-14).** A read-only
+fleet measurement (17 real re-emits, 8 processes, 4 sites) answered W4's
+question: 19 of 21 emitted files are byte-stable everywhere — the boolean
+kernel consumed ZERO randomness across every composite — and the single
+unstable artifact was 2a's scanned-cap isolation: an unseeded 20k-point
+surface draw whose jitter (median 0.013mm) exceeds a handful of vertices'
+margin to the 0.6mm band, flipping face membership on 22% of re-emits
+(50% on the worst site), with the sealed manifest moving in sympathy.
+Canonicalization provably cannot fix a file with a different triangle
+count; seeding the one call site provably does (21/21 across processes).
+isolation.py now passes seed=0 (the seed= parameter — np.random.seed is a
+DIFFERENT stream) with the byte-identity pin in test_isolation. Queued
+for the W4 implementation slice, from the same report: seal the eight
+boolean composites into the manifest (today the seal covers the one file
+that moved and none of the kernel outputs), pin matplotlib exactly (its
+version string is embedded in two sealed PNGs), retire clock_signature's
+id()-keyed memo (an address-reuse correctness hazard), and seed
+strip_fabricated's dormant fallback draw.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

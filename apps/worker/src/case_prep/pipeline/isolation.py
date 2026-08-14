@@ -130,8 +130,15 @@ def isolate_scanned_cap(scan: trimesh.Trimesh, template: trimesh.Trimesh,
     posed_template = template.copy()
     posed_template.apply_transform(np.asarray(pose, dtype=float))
     template_vertices = np.asarray(posed_template.vertices, dtype=float)
+    # SEEDED (W4, measured 2026-08-14): unseeded, this draw made the artifact
+    # re-roll — ~5,300 of the pre-cut's vertices are decided by the 0.6mm band,
+    # the draw's per-vertex jitter is median 0.013mm, and a handful of vertices
+    # sit closer to the threshold than that, so face MEMBERSHIP flipped on 22%
+    # of re-emits (50% on the worst site) and the sealed manifest moved with
+    # it. The explicit seed= parameter (NOT np.random.seed — a different
+    # stream) makes the whole 21-file package byte-stable across processes.
     surface_sample, _ = trimesh.sample.sample_surface(
-        posed_template, _TEMPLATE_SAMPLE_POINTS)
+        posed_template, _TEMPLATE_SAMPLE_POINTS, seed=0)
     tree = cKDTree(np.vstack([template_vertices, surface_sample]))
 
     # 3. CORE-KEEP (unconditional) OR template-band (everywhere else).
