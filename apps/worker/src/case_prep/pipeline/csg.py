@@ -23,7 +23,7 @@ from typing import Optional
 import numpy as np
 import trimesh
 
-from case_prep.pipeline.kernel import default_kernel
+from case_prep.pipeline.kernel import TrackedResult, default_kernel
 
 
 def _simple_boundary_loops(adj: dict) -> list:
@@ -272,6 +272,43 @@ def solidify_shell(shell: trimesh.Trimesh, crowns_up: np.ndarray,
     return solid
 
 
+def fabricated_face_mask(original_shell: trimesh.Trimesh,
+                         solid: trimesh.Trimesh) -> np.ndarray:
+    """THE CLOSURE, NAMED AT THE SOURCE (boolean-engine plan W1, 2026-08-13):
+    true for every face of ``solid`` that ``solidify_shell`` fabricated — the
+    skirt, the base fan, any hole lid — false for the shell's own scan
+    faces. Exact, by construction, never by distance: ``solidify_shell``
+    always builds its output as ``[the input's own F, skirt, base fan, lid
+    fans...]`` (its own ``new_faces`` list, in that order), so every
+    fabricated face comes AFTER every scan face and the boundary is one
+    integer — ``len(original_shell.faces)``.
+
+    Trusted, not merely assumed: the leading block of ``solid.faces`` must
+    reference the SAME vertex triples as ``original_shell.faces`` (compared
+    as unordered sets per face — ``trimesh.repair.fix_normals`` may flip a
+    triangle's own winding without moving it, and the "already closed"
+    branch of ``solidify_shell`` runs exactly that repair). A solid whose
+    leading block has drifted from this invariant raises here rather than
+    silently mislabelling every downstream provenance tag."""
+    n_scan = len(original_shell.faces)
+    if len(solid.faces) < n_scan:
+        raise ValueError(
+            "the solidified shell has fewer faces than its own input "
+            f"({len(solid.faces)} < {n_scan}) — solidify_shell's "
+            "append-only ordering invariant is broken")
+    head = np.sort(np.asarray(solid.faces[:n_scan]), axis=1)
+    orig = np.sort(np.asarray(original_shell.faces), axis=1)
+    if not np.array_equal(head, orig):
+        raise ValueError(
+            "the solidified shell's leading faces no longer match its own "
+            "input's faces — solidify_shell's append-only ordering "
+            "invariant is broken, and the fabricated-face mask cannot be "
+            "trusted without it")
+    mask = np.zeros(len(solid.faces), bool)
+    mask[n_scan:] = True
+    return mask
+
+
 # one emit solidifies the same scan for the dish, the platform and the closed
 # model — cache it for the life of the mesh object (key carries a content
 # checksum so a recycled id can never serve another mesh's solid)
@@ -509,3 +546,27 @@ def strip_fabricated(cut: trimesh.Trimesh, original_arch: trimesh.Trimesh,
     surf_pts, _ = trimesh.sample.sample_surface(original_arch, 150_000)
     d_scan, _ = cKDTree(np.vstack([V, surf_pts])).query(C)
     return inside | (d_scan < 0.35)
+
+
+def strip_tracked(result: TrackedResult) -> np.ndarray:
+    """``strip_fabricated``'s claim made EXACT (boolean-engine plan W1,
+    2026-08-13): given a ``TrackedResult`` whose base operand was tagged
+    with ``fabricated_face_mask`` (source 0 = the shell's own scan faces,
+    source 1 = the closure it fabricated — ``base_groups == 2``), the keep
+    decision is pure identity — every face is either tool material or the
+    shell's own scan material, and the ONLY thing ever dropped is the
+    closure, by its own tag, never by how close it happens to sit to
+    anything. When the base carried no split at all (``base_groups == 1`` —
+    an already-closed shell that ``solidify_shell`` passed through
+    unchanged, so there is no closure to drop) every face is scan-or-tool
+    by definition and nothing is stripped.
+
+    This is the function ``strip_fabricated``'s own docstring describes as
+    the goal: "the fabricated closure ... is stripped" — here that sentence
+    is true by construction, not by a 0.35mm sample-distance admission."""
+    source = np.asarray(result.source)
+    if result.base_groups >= 2:
+        # source 1 is the closure ONLY when the base was actually split;
+        # every source at or above 2 is a tool's own, kept unconditionally
+        return source != 1
+    return np.ones(len(source), bool)

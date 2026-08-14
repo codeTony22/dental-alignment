@@ -958,3 +958,86 @@ class TestCapImprintHoles:
             ray_origins=[origin + axis * (gum + 4.0)],
             ray_directions=[-axis])
         assert bool(np.asarray(down)[0]), "the recess needs its floor"
+
+
+class TestTrackedStripFailsOpenToTheDistanceStrip:
+    """Boolean-engine plan W1 (2026-08-13): ``_csg_carve`` and
+    ``arch_with_parts_fused`` now strip by manifold3d provenance first —
+    these pins hold BOTH ends of that fail-open ladder honest: the tracked
+    route runs silently (no note) on the clean synthetic fixtures every
+    other pin in this file already exercises, and a forced tracked-path
+    refusal falls back to the untracked engine + the old 0.35mm distance
+    strip, WITH a note, producing the identical clinical outcome the
+    untracked pins above already pin — the strip's own MECHANISM changed,
+    the CONTRACT it enforces did not."""
+
+    def _site(self, offset=0.2):
+        return (trimesh.creation.cylinder(radius=2.0, height=4.0),
+               _pose_at(0, 0, 2.0), offset, 2.0)
+
+    def test_the_tracked_route_needs_no_fallback_on_a_clean_fixture(self):
+        """If this ever fails, every OTHER ``notes == []`` pin in this file
+        is silently exercising the fallback strip instead of the tracked
+        one — this is the pin that tells the two apart."""
+        from case_prep.pipeline.deliverables import cap_imprint_holes
+
+        arch = _arch_with_bump()
+        out, notes = cap_imprint_holes(arch, [self._site()])
+        assert notes == []
+        assert len(out.faces) > 0
+
+    def test_a_tracked_carve_refusal_falls_back_and_says_so(self, monkeypatch):
+        from case_prep.pipeline import deliverables as d
+
+        def _refuse(*_args, **_kwargs):
+            raise RuntimeError("forced for the W1 fallback pin")
+
+        monkeypatch.setattr(d, "fabricated_face_mask", _refuse)
+
+        arch = _arch_with_bump()
+        out, notes = d.cap_imprint_holes(arch, [self._site()])
+        assert any("distance-based strip" in n for n in notes), notes
+
+        # the SAME clinical outcome ``TestCapImprintHoles::
+        # test_only_the_caps_footprint_is_culled`` already pins on the
+        # tracked route: the cap's own footprint is gone, the gum beside
+        # it survives
+        v = np.asarray(out.vertices, float)
+        r = np.linalg.norm(v[:, :2], axis=1)
+        assert not ((r < 1.8) & (v[:, 2] > 0.8) & (v[:, 2] < 3.8)).any()
+        sheet_near = (r > 2.5) & (r < 3.4) & (np.abs(v[:, 2]) < 0.6)
+        assert sheet_near.sum() >= 5, "the gum beside the cap must survive"
+
+    def test_the_tracked_union_needs_no_fallback_on_a_clean_fixture(self):
+        from case_prep.pipeline.deliverables import arch_with_parts_fused
+
+        arch = _arch_with_bump()
+        part = trimesh.creation.cylinder(radius=1.0, height=3.0)
+        pose = _pose_at(0.0, 0.0, 4.0)
+        _fused, notes = arch_with_parts_fused(arch, [(part, pose)])
+        assert notes == []
+
+    def test_a_tracked_union_refusal_falls_back_and_says_so(self, monkeypatch):
+        from case_prep.pipeline import deliverables as d
+
+        def _refuse(*_args, **_kwargs):
+            raise RuntimeError("forced for the W1 fallback pin")
+
+        monkeypatch.setattr(d, "fabricated_face_mask", _refuse)
+
+        arch = _arch_with_bump()
+        part = trimesh.creation.cylinder(radius=1.0, height=3.0)
+        pose = _pose_at(0.0, 0.0, 4.0)
+        fused, notes = d.arch_with_parts_fused(arch, [(part, pose)])
+        assert any("distance-based strip" in n for n in notes), notes
+
+        # the SAME clinical outcome ``TestArchWithPartsFused::
+        # test_the_scans_own_far_reaches_survive_and_the_base_stays_
+        # stripped`` already pins on the tracked route
+        v = np.asarray(fused.vertices, float)
+        assert (np.abs(v[:, 0]) > 15).any(), \
+            "the sheet's far ends must survive the strip"
+        scan_floor = float(np.asarray(arch.vertices, float)[:, 2].min())
+        assert not (v[:, 2] < scan_floor - 0.2).any(), \
+            "nothing may ship below the scan's own deepest point — a " \
+            "fabricated base survived the strip"

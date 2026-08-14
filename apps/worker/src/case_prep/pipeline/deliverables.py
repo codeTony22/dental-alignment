@@ -16,8 +16,9 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 import trimesh
 
-from case_prep.pipeline.csg import (exact_cap_punch, punch_solid,
-                                    solidified_shell_cached, strip_fabricated)
+from case_prep.pipeline.csg import (exact_cap_punch, fabricated_face_mask,
+                                    punch_solid, solidified_shell_cached,
+                                    strip_fabricated, strip_tracked)
 from case_prep.pipeline.kernel import default_kernel
 
 _REGION_MARGIN_MM = 0.6  # cull slightly beyond the cap so no scanned cap sliver survives
@@ -89,7 +90,17 @@ def arch_with_parts_fused(arch: trimesh.Trimesh,
     refusing, the arch failing to solidify — falls the WHOLE composite back to
     ``arch_with_parts`` for every part, with its own note; the notes from any per-part
     fallback that already happened are lost in that case, because the whole composite
-    it would have landed on no longer exists."""
+    it would have landed on no longer exists.
+
+    THE TRACKED UNION (boolean-engine plan W1, 2026-08-13): the arch solid is tagged
+    scan-vs-fabricated at the source (``fabricated_face_mask``) and the union runs
+    through manifold3d's own provenance (``union_tracked``) — the strip that follows
+    reads WHICH solid a face's material came from, part or shell-scan or
+    shell-closure, rather than sampling a dense point cloud off every part solid and
+    measuring distance. A refusal here (a manifold3d rejection the plain trimesh
+    engine tolerated, or the tracked union itself coming back empty) falls back to
+    the untracked engine plus the old distance-based strip, with a note — the
+    geometry degrades silently, the manifest never does."""
     from scipy.spatial import cKDTree
 
     try:
@@ -105,22 +116,42 @@ def arch_with_parts_fused(arch: trimesh.Trimesh,
                 notes.append(f"part {index} could not be fused ({exc}) — "
                             f"concatenated instead")
                 fallback_parts.append((part, pose))
-        fused = default_kernel().union([solid] + part_solids)
-        if len(fused.faces) == 0:
-            raise ValueError("the fused composite came back empty")
-        if part_solids:
-            # the dense sample lives on the PART solids, not the arch — these are the
-            # surfaces the strip below must keep even though they sit nowhere near the
-            # original scan (one tree over every part, same idiom as strip_fabricated's
-            # own arch sample)
-            surf_pts = np.vstack([
-                trimesh.sample.sample_surface(ps, 150_000)[0] for ps in part_solids])
-            d_part, _ = cKDTree(surf_pts).query(
-                np.asarray(fused.triangles_center, float))
-            inside_mask = d_part < 0.45
+
+        tracked_keep: Optional[np.ndarray] = None
+        try:
+            fabricated = fabricated_face_mask(arch, solid)
+            tracked = default_kernel().union_tracked(
+                [solid] + part_solids, fabricated.astype(np.int64))
+            fused = tracked.mesh
+            if len(fused.faces) == 0:
+                raise ValueError("the fused composite came back empty")
+            tracked_keep = strip_tracked(tracked)
+        except Exception as exc:  # noqa: BLE001 — fail-open to the
+            # untracked engine and the distance strip
+            fused = default_kernel().union([solid] + part_solids)
+            if len(fused.faces) == 0:
+                raise ValueError("the fused composite came back empty")
+            notes.append(f"the provenance-tracked strip could not run "
+                        f"({exc}) — the distance-based strip was used "
+                        f"instead")
+
+        if tracked_keep is not None:
+            keep = tracked_keep
         else:
-            inside_mask = np.zeros(len(fused.faces), bool)
-        keep = strip_fabricated(fused, arch, inside_mask)
+            if part_solids:
+                # the dense sample lives on the PART solids, not the arch — these are
+                # the surfaces the strip below must keep even though they sit nowhere
+                # near the original scan (one tree over every part, same idiom as
+                # strip_fabricated's own arch sample)
+                surf_pts = np.vstack([
+                    trimesh.sample.sample_surface(ps, 150_000)[0]
+                    for ps in part_solids])
+                d_part, _ = cKDTree(surf_pts).query(
+                    np.asarray(fused.triangles_center, float))
+                inside_mask = d_part < 0.45
+            else:
+                inside_mask = np.zeros(len(fused.faces), bool)
+            keep = strip_fabricated(fused, arch, inside_mask)
         F = np.asarray(fused.faces)
         V = np.asarray(fused.vertices, float)
         out = trimesh.Trimesh(V.copy(), F[keep].copy(), process=False)
@@ -493,9 +524,32 @@ def _csg_carve(arch: trimesh.Trimesh,
         actual_floor_a = float(punch_a.min()) if len(punch_a) else floor_a
         regions.append((origin, axis, xl, yl, zs_p, prof_p, actual_floor_a,
                         h_low))
-    cut = default_kernel().difference(solid, punches)
-    if not cut.is_watertight:
-        raise ValueError("the boolean result is not watertight")
+    # THE TRACKED CUT (boolean-engine plan W1, 2026-08-13): the shell is
+    # tagged scan-vs-fabricated at the source (``fabricated_face_mask``,
+    # exact by construction — solidify_shell's own append-only ordering)
+    # and the difference runs through manifold3d's own provenance instead
+    # of ``trimesh.boolean`` — so the strip below reads WHICH solid a face
+    # came from rather than measuring how close it sits to anything.
+    # Fail-open, never a dead package: any refusal here (a manifold3d
+    # rejection the plain trimesh engine tolerated, an unwatertight tracked
+    # result) falls back to the untracked engine + the distance strip, with
+    # a note — the geometry falls back silently, the manifest never does.
+    tracked_keep: Optional[np.ndarray] = None
+    try:
+        fabricated = fabricated_face_mask(arch, solid)
+        tracked = default_kernel().difference_tracked(
+            solid, punches, fabricated.astype(np.int64))
+        cut = tracked.mesh
+        if not cut.is_watertight:
+            raise ValueError("the tracked boolean result is not watertight")
+        tracked_keep = strip_tracked(tracked)
+    except Exception as exc:  # noqa: BLE001 — fail-open to the untracked
+        # engine and the distance strip
+        cut = default_kernel().difference(solid, punches)
+        if not cut.is_watertight:
+            raise ValueError("the boolean result is not watertight")
+        notes.append(f"the provenance-tracked strip could not run ({exc}) "
+                     f"— the distance-based strip was used instead")
     # the tint split: faces on any site's cut surface go to the socket layer
     C = np.asarray(cut.triangles_center, float)
     inside = np.zeros(len(C), bool)
@@ -511,9 +565,12 @@ def _csg_carve(arch: trimesh.Trimesh,
     # solidify base and skirt exist ONLY so the boolean has a solid to cut.
     # The artifact is the SCAN. A face survives if it lies on a cut surface
     # (the recess) or on the original shell itself; the fabricated closure —
-    # base plate, skirt, anything the scan never contained — is stripped.
-    # Tab 6's closed model keeps its base; that is its whole point.
-    keep = strip_fabricated(cut, arch, inside)
+    # base plate, skirt, anything the scan never contained — is stripped,
+    # by provenance identity when the tracked cut ran, by the 0.35mm
+    # distance fallback when it did not. Tab 6's closed model keeps its
+    # base; that is its whole point.
+    keep = (tracked_keep if tracked_keep is not None
+           else strip_fabricated(cut, arch, inside))
     F = np.asarray(cut.faces)
     Vc = np.asarray(cut.vertices, float)
     out = trimesh.Trimesh(Vc.copy(), F[keep & ~inside].copy(), process=False)
@@ -541,9 +598,13 @@ def cap_imprint_parts(arch: trimesh.Trimesh,
     The result is watertight: machined wall, machined floor, no backface
     possible from any angle. Faces on the cut surface split into the SOCKET
     piece for the preview tint; concatenating the two pieces rebuilds the cut
-    solid exactly. When the CSG route cannot run (an unclosable shell, a
-    boolean refusal) the one-shell PRESS carve (§10-AS.10) takes over with a
-    note — an honest degradation, never a dead package."""
+    solid exactly. Inside ``_csg_carve``, the fabricated closure (base plate,
+    skirt) is stripped by manifold3d's own face PROVENANCE now — exact by
+    construction (boolean-engine plan W1, 2026-08-13) — with the old 0.35mm
+    distance test as ITS OWN fallback, noted, never silent. When the CSG
+    route cannot run at all (an unclosable shell, a boolean refusal) the
+    one-shell PRESS carve (§10-AS.10) takes over with a note — an honest
+    degradation, never a dead package."""
     try:
         return _csg_carve(arch, sites, visible_depth_mm, top_floor)
     except Exception as exc:  # noqa: BLE001 — the fallback IS the containment

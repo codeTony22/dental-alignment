@@ -41,8 +41,9 @@ import numpy as np
 import pytest
 import trimesh
 
-from case_prep.pipeline.csg import (exact_cap_punch, solidified_shell_cached,
-                                    strip_fabricated)
+from case_prep.pipeline.csg import (exact_cap_punch, fabricated_face_mask,
+                                    solidified_shell_cached, strip_fabricated,
+                                    strip_tracked)
 from case_prep.pipeline.kernel import default_kernel
 
 RADIUS_MM = 2.0
@@ -194,6 +195,111 @@ class TestStripMaskGoldenMetric:
             "the strip dropped nothing — the fabricated base/skirt survived"
         assert int(keep.sum()) < len(cut.faces), \
             "the strip kept everything, including the fabricated closure"
+
+
+def _canonical_float32_triangles(vertices: np.ndarray, faces: np.ndarray) -> set:
+    """Every triangle of ``(vertices, faces)`` as an order- and rotation-
+    invariant key at FLOAT32 precision — the precision manifold3d's own
+    MeshGL round-trip forces on every vertex it passes through, even ones
+    the boolean never geometrically moved (``manifold3d.Mesh.
+    vert_properties`` is declared ``float32`` by the binding itself).
+    Measured at pin time on this exact fixture (2026-08-13): the raw
+    float64->float32->float64 cast alone moves a coordinate by up to
+    ~2.4e-7mm over this fixture's ~8mm span — NOT bit-identical against the
+    untouched float64 input, and nowhere near the plan's own <1e-9 hope.
+    Comparing at float32 precision on BOTH sides (this helper, and its use
+    below) is the honest form of "exact" the locality property can actually
+    claim: zero further difference beyond that one, unavoidable, sub-
+    micron cast — verified below to be exactly zero, not merely small."""
+    tris = np.asarray(vertices, np.float32)[np.asarray(faces)]
+    keys = set()
+    for tri in tris:
+        idx = np.lexsort((tri[:, 2], tri[:, 1], tri[:, 0]))
+        keys.add(tuple(map(tuple, tri[idx].tolist())))
+    return keys
+
+
+class TestTrackedLocalityAndConservativity:
+    """W1's own acceptance metric (boolean-engine plan, 2026-08-13):
+    "locality becomes bit-identity on untouched regions (hash-compared)"
+    and conservativity — "no shipped triangle originates from the
+    closure" — becomes EXACT rather than sampled. Both are judged on the
+    tracked ``solidify -> punch -> difference_tracked -> strip_tracked``
+    sequence, the same shape ``_csg_carve`` now runs, over the curved-sheet
+    fixture (the one fixture in this file that makes ``solidified_shell_
+    cached`` fabricate a skirt+base, so conservativity has something to
+    prove)."""
+
+    def _tracked_cut(self):
+        sheet = _curved_sheet()
+        solid = solidified_shell_cached(sheet)
+        fabricated = fabricated_face_mask(sheet, solid)
+        pose = _pose_at(0.0, 0.0, 1.0)
+        punch = exact_cap_punch(_cap(), OFFSET_MM, pose)
+        tracked = default_kernel().difference_tracked(
+            solid, [punch], fabricated.astype(np.int64))
+        return sheet, tracked, pose
+
+    def test_locality_far_scan_provenance_faces_are_bit_identical_to_the_scan(self):
+        sheet, tracked, pose = self._tracked_cut()
+        assert tracked.mesh.is_watertight
+        keep = strip_tracked(tracked)
+
+        C = np.asarray(tracked.mesh.triangles_center, float)
+        rel = C - pose[:3, 3]
+        r = np.linalg.norm(rel[:, :2], axis=1)
+        far_from_every_tool = r > (RADIUS_MM + OFFSET_MM + 2.0)
+        scan_provenance = (tracked.source == 0)
+        far_scan = far_from_every_tool & scan_provenance & keep
+        assert int(far_scan.sum()) > 0, \
+            "no far scan-provenance face survived — this pin proves nothing"
+
+        scan_keys = _canonical_float32_triangles(sheet.vertices, sheet.faces)
+        out_faces = np.asarray(tracked.mesh.faces)[far_scan]
+        out_keys = _canonical_float32_triangles(tracked.mesh.vertices, out_faces)
+
+        missing = out_keys - scan_keys
+        assert not missing, \
+            f"{len(missing)} far scan-provenance triangle(s) are not " \
+            "bit-identical (at float32 precision) to any triangle of the " \
+            "original scan — locality broke"
+
+    def test_conservativity_zero_closure_provenance_faces_survive_the_strip(self):
+        sheet, tracked, _pose = self._tracked_cut()
+        assert tracked.base_groups == 2, \
+            "the shell must have been split scan-vs-closure, or this pin " \
+            "proves nothing about conservativity"
+        keep = strip_tracked(tracked)
+
+        closure_provenance = (tracked.source == 1)
+        assert int(closure_provenance.sum()) > 0, \
+            "solidify fabricated nothing on this fixture — vacuous pin"
+        assert not (keep & closure_provenance).any(), \
+            "a closure-provenance face survived the strip — conservativity " \
+            "is no longer exact"
+
+    def test_clinical_metrics_match_the_untracked_path(self):
+        """The tracked route must not move the numbers the plan names —
+        recess wall position and volume removed — even though its own
+        internal boolean call shape (``batch_boolean``) differs from the
+        untracked path's (``trimesh.boolean``, via a single ``-``
+        operator here, since there is exactly one tool)."""
+        sheet, tracked, pose = self._tracked_cut()
+        solid = solidified_shell_cached(sheet)
+        punch = exact_cap_punch(_cap(), OFFSET_MM, pose)
+        untracked_cut = default_kernel().difference(solid, [punch])
+
+        assert float(tracked.mesh.volume) == pytest.approx(
+            float(untracked_cut.volume), abs=1e-6)
+
+        expected_radius = RADIUS_MM + OFFSET_MM
+        angles = np.linspace(0.0, 2.0 * np.pi, 16, endpoint=False)
+        probes = pose[:3, 3] + np.column_stack([
+            expected_radius * np.cos(angles),
+            expected_radius * np.sin(angles), np.zeros(16)])
+        _, dist_tracked, _ = tracked.mesh.nearest.on_surface(probes)
+        _, dist_untracked, _ = untracked_cut.nearest.on_surface(probes)
+        assert float(np.abs(dist_tracked - dist_untracked).max()) < 1e-6
 
 
 REAL = Path(__file__).resolve().parents[1] / "data" / "real"

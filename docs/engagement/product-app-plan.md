@@ -2867,6 +2867,24 @@ the cap, nothing else." The demo-fidelity extras pin gains the two
 per-tooth names on the warmed case — the exact enumeration the fidelity
 doctrine demands. Worker 25 narrow/935 fast, bff 666.
 
+**AT boolean W1 — provenance replaces proximity in the strip
+(2026-08-14).** The kernel seam gains tracked operations
+(difference_tracked/union_tracked): every operand carries a reserved
+manifold id through the boolean (reserve_ids + explicit multi-run Mesh
+construction — as_original RESETS ids and cannot express a solid carrying
+scan-vs-closure groups; the binding's run indices are in undocumented
+HALFEDGE units, found empirically). solidify_shell's fabricated faces are
+an exact integer boundary (fabricated_face_mask, invariant-checked), so
+the strip becomes identity: keep = not-closure, no distance query. The
+contract's conservativity is now exact; locality is bit-exact at float32
+(manifold's MeshGL is float32 — measured round-trip noise 2.38e-7mm, and
+STL itself is float32, so shipped precision is unchanged; both numbers in
+the corpus docstring). _csg_carve and arch_with_parts_fused run tracked
+by default and fall back to the distance strip WITH a note (forced-refusal
+pins prove the ladder); strip_fabricated survives as that fallback.
+closed_model untouched (it keeps its base by design). Narrow 94, fast
+lane 956.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

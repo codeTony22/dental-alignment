@@ -282,6 +282,149 @@ class TestStripFabricated:
         assert list(keep) == [True, False, True]
 
 
+class TestFabricatedFaceMask:
+    """Boolean-engine plan W1 (2026-08-13): the EXACT companion to
+    ``strip_fabricated``'s own distance test — ``solidify_shell`` always
+    appends its fabricated faces (skirt, base fan, hole lids) AFTER the
+    input shell's own, so the scan/closure boundary is one integer,
+    ``len(original_shell.faces)``, never a proximity query."""
+
+    @staticmethod
+    def _open_sheet():
+        xs, ys = np.meshgrid(np.linspace(-8, 8, 24), np.linspace(-8, 8, 24))
+        pts = np.column_stack([xs.ravel(), ys.ravel(), 0.02 * xs.ravel() ** 2])
+        faces = []
+        for i in range(23):
+            for j in range(23):
+                a = i * 24 + j
+                faces.append([a, a + 1, a + 25])
+                faces.append([a, a + 25, a + 24])
+        return trimesh.Trimesh(pts, np.asarray(faces), process=False)
+
+    def test_every_fabricated_face_is_in_the_mask_and_no_scan_face_is(self):
+        from case_prep.pipeline.csg import fabricated_face_mask, solidify_shell
+
+        sheet = self._open_sheet()
+        solid = solidify_shell(sheet, np.array([0.0, 0.0, 1.0]))
+        assert len(solid.faces) > len(sheet.faces), \
+            "solidify must have fabricated something, or this pin is vacuous"
+
+        mask = fabricated_face_mask(sheet, solid)
+
+        assert len(mask) == len(solid.faces)
+        n_scan = len(sheet.faces)
+        assert not mask[:n_scan].any(), "a scan face was marked fabricated"
+        assert mask[n_scan:].all(), "a fabricated face was left unmarked"
+        assert int(mask.sum()) == len(solid.faces) - n_scan
+
+    def test_an_already_closed_shell_has_no_fabricated_faces_at_all(self):
+        from case_prep.pipeline.csg import fabricated_face_mask, solidify_shell
+
+        box = trimesh.creation.box(extents=[10, 10, 5])
+        solid = solidify_shell(box, np.array([0.0, 0.0, 1.0]))
+        mask = fabricated_face_mask(box, solid)
+        assert not mask.any(), \
+            "an already-closed shell fabricates nothing — solidify's own " \
+            "passthrough branch adds no faces"
+
+    def test_refuses_when_the_leading_faces_no_longer_match_the_input(self):
+        from case_prep.pipeline.csg import fabricated_face_mask
+
+        original = trimesh.creation.box(extents=[2, 2, 2])
+        tampered = original.copy()
+        # scramble the leading block's own vertex references so the
+        # append-only invariant this function trusts is visibly broken
+        F = np.asarray(tampered.faces).copy()
+        F[0] = F[0][::-1]
+        F[0, 0], F[1, 0] = F[1, 0], F[0, 0]
+        tampered = trimesh.Trimesh(np.asarray(tampered.vertices, float), F,
+                                   process=False)
+        with pytest.raises(ValueError):
+            fabricated_face_mask(original, tampered)
+
+
+class TestStripTracked:
+    """Boolean-engine plan W1: the provenance-exact replacement for
+    ``strip_fabricated`` — keep is read off ``TrackedResult.source``
+    identity, never a distance query."""
+
+    def test_drops_only_the_shells_own_closure_source(self):
+        from case_prep.pipeline.csg import strip_tracked
+        from case_prep.pipeline.kernel import TrackedResult
+
+        # 5 faces: two scan (source 0), two closure (source 1), one tool (2)
+        source = np.array([0, 0, 1, 1, 2])
+        mesh = trimesh.Trimesh(np.zeros((3, 3)), np.zeros((5, 3), int),
+                               process=False)
+        result = TrackedResult(mesh=mesh, source=source, base_groups=2)
+
+        keep = strip_tracked(result)
+
+        assert list(keep) == [True, True, False, False, True]
+
+    def test_an_unsplit_base_strips_nothing(self):
+        """``base_groups == 1`` means the shell was never split — every
+        face is either the shell's own or a tool's, and there is no
+        third "closure" bucket to drop at all."""
+        from case_prep.pipeline.csg import strip_tracked
+        from case_prep.pipeline.kernel import TrackedResult
+
+        source = np.array([0, 0, 1, 2])
+        mesh = trimesh.Trimesh(np.zeros((3, 3)), np.zeros((4, 3), int),
+                               process=False)
+        result = TrackedResult(mesh=mesh, source=source, base_groups=1)
+
+        keep = strip_tracked(result)
+
+        assert list(keep) == [True, True, True, True]
+
+    def test_end_to_end_on_a_real_carve_matches_the_distance_strips_own_shape(self):
+        """The tracked route, run over the exact solidify -> punch ->
+        difference_tracked sequence ``_csg_carve`` performs, must agree
+        with ``strip_fabricated`` on WHICH faces are the fabricated
+        closure — same shell, same punch, same cut region, two different
+        ways of answering the same question."""
+        from case_prep.pipeline.csg import (exact_cap_punch,
+                                            fabricated_face_mask,
+                                            solidified_shell_cached,
+                                            strip_fabricated, strip_tracked)
+        from case_prep.pipeline.kernel import default_kernel
+
+        sheet = TestFabricatedFaceMask._open_sheet()
+        solid = solidified_shell_cached(sheet)
+        mask = fabricated_face_mask(sheet, solid)
+
+        pose = np.eye(4)
+        pose[2, 3] = 1.0
+        cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
+        punch = exact_cap_punch(cap, 0.2, pose)
+
+        tracked = default_kernel().difference_tracked(
+            solid, [punch], mask.astype(int))
+        assert tracked.mesh.is_watertight
+        tracked_keep = strip_tracked(tracked)
+
+        untracked_cut = default_kernel().difference(solid, [punch])
+        assert untracked_cut.is_watertight
+        rel = np.asarray(untracked_cut.triangles_center, float) - pose[:3, 3]
+        inside = ((np.linalg.norm(rel[:, :2], axis=1) < 2.2 + 0.1)
+                  & (np.abs(rel[:, 2]) < 3.0))
+        distance_keep = strip_fabricated(untracked_cut, sheet, inside)
+
+        # not byte-identical face-for-face (manifold3d's two call shapes can
+        # retriangulate differently), but the SAME fraction of the result
+        # survives the strip either way — both routes drop exactly the
+        # fabricated base/skirt and keep everything else
+        assert int(tracked_keep.sum()) > 0
+        assert int(distance_keep.sum()) > 0
+        tracked_frac = tracked_keep.sum() / len(tracked_keep)
+        distance_frac = distance_keep.sum() / len(distance_keep)
+        assert abs(tracked_frac - distance_frac) < 0.05, \
+            f"tracked strip kept {tracked_frac:.3f} of the cut, distance " \
+            f"strip kept {distance_frac:.3f} — the two routes disagree " \
+            "about how much is fabricated"
+
+
 class TestJunctionSafeBoundary:
     """§10-AT front 5/W5: ``cap_imprint_parts``'s per-face mask at zero
     gingival relief leaves BOWTIE JUNCTIONS in the shell's boundary graph —
