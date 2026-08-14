@@ -145,6 +145,82 @@ def test_manifest_seals_the_boolean_composites_the_run_emitted(tmp_path):
             f"{name} was never emitted — it must not be hallucinated into the seal"
 
 
+@pytest.mark.slow
+def test_manifest_facts_cover_the_composites_and_the_per_site_meshes(tmp_path, monkeypatch):
+    """ARTIFACT FACTS (boolean-engine plan 4c / clinical-pipeline-plan Stage 5): every
+    STL this run actually wrote — per-site (healing cap, scanbody, production set,
+    the raw scan, the overlay) AND the boolean composites — carries a manifest
+    ``facts`` block. The run lane holds every one of these meshes in memory at write
+    time (the per-site meshes inside ``emit_case_package``, the composites right
+    where this lane builds them), so facts are the CALLER-PROVIDES route throughout,
+    never a reload of the STL this run just wrote.
+
+    ``triangle_count`` is checked against an on-disk reload — STL preserves the
+    triangle list losslessly, so the two must agree exactly. ``watertight`` is
+    checked ONLY on the raw scan (structurally, provably open) — MEASURED
+    (2026-08-14): STL's float32 quantization can shift a reloaded mesh's vertex
+    count enough to flip ``is_watertight`` on a genuinely watertight solid (2050 ->
+    2020 vertices on this fixture's posed scanbody, purely from the export/reload
+    round trip), which is exactly why the design calls for the CALLER's in-memory
+    reading rather than a reload — the reload is the less trustworthy answer, not
+    the more trustworthy one."""
+    scan, lib, gt = _embedded_case(tmp_path)
+    confirmed = [ConfirmedSite(tooth=19 + i, center=tuple(map(float, p.position)))
+                 for i, p in enumerate(gt.poses)]
+
+    out = tmp_path / "out"
+    case_id = "case-051"
+
+    # THE CALLER-PROVIDES ROUTE, PINNED DIRECTLY: every mesh this lane writes is
+    # already in memory when it writes it, so the load fallback
+    # (``output_package._facts_from_disk``) must never fire over a clean run — a
+    # call would mean some artifact's facts were re-derived by re-parsing the file
+    # this same lane just wrote, the double-IO the design brief exists to avoid.
+    import case_prep.adapters.output_package as _op
+    fallback_calls: list = []
+    original_fallback = _op._facts_from_disk
+    monkeypatch.setattr(
+        _op, "_facts_from_disk",
+        lambda p: (fallback_calls.append(p), original_fallback(p))[1])
+
+    run_auto_case(
+        case_id=case_id, scan=scan, library=lib,
+        construction_mesh=make_scan_body_mesh(), vendor="dess",
+        gingival_offset_mm=0.0,  # stand-in body — see module note
+        confirmed=confirmed, jaw_label="upper", out_dir=out)
+
+    assert fallback_calls == [], (
+        "the run lane must hand every artifact's facts straight from the mesh it "
+        f"already holds — the load fallback fired for {fallback_calls}")
+
+    manifest = json.loads((out / f"{case_id}-manifest.json").read_text())
+    by_name = {f["name"]: f for f in manifest["files"]}
+    on_disk_stl = {p.name for p in out.iterdir() if p.suffix == ".stl"}
+    assert on_disk_stl, "the fixture must actually write some STL"
+
+    import trimesh as _trimesh
+
+    for name in on_disk_stl:
+        entry = by_name.get(name)
+        assert entry is not None, f"{name} is on disk but never entered the manifest"
+        assert "facts" in entry, f"{name} carries no facts block"
+        assert isinstance(entry["facts"]["triangle_count"], int)
+        assert isinstance(entry["facts"]["watertight"], bool)
+        reloaded = _trimesh.load(out / name, force="mesh")
+        assert entry["facts"]["triangle_count"] == len(reloaded.faces), name
+
+    raw_scan_name = f"{case_id}-upper.stl"
+    assert raw_scan_name in by_name
+    assert by_name[raw_scan_name]["facts"]["watertight"] is False, \
+        "the raw jaw scan is a surface, not a solid — structurally open"
+
+    # and every non-STL entry (json sidecars, the manifest's own QC PNGs if any)
+    # carries NO facts key at all — absence, not an empty object
+    for name, entry in by_name.items():
+        if not name.endswith(".stl"):
+            assert "facts" not in entry, f"{name} is not a mesh — no facts expected"
+
+
 def test_run_auto_case_requires_confirmed_sites(tmp_path):
     scan, lib, _ = _embedded_case(tmp_path)
     with pytest.raises(ValueError):

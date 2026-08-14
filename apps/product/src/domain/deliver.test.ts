@@ -2007,6 +2007,78 @@ describe("analysisClipboardText — the paste-ready case digest (client 2026-08-
     expect(text).toContain("terms placeholder-v2");
   });
 
+  describe("ARTIFACT FACTS (boolean-engine plan 4c) — the per-file line grows a suffix", () => {
+    it("a served ArtifactFile with facts prints its triangle count and open|closed", () => {
+      const text = analysisClipboardText("c", "d", null, assurance as never, {
+        files: [
+          {
+            name: "c-model-closed.stl",
+            size_bytes: 1000,
+            tooth: null,
+            description: null,
+            facts: { triangle_count: 48213, watertight: true },
+          },
+          {
+            name: "c-upper.stl",
+            size_bytes: 2000,
+            tooth: null,
+            description: "the doctor's scan, exactly as uploaded",
+            facts: { triangle_count: 512, watertight: false },
+          },
+        ],
+      });
+      expect(text).toContain("- c-model-closed.stl · 48213 triangles · closed");
+      expect(text).toContain(
+        "- c-upper.stl — the doctor's scan, exactly as uploaded · 512 triangles · open",
+      );
+    });
+
+    it("a served ArtifactFile with no facts (absence) prints nothing extra", () => {
+      const text = analysisClipboardText("c", "d", null, assurance as never, {
+        files: [
+          {
+            name: "c-4-implant.json",
+            size_bytes: 300,
+            tooth: 4,
+            description: null,
+            facts: null,
+          },
+        ],
+      });
+      expect(text).toContain("- c-4-implant.json");
+      expect(text).not.toContain("triangles");
+      expect(text).not.toContain("open");
+      expect(text).not.toContain("closed");
+    });
+
+    it("a bare string entry (the legacy shape) still prints verbatim, unchanged", () => {
+      // backward compatibility: DeliverStage.tsx today composes plain strings —
+      // this must keep working exactly as it always has
+      const text = analysisClipboardText("c", "d", null, assurance as never, {
+        files: ["c-arch-capless.stl — a served sentence"],
+      });
+      expect(text).toContain("- c-arch-capless.stl — a served sentence");
+      expect(text).not.toContain("triangles");
+    });
+
+    it("string and ArtifactFile entries can mix in the same list", () => {
+      const text = analysisClipboardText("c", "d", null, assurance as never, {
+        files: [
+          "c-plain-legacy.stl",
+          {
+            name: "c-model-closed.stl",
+            size_bytes: 1000,
+            tooth: null,
+            description: null,
+            facts: { triangle_count: 10, watertight: true },
+          },
+        ],
+      });
+      expect(text).toContain("- c-plain-legacy.stl");
+      expect(text).toContain("- c-model-closed.stl · 10 triangles · closed");
+    });
+  });
+
   it("carries the detection record and the case log — the math the reviewer diagnoses from (client 2026-08-10)", () => {
     // "the copy analysis tool should show enough data, math information for the
     // LLM to make an opinion of what is wrong with that current alignment run"

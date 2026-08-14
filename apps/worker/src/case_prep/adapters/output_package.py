@@ -99,10 +99,81 @@ class SitePackageSpec:
 
 
 @dataclass(frozen=True)
+class MeshFacts:
+    """ARTIFACT FACTS (boolean-engine plan 4c / clinical-pipeline-plan Stage 5): what
+    a single emitted STL's own bytes answer — so "what happened to this file" stops
+    being a mystery to a lab or a reviewer reading the manifest cold.
+
+    ``triangle_count`` is the mesh's own face count; ``watertight`` is trimesh's
+    ``is_watertight`` AT WRITE TIME — this IS the open/closed fact the client asked
+    for (an open-arch artifact reads False, the closed model reads True; no separate
+    verdict is computed, this is the direct reading).
+
+    DELIBERATELY NO THIRD ``notes`` FIELD. The fallback/degradation notes this
+    codebase already tracks (``production.composite_note`` / ``imprint_note`` /
+    ``model_note`` / ``scanned_cap_note``) are keyed by TOOTH on the report's row,
+    not by artifact filename, and a single note can cover several files (a
+    whole-composite fallback) or none of a given one — threading it onto one file's
+    facts here would either duplicate that row channel or silently drop the
+    many-to-many cases it already handles correctly. Facts stay to what one
+    artifact's own geometry can answer by itself."""
+
+    triangle_count: int
+    watertight: bool
+
+    def as_json(self) -> Dict[str, object]:
+        return {"triangle_count": self.triangle_count, "watertight": self.watertight}
+
+
+def facts_of(mesh: trimesh.Trimesh) -> MeshFacts:
+    """The facts an IN-MEMORY mesh already answers — no disk round-trip. Both emit
+    lanes hold every mesh they write (the aligned per-site copies, the boolean
+    composites) at the moment they write it; this is the seam they call instead of
+    letting the manifest reload the file it just exported."""
+    return MeshFacts(triangle_count=int(len(mesh.faces)), watertight=bool(mesh.is_watertight))
+
+
+def _facts_from_disk(path: Path) -> MeshFacts:
+    """THE LOAD FALLBACK — only for an STL no caller already measured in memory.
+    ``force="mesh"`` matches every other STL load in this codebase (adapters/
+    ingest.py, application/catalog.py, …) and is REQUIRED here, not merely
+    conventional: an STL is an unwelded triangle soup on disk, and without the
+    default vertex-merge step ``is_watertight`` reads False on every closed mesh
+    alike (no two triangles share a vertex to begin with, so no edge is ever seen
+    as shared)."""
+    mesh = trimesh.load(path, force="mesh")
+    return facts_of(mesh)
+
+
+def _facts_for(path: Path, facts: Optional[MeshFacts]) -> Optional[MeshFacts]:
+    """THE ONE FACTS RULE, shared by ``emit_case_package`` and
+    ``register_package_files``: use what the caller already measured (no reload —
+    the caller-provides route the design brief asks for); for an ``.stl`` no caller
+    measured, fall back to loading the file just written/hashed; anything else
+    (json/png/html) carries no facts at all — absence, never an invented reading."""
+    if facts is not None:
+        return facts
+    if path.suffix.lower() != ".stl":
+        return None
+    return _facts_from_disk(path)
+
+
+@dataclass(frozen=True)
 class ManifestFile:
     name: str
     sha256: str
     bytes: int
+    # None for a non-mesh file (absence, not an empty object) and for an entry
+    # ``register_package_files`` read back off an OLD manifest without touching —
+    # that path never re-derives facts for a file nobody asked it to re-hash
+    facts: Optional[MeshFacts] = None
+
+    def as_json(self) -> Dict[str, object]:
+        row: Dict[str, object] = {"name": self.name, "sha256": self.sha256,
+                                  "bytes": self.bytes}
+        if self.facts is not None:
+            row["facts"] = self.facts.as_json()
+        return row
 
 
 @dataclass(frozen=True)
@@ -139,8 +210,9 @@ def _sha256_of(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _record_file(path: Path) -> ManifestFile:
-    return ManifestFile(name=path.name, sha256=_sha256_of(path), bytes=path.stat().st_size)
+def _record_file(path: Path, facts: Optional[MeshFacts] = None) -> ManifestFile:
+    return ManifestFile(name=path.name, sha256=_sha256_of(path),
+                        bytes=path.stat().st_size, facts=facts)
 
 
 def _relief_record(product: trimesh.Trimesh) -> Dict[str, object]:
@@ -307,6 +379,11 @@ def emit_case_package(
     out.mkdir(parents=True, exist_ok=True)
 
     written: List[Path] = []
+    # caller-provides route (design brief): every mesh written below is already in
+    # memory at the moment it is exported, so its facts are computed HERE — never a
+    # second load of the file this function just wrote. Non-mesh writes (the JSON
+    # sidecars) simply never gain an entry, which ``_facts_for`` reads as "no facts".
+    facts_by_path: Dict[Path, MeshFacts] = {}
 
     # 1. SCAN LAYER — the raw jaw scan, exported unmodified. A PREVIEW skips it
     # (include_scan_layer=False, 2026-07-26): the doctor's scan is 15-25MB and the
@@ -316,6 +393,7 @@ def emit_case_package(
         scan_path = out / f"{case_id}-{jaw_label}.stl"
         _export_stl(jaw_scan, scan_path)
         written.append(scan_path)
+        facts_by_path[scan_path] = facts_of(jaw_scan)
 
     overlay_parts: List[trimesh.Trimesh] = [jaw_scan]
     site_rows: List[Dict[str, object]] = []
@@ -325,6 +403,7 @@ def emit_case_package(
         cap_path = out / f"{case_id}-{spec.tooth}-healingcap-aligned.stl"
         _export_stl(aligned_cap, cap_path)
         written.append(cap_path)
+        facts_by_path[cap_path] = facts_of(aligned_cap)
         overlay_parts.append(aligned_cap)
 
         # 2. IMPLANT RECORD — scan-body CAD carrying the pose in-mesh (primary
@@ -333,6 +412,7 @@ def emit_case_package(
         body_path = out / f"{case_id}-{spec.tooth}-scanbody-{spec.vendor}.stl"
         _export_stl(aligned_body, body_path)
         written.append(body_path)
+        facts_by_path[body_path] = facts_of(aligned_body)
         overlay_parts.append(aligned_body)
 
         implant_json = {
@@ -379,6 +459,7 @@ def emit_case_package(
             cad_path = out / f"{case_id}-{spec.tooth}-prosthesis_cad.stl"
             _export_stl(aligned_product, cad_path)
             written.append(cad_path)
+            facts_by_path[cad_path] = facts_of(aligned_product)
             overlay_parts.append(aligned_product)
 
             construction_json = {
@@ -412,6 +493,7 @@ def emit_case_package(
         overlay_path = out / f"{case_id}-{jaw_label}-overlay.stl"
         _export_stl(overlay_mesh, overlay_path)
         written.append(overlay_path)
+        facts_by_path[overlay_path] = facts_of(overlay_mesh)
 
     # 5b. CALLER-WRITTEN DELIVERABLES (e.g. QC acceptance renders) — the manifest's
     # contract is that every listed NAME exists in the package dir and its hash
@@ -432,7 +514,7 @@ def emit_case_package(
     # 4. MANIFEST — SHA-256 over every file emitted above (the manifest is
     # written last, after everything else exists on disk, and does not hash
     # itself).
-    file_records = [_record_file(p) for p in written]
+    file_records = [_record_file(p, _facts_for(p, facts_by_path.get(p))) for p in written]
     manifest_json: Dict[str, object] = {
         "case_id": case_id,
         "jaw": jaw_label,
@@ -440,7 +522,7 @@ def emit_case_package(
         "tooth_numbering": "universal",
         "coordinate_frame": "all poses and aligned meshes are expressed in the jaw scan's "
                              "world frame; the jaw scan itself is exported unmodified",
-        "files": [{"name": f.name, "sha256": f.sha256, "bytes": f.bytes} for f in file_records],
+        "files": [f.as_json() for f in file_records],
         "sites": site_rows,
     }
     if overlay:
@@ -496,7 +578,9 @@ def emit_case_package(
 
 
 def register_package_files(manifest_path: "Path | str",
-                           paths: List[Path]) -> Tuple[ManifestFile, ...]:
+                           paths: List[Path],
+                           facts_by_name: Optional[Dict[str, MeshFacts]] = None
+                           ) -> Tuple[ManifestFile, ...]:
     """Re-hash ``paths`` into an already-written manifest, inserting or REPLACING each
     record by bare file name; returns the updated records.
 
@@ -506,20 +590,31 @@ def register_package_files(manifest_path: "Path | str",
     manifest's contract ("every listed name exists and its hash verifies") quietly stops
     holding for the two rewritten files, and the proof is not listed at all. Files must
     already sit in the manifest's own directory (the manifest is keyed by bare name);
-    a missing manifest raises rather than silently doing nothing."""
+    a missing manifest raises rather than silently doing nothing.
+
+    ``facts_by_name`` is the SAME caller-provides seam ``emit_case_package`` uses
+    internally: the boolean composites (arch/socket/model layers) and the scanned-cap
+    isolation are built by their callers with the mesh already in hand, so their facts
+    ride straight in here — no reload of the file this call just re-hashed. A ``.stl``
+    absent from the mapping falls back to loading the file (``_facts_for``); a non-STL
+    name (an alignment-proof PNG) carries no facts, matching ``emit_case_package``'s
+    own rule. An entry this call is not asked to touch is left byte-for-byte as it
+    was — an OLD manifest predating facts stays parseable and its untouched rows stay
+    bare, never gaining an invented block for a file nobody re-measured."""
     path = Path(manifest_path)
     manifest_json = json.loads(path.read_text())
     records = list(manifest_json.get("files") or [])
     updated: List[ManifestFile] = []
+    facts_by_name = facts_by_name or {}
     for p in paths:
         p = Path(p)
         if not p.is_file():
             raise ValueError(f"cannot register a file that is not on disk: {p}")
         if p.resolve().parent != path.resolve().parent:
             raise ValueError(f"cannot register a file outside the package dir: {p}")
-        record = _record_file(p)
+        record = _record_file(p, _facts_for(p, facts_by_name.get(p.name)))
         updated.append(record)
-        row = {"name": record.name, "sha256": record.sha256, "bytes": record.bytes}
+        row = record.as_json()
         at = next((i for i, r in enumerate(records) if r.get("name") == record.name), None)
         if at is None:
             records.append(row)

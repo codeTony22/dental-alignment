@@ -699,3 +699,196 @@ def test_implant_record_carries_the_audit_trail(tmp_path):
     assert rec["audit"]["seed_source"] == "brush"
     assert rec["audit"]["seat_method"] == "rim"
     assert rec["audit"]["guidance_level"] == "ready"
+
+
+class TestArtifactFacts:
+    """ARTIFACT FACTS IN THE MANIFEST (boolean-engine plan 4c / clinical-pipeline-plan
+    Stage 5): every emitted STL's manifest entry grows an optional ``facts`` object —
+    ``triangle_count`` and ``watertight`` (trimesh's own reading AT WRITE TIME — this
+    IS the open/closed fact: an open-arch artifact reads False, a closed model reads
+    True). Non-STL files (json/png/html) carry no ``facts`` key at all — absence, not
+    an empty object. No third ``notes`` field: the fallback/degradation notes already
+    flow per ROW (production block), keyed by tooth, not by artifact filename — a
+    composite note can cover several files or none, so threading it onto one file's
+    facts would duplicate or silently drop the many-to-many cases."""
+
+    def test_every_stl_entry_carries_facts_matching_the_actual_on_disk_mesh(
+        self, tmp_path, jaw_scan, healing_cap, construction_body
+    ):
+        prosthesis = trimesh.creation.box(extents=[6.0, 6.0, 8.0])
+        site = _site(tooth=19)
+        emit_case_package(
+            "case-040", jaw_scan, "lower",
+            [(site, healing_cap, construction_body)],
+            tmp_path, final_product_mesh={19: prosthesis},
+        )  # overlay defaults on — exercises the overlay STL's facts too
+
+        payload = json.loads((tmp_path / "case-040-manifest.json").read_text())
+        by_name = {f["name"]: f for f in payload["files"]}
+        stl_names = {n for n in by_name if n.endswith(".stl")}
+        assert stl_names == {
+            "case-040-lower.stl",
+            "case-040-19-healingcap-aligned.stl",
+            "case-040-19-scanbody-dess.stl",
+            "case-040-19-prosthesis_cad.stl",
+            "case-040-lower-overlay.stl",
+        }
+        for name in stl_names:
+            entry = by_name[name]
+            assert "facts" in entry, f"{name} carries no facts block"
+            reloaded = trimesh.load(tmp_path / name, force="mesh")
+            assert entry["facts"]["triangle_count"] == len(reloaded.faces)
+            assert entry["facts"]["watertight"] == bool(reloaded.is_watertight)
+
+    def test_non_stl_entries_carry_no_facts_key(
+        self, tmp_path, jaw_scan, healing_cap, construction_body
+    ):
+        prosthesis = trimesh.creation.box(extents=[6.0, 6.0, 8.0])
+        emit_case_package(
+            "case-041", jaw_scan, "lower",
+            [(_site(tooth=19), healing_cap, construction_body)],
+            tmp_path, final_product_mesh={19: prosthesis}, overlay=False,
+        )
+        payload = json.loads((tmp_path / "case-041-manifest.json").read_text())
+        by_name = {f["name"]: f for f in payload["files"]}
+        for name in ("case-041-19-implant.json", "case-041-19-construction.json"):
+            assert "facts" not in by_name[name], \
+                f"{name} is not a mesh — it must carry no facts block, not an empty one"
+
+    def test_an_open_surface_reads_false_a_closed_solid_reads_true(
+        self, tmp_path, healing_cap, construction_body
+    ):
+        """The literal client fact this block exists to carry: an open-arch artifact
+        (a scan surface, not a solid) reads watertight False; a genuinely closed
+        solid reads True. The stock fixtures (box/cylinder primitives) are all
+        watertight by construction, so this test builds its own open mesh — one
+        triangle deleted from a closed box leaves a hole."""
+        box = trimesh.creation.box(extents=[30.0, 20.0, 5.0])
+        open_scan = trimesh.Trimesh(vertices=box.vertices.copy(),
+                                    faces=box.faces[:-1].copy(), process=False)
+        assert not open_scan.is_watertight, "fixture sanity: must actually be open"
+
+        emit_case_package(
+            "case-042", open_scan, "lower",
+            [(_site(tooth=19), healing_cap, construction_body)],
+            tmp_path, overlay=False,
+        )
+        payload = json.loads((tmp_path / "case-042-manifest.json").read_text())
+        by_name = {f["name"]: f for f in payload["files"]}
+        assert by_name["case-042-lower.stl"]["facts"]["watertight"] is False
+        assert by_name["case-042-19-healingcap-aligned.stl"]["facts"]["watertight"] is True
+
+    def test_package_manifest_dataclass_mirrors_the_same_facts(
+        self, tmp_path, jaw_scan, healing_cap, construction_body
+    ):
+        manifest = emit_case_package(
+            "case-043", jaw_scan, "lower",
+            [(_site(tooth=19), healing_cap, construction_body)],
+            tmp_path, overlay=False,
+        )
+        payload = json.loads((tmp_path / "case-043-manifest.json").read_text())
+        json_facts = {f["name"]: f.get("facts") for f in payload["files"]}
+        for record in manifest.files:
+            if record.facts is None:
+                assert json_facts[record.name] is None
+            else:
+                assert json_facts[record.name] == record.facts.as_json()
+
+
+class TestRegisterPackageFilesFacts:
+    """``register_package_files`` — the composite-artifact seam (arch/socket/model
+    layers, scanned-cap isolation) — carries the SAME facts contract: caller-provided
+    facts ride verbatim (no reload of the file the call just re-hashed), an omitted
+    STL falls back to loading the file it just hashed, and a non-STL name carries no
+    facts at all."""
+
+    def test_caller_provided_facts_ride_verbatim_with_no_disk_reload(
+        self, tmp_path, jaw_scan, healing_cap, construction_body, monkeypatch
+    ):
+        import case_prep.adapters.output_package as op
+        from case_prep.adapters.output_package import MeshFacts, register_package_files
+
+        emit_case_package("reg-facts", jaw_scan, "lower",
+                          [(_site(tooth=19), healing_cap, construction_body)],
+                          tmp_path, overlay=False)
+        composite = tmp_path / "reg-facts-composite.stl"
+        trimesh.creation.icosphere(subdivisions=1).export(composite)
+
+        calls = []
+        monkeypatch.setattr(op, "_facts_from_disk", lambda p: calls.append(p))
+
+        # deliberately WRONG relative to what the file on disk would measure — this
+        # proves the caller's own reading rides verbatim rather than being silently
+        # recomputed, not merely that SOME facts landed
+        provided = MeshFacts(triangle_count=999999, watertight=False)
+        records = register_package_files(
+            tmp_path / "reg-facts-manifest.json", [composite],
+            facts_by_name={composite.name: provided})
+
+        assert calls == [], "the load fallback must not fire when facts are provided"
+        assert records[0].facts == provided
+        payload = json.loads((tmp_path / "reg-facts-manifest.json").read_text())
+        entry = next(f for f in payload["files"] if f["name"] == composite.name)
+        assert entry["facts"] == {"triangle_count": 999999, "watertight": False}
+
+    def test_an_omitted_stl_falls_back_to_loading_the_file_it_just_hashed(
+        self, tmp_path, jaw_scan, healing_cap, construction_body
+    ):
+        from case_prep.adapters.output_package import register_package_files
+
+        emit_case_package("reg-fb", jaw_scan, "lower",
+                          [(_site(tooth=19), healing_cap, construction_body)],
+                          tmp_path, overlay=False)
+        composite = tmp_path / "reg-fb-composite.stl"
+        trimesh.creation.icosphere(subdivisions=1).export(composite)
+
+        records = register_package_files(tmp_path / "reg-fb-manifest.json", [composite])
+        reloaded = trimesh.load(composite, force="mesh")
+        assert records[0].facts.triangle_count == len(reloaded.faces)
+        assert records[0].facts.watertight == bool(reloaded.is_watertight)
+
+    def test_a_non_stl_registered_file_carries_no_facts(
+        self, tmp_path, jaw_scan, healing_cap, construction_body
+    ):
+        from case_prep.adapters.output_package import register_package_files
+
+        emit_case_package("reg-png", jaw_scan, "lower",
+                          [(_site(tooth=19), healing_cap, construction_body)],
+                          tmp_path, overlay=False)
+        proof = tmp_path / "reg-png-proof.png"
+        proof.write_bytes(b"not really a png")
+
+        records = register_package_files(tmp_path / "reg-png-manifest.json", [proof])
+        assert records[0].facts is None
+        payload = json.loads((tmp_path / "reg-png-manifest.json").read_text())
+        entry = next(f for f in payload["files"] if f["name"] == proof.name)
+        assert "facts" not in entry
+
+    def test_an_old_manifest_without_facts_still_parses_and_untouched_entries_stay_bare(
+        self, tmp_path
+    ):
+        """Schema additivity, pinned: a manifest written BEFORE this feature existed
+        carries no ``facts`` key on any entry. ``register_package_files`` must still
+        read it, update only the entries it is asked to touch, and leave every other
+        entry's OLD shape exactly as it was — a reader keying off "absence means
+        predates facts" must never see a fact silently invented for a file nobody
+        re-measured."""
+        from case_prep.adapters.output_package import register_package_files
+
+        old_manifest = {
+            "case_id": "old-case", "jaw": "lower", "units": "mm",
+            "files": [{"name": "old-case-lower.stl", "sha256": "deadbeef", "bytes": 123}],
+            "sites": [],
+        }
+        manifest_path = tmp_path / "old-case-manifest.json"
+        manifest_path.write_text(json.dumps(old_manifest, indent=2))
+
+        new_file = tmp_path / "old-case-19-alignment-proof.png"
+        new_file.write_bytes(b"proof")
+        register_package_files(manifest_path, [new_file])
+
+        payload = json.loads(manifest_path.read_text())
+        by_name = {f["name"]: f for f in payload["files"]}
+        assert "facts" not in by_name["old-case-lower.stl"], \
+            "an entry this call never touched must keep its pre-facts shape verbatim"
+        assert "facts" not in by_name["old-case-19-alignment-proof.png"]

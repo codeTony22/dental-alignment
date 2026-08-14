@@ -44,7 +44,8 @@ import numpy as np
 import trimesh
 
 from case_prep.adapters import construction_catalog
-from case_prep.adapters.output_package import (SitePackageSpec, emit_case_package,
+from case_prep.adapters.output_package import (MeshFacts, SitePackageSpec,
+                                               emit_case_package, facts_of,
                                                register_package_files)
 from case_prep.adapters.qc_render import render_site_qc
 from case_prep.domain.channel import channel_from_boundary_loops
@@ -266,10 +267,16 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
 
     # ---- arch deliverables, mirrored from auto_flow.py:2441-2500 ----
     dims = library.variant_dimensions()
+    # ARTIFACT FACTS FOR THE COMPOSITES (boolean-engine plan 4c), mirrored from the
+    # run lane: every mesh below is already in memory the instant it is written, so
+    # its facts are computed HERE, off that mesh — never a reload of the STL this
+    # same lane just wrote.
+    composite_facts: Dict[str, MeshFacts] = {}
     caps_posed = [(tmpl, sp.pose_matrix) for sp, tmpl, _ in package_sites]
     arch_caps_path = out_dir / f"{case.id}-arch-with-healingcaps.stl"
     arch_caps, caps_notes = arch_with_parts_fused(scan, caps_posed)
     arch_caps.export(arch_caps_path)
+    composite_facts[arch_caps_path.name] = facts_of(arch_caps)
     for note in caps_notes:
         # "part N …" — N is 1-based package_sites order (caps_posed's own order);
         # land it on that row. A WHOLE-COMPOSITE note (the fail-open fallback,
@@ -319,7 +326,9 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
             continue
         scanned_cap_path = out_dir / f"{case.id}-{sp.tooth}-scanned-cap.stl"
         isolated.export(scanned_cap_path)
-        register_package_files(manifest.path, [scanned_cap_path])
+        register_package_files(
+            manifest.path, [scanned_cap_path],
+            facts_by_name={scanned_cap_path.name: facts_of(isolated)})
         scanned_cap_names.append(scanned_cap_path.name)
 
     arch_socketless, socket_dish, imprint_notes = cap_imprint_parts(
@@ -340,6 +349,7 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
                 "imprint_note"] = note
     arch_capless_path = out_dir / f"{case.id}-arch-capless.stl"
     arch_removed.export(arch_capless_path)
+    composite_facts[arch_capless_path.name] = facts_of(arch_removed)
     # THE FIFTH ARTIFACT (client 2026-08-09): the platform socket. Both
     # sockets also land as their OWN layer files beside the socketless arch,
     # so the preview can tint the cut surface (the downloads keep the merged
@@ -351,22 +361,27 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
                      if socket_platform is not None else arch_socketless)
     arch_platform_path = out_dir / f"{case.id}-arch-platform.stl"
     arch_platform.export(arch_platform_path)
+    composite_facts[arch_platform_path.name] = facts_of(arch_platform)
     arch_socketless_path = out_dir / f"{case.id}-arch-socketless.stl"
     arch_socketless.export(arch_socketless_path)
+    composite_facts[arch_socketless_path.name] = facts_of(arch_socketless)
     layer_names = [arch_socketless_path.name]
     if socket_dish is not None:
         pth = out_dir / f"{case.id}-socket-dish.stl"
         socket_dish.export(pth)
+        composite_facts[pth.name] = facts_of(socket_dish)
         layer_names.append(pth.name)
     if socket_platform is not None:
         pth = out_dir / f"{case.id}-socket-platform.stl"
         socket_platform.export(pth)
+        composite_facts[pth.name] = facts_of(socket_platform)
         layer_names.append(pth.name)
     # ARTIFACT 6 RETURNS (client 2026-08-11): the closed model, base and all
     model_closed, model_notes = closed_model_with_recesses(scan, imprint_sites)
     if model_closed is not None:
         pth = out_dir / f"{case.id}-model-closed.stl"
         model_closed.export(pth)
+        composite_facts[pth.name] = facts_of(model_closed)
         layer_names.append(pth.name)
     for note in model_notes:
         if note.startswith("site "):
@@ -383,6 +398,7 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
     arch_cons_path = out_dir / f"{case.id}-arch-with-constructions.stl"
     arch_cons, cons_notes = arch_with_parts_fused(arch_removed, cons_posed)
     arch_cons.export(arch_cons_path)
+    composite_facts[arch_cons_path.name] = facts_of(arch_cons)
     for note in cons_notes:
         if note.startswith("part "):
             teeth = [package_sites[int(note.split()[1]) - 1][0].tooth]
@@ -400,10 +416,14 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
     # isolation above. Only names this re-emit actually produced ride the seal
     # (``layer_names`` already carries only what was written): an absent socket
     # layer or closed model is never hallucinated into the hash list.
+    # ``composite_facts`` (boolean-engine plan 4c) rides the SAME call, mirroring
+    # the run lane: every one of these meshes was in memory the instant it was
+    # written, so its facts are the caller-provides route throughout.
     composite_paths = [arch_caps_path, arch_capless_path, arch_platform_path,
                        arch_cons_path]
     composite_paths.extend(out_dir / name for name in layer_names)
-    register_package_files(manifest.path, composite_paths)
+    register_package_files(manifest.path, composite_paths,
+                           facts_by_name=composite_facts)
 
     viewer_file: List[str] = []
     try:

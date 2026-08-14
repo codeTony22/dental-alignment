@@ -929,6 +929,92 @@ class TestArtifactsDisclose:
             assert res.status_code == 404, name
 
 
+class TestArtifactFacts:
+    """ARTIFACT FACTS (boolean-engine plan 4c / clinical-pipeline-plan Stage 5): the
+    worker's manifest carries an optional per-file ``facts`` block (triangle_count,
+    watertight); this serves it straight through on the artifacts listing, read from
+    the manifest ONCE per listing (a stat-cost read, not a mesh reload). Absence — a
+    manifest predating facts, a name the manifest never carried, or a manifest that
+    fails to parse at all — serves None, never an invented reading. Schema
+    additivity: the whole listing must keep working on an old-shaped manifest."""
+
+    def _released_with_manifest(self, settings, product_root, manifest_files,
+                                dispositions=None):
+        """The disclosed-artifacts fixture, with the run directory's own
+        ``manifest.json`` overwritten to a REAL, parseable manifest — the base
+        fixture (``deliverable_client``) writes placeholder bytes for every
+        non-PNG file, including the manifest, so a facts test needs one that
+        actually round-trips through ``json.loads``."""
+        client = confirmed_paid_client(settings, product_root, dispositions)
+        assert release(client).status_code == 200
+        run_id = SessionStore(product_root).load("neodent-gm").run.run_id
+        run_dir = product_root / "neodent-gm" / "runs" / run_id
+        (run_dir / "neodent-gm-manifest.json").write_text(json.dumps({
+            "case_id": "neodent-gm", "jaw": "upper", "files": manifest_files}))
+        return client
+
+    def test_a_named_files_facts_ride_the_listing_verbatim(
+            self, settings, product_root):
+        client = self._released_with_manifest(settings, product_root, [
+            {"name": "neodent-gm-4-healingcap-aligned.stl", "sha256": "x",
+             "bytes": 4, "facts": {"triangle_count": 128, "watertight": True}},
+            {"name": "neodent-gm-13-healingcap-aligned.stl", "sha256": "y",
+             "bytes": 4},
+        ])
+        files = {f["name"]: f for f in client.get(
+            "/api/case-sessions/neodent-gm/runs/current/artifacts").json()["files"]}
+        assert files["neodent-gm-4-healingcap-aligned.stl"]["facts"] == {
+            "triangle_count": 128, "watertight": True}
+        # a name the manifest listed but never gave facts to (a non-STL entry, or a
+        # file the run's own facts wiring skipped) serves None, not an empty object
+        assert files["neodent-gm-13-healingcap-aligned.stl"]["facts"] is None
+
+    def test_a_manifest_predating_facts_serves_absence_on_every_file(
+            self, settings, product_root):
+        """Schema additivity, pinned directly: a manifest written before this
+        feature existed (every entry ``{name, sha256, bytes}``, no ``facts`` key
+        anywhere) must still serve — every artifact's facts reads None, never a
+        422 or a 500."""
+        client = self._released_with_manifest(settings, product_root, [
+            {"name": n, "sha256": "x", "bytes": 4} for n in (
+                "neodent-gm-4-healingcap-aligned.stl",
+                "neodent-gm-13-healingcap-aligned.stl",
+                "neodent-gm-upper-overlay.stl", "neodent-gm-upper.stl")
+        ])
+        res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts")
+        assert res.status_code == 200
+        files = {f["name"]: f for f in res.json()["files"]}
+        for name in ("neodent-gm-4-healingcap-aligned.stl",
+                     "neodent-gm-upper-overlay.stl", "neodent-gm-upper.stl"):
+            assert files[name]["facts"] is None
+
+    def test_an_unparseable_manifest_serves_absence_never_errors(
+            self, settings, product_root):
+        # the base fixture never overwrites the manifest — it is placeholder bytes
+        # ("STL:neodent-gm-manifest.json"), not valid JSON at all
+        client = self._released(settings, product_root)
+        res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts")
+        assert res.status_code == 200
+        files = {f["name"]: f for f in res.json()["files"]}
+        assert files["neodent-gm-4-healingcap-aligned.stl"]["facts"] is None
+
+    def test_a_missing_manifest_file_serves_absence_never_errors(
+            self, settings, product_root):
+        client = self._released(settings, product_root)
+        run_id = SessionStore(product_root).load("neodent-gm").run.run_id
+        (product_root / "neodent-gm" / "runs" / run_id /
+         "neodent-gm-manifest.json").unlink()
+        res = client.get("/api/case-sessions/neodent-gm/runs/current/artifacts")
+        assert res.status_code == 200
+        files = {f["name"]: f for f in res.json()["files"]}
+        assert files["neodent-gm-4-healingcap-aligned.stl"]["facts"] is None
+
+    def _released(self, settings, product_root, dispositions=None):
+        client = confirmed_paid_client(settings, product_root, dispositions)
+        assert release(client).status_code == 200
+        return client
+
+
 # --- the paid invoice, riding the download bundle (client 2026-08-09) ------------------
 
 class TestTheInvoiceDocument:

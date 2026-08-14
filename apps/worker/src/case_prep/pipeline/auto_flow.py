@@ -22,7 +22,8 @@ from scipy.spatial import cKDTree
 from case_prep.adapters import open3d_engine as engine
 from case_prep.adapters.cap_detection import crown_up_axis, find_cap_sites, measure_rim_diameter
 from case_prep.adapters.cap_library import CapLibrary
-from case_prep.adapters.output_package import (SitePackageSpec, emit_case_package,
+from case_prep.adapters.output_package import (MeshFacts, SitePackageSpec,
+                                                emit_case_package, facts_of,
                                                 register_package_files)
 from case_prep.adapters.rng import PipelineRng, sample_surface
 from case_prep.adapters.site_analysis import measure_site
@@ -2465,10 +2466,17 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
             # manifest — fold into the emitter when the trio is confirmed final.)
             from pathlib import Path as _P
             dims = library.variant_dimensions()
+            # ARTIFACT FACTS FOR THE COMPOSITES (boolean-engine plan 4c): every mesh
+            # below is already in memory the instant it is written, so its facts are
+            # computed HERE, straight off that mesh — never a reload of the STL this
+            # same lane just wrote. Keyed by bare name and handed to
+            # ``register_package_files`` alongside the paths it re-hashes.
+            composite_facts: Dict[str, MeshFacts] = {}
             caps_posed = [(tmpl, sp.pose_matrix) for sp, tmpl, _ in package_sites]
             arch_caps, caps_composite_notes = arch_with_parts_fused(scan, caps_posed)
             arch_caps_path = _P(out_dir) / f"{case_id}-arch-with-healingcaps.stl"
             arch_caps.export(arch_caps_path)
+            composite_facts[arch_caps_path.name] = facts_of(arch_caps)
             for note in caps_composite_notes:
                 # "part N …" — N is 1-based caps_posed/package_sites order; land it
                 # on that row. A WHOLE-COMPOSITE note (the fail-open fallback,
@@ -2527,7 +2535,9 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                 _scanned_cap_path = (_P(out_dir)
                                      / f"{case_id}-{_sp.tooth}-scanned-cap.stl")
                 _isolated.export(_scanned_cap_path)
-                register_package_files(manifest.path, [_scanned_cap_path])
+                register_package_files(
+                    manifest.path, [_scanned_cap_path],
+                    facts_by_name={_scanned_cap_path.name: facts_of(_isolated)})
                 scanned_cap_names.append(_scanned_cap_path.name)
 
             arch_socketless, socket_dish, imprint_notes = cap_imprint_parts(
@@ -2551,6 +2561,7 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                             "imprint_note"] = note
             arch_capless_path = _P(out_dir) / f"{case_id}-arch-capless.stl"
             arch_removed.export(arch_capless_path)
+            composite_facts[arch_capless_path.name] = facts_of(arch_removed)
             # THE FIFTH ARTIFACT (client 2026-08-09): the platform socket —
             # and both sockets as their own layer files for the tinted preview
             _, socket_platform, _pn = cap_imprint_parts(scan, imprint_sites,
@@ -2560,16 +2571,20 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                 if socket_platform is not None else arch_socketless)
             (_P(out_dir) / f"{case_id}-arch-platform.stl").write_bytes(
                 arch_platform.export(file_type="stl"))
+            composite_facts[f"{case_id}-arch-platform.stl"] = facts_of(arch_platform)
             (_P(out_dir) / f"{case_id}-arch-socketless.stl").write_bytes(
                 arch_socketless.export(file_type="stl"))
+            composite_facts[f"{case_id}-arch-socketless.stl"] = facts_of(arch_socketless)
             _layer_names = [f"{case_id}-arch-socketless.stl"]
             if socket_dish is not None:
                 (_P(out_dir) / f"{case_id}-socket-dish.stl").write_bytes(
                     socket_dish.export(file_type="stl"))
+                composite_facts[f"{case_id}-socket-dish.stl"] = facts_of(socket_dish)
                 _layer_names.append(f"{case_id}-socket-dish.stl")
             if socket_platform is not None:
                 (_P(out_dir) / f"{case_id}-socket-platform.stl").write_bytes(
                     socket_platform.export(file_type="stl"))
+                composite_facts[f"{case_id}-socket-platform.stl"] = facts_of(socket_platform)
                 _layer_names.append(f"{case_id}-socket-platform.stl")
 
             # ARTIFACT 6 RETURNS (client 2026-08-11): the closed model
@@ -2578,6 +2593,7 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
             if _model_closed is not None:
                 (_P(out_dir) / f"{case_id}-model-closed.stl").write_bytes(
                     _model_closed.export(file_type="stl"))
+                composite_facts[f"{case_id}-model-closed.stl"] = facts_of(_model_closed)
                 _layer_names.append(f"{case_id}-model-closed.stl")
             for _note in _model_notes:
                 if _note.startswith("site "):
@@ -2596,6 +2612,7 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                 arch_removed, cons_posed)
             arch_cons_path = _P(out_dir) / f"{case_id}-arch-with-constructions.stl"
             arch_cons.export(arch_cons_path)
+            composite_facts[arch_cons_path.name] = facts_of(arch_cons)
             for note in cons_composite_notes:
                 if note.startswith("part "):
                     teeth = [package_sites[int(note.split()[1]) - 1][0].tooth]
@@ -2615,12 +2632,16 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
             # this run actually produced ride the seal: the two tinted-preview socket
             # layers and the closed model are conditional (``_layer_names`` already
             # carries only what was written), so a file the run never made is never
-            # hallucinated into the hash list.
+            # hallucinated into the hash list. ``composite_facts`` (boolean-engine
+            # plan 4c) rides the SAME call: every one of these meshes was in memory
+            # the instant it was written, so its facts are the caller-provides route
+            # throughout — never a reload of the file this call is re-hashing.
             composite_paths = [arch_caps_path, arch_capless_path,
                                _P(out_dir) / f"{case_id}-arch-platform.stl",
                                arch_cons_path]
             composite_paths.extend(_P(out_dir) / name for name in _layer_names)
-            register_package_files(manifest.path, composite_paths)
+            register_package_files(manifest.path, composite_paths,
+                                   facts_by_name=composite_facts)
 
             # view.html: the offline, no-install 3D viewer for the whole package (skipped with a
             # note when the standalone bundle has not been built on this machine)

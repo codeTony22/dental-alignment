@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import datetime
 import html
+import json
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Tuple
 
@@ -1672,6 +1673,17 @@ def release_case(case_id: str, request: Request) -> CaseSessionDetail:
 
 # --- the artifact endpoints (class 2: DELIVERABLES, gated) ------------------------------
 
+class ArtifactFacts(BaseModel):
+    """ARTIFACT FACTS (boolean-engine plan 4c / clinical-pipeline-plan Stage 5): what
+    the worker's manifest measured about this ONE mesh at emit time — the geometry a
+    lab or a reviewer would otherwise have to open the file to learn. ``watertight``
+    is the open/closed fact verbatim: an open-arch artifact reads False, a closed
+    model reads True — no verdict of ours, the worker's own reading, served through."""
+
+    triangle_count: int
+    watertight: bool
+
+
 class ArtifactFile(BaseModel):
     """One released deliverable as the delivery surface needs it (client 2026-07-27
     #6: "Make sure we have good UI for payment and release of information /
@@ -1688,6 +1700,11 @@ class ArtifactFile(BaseModel):
     # download list and the analysis digest speak identically. None for a name
     # this catalogue does not know — the surface renders nothing, never a guess.
     description: Optional[str] = None
+    # SCHEMA ADDITIVITY (boolean-engine plan 4c): None for a non-mesh file, for a
+    # name the manifest never measured, or for a run whose manifest predates this
+    # field entirely — the manifest is read defensively (``_manifest_facts``), so an
+    # old-shaped record on disk still serves a full listing, just without this.
+    facts: Optional[ArtifactFacts] = None
 
 
 class ArtifactsView(BaseModel):
@@ -1791,10 +1808,44 @@ def artifact_description(name: str) -> Optional[str]:
     return None
 
 
+def _manifest_facts(run_dir: Path, case_id: str) -> Dict[str, ArtifactFacts]:
+    """The worker's manifest, reduced to its per-file ``facts`` blocks, by name —
+    read ONCE per listing (a single stat+parse, not a per-artifact cost) rather than
+    threaded as a parameter through every ``_artifact_file`` call.
+
+    DEFENSIVE THROUGHOUT (schema additivity, boolean-engine plan 4c): a run whose
+    manifest predates this feature, a manifest that fails to parse, or one simply
+    absent from the run directory all resolve to ``{}`` — every artifact's facts
+    then reads None, never a 500 over a file this endpoint does not itself own the
+    shape of. The manifest is the WORKER's own record; a malformed one is the
+    worker's problem to fix, not a reason to break the listing."""
+    path = run_dir / f"{case_id}-manifest.json"
+    if not path.is_file():
+        return {}
+    try:
+        manifest = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    facts: Dict[str, ArtifactFacts] = {}
+    for entry in manifest.get("files") or []:
+        if not isinstance(entry, dict):
+            continue
+        name, raw = entry.get("name"), entry.get("facts")
+        if isinstance(name, str) and isinstance(raw, dict):
+            try:
+                facts[name] = ArtifactFacts(**raw)
+            except Exception:
+                continue  # a facts block this schema cannot read is absence, not a crash
+    return facts
+
+
 def _artifact_file(run_dir: Path, name: str, case_id: str,
-                   teeth: List[int]) -> ArtifactFile:
-    """One listed deliverable with the two facts the delivery surface needs beyond
-    its name: how big it is, and which site it belongs to. The size is read from the
+                   teeth: List[int],
+                   facts_by_name: Optional[Dict[str, ArtifactFacts]] = None
+                   ) -> ArtifactFile:
+    """One listed deliverable with the facts the delivery surface needs beyond its
+    name: how big it is, which site it belongs to, and (boolean-engine plan 4c) what
+    the worker's own manifest measured about its geometry. The size is read from the
     run directory at list time (the run dir is immutable, so this is a stat, not a
     derivation); a file the package claims but disk no longer holds reports None —
     visible as a gap rather than smoothed into a zero."""
@@ -1804,6 +1855,7 @@ def _artifact_file(run_dir: Path, name: str, case_id: str,
         size_bytes=(path.stat().st_size if path.is_file() else None),
         tooth=tooth_of_file(name, case_id, teeth),
         description=artifact_description(name),
+        facts=(facts_by_name or {}).get(name),
     )
 
 
@@ -1941,7 +1993,9 @@ def list_artifacts(case_id: str, request: Request) -> ArtifactsView:
     names, held_case_files = split_released_files(
         run.package_files, teeth, release.released_teeth, case.id)
     run_dir = _run_dir(settings, case.id, run)
-    files = [_artifact_file(run_dir, name, case.id, teeth) for name in names]
+    facts_by_name = _manifest_facts(run_dir, case.id)
+    files = [_artifact_file(run_dir, name, case.id, teeth, facts_by_name)
+            for name in names]
     if session.payment_authorized:
         body, _payment = _invoice_document_for(case, session, run)
         files.append(ArtifactFile(name=INVOICE_ARTIFACT_NAME,

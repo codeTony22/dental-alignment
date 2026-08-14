@@ -1738,6 +1738,27 @@ function _siteBlock(site: AssuranceSite): string {
 }
 
 /**
+ * ARTIFACT FACTS (boolean-engine plan 4c / clinical-pipeline-plan Stage 5): one
+ * ``## Package files`` line, composed from either shape ``analysisClipboardText``
+ * accepts. A bare string (the legacy call shape — DeliverStage.tsx today composes
+ * ``"${name} — ${description}"`` itself) prints VERBATIM, unchanged. A served
+ * ``ArtifactFile`` is composed HERE — name, then " — description" when the
+ * catalogue named one, then " · N triangles · open|closed" when the manifest
+ * measured facts for it. Facts ABSENT (a non-mesh file, an old manifest, a name the
+ * manifest never carried) print nothing extra — no verdict invented client-side.
+ */
+function _fileLine(entry: string | ArtifactFile): string {
+  if (typeof entry === "string") return entry;
+  let line = entry.name;
+  if (entry.description != null) line += ` — ${entry.description}`;
+  if (entry.facts != null) {
+    line += ` · ${entry.facts.triangle_count} triangles · ` +
+      (entry.facts.watertight ? "closed" : "open");
+  }
+  return line;
+}
+
+/**
  * The paste-ready case digest for an outside reviewer (human or LLM): case and run
  * identity, the fork, then every site's served facts worst-first, all sentences
  * verbatim. Ends with the questions the client actually asks of it.
@@ -1748,8 +1769,11 @@ export function analysisClipboardText(
   jaw: string | null,
   assurance: AssuranceView,
   extras?: {
-    /** the package's artifact names, when the listing has loaded */
-    readonly files?: readonly string[];
+    /** the package's artifact names, when the listing has loaded — either a
+     *  pre-composed line (the legacy shape, printed verbatim) or the served
+     *  ``ArtifactFile`` itself (name/description/facts composed by
+     *  ``_fileLine``); the two may mix in the same list. */
+    readonly files?: readonly (string | ArtifactFile)[];
     /** the standing confirmation seal, when one exists */
     readonly confirmation?: {
       readonly at: string;
@@ -1809,7 +1833,7 @@ export function analysisClipboardText(
   const fileLines: string[] = [];
   if (extras?.files !== undefined && extras.files.length > 0) {
     fileLines.push("", "## Package files");
-    for (const name of extras.files) fileLines.push(`- ${name}`);
+    for (const entry of extras.files) fileLines.push(`- ${_fileLine(entry)}`);
   }
   const sealLines: string[] = [];
   if (extras?.confirmation != null) {

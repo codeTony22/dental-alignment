@@ -2967,6 +2967,22 @@ exact-coplanar contact. Scoreboard preserved at
 docs/engagement/meshlib-scoreboard-2026-08.md; Stage-2 results appended
 to the boolean plan.
 
+**AT pipeline 4c — artifact facts in the manifest (2026-08-14).** Every
+emitted STL's manifest entry gains facts {triangle_count, watertight} —
+computed from the mesh IN MEMORY at write time, because the measurement
+en route found STL's float32 export can flip is_watertight on reload
+(2050→2020 vertices on a genuinely-closed mesh): caller-provides is more
+CORRECT, not just 3.2× cheaper; the disk fallback exists and is pinned
+to never fire on clean lanes. Non-STL files carry no facts key (absence,
+not empty). Notes stay on the row channel — they are keyed by tooth,
+many-to-many with files, and threading them per-file would duplicate or
+drop cases. BFF serves facts on the artifact listing (old/unparseable
+manifests serve null, pinned); the digest's file lines append "· N
+triangles · open|closed" when a caller passes rich ArtifactFile objects
+— DeliverStage still passes strings, so the LIVE digest shows facts only
+after a small follow-up threads the objects (deliberate, recorded gap).
+Worker 43 narrow/996 fast, bff 120, product 1495, typecheck clean.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

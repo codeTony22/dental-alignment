@@ -1203,6 +1203,13 @@ export async function postCheckoutReturn(
  * claims a file the run directory no longer holds — an honest gap, never a 0), and
  * the site it belongs to (null = case-wide). The BFF attributes it with the artifact
  * gate's own anchored rule; this app never re-parses a filename. */
+/** ARTIFACT FACTS (boolean-engine plan 4c / clinical-pipeline-plan Stage 5): what
+ *  the worker's manifest measured about this one mesh at emit time. */
+export interface ArtifactFacts {
+  triangle_count: number;
+  watertight: boolean;
+}
+
 export interface ArtifactFile {
   name: string;
   size_bytes: number | null;
@@ -1210,6 +1217,9 @@ export interface ArtifactFile {
   /** the served catalogue sentence (§10-AT 4b) — null for a name the server's
    *  catalogue does not know; the surface renders nothing, never a guess */
   description?: string | null;
+  /** null for a non-mesh file, a name the manifest never measured, or a run whose
+   *  manifest predates this field — schema additivity, not an invented reading */
+  facts?: ArtifactFacts | null;
 }
 
 export interface ArtifactsView {

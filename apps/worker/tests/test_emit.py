@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 
 import pytest
+import trimesh
 
 from case_prep.application.cases import CaseRecord, discover_cases
 from case_prep.application.emit import emit_from_poses
@@ -86,7 +87,7 @@ def _sha256(path: Path) -> str:
 @real_only
 @pytest.mark.slow  # one FULL source run + one re-emit (emission only) on real meshes
 class TestReEmitOnTheRealTree:
-    def test_a_part_change_re_emits_without_re_aligning(self, tmp_path):
+    def test_a_part_change_re_emits_without_re_aligning(self, tmp_path, monkeypatch):
         cases = {c.id: c for c in discover_cases(REAL)}
         case = cases.get("neodent-gm") or cases.get("doctor-neodent-gm")
         assert case is not None, sorted(cases)
@@ -131,7 +132,24 @@ class TestReEmitOnTheRealTree:
             gingival_offset_mm=0.1)
         out_dir = tmp_path / "runs" / "reemitted"
         out_dir.mkdir(parents=True)
+
+        # THE CALLER-PROVIDES ROUTE, PINNED DIRECTLY (boolean-engine plan 4c): the
+        # re-emit lane holds every composite mesh in memory the instant it writes
+        # it, so the load fallback (``output_package._facts_from_disk``) must never
+        # fire — a call would mean facts were re-derived by re-parsing a file this
+        # same call just wrote.
+        import case_prep.adapters.output_package as _op
+        fallback_calls: list = []
+        original_fallback = _op._facts_from_disk
+        monkeypatch.setattr(
+            _op, "_facts_from_disk",
+            lambda p: (fallback_calls.append(p), original_fallback(p))[1])
+
         summary_b = emit_from_poses(case, reemit_selection, source_dir, out_dir)
+
+        assert fallback_calls == [], (
+            "the re-emit lane must hand every artifact's facts straight from the "
+            f"mesh it already holds — the load fallback fired for {fallback_calls}")
 
         # 1. NOTHING re-aligned: the pose travels bit-identically
         new_record = json.loads(
@@ -165,6 +183,9 @@ class TestReEmitOnTheRealTree:
         summary_c = emit_from_poses(case, reemit_persite, source_dir, persite_dir)
         row_c = next(r for r in summary_c["sites"] if r["tooth"] == tooth)
         assert row_c["production"]["gingival_offset_requested_mm"] == 0.05
+        assert fallback_calls == [], (
+            "the per-site-relief re-emit must also hand its facts straight from "
+            f"memory — the load fallback fired for {fallback_calls}")
 
         # 4. the receipt names its source and refreshes the product facts
         assert summary_b["emitted_from"] == "source"
@@ -216,3 +237,30 @@ class TestReEmitOnTheRealTree:
             if name not in on_disk:
                 assert name not in sealed, \
                     f"{name} was never emitted — it must not ride the seal"
+
+        # 7. ARTIFACT FACTS (boolean-engine plan 4c / clinical-pipeline-plan Stage 5)
+        # — every STL this re-emit wrote (per-site AND the composites) carries a
+        # manifest ``facts`` block; ``triangle_count`` matches an on-disk reload
+        # exactly (STL preserves the triangle list losslessly). ``watertight`` is
+        # checked only where the answer is structurally unambiguous — the raw scan
+        # is open, the closed model (when this fixture happens to emit one) is
+        # closed — a naive reload's watertight reading can otherwise disagree with
+        # the in-memory mesh's own answer purely from STL's float32 quantization
+        # (measured on the synthetic fixture, test_auto_flow.py's twin pin), which
+        # is exactly why the design calls for the caller's own reading.
+        for name in on_disk:
+            if not name.endswith(".stl"):
+                continue
+            entry = sealed.get(name)
+            assert entry is not None, f"{name} is on disk but never entered the seal"
+            assert "facts" in entry, f"{name} carries no facts block"
+            reloaded = trimesh.load(out_dir / name, force="mesh")
+            assert entry["facts"]["triangle_count"] == len(reloaded.faces), name
+        raw_scan_name = f"{case.id}-upper.stl"
+        if raw_scan_name in sealed:
+            assert sealed[raw_scan_name]["facts"]["watertight"] is False
+        if f"{case.id}-model-closed.stl" in sealed:
+            assert sealed[f"{case.id}-model-closed.stl"]["facts"]["watertight"] is True
+        for name, entry in sealed.items():
+            if not name.endswith(".stl"):
+                assert "facts" not in entry, f"{name} is not a mesh — no facts expected"
