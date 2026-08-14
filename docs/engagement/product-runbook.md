@@ -131,6 +131,16 @@ gates and their commands are listed in CLAUDE.md; run them and read each summary
 `rehearse` must print "REHEARSAL CLEAN" (the frozen demo's gate — still binding). The full
 worker battery (~13 min) before anything client-facing that touched the pipeline.
 
+**Known rehearse reds (read 2026-08-14, standing until decided):** two rows —
+`297589851-neodent-gm-arch-with-constructions: no suggested selection` and
+`297589851-neodent-gm-arch-with-healingcaps: no suggested selection`. These are the
+client's OWN upload experiments (our generated composite artifacts uploaded back in as
+scans, 2026-08-04/06); a composite has no detectable healing caps, so no suggestion is
+correct behaviour, not a defect. The frozen tool has no case-level allowlist and cannot
+be edited without breaking the freeze, so the gate stays red-with-known-cause until the
+client decides: unfreeze the tool's baseline table, or move the two experiment folders
+out of `data/real/scans/`. Anything BEYOND these two rows is a real finding.
+
 ## 4. What to say about what's missing (honesty beats surprise)
 
 - **Adjustment** is built and skippable BY DESIGN (the client's own ruling); flagged sites
