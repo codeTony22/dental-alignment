@@ -2820,6 +2820,22 @@ one deliberate divergence from the pipeline plan's 2b wording, chosen over
 quietly breaking the digest's server-truth invariant. Product 1482 (+13),
 typecheck clean.
 
+**AT boolean Stage 0 — the kernel seam and the conformance corpus
+(2026-08-13).** pipeline/kernel.py: the BooleanKernel port (union /
+difference / intersection / is_valid_solid) with ManifoldKernel wrapping
+the exact trimesh calls the code already made — csg.py and deliverables.py
+now speak only to the seam; behaviour identical by construction (9 kernel
+pins, cube-algebra volumes exact). test_csg_corpus.py: golden CLINICAL
+metrics — recess mouth vs cap-rim+2·offset, floor height, volume removed
+bounded by the tool's own, watertight-before-strip, strip face counts —
+plus the real-fleet golden test, executed against cap6030's landed pose at
+integration: wall-distance median 0.189mm/p90 0.370/max 0.462; the band
+pinned at 0.40 (~2× measured, per the de-flake lesson: headroom, not a
+coin flip). The geometry deps are pinned exact (numpy/scipy/trimesh/
+manifold3d) — the standing unpinned-env risk retires (plan W4/Stage 0).
+is_valid_solid is pinned but not yet load-bearing — the Stage-1 follow-up,
+flagged, not smuggled. Narrow 60, fast lane 916.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

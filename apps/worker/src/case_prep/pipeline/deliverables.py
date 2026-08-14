@@ -18,6 +18,7 @@ import trimesh
 
 from case_prep.pipeline.csg import (exact_cap_punch, punch_solid,
                                     solidified_shell_cached, strip_fabricated)
+from case_prep.pipeline.kernel import default_kernel
 
 _REGION_MARGIN_MM = 0.6  # cull slightly beyond the cap so no scanned cap sliver survives
 
@@ -89,7 +90,6 @@ def arch_with_parts_fused(arch: trimesh.Trimesh,
     ``arch_with_parts`` for every part, with its own note; the notes from any per-part
     fallback that already happened are lost in that case, because the whole composite
     it would have landed on no longer exists."""
-    import trimesh.boolean
     from scipy.spatial import cKDTree
 
     try:
@@ -105,7 +105,7 @@ def arch_with_parts_fused(arch: trimesh.Trimesh,
                 notes.append(f"part {index} could not be fused ({exc}) — "
                             f"concatenated instead")
                 fallback_parts.append((part, pose))
-        fused = trimesh.boolean.union([solid] + part_solids, engine="manifold")
+        fused = default_kernel().union([solid] + part_solids)
         if len(fused.faces) == 0:
             raise ValueError("the fused composite came back empty")
         if part_solids:
@@ -405,8 +405,6 @@ def _csg_carve(arch: trimesh.Trimesh,
                visible_depth_mm: Optional[float],
                top_floor: bool
                ) -> Tuple[trimesh.Trimesh, Optional[trimesh.Trimesh], list]:
-    import trimesh.boolean
-
     solid = solidified_shell_cached(arch)
     V = np.asarray(arch.vertices, float)
     punches = []
@@ -495,7 +493,7 @@ def _csg_carve(arch: trimesh.Trimesh,
         actual_floor_a = float(punch_a.min()) if len(punch_a) else floor_a
         regions.append((origin, axis, xl, yl, zs_p, prof_p, actual_floor_a,
                         h_low))
-    cut = trimesh.boolean.difference([solid] + punches, engine="manifold")
+    cut = default_kernel().difference(solid, punches)
     if not cut.is_watertight:
         raise ValueError("the boolean result is not watertight")
     # the tint split: faces on any site's cut surface go to the socket layer
@@ -731,8 +729,7 @@ def closed_model_with_recesses(scan: trimesh.Trimesh,
                 notes.append(f"site {index}: the exact cap could not be cut "
                              f"in the closed model ({exc}) — its envelope "
                              f"was used instead")
-        import trimesh.boolean
-        model = trimesh.boolean.difference([solid] + tools, engine="manifold")
+        model = default_kernel().difference(solid, tools)
         if not model.is_watertight:
             raise ValueError("the boolean result is not watertight")
         return model, notes

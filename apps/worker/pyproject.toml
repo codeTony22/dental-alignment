@@ -4,17 +4,25 @@ version = "0.1.0"
 description = "Phase 2A automated case-prep spike: count -> localize -> align -> 6-DoF pose -> gate -> report"
 requires-python = ">=3.9"
 dependencies = [
-    "numpy>=1.24",
-    "scipy>=1.10",
-    "trimesh>=4.0",
+    # BOOLEAN DETERMINISM PINS (boolean-engine plan W4/Stage 0, 2026-08-13): the
+    # unpinned env was a standing risk the plan names outright — "same inputs must
+    # yield the same artifact bytes" cannot hold if the kernel underneath can drift
+    # between installs. These four are pinned EXACT to the versions this worktree's
+    # own venv is running (read via `.venv/bin/python -c "import trimesh, numpy,
+    # scipy; print(...)"` + `pip show manifold3d`, 2026-08-13); everything else below
+    # stays loose on purpose — only the geometry stack a kernel swap or a boolean
+    # result could be sensitive to gets the exact pin.
+    "numpy==2.0.2",
+    "scipy==1.13.1",
+    "trimesh==4.12.2",
+    "manifold3d==3.5.2",     # true boolean engine for the closed-model artifacts
+    # (§10-AS.11 spike, 2026-08-11: solidified 276794487's scan skirt-to-base,
+    # watertight, and cut the envelope recess by CSG — the competitor's route)
     "pydantic>=2.0",
     "jinja2>=3.0",
     "open3d>=0.18",
     "scikit-image>=0.21",   # marching cubes for SDF-CSG surface extraction
     "rtree>=1.0",            # spatial index for trimesh point-in-mesh queries
-    "manifold3d>=3.5",       # true boolean engine for the closed-model artifacts
-    # (§10-AS.11 spike, 2026-08-11: solidified 276794487's scan skirt-to-base,
-    # watertight, and cut the envelope recess by CSG — the competitor's route)
 ]
 
 [project.optional-dependencies]

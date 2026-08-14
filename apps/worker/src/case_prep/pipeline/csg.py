@@ -23,6 +23,8 @@ from typing import Optional
 import numpy as np
 import trimesh
 
+from case_prep.pipeline.kernel import default_kernel
+
 
 def solidify_shell(shell: trimesh.Trimesh, crowns_up: np.ndarray,
                    base_margin_mm: float = 1.5) -> trimesh.Trimesh:
@@ -276,20 +278,18 @@ def exact_cap_punch(template: trimesh.Trimesh, offset_mm: float,
         # since a Minkowski sum cannot self-intersect by construction. That
         # is the candidate for a future slice; this one keeps the existing
         # vertex-normal dilation and only adds the self-heal after it.)
-        import trimesh.boolean
         try:
-            punch = trimesh.boolean.union([punch], engine="manifold")
+            punch = default_kernel().union([punch])
         except Exception:  # noqa: BLE001 — keep the un-healed punch; the
             # cut's own per-site failure handling is the containment here,
             # not this function refusing to return a shape at all
             pass
     punch.apply_transform(np.asarray(pose, float))
     if floor_a is not None:
-        import trimesh.boolean
         box = trimesh.creation.box(extents=[60.0, 60.0, 60.0])
         box.apply_translation([0.0, 0.0, 30.0 + float(floor_a)])
         box.apply_transform(np.asarray(pose, float))
-        clipped = trimesh.boolean.intersection([punch, box], engine="manifold")
+        clipped = default_kernel().intersection(punch, box)
         if len(clipped.faces) > 0:
             punch = clipped
         # "the clip only limits depth, never extends it": a submerged cap
