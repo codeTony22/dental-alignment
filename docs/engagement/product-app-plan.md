@@ -3004,6 +3004,21 @@ those are real tool/scan interlock; the manufactured-junction class dies
 only on the zero-relief lane (382→0). The junction-safe walker stays
 load-bearing.
 
+**AT boolean Stage 2 addendum — the incidence number (2026-08-14).** The
+last evidence the Stage 3 memo owed: across every real boolean call the
+emit lanes make (115 calls, 9 cases), the MeshLib-no-op trigger class
+has ZERO incidence between distinct solids — closest approach 1.56e-4mm,
+three orders of magnitude clear, stable across a 10⁵ tolerance sweep.
+The self-heal (union of a solid with itself) is 100% coplanar by
+construction, and MeshLib cannot execute it on the fleet (16/20 empty):
+the kernel disqualification stands on real data; the offset/open-shell
+licensing case is untouched. Found in passing, ours to fix: the heal's
+`except Exception` would swallow an EMPTY kernel result and ship a
+package with NO recess (latent — manifold is 20/20 non-empty), and
+solidified_shell_cached still keys on id(arch), the address-reuse class
+W4 retired elsewhere. The hardening pair is queued. Full findings in
+the boolean plan's Stage 2 addendum.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

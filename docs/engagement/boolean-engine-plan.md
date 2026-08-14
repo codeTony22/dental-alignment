@@ -505,6 +505,43 @@ contact in production geometry** — the no-op failure is frequent
 conditional on that contact; its unconditional rate on real cases is
 unmeasured.
 
+### Stage 2 addendum — the incidence measurement (2026-08-14, fleet)
+
+All 115 boolean calls the emit lanes make, reconstructed on the real
+fleet (9 cases, 10 sites, 125 operand pairs; bucketed plane census,
+22s):
+
+- **Between DISTINCT solids: zero incidence** — 0/75 calls, 0 face pairs
+  in every band down to <1e-3mm, stable across a 10⁵ sweep of the
+  parallelism tolerance. The closest production geometry ever gets to
+  the ±1e-7 trigger window is 1.56e-4mm.
+- **The self-heal is the exception, structurally**: union([p, p]) passes
+  the same solid twice — 100% coplanar by construction, 50/50 calls. Run
+  against MeshLib on the fleet's own operands: EMPTY output on 16/20
+  (with errorString — a different failure than Stage 2's silent no-op);
+  4/10 clean-cap failures attributable specifically to coplanarity, and
+  ALL 10 dilated caps fail regardless. The kernel disqualification is
+  confirmed on real data; the offset/open-shell lanes are untouched by
+  this result (neither makes a coplanar-operand boolean).
+- **The near miss**: 4–5 of 20 site×lane configurations put the clip
+  plane on the cap's own base BY DESIGN (floor_a = envelope-base), and
+  at the accepted production relief 0.00 the margin narrows to 2.1e-7mm
+  — held open only by the vendor STL's float32 base-disc scatter
+  (7e-7–1e-6mm across all 12 catalog variants). Two vendors' export
+  habits are not a guarantee; the guard stays mandatory.
+- **A latent containment gap in OUR code, found in passing**: the
+  self-heal's `except Exception` would swallow an EMPTY kernel result
+  (empty raises nothing; is_watertight False, volume 0) — the punch
+  silently becomes empty, the clip keeps it, and the package ships with
+  NO recess. Manifold has never produced empty there (20/20), so it
+  cannot fire today; it is exactly the hole a kernel swap would fall
+  through. The mandated guard is therefore "output ≠ input AND output ≠
+  empty", and the heal's catch needs the empty check regardless of any
+  licensing decision. Also re-flagged: solidified_shell_cached keys on
+  id(arch) — the same address-reuse hazard class W4 retired in
+  clock_signature — plus one unexplained, non-reproducing face-count
+  observation in its vicinity. Both queued as the hardening pair.
+
 ### Verification, per stage
 
 | stage | proof |
