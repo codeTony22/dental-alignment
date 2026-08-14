@@ -1747,6 +1747,9 @@ _ARTIFACT_MEDIA = {".stl": "model/stl", ".json": "application/json",
 # lanes' own stable contracts — a new artifact earns a row here in the same
 # change that starts emitting it.
 _ARTIFACT_SENTENCES: "list[tuple[str, str]]" = [
+    ("-scanned-cap.stl",
+     "the scan's own surface at the healing cap, isolated — what the scanner saw of "
+     "the cap, nothing else"),
     ("-arch-with-healingcaps.stl",
      "the open arch fused with the aligned library caps — the alignment made solid"),
     ("-arch-with-constructions.stl",

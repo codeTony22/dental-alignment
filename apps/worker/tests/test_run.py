@@ -165,6 +165,10 @@ class TestRunOnTheRealTree:
             "neodent-gm-socket-dish.stl",
             "neodent-gm-socket-platform.stl",
             "neodent-gm-model-closed.stl",
+            # pipeline 2a: the per-site scanned-cap isolation, one per selected
+            # tooth — the demo can never emit these
+            "neodent-gm-4-scanned-cap.stl",
+            "neodent-gm-13-scanned-cap.stl",
         }
         for name in summary["package_files"]:
             assert (out_dir / name).is_file(), name

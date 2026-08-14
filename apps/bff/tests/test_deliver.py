@@ -25,7 +25,7 @@ import json
 import pytest
 
 from bff.config import Settings
-from bff.resources.deliver import CLINICAL_VERSION, TERMS_VERSION
+from bff.resources.deliver import CLINICAL_VERSION, TERMS_VERSION, artifact_description
 from bff.session import SessionStore
 
 from conftest import make_data_tree
@@ -823,6 +823,11 @@ class TestArtifactsDisclose:
         # the per-site aligned cap is not in the suffix table and carries no
         # scanbody infix — honestly undescribed, never guessed
         assert files["neodent-gm-4-healingcap-aligned.stl"]["description"] is None
+        # the scanned-cap isolation (plan Stage 2 slice 2a) is a name-shape, not a
+        # fixture file here — pinned directly against the pure function
+        assert artifact_description("neodent-gm-4-scanned-cap.stl") == (
+            "the scan's own surface at the healing cap, isolated — what the scanner "
+            "saw of the cap, nothing else")
 
     def test_each_listed_file_carries_its_size_and_its_site(
             self, settings, product_root):

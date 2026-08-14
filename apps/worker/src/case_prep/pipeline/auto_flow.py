@@ -22,7 +22,8 @@ from scipy.spatial import cKDTree
 from case_prep.adapters import open3d_engine as engine
 from case_prep.adapters.cap_detection import crown_up_axis, find_cap_sites, measure_rim_diameter
 from case_prep.adapters.cap_library import CapLibrary
-from case_prep.adapters.output_package import SitePackageSpec, emit_case_package
+from case_prep.adapters.output_package import (SitePackageSpec, emit_case_package,
+                                                register_package_files)
 from case_prep.adapters.rng import PipelineRng, sample_surface
 from case_prep.adapters.site_analysis import measure_site
 from case_prep.domain.cap_catalog import CapSpec, classify_diameter, variant_flags
@@ -36,6 +37,7 @@ from case_prep.pipeline.deliverables import (arch_with_parts_fused,
                                               cap_imprint_parts,
                                               closed_model_with_recesses,
                                               remove_cap_region)
+from case_prep.pipeline.isolation import isolate_scanned_cap
 from case_prep.pipeline.final_product import (DEFAULT_GINGIVAL_OFFSET_MM,
                                               DEFAULT_SCREW_RADIUS_MM,
                                               ReliefClamp,
@@ -2502,6 +2504,32 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                               sp.tooth, gingival_offset_mm)))
                 imprint_sites.append((tmpl, sp.pose_matrix, offset,
                                       float(dia_h[0]) / 2.0))
+
+            # SCANNED-CAP ISOLATION (clinical pipeline plan Stage 2 slice 2a, boolean
+            # plan 4d): per site, exactly what the scanner saw of the healing cap —
+            # cylinder pre-cut at the catalog rim, template-matched band, core-keep
+            # for the scanned screw-recess void the template can never cover (§10-AT
+            # front 1 corrected). Whole triangles from the scan's own bytes; nothing
+            # moved, nothing inferred. A pathological pose that catches nothing skips
+            # emission and lands a per-site note instead of an empty file, the same
+            # honesty rule the imprint/composite notes below already carry.
+            scanned_cap_names: List[str] = []
+            for _index, ((_sp, _tmpl, _c), (_t, _pose, _offset, _rim_r)) in enumerate(
+                    zip(package_sites, imprint_sites), 1):
+                _isolated = isolate_scanned_cap(scan, _tmpl, _pose, _rim_r)
+                if _isolated is None:
+                    _target = _rows_by_tooth_qc.get(_sp.tooth)
+                    if _target is not None:
+                        _target.setdefault("production", {})["scanned_cap_note"] = (
+                            f"site {_index}: the scanned-cap isolation caught nothing "
+                            "at this pose — the artifact was not emitted")
+                    continue
+                _scanned_cap_path = (_P(out_dir)
+                                     / f"{case_id}-{_sp.tooth}-scanned-cap.stl")
+                _isolated.export(_scanned_cap_path)
+                register_package_files(manifest.path, [_scanned_cap_path])
+                scanned_cap_names.append(_scanned_cap_path.name)
+
             arch_socketless, socket_dish, imprint_notes = cap_imprint_parts(
                 scan, imprint_sites)
             arch_removed = (trimesh.util.concatenate(
@@ -2622,6 +2650,7 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
             [arch_caps_path.name, arch_capless_path.name,
              f"{case_id}-arch-platform.stl", arch_cons_path.name]
             + _layer_names
+            + scanned_cap_names
             + viewer_file if emit_package else []),
     }
     # emit_case_package used to create out_dir as a side effect; a preview skips it,

@@ -186,3 +186,10 @@ class TestReEmitOnTheRealTree:
                      f"{case.id}-arch-with-constructions.stl",
                      f"{case.id}-auto-report.json"):
             assert (out_dir / name).exists()
+
+        # 5. THE SCANNED-CAP ARTIFACT (plan Stage 2 slice 2a) rides the re-emit too —
+        # a part change owes the lab the same "what the scanner saw" file, even
+        # though nothing realigned
+        scanned_cap_name = f"{case.id}-{tooth}-scanned-cap.stl"
+        assert scanned_cap_name in summary_b["package_files"]
+        assert (out_dir / scanned_cap_name).is_file()

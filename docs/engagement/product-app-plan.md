@@ -2855,6 +2855,18 @@ the actual failing inputs and requires notes == []. Narrow 64, fast lane
 928. Deliberately NOT bundled (they change artifact shape): self-heal at
 zero offset; punch-surface inside-mask — queued as W2-adjacent follow-ups.
 
+**AT pipeline 2a — the isolation ships as an artifact (2026-08-13).**
+`{case}-{tooth}-scanned-cap.stl` per site, both lanes: the server-side
+mirror of pane 2's matched rung — cylinder pre-cut at the catalog rim,
+0.6mm template band, the client-ruled core-keep (max(rim−1.0, 1.2)) —
+whole triangles from the scan's own bytes, mechanism in its own
+pipeline/isolation.py. An empty isolation (pathological pose) lands a
+per-site note instead of an empty file. The catalogue sentence: "the
+scan's own surface at the healing cap, isolated — what the scanner saw of
+the cap, nothing else." The demo-fidelity extras pin gains the two
+per-tooth names on the warmed case — the exact enumeration the fidelity
+doctrine demands. Worker 25 narrow/935 fast, bff 666.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

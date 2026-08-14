@@ -57,6 +57,7 @@ from case_prep.pipeline.deliverables import (arch_with_parts_fused,
                                              cap_imprint_holes,
                                              cap_imprint_parts,
                                              closed_model_with_recesses)
+from case_prep.pipeline.isolation import isolate_scanned_cap
 from case_prep.pipeline.final_product import (DEFAULT_SCREW_RADIUS_MM,
                                               build_final_product,
                                               resolve_gingival_offset)
@@ -298,6 +299,29 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
             else float(_relief_ask(sp.tooth))
         imprint_sites.append((tmpl, sp.pose_matrix, offset,
                               float(dia_h[0]) / 2.0))
+
+    # SCANNED-CAP ISOLATION (clinical pipeline plan Stage 2 slice 2a, boolean plan
+    # 4d): per site, exactly what the scanner saw of the healing cap — cylinder
+    # pre-cut at the catalog rim, template-matched band, core-keep for the scanned
+    # screw-recess void the template can never cover (§10-AT front 1 corrected).
+    # Whole triangles from the scan's own bytes; nothing moved, nothing inferred.
+    # A pathological pose that catches nothing skips emission and lands a per-site
+    # note instead of an empty file — the same honesty rule the imprint/composite
+    # notes below already carry.
+    scanned_cap_names: List[str] = []
+    for index, ((sp, tmpl, _c), (_t, pose, _offset, rim_r)) in enumerate(
+            zip(package_sites, imprint_sites), 1):
+        isolated = isolate_scanned_cap(scan, tmpl, pose, rim_r)
+        if isolated is None:
+            rows_by_tooth[sp.tooth].setdefault("production", {})["scanned_cap_note"] = (
+                f"site {index}: the scanned-cap isolation caught nothing at this "
+                "pose — the artifact was not emitted")
+            continue
+        scanned_cap_path = out_dir / f"{case.id}-{sp.tooth}-scanned-cap.stl"
+        isolated.export(scanned_cap_path)
+        register_package_files(manifest.path, [scanned_cap_path])
+        scanned_cap_names.append(scanned_cap_path.name)
+
     arch_socketless, socket_dish, imprint_notes = cap_imprint_parts(
         scan, imprint_sites)
     arch_removed = (trimesh.util.concatenate([arch_socketless, socket_dish])
@@ -416,6 +440,7 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
         + [arch_caps_path.name, arch_capless_path.name,
            arch_platform_path.name, arch_cons_path.name]
         + layer_names
+        + scanned_cap_names
         + viewer_file,
     }
     out_dir.mkdir(parents=True, exist_ok=True)
