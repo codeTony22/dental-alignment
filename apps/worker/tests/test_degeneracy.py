@@ -136,10 +136,30 @@ class TestCoplanarBoreLidOnAMachinedFloor:
         return exact_cap_punch(cap, 0.0, pose)
 
     def test_the_punchs_fan_lid_and_the_blocks_top_face_are_bit_identical(self):
-        """The degenerate contact itself, verified BEFORE the cut runs."""
+        """The degenerate contact itself, verified BEFORE the cut runs.
+
+        LOOSENED (kernel-parity-scoreboard.md §2.2, 2026-08-15 — cited per
+        the kernel-parity task's own instruction): the punch side of this
+        bit-exact ``==`` is a MANIFOLD-SPECIFIC numerical accident, not a
+        geometric requirement — manifold3d's own float32 MeshGL round-trip
+        happens to preserve a round literal like ``TOP_Z = 3.0``
+        losslessly, but ``exact_cap_punch``'s own unconditional self-heal
+        (``union([punch, punch])``, csg.py, W5 rider (a)) genuinely
+        RETRIANGULATES under MeshLib and moves the lid plane by
+        ~5e-10mm — geometrically and clinically meaningless (three orders
+        of magnitude below ``csg.py``'s own 1e-3mm^3 ``heal_fired``
+        threshold — this is a coordinate drift, not a volume change, and
+        it does not set ``heal_fired``), but enough to break bit-exact
+        ``==``. The CONTRACT this precondition exists to protect is
+        coplanarity within the margin the cut test below actually needs,
+        not bit-exactness: 1e-6mm is five orders of magnitude tighter than
+        the measured drift and nine orders looser than anything clinically
+        significant. The block's own literal is untouched by any kernel
+        and stays bit-exact."""
         punch = self._punch()
         block = self._flat_topped_block()
-        assert float(punch.vertices[:, 2].max()) == self.TOP_Z
+        assert float(punch.vertices[:, 2].max()) == pytest.approx(
+            self.TOP_Z, abs=1e-6)
         assert float(block.vertices[:, 2].max()) == self.TOP_Z
 
     def test_the_cut_stays_watertight_at_the_exact_coplanar_seam(self):
@@ -189,12 +209,32 @@ class TestFloorClipAtExactlyTheCapsBasePlane:
             "min z with offset_mm=0, or this pin proves nothing about a " \
             "flush-mated clip plane"
 
-    def test_watertight_punch_and_the_floor_lands_at_floor_a(self):
+    def test_watertight_punch_and_the_floor_lands_at_floor_a(self, engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md §2.1/§3, item 2's
+        FLUSH-OPERAND DECISION, 2026-08-15): a floor clip flush with the
+        punch's own base is EXACTLY the coplanar contact MeshLib's own
+        guard exists to catch (an EMPTY or UNCHANGED result, depending on
+        which side of MeshLib's ±1e-7mm contact tolerance this fixture's
+        own retriangulation noise lands on) — DECIDED: accept the
+        refusal, never pre-nudge a measured coordinate to appease one
+        engine (``meshlib_kernel.py``'s own docstring). There is no
+        fallback wrapper at THIS call site (``exact_cap_punch`` has no
+        ``try`` around its own floor-clip intersection) — this test
+        exercises the clip directly, so the honest non-tracked assertion
+        is the guard's own loud, named refusal."""
         cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
         floor_a = float(np.asarray(cap.vertices, float)[:, 2].min())  # -2.0,
         # the SAME value the previous test measures and calls the
         # degenerate contact -- passed straight through, not recomputed
         pose = np.eye(4)
+
+        if not engine_expects.tracked:
+            with pytest.raises(ValueError) as excinfo:
+                exact_cap_punch(cap, 0.0, pose, floor_a=floor_a)
+            message = str(excinfo.value)
+            assert "guard" in message.lower()
+            assert "MeshLib" in message
+            return
 
         clipped = exact_cap_punch(cap, 0.0, pose, floor_a=floor_a)
         assert clipped.is_watertight, \
@@ -446,9 +486,21 @@ class TestPunchTangentToTheSkirt:
         skirt copies that SAME x,y for every fabricated vertex (only z
         moves — the projection subtracts along ``up=[0,0,1]`` alone, so
         x,y are untouched, not merely close), and the punch reaches
-        exactly x=8.0 at TWO of its own vertices (the top and bottom rim,
-        at the pose's own aligned angle) — a whole EDGE tangent to the
-        skirt plane, not a single accidental point."""
+        the skirt plane along a whole EDGE (top+bottom rim, at the pose's
+        own aligned angle), not a single accidental point.
+
+        LOOSENED (kernel-parity-scoreboard.md §2.2, 2026-08-15 — cited per
+        the kernel-parity task's own instruction): the bit-exact vertex
+        COUNT (2) this test used to assert is a manifold-specific
+        retriangulation accident, not the geometric contract — the
+        unconditional self-heal (``union([punch, punch])``, csg.py, fires
+        even at ``offset_mm=0``) genuinely retriangulates under MeshLib
+        and adds vertices exactly ON the tangent plane that the manifold
+        path's own construction never introduces (measured: 10, not 2).
+        The CONTRACT is a whole edge tangent to the plane — at least 2
+        vertices ON it, spanning the punch's full height (both the top
+        AND bottom rim reach it) — not a specific triangulation of that
+        edge."""
         sheet, solid, punch, sheet_half = self._punch_and_solid()
         assert not sheet.is_watertight
         assert sheet_half == 8.0
@@ -458,16 +510,30 @@ class TestPunchTangentToTheSkirt:
 
         Vp = np.asarray(punch.vertices, float)
         at_plane = Vp[:, 0] == skirt_x
-        assert int(at_plane.sum()) == 2, \
+        assert int(at_plane.sum()) >= 2, \
             "the punch must graze the skirt plane along a whole edge " \
             "(top+bottom rim), or the degenerate contact this case " \
             "needs is not actually there"
-        assert sorted(Vp[at_plane, 2].tolist()) == [-2.0, 2.0]
+        plane_zs = Vp[at_plane, 2]
+        assert float(plane_zs.min()) == -2.0 and float(plane_zs.max()) == 2.0, \
+            "the tangent contact must span the punch's full height (both " \
+            "the top and bottom rim), whatever triangulation lands on it"
 
-    def test_the_tracked_cut_is_watertight_and_conservative(self):
+    def test_the_tracked_cut_is_watertight_and_conservative(self, engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15):
+        this pin's whole point is the tracked op at a degenerate tangent
+        contact — under a kernel without it, the honest assertion is the
+        named refusal, verified against the exact same tangent-contact
+        inputs."""
         sheet, solid, punch, _sheet_half = self._punch_and_solid()
         fabricated = fabricated_face_mask(sheet, solid)
         assert solid.is_watertight
+
+        if not engine_expects.tracked:
+            with pytest.raises(NotImplementedError, match="difference_tracked"):
+                default_kernel().difference_tracked(
+                    solid, [punch], fabricated.astype(np.int64))
+            return
 
         tracked = default_kernel().difference_tracked(
             solid, [punch], fabricated.astype(np.int64))

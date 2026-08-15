@@ -56,6 +56,36 @@ adapter refuses rather than fakes it. ``minkowski_sphere`` raises
 ``NotImplementedError`` too: the memo's own offset recommendation is
 ``sharpOffsetMesh`` (§3.3/§4), a SEPARATE, still-unlicensed capability this
 slice does not build.
+
+THE FLUSH-OPERAND DECISION (kernel-parity scoreboard §3, amended 2026-08-15
+— "try both engines for real" against the referee corpus itself surfaced
+this for the first time, not on paper): a legitimately-flush operand — the
+floor clip's plane landing EXACTLY on the cap's own base plane, ``relief ==
+0`` — trips guard 2 above (the UNCHANGED coplanar no-op) or comes back
+EMPTY, depending on which side of the ±1e-7mm contact this engine's own
+retriangulation noise happens to land on (kernel-parity-scoreboard.md §2.1).
+DECIDED: ACCEPT THE FALLBACK, never pre-nudge the operand. Moving a
+measured, calibrated coordinate by a few times 1e-7mm purely to keep a
+SPECIFIC ENGINE happy is exactly the inference the client's own doctrine
+forbids ("we should not be inferring anything here" — §10-AS.14) applied to
+geometry instead of an offset number; it would also silently make every
+future flush contact engine-DEPENDENT (a value nudged to please MeshLib is
+a value manifold never asked for). The already-existing consumer-side
+fallback — ``_csg_carve``'s per-site ``except Exception`` around
+``exact_cap_punch``, landing "its envelope was used instead" — is the
+correct, sufficient answer under this engine; nothing in this adapter or
+its callers changes to accommodate it. This same acceptance generalises,
+by the same reasoning, to every other native MeshLib boolean refusal a
+legitimately-shaped operand can trigger under this engine and manifold
+cannot — measured directly, this slice's own referee run: a self-
+intersecting vertex-normal-dilated punch's own self-heal union (a
+genuinely self-intersecting but otherwise unremarkable operand — a screw-
+slot cap, nothing degenerate about it) and a fin/deviated-cap's true-
+boolean recess cut both trip MeshLib's native ``res.valid() is False``
+refusal (kernel-parity-scoreboard.md §2.1/§2.4) where manifold3d succeeds;
+in every case the existing fail-open ladder already coded for OTHER
+reasons (a manifold3d rejection, an unwatertight tracked result) is what
+actually ships, unmodified, under this engine too.
 """
 from __future__ import annotations
 
@@ -97,7 +127,15 @@ def guard_boolean_output(op_name: str, operands: Sequence[trimesh.Trimesh],
         ``GUARD_VOLUME_TOLERANCE_MM3`` mm^3) as one of ``operands``.
 
     A pure function over trimesh meshes: no meshlib import, callable —
-    and tested — with or without the package present."""
+    and tested — with or without the package present.
+
+    THE FLUSH-OPERAND DECISION (this module's own docstring, kernel-parity
+    scoreboard §3, amended 2026-08-15): a legitimately-flush operand (a
+    floor clip landing exactly on a coplanar plane, ``relief == 0``) is a
+    real, expected trigger of this guard's EMPTY or UNCHANGED branch under
+    this engine — never cured by nudging the operand's own coordinates by
+    epsilon before the call. This function raises; the caller's own,
+    already-documented fallback ladder is where the acceptance lives."""
     face_counts = [len(op.faces) for op in operands]
     if len(result.faces) == 0:
         raise ValueError(
@@ -228,3 +266,11 @@ class MeshLibKernel:
             "§4) — 50-66x faster than manifold's minkowski_sum at equal "
             "or better accuracy — but it is a SEPARATE, still-unlicensed "
             "capability this slice does not build; out of scope here.")
+
+    def supports_tracked(self) -> bool:
+        """False — ``difference_tracked``/``union_tracked`` above always
+        raise ``NotImplementedError`` (no manifold3d-originalID equivalent
+        exists in MeshLib, W1). See ``BooleanKernel.supports_tracked``'s own
+        docstring for the scope of what this flag stands in for in the
+        referee corpus's own ``engine_expects`` fixture."""
+        return False

@@ -260,16 +260,31 @@ class TestExactCapPunch:
         with pytest.raises(ValueError):
             exact_cap_punch(trimesh.Trimesh(), 0.2, np.eye(4))
 
-    def test_minkowski_engine_is_watertight_on_a_closed_cylinder_cap(self):
+    def test_minkowski_engine_is_watertight_on_a_closed_cylinder_cap(
+            self, engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15):
+        the ``minkowski`` offset engine is ``kernel.minkowski_sphere`` under
+        the hood, which only ``ManifoldKernel`` implements — MeshLibKernel
+        raises ``NotImplementedError`` naming the still-unlicensed
+        ``sharpOffsetMesh`` alternative (``meshlib_kernel.py``'s own
+        docstring). There is no consumer-level fallback wrapper at this
+        call site (``exact_cap_punch``'s ``offset_engine`` dispatch is a
+        plain ``elif``, no ``try``) — this test exists specifically to
+        exercise the minkowski path itself, so under a kernel that lacks
+        it the honest, engine-aware pass is the loud, named refusal."""
         from case_prep.pipeline.csg import exact_cap_punch
 
         cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
+        if not engine_expects.tracked:
+            with pytest.raises(NotImplementedError, match="minkowski_sphere"):
+                exact_cap_punch(cap, 0.2, np.eye(4), offset_engine="minkowski")
+            return
         punch = exact_cap_punch(cap, 0.2, np.eye(4), offset_engine="minkowski")
         assert punch.is_watertight
         assert float(punch.volume) > float(cap.volume), \
             "the dilation must grow the cap, not shrink it"
 
-    def test_minkowski_engine_lids_the_bore_before_dilating(self):
+    def test_minkowski_engine_lids_the_bore_before_dilating(self, engine_expects):
         """ORDER PIN (boolean-engine plan W2): a not-yet-closed template
         must still work on the minkowski path — proof the lid
         (``_lid_boundary_loops``) runs BEFORE ``minkowski_sphere``, never
@@ -277,12 +292,21 @@ class TestExactCapPunch:
         shell handed to ``minkowski_sum`` comes back an EMPTY mesh, not a
         raised error — so if lidding ran second, this would fail with a
         confusing downstream watertightness error, not a clear refusal at
-        the source."""
+        the source.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1): same capability
+        gap as the pin above — under a kernel without ``minkowski_sphere``
+        the order this pin protects cannot be exercised at all, so the
+        honest non-tracked assertion is the same named refusal."""
         from case_prep.pipeline.csg import exact_cap_punch
 
         cap = _annulus_topped_cylinder()
         assert not cap.is_watertight, \
             "the fixture must start open, or this pin proves nothing"
+        if not engine_expects.tracked:
+            with pytest.raises(NotImplementedError, match="minkowski_sphere"):
+                exact_cap_punch(cap, 0.2, np.eye(4), offset_engine="minkowski")
+            return
         punch = exact_cap_punch(cap, 0.2, np.eye(4), offset_engine="minkowski")
         assert punch.is_watertight
         assert len(punch.faces) > 0
@@ -440,7 +464,7 @@ class TestOffsetEngineComparison:
     older fixture's own pin only asserts "still usable", never
     "heal_fired")."""
 
-    def test_the_concave_fixture_forces_a_real_self_intersection(self):
+    def test_the_concave_fixture_forces_a_real_self_intersection(self, engine_expects):
         """A precondition pin for the two below: without a genuine
         pre-heal self-intersection, "heal_fired differs by engine" would
         be vacuous. Measured directly (this slice's own pin time): the
@@ -448,24 +472,62 @@ class TestOffsetEngineComparison:
         offset 0.2) overcounts the true material by exactly the doubled-up
         overlap; the healed volume (64.074mm^3) is the true, smaller
         figure — the two must differ by far more than the ~1e-6mm^3
-        float32 round-trip noise a clean solid's self-union carries."""
+        float32 round-trip noise a clean solid's self-union carries.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md §2.4, item 1 generalised,
+        2026-08-15): this same genuinely self-intersecting fixture also
+        exercises a capability gap the scoreboard names separately from
+        tracked ops — MeshLib's own boolean natively REFUSES a self-union
+        on self-intersecting operands (``res.valid() is False``, "Bad
+        contour ... probably mesh B has self-intersections") where
+        manifold3d succeeds. ``exact_cap_punch``'s own pre-existing
+        ``except Exception: pass`` around the heal call (csg.py, written
+        for manifold3d's own possible rejections, not this engine) catches
+        it identically: ``heal_fired`` reads False and the ORIGINAL
+        (self-intersecting-by-geometry, still watertight-by-edge-topology)
+        punch survives unchanged — the documented empty-heal-guard
+        contract holding for a reason it was not written for. The
+        tracked-kernel assertion below is unweakened; the non-tracked
+        branch verifies that same contract instead of a heal this engine
+        cannot perform here."""
         from case_prep.pipeline.csg import exact_cap_punch
 
         fixture = _notched_cylinder_cap()
         assert fixture.is_watertight
 
         diagnostics: dict = {}
-        exact_cap_punch(fixture, 0.2, np.eye(4), diagnostics=diagnostics)
+        punch = exact_cap_punch(fixture, 0.2, np.eye(4), diagnostics=diagnostics)
+        if not engine_expects.tracked:
+            assert diagnostics["heal_fired"] is False, (
+                "MeshLib's own boolean refuses a self-union on this "
+                "genuinely self-intersecting operand (kernel-parity-"
+                "scoreboard.md §2.4) — heal-not-fired is the honest "
+                "reading under this engine")
+            assert punch.is_watertight, (
+                "the empty-heal guard's own contract: a heal that could "
+                "not run must keep the un-healed (but still watertight) "
+                "punch, never an empty or degraded one")
+            return
         assert diagnostics["heal_fired"] is True
 
-    def test_vertex_normal_path_needs_the_heal_minkowski_path_does_not(self):
+    def test_vertex_normal_path_needs_the_heal_minkowski_path_does_not(
+            self, engine_expects):
         """THE ACCEPTANCE CRITERION ITSELF: at the SAME offset, on the SAME
         concave fixture, the vertex-normal path's own dilation creates a
         defect the heal must fix (``heal_fired`` True — "that's the defect
         class") and the minkowski path's dilation never does
         (``heal_fired`` False) — both watertight either way, because the
         heal is belt-and-braces on both paths, not load-bearing on
-        neither."""
+        neither.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, §2.4,
+        2026-08-15): under a kernel without ``minkowski_sphere``
+        (MeshLibKernel) this acceptance criterion cannot be exercised for
+        either half — the vertex-normal half additionally trips MeshLib's
+        own native self-union refusal on this fixture (§2.4, same as the
+        precondition pin above), and the minkowski half is the flat
+        capability gap pinned in ``TestExactCapPunch``. Both are verified
+        directly instead of the manifold-only comparison."""
         from case_prep.pipeline.csg import exact_cap_punch
 
         fixture = _notched_cylinder_cap()
@@ -476,6 +538,12 @@ class TestOffsetEngineComparison:
                                    offset_engine="vertex-normal",
                                    diagnostics=vn_diag)
         assert vn_punch.is_watertight
+        if not engine_expects.tracked:
+            assert vn_diag["heal_fired"] is False
+            with pytest.raises(NotImplementedError, match="minkowski_sphere"):
+                exact_cap_punch(fixture, offset, np.eye(4),
+                                offset_engine="minkowski")
+            return
         assert vn_diag["heal_fired"] is True
 
         mk_diag: dict = {}
@@ -485,7 +553,8 @@ class TestOffsetEngineComparison:
         assert mk_punch.is_watertight
         assert mk_diag["heal_fired"] is False
 
-    def test_convex_cap_both_paths_agree_within_a_small_wall_distance(self):
+    def test_convex_cap_both_paths_agree_within_a_small_wall_distance(
+            self, engine_expects):
         """A plain cylinder has no concave crease at all — both paths
         should land close to the same wall, probed the way the corpus
         probes a cut's own wall (``test_csg_corpus.py``'s
@@ -500,7 +569,13 @@ class TestOffsetEngineComparison:
         arithmetic). The two paths' own surfaces sit within ~0.06mm of
         each other end to end — comfortably inside the 0.1mm bound below,
         the same bound the golden corpus already uses for this class of
-        measurement."""
+        measurement.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): the
+        vertex-normal half of this comparison needs no fallback under
+        MeshLib — a plain cylinder has no concave crease, so its self-heal
+        never trips the native refusal §2.4 names — only the minkowski
+        half is a genuine capability gap, verified directly."""
         from case_prep.pipeline.csg import exact_cap_punch
 
         cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
@@ -508,9 +583,16 @@ class TestOffsetEngineComparison:
 
         vn_punch = exact_cap_punch(cap, offset, np.eye(4),
                                    offset_engine="vertex-normal")
+        assert vn_punch.is_watertight
+        if not engine_expects.tracked:
+            with pytest.raises(NotImplementedError, match="minkowski_sphere"):
+                exact_cap_punch(cap, offset, np.eye(4),
+                                offset_engine="minkowski")
+            return
+
         mk_punch = exact_cap_punch(cap, offset, np.eye(4),
                                    offset_engine="minkowski")
-        assert vn_punch.is_watertight and mk_punch.is_watertight
+        assert mk_punch.is_watertight
 
         sample, _ = trimesh.sample.sample_surface(mk_punch, 2000)
         _, delta, _ = vn_punch.nearest.on_surface(sample)
@@ -646,12 +728,20 @@ class TestStripTracked:
 
         assert list(keep) == [True, True, True, True]
 
-    def test_end_to_end_on_a_real_carve_matches_the_distance_strips_own_shape(self):
+    def test_end_to_end_on_a_real_carve_matches_the_distance_strips_own_shape(
+            self, engine_expects):
         """The tracked route, run over the exact solidify -> punch ->
         difference_tracked sequence ``_csg_carve`` performs, must agree
         with ``strip_fabricated`` on WHICH faces are the fabricated
         closure — same shell, same punch, same cut region, two different
-        ways of answering the same question."""
+        ways of answering the same question.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): the
+        comparison itself needs the tracked route to exist. Under a kernel
+        without it, the honest assertion is the named refusal — the
+        distance route alone (which depends on nothing tracked) is still
+        built and checked, so this pin verifies something real either way,
+        not just a skip."""
         from case_prep.pipeline.csg import (exact_cap_punch,
                                             fabricated_face_mask,
                                             solidified_shell_cached,
@@ -667,24 +757,30 @@ class TestStripTracked:
         cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
         punch = exact_cap_punch(cap, 0.2, pose)
 
-        tracked = default_kernel().difference_tracked(
-            solid, [punch], mask.astype(int))
-        assert tracked.mesh.is_watertight
-        tracked_keep = strip_tracked(tracked)
-
         untracked_cut = default_kernel().difference(solid, [punch])
         assert untracked_cut.is_watertight
         rel = np.asarray(untracked_cut.triangles_center, float) - pose[:3, 3]
         inside = ((np.linalg.norm(rel[:, :2], axis=1) < 2.2 + 0.1)
                   & (np.abs(rel[:, 2]) < 3.0))
         distance_keep = strip_fabricated(untracked_cut, sheet, inside)
+        assert int(distance_keep.sum()) > 0
+
+        if not engine_expects.tracked:
+            with pytest.raises(NotImplementedError, match="difference_tracked"):
+                default_kernel().difference_tracked(
+                    solid, [punch], mask.astype(int))
+            return
+
+        tracked = default_kernel().difference_tracked(
+            solid, [punch], mask.astype(int))
+        assert tracked.mesh.is_watertight
+        tracked_keep = strip_tracked(tracked)
 
         # not byte-identical face-for-face (manifold3d's two call shapes can
         # retriangulate differently), but the SAME fraction of the result
         # survives the strip either way — both routes drop exactly the
         # fabricated base/skirt and keep everything else
         assert int(tracked_keep.sum()) > 0
-        assert int(distance_keep.sum()) > 0
         tracked_frac = tracked_keep.sum() / len(tracked_keep)
         distance_frac = distance_keep.sum() / len(distance_keep)
         assert abs(tracked_frac - distance_frac) < 0.05, \

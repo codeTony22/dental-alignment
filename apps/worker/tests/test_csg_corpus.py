@@ -182,7 +182,8 @@ class TestOffsetEngineDidNotFlipTheDefault:
         exact_cap_punch(_cap(), OFFSET_MM, self.POSE, diagnostics=diagnostics)
         assert diagnostics["offset_engine"] == "vertex-normal"
 
-    def test_minkowski_path_recess_mouth_diameter_within_the_chord_error(self):
+    def test_minkowski_path_recess_mouth_diameter_within_the_chord_error(
+            self, engine_expects):
         """The same carve ``TestCarveGoldenMetrics`` runs, ``offset_engine
         ="minkowski"`` the only difference. MEASURED (2026-08-14, this
         slice's own pin run): max probe deviation 0.00083mm, an order of
@@ -194,9 +195,20 @@ class TestOffsetEngineDidNotFlipTheDefault:
         surprise). The tolerance below (0.01mm) is roughly 12x the
         measured figure — a margin, not a coin flip — and, not
         incidentally, 10x TIGHTER than the vertex-normal path's own 0.1mm
-        bound above: the accuracy delta this slice's own report names."""
+        bound above: the accuracy delta this slice's own report names.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): the
+        golden metric itself needs the ``minkowski`` offset engine, which
+        only ``ManifoldKernel`` implements — the honest non-tracked
+        assertion is the named refusal ``exact_cap_punch`` propagates
+        uncaught (no fallback wrapper at this call site)."""
         slab = _thick_slab()
         solid = solidified_shell_cached(slab)
+        if not engine_expects.tracked:
+            with pytest.raises(NotImplementedError, match="minkowski_sphere"):
+                exact_cap_punch(_cap(), OFFSET_MM, self.POSE,
+                                offset_engine="minkowski")
+            return
         punch = exact_cap_punch(_cap(), OFFSET_MM, self.POSE,
                                 offset_engine="minkowski")
         cut = default_kernel().difference(solid, [punch])
@@ -280,17 +292,36 @@ class TestTrackedLocalityAndConservativity:
     cached`` fabricate a skirt+base, so conservativity has something to
     prove)."""
 
-    def _tracked_cut(self):
+    def _tracked_cut_inputs(self):
+        """The pre-boolean setup ``_tracked_cut`` shares with the
+        engine-aware non-tracked branch below — split out so a test can
+        assert the ``difference_tracked`` refusal itself without also
+        needing ``_tracked_cut``'s own successful-call return shape."""
         sheet = _curved_sheet()
         solid = solidified_shell_cached(sheet)
         fabricated = fabricated_face_mask(sheet, solid)
         pose = _pose_at(0.0, 0.0, 1.0)
         punch = exact_cap_punch(_cap(), OFFSET_MM, pose)
+        return sheet, solid, fabricated, pose, punch
+
+    def _tracked_cut(self):
+        sheet, solid, fabricated, pose, punch = self._tracked_cut_inputs()
         tracked = default_kernel().difference_tracked(
             solid, [punch], fabricated.astype(np.int64))
         return sheet, tracked, pose
 
-    def test_locality_far_scan_provenance_faces_are_bit_identical_to_the_scan(self):
+    def test_locality_far_scan_provenance_faces_are_bit_identical_to_the_scan(
+            self, engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15):
+        locality is a claim ABOUT the tracked route's own output — under a
+        kernel that cannot run it, the honest assertion is the named
+        refusal, verified directly against the same inputs."""
+        if not engine_expects.tracked:
+            _sheet, solid, fabricated, _pose, punch = self._tracked_cut_inputs()
+            with pytest.raises(NotImplementedError, match="difference_tracked"):
+                default_kernel().difference_tracked(
+                    solid, [punch], fabricated.astype(np.int64))
+            return
         sheet, tracked, pose = self._tracked_cut()
         assert tracked.mesh.is_watertight
         keep = strip_tracked(tracked)
@@ -314,7 +345,18 @@ class TestTrackedLocalityAndConservativity:
             "bit-identical (at float32 precision) to any triangle of the " \
             "original scan — locality broke"
 
-    def test_conservativity_zero_closure_provenance_faces_survive_the_strip(self):
+    def test_conservativity_zero_closure_provenance_faces_survive_the_strip(
+            self, engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15):
+        conservativity is a claim about ``TrackedResult.source`` itself —
+        under a kernel without the tracked op, the honest assertion is the
+        named refusal."""
+        if not engine_expects.tracked:
+            _sheet, solid, fabricated, _pose, punch = self._tracked_cut_inputs()
+            with pytest.raises(NotImplementedError, match="difference_tracked"):
+                default_kernel().difference_tracked(
+                    solid, [punch], fabricated.astype(np.int64))
+            return
         sheet, tracked, _pose = self._tracked_cut()
         assert tracked.base_groups == 2, \
             "the shell must have been split scan-vs-closure, or this pin " \
@@ -328,16 +370,31 @@ class TestTrackedLocalityAndConservativity:
             "a closure-provenance face survived the strip — conservativity " \
             "is no longer exact"
 
-    def test_clinical_metrics_match_the_untracked_path(self):
+    def test_clinical_metrics_match_the_untracked_path(self, engine_expects):
         """The tracked route must not move the numbers the plan names —
         recess wall position and volume removed — even though its own
         internal boolean call shape (``batch_boolean``) differs from the
         untracked path's (``trimesh.boolean``, via a single ``-``
-        operator here, since there is exactly one tool)."""
-        sheet, tracked, pose = self._tracked_cut()
-        solid = solidified_shell_cached(sheet)
-        punch = exact_cap_punch(_cap(), OFFSET_MM, pose)
+        operator here, since there is exactly one tool).
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): the
+        comparison needs the tracked route to exist. Under a kernel that
+        cannot run it, the honest assertion is the named refusal — the
+        untracked path alone (which depends on nothing tracked) is still
+        built and checked watertight, so this pin verifies something real
+        under either engine."""
+        _sheet, solid, fabricated, pose, punch = self._tracked_cut_inputs()
         untracked_cut = default_kernel().difference(solid, [punch])
+        assert untracked_cut.is_watertight
+
+        if not engine_expects.tracked:
+            with pytest.raises(NotImplementedError, match="difference_tracked"):
+                default_kernel().difference_tracked(
+                    solid, [punch], fabricated.astype(np.int64))
+            return
+
+        tracked = default_kernel().difference_tracked(
+            solid, [punch], fabricated.astype(np.int64))
 
         assert float(tracked.mesh.volume) == pytest.approx(
             float(untracked_cut.volume), abs=1e-6)

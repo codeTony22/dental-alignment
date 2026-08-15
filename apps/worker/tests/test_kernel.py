@@ -242,6 +242,25 @@ class TestTrackedKernelPartOfTheProtocol:
         assert hasattr(kernel, "union_tracked")
 
 
+class TestSupportsTracked:
+    """CAPABILITY INTROSPECTION (kernel-parity-scoreboard.md, item 1,
+    2026-08-15): ``supports_tracked()`` lets a caller branch honestly on
+    the tracked ops rather than try/except-probing them. ``ManifoldKernel``
+    (this file's every other pin already exercises its real
+    ``difference_tracked``/``union_tracked``) answers True. ``MeshLibKernel``
+    answers False (``meshlib_kernel.py``'s own definition, docstringed
+    there) — this suite's scope boundary keeps the adapter's own pins in
+    ``test_meshlib_kernel.py``, out of this slice; this pin covers only the
+    protocol member and the manifold engine's own answer."""
+
+    def test_manifold_kernel_supports_tracked(self):
+        assert ManifoldKernel().supports_tracked() is True
+
+    def test_is_part_of_the_default_kernels_protocol(self):
+        assert hasattr(default_kernel(), "supports_tracked")
+        assert isinstance(default_kernel().supports_tracked(), bool)
+
+
 class TestMinkowskiSphere:
     """W2 (boolean-engine plan, 2026-08-14): the true morphological
     dilation replacing ``exact_cap_punch``'s vertex-normal push. Pinned

@@ -276,3 +276,243 @@ a geometric requirement. None of the three touches `MeshLibKernel` itself, which
 the memo's own finding restated: the gap is structural (no provenance API) and
 probabilistic (a narrow, bounded-incidence trigger already named and guarded), not a
 defect this adapter could quietly fix by trying harder.
+
+**All three are now DONE** (§4, 2026-08-15, same-day follow-up): (1) is built, as the
+`engine_expects` fixture below, not the `tracked_ops_supported(engine)` free function this
+section sketched — a capability method on the kernel itself, so the corpus asks the ENGINE,
+not a lookup table that could drift out of sync with it; (2) is DECIDED, not merely
+theorised — ACCEPT THE FALLBACK, never pre-nudge, recorded in `meshlib_kernel.py`'s own
+docstring and applied to every native MeshLib boolean refusal this corpus's own fixtures
+turned out to trigger, not only the one this section named; (3) is loosened, exactly the
+two named tests, nothing else. §4 is the full accounting.
+
+---
+
+## 4 · The rework, landed (same-day follow-up, 2026-08-15)
+
+### 4.1 · The capability read
+
+`BooleanKernel` (the `Protocol` in `pipeline/kernel.py`) gained one new member:
+
+```python
+def supports_tracked(self) -> bool: ...
+```
+
+`ManifoldKernel.supports_tracked()` returns `True`; `MeshLibKernel.supports_tracked()`
+returns `False`. Its own docstring on the `Protocol` is explicit about scope: it is a
+query about `difference_tracked`/`union_tracked` specifically, named for exactly what it
+answers — not a general "how capable is this kernel" score. It is REUSED, deliberately, as
+the referee corpus's one engine-aware signal for two OTHER axes this run's own exploration
+surfaced (§4.4) — the `minkowski` offset engine, and native-refusal robustness on
+self-intersecting/coplanar operands — because in today's two-kernel world `MeshLibKernel`
+happens to be uniformly the reduced adapter across all three, and a second, narrower
+capability read would be pure redundancy while that stays true. The flag's own docstring
+says so, in the same words, so a future third kernel with a genuinely split capability
+profile is a documented decision point, not a silent trap.
+
+### 4.2 · The engine-aware pattern
+
+One fixture, `engine_expects` (`tests/conftest.py`, shared by all five referee files — the
+only file outside the three the task named that this slice touches, and only to hold the
+one shared fixture the task itself asked for):
+
+```python
+@dataclass(frozen=True)
+class EngineExpectations:
+    tracked: bool
+
+    def assert_fallback_notes(self, notes, *substrings) -> None:
+        ...  # non-tracked branch only: notes must carry exactly len(substrings)
+             # entries, each containing its own substring, IN ORDER
+
+
+@pytest.fixture
+def engine_expects() -> EngineExpectations:
+    from case_prep.pipeline.kernel import default_kernel
+    return EngineExpectations(tracked=default_kernel().supports_tracked())
+```
+
+Every reworked test reads `engine_expects.tracked` once and branches: the `tracked=True`
+branch is the ORIGINAL assertion, byte-for-byte, wherever the geometry itself does not
+depend on the engine (verified directly per test, not assumed — §4.3); the `tracked=False`
+branch takes one of two shapes, depending on whether the call site under test has a
+consumer-level fallback ladder to observe:
+
+* **A fallback wrapper exists** (all 23 of `test_deliverables.py`'s own failures, plus the
+  two `TestOffsetEngineComparison` pins §4.4 covers — `_csg_carve`/`arch_with_parts_fused`/
+  `cap_imprint_parts`'s own `except Exception` clauses, or `exact_cap_punch`'s own
+  self-heal catch): `assert_fallback_notes(notes, *substrings)` verifies the note(s) that
+  landed, in order, by content — "the note IS the contract" — or, for the self-heal pins,
+  the equivalent direct check (`heal_fired is False` and the punch stays watertight).
+* **No fallback wrapper exists at this call site** (`TestStripTracked`,
+  `TestTrackedLocalityAndConservativity`'s 3 pins, the `TestExactCapPunch`/
+  `TestOffsetEngineDidNotFlipTheDefault` minkowski pins, one `TestPunchTangentToTheSkirt`
+  pin, `TestFloorClipAtExactlyTheCapsBasePlane`, and the two outer-ladder
+  `TestCapImprintHoles` pins §4.4 covers, where the WHOLE carve — not one strip step —
+  falls back): `pytest.raises(NotImplementedError, match=...)` or `pytest.raises(ValueError)`
+  against the exact same inputs the tracked branch would have used, verifying the refusal
+  itself is loud and names what refused.
+
+37 failures reworked in total (matching every one §2 classified), plus the 2 preconditions
+loosened to a contract instead of an accident (§4.5) and 2 new capability pins (§4.1).
+
+### 4.3 · The flush-operand decision, implemented
+
+`TestFloorClipAtExactlyTheCapsBasePlane::test_watertight_punch_and_the_floor_lands_at_floor_a`
+(§2.1's own subject) now reads, under `engine_expects.tracked is False`:
+
+```python
+with pytest.raises(ValueError) as excinfo:
+    exact_cap_punch(cap, 0.0, pose, floor_a=floor_a)
+message = str(excinfo.value)
+assert "guard" in message.lower()
+assert "MeshLib" in message
+```
+
+— verifying the refusal is LOUD (names itself, names the engine) rather than asserting the
+manifold-only outcome (a clipped, watertight punch) that this engine cannot produce on a
+legitimately-flush operand. The decision — ACCEPT THE FALLBACK, never pre-nudge the operand
+by epsilon to appease one engine — is recorded in `meshlib_kernel.py`'s own module
+docstring (a new "THE FLUSH-OPERAND DECISION" paragraph) and in `guard_boolean_output`'s own
+docstring, both citing this doc. Every OTHER test in §2 whose note names `"the exact cap
+could not be cut"` (the guard firing inside `_csg_carve`'s own caught call, 8 tests — the
+scoreboard's original count of 4 undercounted this; the correct count, reconfirmed while
+reworking every one of them directly, is 8: `TestCapImprintHoles::
+test_the_floor_follows_the_gum_at_the_countersink_depth`,
+`test_the_collar_drapes_onto_curved_gum_no_floating_crescents`,
+`test_a_proud_platform_floor_is_a_saucer_on_the_gum`,
+`test_a_tall_cap_socket_stops_just_below_the_gum`, plus the four `TestSocketIsFaceProvenance`
+/`TestMaskNeverSplitsAUniformProvenanceFan`/`TestNoScanFaceShipsInTheSocketLayer`/
+`TestTheMergedCaplessArtifactDoesNotMove` rows §2 already named) applies the identical
+acceptance via `assert_fallback_notes`, verifying the guard note's own content rather than
+merely its presence.
+
+### 4.4 · Beyond the three — the same decision, generalised (not a fourth item, the same one)
+
+Reworking the corpus test-by-test surfaced two MORE shapes of native MeshLib boolean
+refusal §2 did not classify separately (§2.4 predicted the FIRST of these existed but
+could not find it among the 37; it turns out one test already exercises it):
+
+* **The self-heal, on a genuinely self-intersecting punch, for real.**
+  `TestOffsetEngineComparison::test_the_concave_fixture_forces_a_real_self_intersection`
+  and its sibling `test_vertex_normal_path_needs_the_heal_minkowski_path_does_not` run
+  `exact_cap_punch`'s vertex-normal path on `_notched_cylinder_cap()` — genuinely
+  self-intersecting, no synthetic monkeypatch — and MeshLib's own `union([punch, punch])`
+  raises NATIVELY (`"Bad contour on 28 mesh A faces, probably mesh B has self-intersections
+  ..."`), caught by `csg.py`'s own pre-existing `except Exception: pass` around the heal
+  call (the same catch §2.4 already named for a DIFFERENT, hand-built fixture).
+  `heal_fired` reads `False` and the un-healed-but-still-watertight punch survives — §2.4's
+  own predicted contract, holding on a test that turns out to already exercise it directly,
+  not only by the isolated exploration §2.4 reported. Reworked to assert exactly that
+  contract under `engine_expects.tracked is False`, instead of the manifold-only
+  `heal_fired is True`.
+* **The untracked `difference`, on a self-intersecting or deviated operand, for real.**
+  `TestCapImprintHoles::test_the_recess_is_the_caps_exact_surface` (a cap with a
+  protruding fin) and `test_a_deviated_scanned_cap_leaves_no_flaps` (a cap seated 0.35mm
+  off pose) make their own operand self-intersecting under MeshLib's contour test at the
+  `difference` step itself — not the self-heal, the actual carve — so BOTH `_csg_carve`
+  routes fail (tracked AND untracked) and `cap_imprint_parts`'s own outer ladder falls the
+  WHOLE carve back to the one-shell PRESS CARVE (`§10-AS.10`), a different algorithm with
+  no claim to either pin's own CSG-exact geometric claims (the fin's own azimuthal
+  footprint; the torn-flap cull margin). Reworked to verify the refusal is loud (names
+  MeshLib, names itself) and the press-carve fallback's own note landed, and to SKIP the
+  CSG-path-specific geometric assertions under this engine — they test a claim about a
+  different algorithm now running.
+
+Both are the SAME decision as §4.3 (accept the native refusal, trust the existing
+fail-open ladder, never pre-nudge), applied to two MORE call sites the exploration found by
+actually reworking the tests rather than by prediction. Nothing here is a fourth category:
+every one of the 37 is still exactly one of parity-gap-fallback (34), guard-refusal, or
+precondition drift (2) — the total stays 37, reclassified more precisely than §2's own
+first pass (which counted only 1 guard-refusal test and folded these other 4 into the
+parity-gap-fallback bucket by their `NotImplementedError`-shaped description, imprecisely —
+`test_vertex_normal_path_needs_the_heal_minkowski_path_does_not` genuinely carries BOTH: its
+vertex-normal half is guard-refusal, its minkowski half is parity-gap-fallback), not
+enlarged. Guard-refusal now names 3 distinct call sites (the coplanar floor-clip
+intersection, §2.1's own subject; the self-heal's own union call, §2.4; the untracked
+carve's own difference call, new here) across 5 tests
+(`test_watertight_punch_and_the_floor_lands_at_floor_a`;
+`test_the_concave_fixture_forces_a_real_self_intersection` and
+`test_vertex_normal_path_needs_the_heal_minkowski_path_does_not`;
+`test_the_recess_is_the_caps_exact_surface` and
+`test_a_deviated_scanned_cap_leaves_no_flaps`) — not 1 test at 1 site, as §2's first pass
+undercounted before every failure was reworked and re-examined directly.
+
+### 4.5 · The two loosened preconditions, before/after
+
+**`TestCoplanarBoreLidOnAMachinedFloor::test_the_punchs_fan_lid_and_the_blocks_top_face_are_bit_identical`**
+
+```python
+# before
+assert float(punch.vertices[:, 2].max()) == self.TOP_Z
+
+# after
+assert float(punch.vertices[:, 2].max()) == pytest.approx(self.TOP_Z, abs=1e-6)
+```
+
+1e-6mm is five orders of magnitude looser than the measured manifold-vs-MeshLib drift
+(≈5e-10mm, §2.2) and nine orders tighter than anything clinically significant — the
+CONTRACT (coplanar enough for the cut test below to be meaningful), not the accident
+(bit-exact because manifold's float32 round-trip happens to preserve `3.0` losslessly).
+The block's own literal (never touched by any kernel) stays bit-exact `==`, unchanged.
+
+**`TestPunchTangentToTheSkirt::test_the_punchs_side_and_the_skirt_share_the_same_x_plane`**
+
+```python
+# before
+at_plane = Vp[:, 0] == skirt_x
+assert int(at_plane.sum()) == 2
+assert sorted(Vp[at_plane, 2].tolist()) == [-2.0, 2.0]
+
+# after
+at_plane = Vp[:, 0] == skirt_x
+assert int(at_plane.sum()) >= 2
+plane_zs = Vp[at_plane, 2]
+assert float(plane_zs.min()) == -2.0 and float(plane_zs.max()) == 2.0
+```
+
+The manifold-authored fixture (2 vertices, top+bottom rim only) still satisfies `>= 2` and
+still spans `[-2.0, 2.0]` exactly, so this loosening changes nothing on the manifold path
+(reconfirmed: 130/130 on this slice's own five-file run) — it accepts MeshLib's own
+retriangulation near the tangent contact (10 vertices, same span) without accepting a
+weaker CONTRACT: the whole edge (top rim to bottom rim) must still be tangent to the
+plane, whatever triangulation lands on it.
+
+### 4.6 · The after-table
+
+Both venvs, same harness as §1 (Engine A: production venv, `CASE_PREP_BOOLEAN_KERNEL`
+unset; Engine B: scratch venv, `CASE_PREP_BOOLEAN_KERNEL=meshlib`), same five suites, run
+individually (not combined) so each suite's own wall-clock is exact rather than apportioned:
+
+| suite | Engine A (manifold) | Engine B (meshlib) | A wall-clock | B wall-clock |
+|---|---|---|---|---|
+| `test_kernel.py` | 30 pass / 0 fail / 0 skip | 29 pass / 0 fail / 1 skip | 0.49 s | 0.63 s |
+| `test_csg.py` | 40 pass / 0 fail / 1 skip | 40 pass / 0 fail / 1 skip | 1.69 s | 1.07 s |
+| `test_csg_corpus.py` | 10 pass / 0 fail / 3 skip | 10 pass / 0 fail / 3 skip | 0.85 s | 1.25 s |
+| `test_degeneracy.py` | 11 pass / 0 fail / 0 skip | 11 pass / 0 fail / 0 skip | 0.59 s | 0.85 s |
+| `test_deliverables.py` | 39 pass / 0 fail / 2 skip | 39 pass / 0 fail / 2 skip | 2.48 s | 5.13 s |
+| **TOTAL** | **130 / 0 / 6** (136 collected) | **129 / 0 / 7** (136 collected) | **6.10 s** (sum; 5.13 s combined) | **8.93 s** (sum; 6.12 s combined) |
+
+**Engine A: 130/130, 0 failures — 2 pins ABOVE the §1 baseline (128), never fewer**: the
+new `TestSupportsTracked` class (`test_kernel.py`, 2 pins for the capability read itself)
+is the only net-new test surface; every pre-existing manifold-path assertion this slice
+touched is reconfirmed passing, unweakened, exactly as §4.5's own reconfirmation states for
+the two loosened preconditions specifically. The fast-lane equivalent (`-m "not slow"` on
+these five files, production venv) is likewise green: 130 passed, 2 skipped, 4 deselected.
+
+**Engine B: 129/136, 0 failures, 0 unclassified — down from 90/37/7 (§1) to 129/0/7.**
+Every one of the 37 failures §2 classified now passes, engine-aware, without weakening a
+single manifold-path assertion (§4.2's own branch structure keeps the `tracked=True` arm
+literal or, where geometry was reconfirmed unaffected by the strip mechanism, byte-for-byte
+the original code). The skip-count asymmetry (6 vs 7) is unchanged from §1 and remains the
+same one pin (`test_kernel.py::TestEngineSwitch`'s missing-package path, which correctly
+skips only where meshlib IS importable). The fast-lane equivalent under Engine B is
+likewise green: 129 passed, 3 skipped, 4 deselected. `test_meshlib_kernel.py` — outside
+this slice's own scope, untouched — still reads 25 passed / 2 skipped under Engine B and
+11 passed / 16 skipped under Engine A, unchanged from before this rework, confirming the
+`supports_tracked()` docstring additions to `meshlib_kernel.py` broke nothing there either.
+
+**Nothing resisted classification.** The task's own target — 0 unclassified failures under
+Engine B — is reached exactly: every failure in §2's table is now a passing, engine-aware
+assertion, and the two "beyond the three" shapes §4.4 found were classified (as the same
+guard-refusal decision, at two more call sites) rather than left as a residue.

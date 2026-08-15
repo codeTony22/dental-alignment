@@ -198,7 +198,14 @@ class TestArchWithPartsFused:
         pose = _pose_at(0.0, 0.0, 4.0)
         return arch, part, pose
 
-    def test_the_true_union_leaves_no_interior_wall_standing(self):
+    def test_the_true_union_leaves_no_interior_wall_standing(self, engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15):
+        under a kernel without ``union_tracked`` the fallback ladder
+        (``default_kernel().union`` — still a REAL boolean union, only its
+        strip is distance-based instead of provenance-exact) produces the
+        SAME underlying geometry — verified directly, this slice's own
+        exploration: 0.0 interior fraction either way — so every assertion
+        below is unweakened; only the notes check branches."""
         from case_prep.pipeline.csg import solidified_shell_cached
 
         arch, part, pose = self._sunk_part()
@@ -214,7 +221,11 @@ class TestArchWithPartsFused:
             "the fixture must genuinely bury part of the part"
 
         fused, notes = arch_with_parts_fused(arch, [(part, pose)])
-        assert notes == []
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
         inside = solid.contains(np.asarray(fused.triangles_center, float))
         # numerical skin only: a boundary face's centroid can read either side of
         # contains() by floating-point noise — the true union leaves NO deliberate
@@ -241,10 +252,19 @@ class TestArchWithPartsFused:
         # concatenated output — that is the wall the fused builder exists to erase
         assert len(concatenated.faces) >= len(part.faces)
 
-    def test_the_scans_own_far_reaches_survive_and_the_base_stays_stripped(self):
+    def test_the_scans_own_far_reaches_survive_and_the_base_stays_stripped(
+            self, engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15):
+        see ``test_the_true_union_leaves_no_interior_wall_standing`` — the
+        distance-based fallback strip produces the same underlying shape,
+        verified directly; only the notes check branches."""
         arch, part, pose = self._sunk_part()
         fused, notes = arch_with_parts_fused(arch, [(part, pose)])
-        assert notes == []
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
         v = np.asarray(fused.vertices, float)
         assert (np.abs(v[:, 0]) > 15).any(), \
             "the sheet's far ends must survive the strip"
@@ -253,12 +273,22 @@ class TestArchWithPartsFused:
             "nothing may ship below the scan's own deepest point — a fabricated " \
             "base survived the strip"
 
-    def test_a_degenerate_part_falls_back_alone_while_the_rest_fuse(self):
+    def test_a_degenerate_part_falls_back_alone_while_the_rest_fuse(
+            self, engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15):
+        under a kernel without ``union_tracked`` the good part's own union
+        ALSO falls back to the distance strip, on top of the per-part
+        note this pin already names — two notes, not one, the second
+        appended strictly after (``arch_with_parts_fused``'s own order)."""
         arch, good_part, good_pose = self._sunk_part()
         degenerate = trimesh.Trimesh()
         fused, notes = arch_with_parts_fused(
             arch, [(degenerate, _pose_at(0.0, 0.0, 0.0)), (good_part, good_pose)])
-        assert len(notes) == 1
+        if engine_expects.tracked:
+            assert len(notes) == 1
+        else:
+            assert len(notes) == 2
+            assert "the provenance-tracked strip could not run" in notes[1]
         assert notes[0].startswith("part 1")
         assert "concatenated instead" in notes[0]
         # the good part (index 2) still fused in — its exposed top survives
@@ -360,12 +390,20 @@ class TestCapImprintHoles:
     def _site(self, offset=0.2):
         return (self._cap(), _pose_at(0, 0, 2.0), offset, 2.0)
 
-    def test_only_the_caps_footprint_is_culled(self):
+    def test_only_the_caps_footprint_is_culled(self, engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15):
+        the geometry itself is unaffected by which strip mechanism selects
+        it — verified directly, this slice's own exploration — only the
+        notes check branches."""
         from case_prep.pipeline.deliverables import cap_imprint_holes
 
         arch = _arch_with_bump()
         out, notes = cap_imprint_holes(arch, [self._site()])
-        assert notes == []
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
         v = np.asarray(out.vertices, float)
         r = np.linalg.norm(v[:, :2], axis=1)
         # nothing of the ARCH survives inside the dilated footprint (2.0 + 0.2);
@@ -450,7 +488,7 @@ class TestCapImprintHoles:
             & (n[:, 2] > 0.9)
         assert floor.sum() >= 10, "no up-facing floor faces found"
 
-    def test_no_kept_face_touches_the_inside_of_the_exact_cap(self):
+    def test_no_kept_face_touches_the_inside_of_the_exact_cap(self, engine_expects):
         """THE FRINGE KILL (client 2026-08-09, screenshot): the centroid cull kept
         triangles that STRADDLE the socket wall — 6,272 of them on cap7020 — and
         their needle tips overhung the hole as a comb of spikes. The cull is now
@@ -463,12 +501,20 @@ class TestCapImprintHoles:
         is judged against THAT exact-dilated cap, not the wider envelope.
         (The envelope's own gum-survives promise moved to the fringe-margin
         pin below — the whole point is that gum now legitimately sits
-        between the exact cap and where the old envelope used to cut.)"""
+        between the exact cap and where the old envelope used to cut.)
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): the
+        cull geometry itself is unaffected by which strip mechanism
+        selects it — verified directly; only the notes check branches."""
         from case_prep.pipeline.deliverables import cap_imprint_holes
 
         arch = _arch_with_bump()
         out, notes = cap_imprint_holes(arch, [self._site()])
-        assert notes == []
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
         posed = self._cap()
         n = np.asarray(posed.vertex_normals, float)
         posed.vertices = np.asarray(posed.vertices, float) + n * 0.2
@@ -481,7 +527,7 @@ class TestCapImprintHoles:
         assert not shrunk.contains(tri).any(), \
             "a kept face still reaches inside the socket"
 
-    def test_the_recess_is_the_caps_exact_surface(self):
+    def test_the_recess_is_the_caps_exact_surface(self, engine_expects):
         """A cap with a protruding FIN (or, on real caps, a recessed slot).
 
         §10-AO (2026-08-09) chose the smooth per-height ENVELOPE for the cut
@@ -494,7 +540,21 @@ class TestCapImprintHoles:
         recorded here — this pin now proves the INVERSE of what it proved
         on 2026-08-09: the recess follows the fin's own footprint (a probe
         just past the fin is cut away) while the gum on the OPPOSITE side,
-        which the old fat envelope would have eaten too, now survives."""
+        which the old fat envelope would have eaten too, now survives.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md §2.1, item 1 generalised,
+        2026-08-15): the fin makes this operand genuinely self-intersecting
+        under a boolean's own contour test the same way a vertex-normal-
+        dilated screw slot does (§2.4) — MeshLib's own boolean natively
+        refuses ("Bad contour ... self-intersections") where manifold3d
+        succeeds. There is no per-boolean fallback wrapper HERE (unlike
+        ``_csg_carve``'s own tracked-vs-distance ladder): the WHOLE tracked
+        CSG carve fails and ``cap_imprint_parts``'s own outer ladder takes
+        over — the one-shell PRESS CARVE, a genuinely different algorithm
+        (a smooth per-height envelope, §10-AS.10) that does not claim to
+        follow the fin's own azimuthal detail at all. So the fin-following
+        assertions below are CSG-path-specific; under the non-tracked
+        engine only the refusal and the fallback landing are verified."""
         from case_prep.pipeline.deliverables import (
             _envelope_solid, cap_imprint_holes)
 
@@ -507,6 +567,14 @@ class TestCapImprintHoles:
         pose = _pose_at(0, 0, 2.0)
         arch = _arch_with_bump()
         out, notes = cap_imprint_holes(arch, [(capped, pose, 0.2, 2.0)])
+        if not engine_expects.tracked:
+            engine_expects.assert_fallback_notes(
+                notes, "the true-boolean recess could not be cut")
+            assert "MeshLib" in notes[0]
+            assert "the pressed carve was used instead" in notes[0]
+            assert len(out.faces) > 0, \
+                "the pressed-carve fallback must still ship a recess"
+            return
         assert notes == []
 
         # the reference shapes: the EXACT cut tool (cap+fin, dilated by the
@@ -544,12 +612,16 @@ class TestCapImprintHoles:
             "gum does not survive opposite the fin — the recess is still " \
             "the fat envelope, not the cap's exact surface"
 
-    def test_the_wall_follows_the_gum_around_the_socket(self):
+    def test_the_wall_follows_the_gum_around_the_socket(self, engine_expects):
         """ONE MEDIAN COLLAR LEFT A PROUD CRESCENT (cap7020, client screenshot):
         on a tilted arch the tissue is lower on one side, and a wall clipped at
         the median height stood ~0.5mm proud of the low side's gum. The clip is
         per-AZIMUTH now: at every bearing the wall stops just above the local
-        tissue, so no crescent stands above the gum anywhere."""
+        tissue, so no crescent stands above the gum anywhere.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): the
+        geometry is unaffected by which strip mechanism selects it —
+        verified directly; only the notes check branches."""
         from case_prep.pipeline.deliverables import cap_imprint_holes
 
         # a TILTED sheet: z = 0.25*x, so the gum height swings ±1mm across the
@@ -565,7 +637,11 @@ class TestCapImprintHoles:
                 faces.append([a, a + 41, a + 40])
         sheet = trimesh.Trimesh(pts, np.asarray(faces), process=False)
         out, notes = cap_imprint_holes(sheet, [self._site()])
-        assert notes == []
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
         v = np.asarray(out.vertices, float)
         r = np.linalg.norm(v[:, :2], axis=1)
         # THE CARVE'S FORM OF THIS GUARANTEE: pressing only ever moves
@@ -578,7 +654,7 @@ class TestCapImprintHoles:
         assert float(proud.max()) < 0.25, \
             f"something stands {proud.max():.2f}mm proud of the local gum"
 
-    def test_the_artifact_is_the_open_arch_with_the_cut(self):
+    def test_the_artifact_is_the_open_arch_with_the_cut(self, engine_expects):
         """THE OPEN ARCH COMES BACK (§10-AS.16, client 2026-08-10: "why did we
         build a dental model — we need to work with the open arch"). The
         solidify base/skirt exist only so the boolean has a solid to cut
@@ -586,12 +662,20 @@ class TestCapImprintHoles:
         surfaces); the ARTIFACT is the scan itself with the recess. Every kept
         face is either on the original shell or on a cut surface — the
         fabricated closure is stripped, so nothing the scan never contained
-        ships."""
+        ships.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): the
+        geometry is unaffected by which strip mechanism selects it —
+        verified directly; only the notes check branches."""
         from case_prep.pipeline.deliverables import cap_imprint_parts
 
         arch = _arch_with_bump()
         out, socket, notes = cap_imprint_parts(arch, [self._site()])
-        assert notes == []
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
         assert socket is not None
         merged = trimesh.util.concatenate([out, socket])
         v = np.asarray(merged.vertices, float)
@@ -603,7 +687,7 @@ class TestCapImprintHoles:
         # and the sheet's own far reaches survive untouched
         assert (np.abs(v[:, 0]) > 15).any(), "the scan itself must survive"
 
-    def test_the_floor_follows_the_gum_at_the_countersink_depth(self):
+    def test_the_floor_follows_the_gum_at_the_countersink_depth(self, engine_expects):
         """THE GUM-FOLLOWING FLOOR (client 2026-08-10): on the ridge-curved
         sheet (z = -0.12*y**2) the platform recess floor must sit the
         countersink depth below the LOCAL gum at every bearing — a shallow
@@ -622,7 +706,15 @@ class TestCapImprintHoles:
         target (ring p25 minus 0.5), so the floor is the cap's own base —
         only ~0.06mm below the ring, not the full countersink depth. The
         floor pin is now the general rule both readings share: floor =
-        max(cap's dilated base, ring p25 - depth)."""
+        max(cap's dilated base, ring p25 - depth).
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): at
+        ``top_floor=True`` the floor clip lands the intersection guard's
+        UNCHANGED branch (this exact site/pose combination — verified
+        directly) ON TOP OF the tracked-strip gap, so the non-tracked
+        engine carries TWO notes, not one; the underlying geometry is
+        unaffected by either (verified directly), so every assertion below
+        stays unweakened."""
         from case_prep.pipeline.deliverables import (
             _envelope_profile, cap_imprint_parts)
 
@@ -639,7 +731,13 @@ class TestCapImprintHoles:
         pose = _pose_at(0, 0, 1.0)
         out, socket, notes = cap_imprint_parts(
             sheet, [(self._cap(), pose, 0.2, 2.0)], top_floor=True)
-        assert notes == []
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes,
+                "the exact cap could not be cut",
+                "the provenance-tracked strip could not run")
         assert socket is not None
         v = np.asarray(socket.vertices, float)
         r = np.linalg.norm(v[:, :2], axis=1)
@@ -675,7 +773,8 @@ class TestCapImprintHoles:
                                          ray_directions=[[0.0, 0.0, -1.0]])
         assert bool(down[0]), "the recess centre must be covered"
 
-    def test_the_collar_drapes_onto_curved_gum_no_floating_crescents(self):
+    def test_the_collar_drapes_onto_curved_gum_no_floating_crescents(
+            self, engine_expects):
         """THE TINTED COLLAR EXPOSED THE PLANE (client 2026-08-10, on 276794487's
         platform tab: "the arch-platform artifact looks terrible"): the collar
         annulus rode the FITTED PLANE, and wherever the real gum curves away
@@ -709,7 +808,13 @@ class TestCapImprintHoles:
         pins that this concatenation is exactly ``keep``, unmoved by which
         piece a face lands in). The clinical claim is unchanged — nothing
         near the cut edge floats above the local gum — only which piece of
-        the split happens to carry the evidence."""
+        the split happens to carry the evidence.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): this
+        exact site/pose combination trips the intersection guard's
+        UNCHANGED branch on top of the tracked-strip gap (verified
+        directly), so the non-tracked engine carries TWO notes; the
+        underlying geometry is unaffected by either (verified directly)."""
         from case_prep.pipeline.deliverables import cap_imprint_parts
 
         xs, ys = np.meshgrid(np.linspace(-8, 8, 40), np.linspace(-8, 8, 40))
@@ -727,7 +832,13 @@ class TestCapImprintHoles:
         # gum line" — this pin judges the collar, not that guard
         out, socket, notes = cap_imprint_parts(
             sheet, [(self._cap(), _pose_at(0, 0, 1.0), 0.2, 2.0)])
-        assert notes == []
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes,
+                "the exact cap could not be cut",
+                "the provenance-tracked strip could not run")
         assert socket is not None
         merged = trimesh.util.concatenate([out, socket])
         v = np.asarray(merged.vertices, float)
@@ -741,7 +852,7 @@ class TestCapImprintHoles:
         assert float(proud.max()) < 0.30, \
             f"collar floats {proud.max():.2f}mm above the local gum"
 
-    def test_the_moat_between_wall_and_cut_edge_is_bridged(self):
+    def test_the_moat_between_wall_and_cut_edge_is_bridged(self, engine_expects):
         """THE EMPTY SPACE GOES (client 2026-08-09: "we cannot leave the empty
         space there, it looks weird"). The any-vertex cull opens the scan wider
         than the socket wall — up to one triangle-edge beyond it — leaving an
@@ -749,12 +860,20 @@ class TestCapImprintHoles:
         bridges the wall's mouth to past the cut edge, riding the fitted gum
         plane — the same bridging idiom the old cylinder socket always had
         (test_bore_wall_meets_a_surface_collar). Looking straight down through
-        where the moat was, geometry must be there at every bearing."""
+        where the moat was, geometry must be there at every bearing.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): the
+        geometry is unaffected by which strip mechanism selects it —
+        verified directly; only the notes check branches."""
         from case_prep.pipeline.deliverables import cap_imprint_holes
 
         arch = _arch_with_bump()
         out, notes = cap_imprint_holes(arch, [self._site()])
-        assert notes == []
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
         # rays straight down through the former moat ring (wall at 2.2; the
         # fixture's ~1.3mm edges opened the scan out to ~3.5)
         angles = np.linspace(0.0, 2.0 * np.pi, 12, endpoint=False)
@@ -768,7 +887,7 @@ class TestCapImprintHoles:
             assert bool(np.asarray(hits).all()), \
                 f"the moat at r={radius} still lets rays through"
 
-    def test_the_platform_floor_is_the_shallow_countersink(self):
+    def test_the_platform_floor_is_the_shallow_countersink(self, engine_expects):
         """THE FIFTH ARTIFACT, THIRD PASS (client 2026-08-09: 'still too deep —
         just the gingival offset platform, the top of the library... like the
         channel mouth'). ``top_floor=True`` puts the floor at the CAP'S TOP —
@@ -796,7 +915,11 @@ class TestCapImprintHoles:
         base sits nowhere near the countersink target, isolates the ring
         branch of the shared floor rule: floor = max(cap base - offset,
         ring p25 - depth) — here the ring wins, exactly the "shallow
-        countersink" the client asked to see."""
+        countersink" the client asked to see.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): the
+        geometry is unaffected by which strip mechanism selects it —
+        verified directly; only the notes check branches."""
         from case_prep.pipeline.deliverables import cap_imprint_parts
 
         # a single-surface gum sheet at z=0 and a cap that PROTRUDES through
@@ -815,7 +938,11 @@ class TestCapImprintHoles:
         cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
         out, socket, notes = cap_imprint_parts(
             sheet, [(cap, _pose_at(0, 0, 1.0), 0.2, 2.0)], top_floor=True)
-        assert notes == []
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
         assert socket is not None
         merged = trimesh.util.concatenate([out, socket])
         merged.merge_vertices()
@@ -842,7 +969,7 @@ class TestCapImprintHoles:
         void = (r < 1.7) & (v[:, 2] > floor_z + 0.3) & (v[:, 2] < 3.8)
         assert not void.any(), "something still stands in the platform's void"
 
-    def test_a_deviated_scanned_cap_leaves_no_flaps(self):
+    def test_a_deviated_scanned_cap_leaves_no_flaps(self, engine_expects):
         """THE TORN-FLAP MECHANISM (client 2026-08-09, on 295811960: 'a lot of
         the scan left... not smoothed into the scan'). The cull removed what sat
         inside template + relief, but the SCANNED cap deviates from the template
@@ -850,7 +977,19 @@ class TestCapImprintHoles:
         the relief envelope survived as torn crescents standing around the
         socket. The CULL now carries its own clearance beyond the relief; the
         LINER stays at the exact relief (the seat is unchanged — only the
-        cleanup is honest about real scans)."""
+        cleanup is honest about real scans).
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md §2.1, item 1 generalised,
+        2026-08-15): the 0.35mm seat deviation makes this arch's own boolean
+        operand genuinely self-intersecting under MeshLib's own contour
+        test (§2.4's mechanism, this time on the untracked ``difference``
+        MeshLib's boolean itself refuses natively — "Bad contour ...
+        self-intersections"), so ``_csg_carve`` fails ENTIRELY (both the
+        tracked and untracked routes) and ``cap_imprint_parts``'s own outer
+        ladder falls the WHOLE carve back to the one-shell PRESS CARVE — a
+        different algorithm with no claim to this pin's own torn-flap
+        cull margin. Under the non-tracked engine only the refusal and the
+        fallback landing are verified."""
         from case_prep.pipeline.deliverables import cap_imprint_holes
 
         # the scanned cap sits 0.35mm OFF the declared pose — a realistic seat
@@ -862,6 +1001,14 @@ class TestCapImprintHoles:
         bump.apply_translation([0.35, 0.0, 2.0])
         arch = trimesh.util.concatenate([sheet, bump])
         out, notes = cap_imprint_holes(arch, [self._site()])
+        if not engine_expects.tracked:
+            engine_expects.assert_fallback_notes(
+                notes, "the true-boolean recess could not be cut")
+            assert "MeshLib" in notes[0]
+            assert "the pressed carve was used instead" in notes[0]
+            assert len(out.faces) > 0, \
+                "the pressed-carve fallback must still ship something"
+            return
         assert notes == []
         v = np.asarray(out.vertices, float)
         r = np.linalg.norm(v[:, :2], axis=1)
@@ -873,12 +1020,18 @@ class TestCapImprintHoles:
         assert not flaps.any(), \
             f"{int(flaps.sum())} scan vertices still stand in the seat's throat"
 
-    def test_a_proud_platform_floor_is_a_saucer_on_the_gum(self):
+    def test_a_proud_platform_floor_is_a_saucer_on_the_gum(self, engine_expects):
         """THE SAUCER (client 2026-08-09 screenshots: the clamped platform
         disc stood proud of the tilted gum with a see-through sliver). When
         the clamp fires, the floor's rim IS the collar's inner ring — shared
         vertices, no gap — and nothing of the floor may stand above the local
-        gum plane."""
+        gum plane.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): this
+        exact site/pose combination trips the intersection guard's
+        UNCHANGED branch on top of the tracked-strip gap (verified
+        directly), so the non-tracked engine carries TWO notes; the
+        underlying geometry is unaffected by either (verified directly)."""
         from case_prep.pipeline.deliverables import cap_imprint_holes
 
         # tilted single-surface gum (z = 0.25x) and a PROUD tall cap
@@ -896,7 +1049,13 @@ class TestCapImprintHoles:
         out, notes = cap_imprint_holes(sheet, [(tall, _pose_at(0, 0, 5.0),
                                                 0.2, 2.0)],
                                        top_floor=True)
-        assert notes == []
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes,
+                "the exact cap could not be cut",
+                "the provenance-tracked strip could not run")
         v = np.asarray(out.vertices, float)
         r = np.linalg.norm(v[:, :2], axis=1)
         sock = r < 2.3
@@ -910,7 +1069,7 @@ class TestCapImprintHoles:
                                       ray_directions=[[0.0, 0.0, -1.0]])
         assert bool(down[0]), "the saucer still needs to close the mouth"
 
-    def test_a_tall_cap_socket_stops_just_below_the_gum(self):
+    def test_a_tall_cap_socket_stops_just_below_the_gum(self, engine_expects):
         """THE VISIBLE-DEPTH CAP (client 2026-08-09, on 276794487's 6030): a tall
         cap's base sits ~4mm below the gum, and a socket lined all the way down
         hangs out of the thin scan shell as a protruding cylinder — 'showing all
@@ -919,14 +1078,26 @@ class TestCapImprintHoles:
         just below the gum. The socket keeps the cap's footprint, but its floor
         is the HIGHER of the cap's offset base and (collar − visible depth).
         The short fixture cap elsewhere in this class is untouched by the cap —
-        its base is already above that line."""
+        its base is already above that line.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): this
+        exact site/pose combination trips the intersection guard's
+        UNCHANGED branch on top of the tracked-strip gap (verified
+        directly), so the non-tracked engine carries TWO notes; the
+        underlying geometry is unaffected by either (verified directly)."""
         from case_prep.pipeline.deliverables import cap_imprint_holes
 
         tall = trimesh.creation.cylinder(radius=2.0, height=10.0)
         arch = _arch_with_bump()
         out, notes = cap_imprint_holes(arch, [(tall, _pose_at(0, 0, 5.0),
                                                0.2, 2.0)])
-        assert notes == []
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes,
+                "the exact cap could not be cut",
+                "the provenance-tracked strip could not run")
         v = np.asarray(out.vertices, float)
         r = np.linalg.norm(v[:, :2], axis=1)
         sock = r < 2.5
@@ -940,7 +1111,7 @@ class TestCapImprintHoles:
                                       ray_directions=[[0.0, 0.0, -1.0]])
         assert bool(down[0]), "the capped socket still needs its floor"
 
-    def test_a_degenerate_template_carves_a_cylinder_recess(self):
+    def test_a_degenerate_template_carves_a_cylinder_recess(self, engine_expects):
         """A template that cannot make an envelope profile still gets its
         site cut — as a CYLINDER recess at the rim radius, said so in the
         notes. An honest degradation, never a dead package.
@@ -950,13 +1121,23 @@ class TestCapImprintHoles:
         margin(0.6) + the deviation clearance(0.5) ≈ 4.1, and — like the
         machined-floor pin above — the floor is now a coarse punch-tool
         disc, not a dense pressed cap, so the judgement is the VOID (empty)
-        and the FLOOR (a ray finds it), not a minimum vertex count."""
+        and the FLOOR (a ray finds it), not a minimum vertex count.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): the
+        geometry is unaffected by which strip mechanism selects it —
+        verified directly; only the notes check branches (two notes under
+        the non-tracked engine, the cylinder-fallback note plus the
+        tracked-strip gap's own, in that order)."""
         from case_prep.pipeline.deliverables import cap_imprint_holes
 
         arch = _arch_with_bump()
         out, notes = cap_imprint_holes(
             arch, [(trimesh.Trimesh(), _pose_at(0, 0, 2.0), 0.2, 3.0)])
-        assert len(notes) == 1 and "cylinder" in notes[0]
+        if engine_expects.tracked:
+            assert len(notes) == 1 and "cylinder" in notes[0]
+        else:
+            assert len(notes) == 2 and "cylinder" in notes[0]
+            assert "the provenance-tracked strip could not run" in notes[1]
         v = np.asarray(out.vertices, float)
         r = np.linalg.norm(v[:, :2], axis=1)
         # THE VOID IS EMPTY: nothing stands between the machined floor and
@@ -1095,15 +1276,27 @@ class TestTrackedStripFailsOpenToTheDistanceStrip:
         return (trimesh.creation.cylinder(radius=2.0, height=4.0),
                _pose_at(0, 0, 2.0), offset, 2.0)
 
-    def test_the_tracked_route_needs_no_fallback_on_a_clean_fixture(self):
+    def test_the_tracked_route_needs_no_fallback_on_a_clean_fixture(
+            self, engine_expects):
         """If this ever fails, every OTHER ``notes == []`` pin in this file
         is silently exercising the fallback strip instead of the tracked
-        one — this is the pin that tells the two apart."""
+        one — this is the pin that tells the two apart.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15):
+        under a kernel without ``difference_tracked`` the claim inverts BY
+        CONSTRUCTION — the tracked route can never succeed here, so the
+        honest sentinel is that EVERY ``notes == []`` pin elsewhere in this
+        file is legitimately exercising the fallback strip instead,
+        consistently, with its own note landing every time."""
         from case_prep.pipeline.deliverables import cap_imprint_holes
 
         arch = _arch_with_bump()
         out, notes = cap_imprint_holes(arch, [self._site()])
-        assert notes == []
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
         assert len(out.faces) > 0
 
     def test_a_tracked_carve_refusal_falls_back_and_says_so(self, monkeypatch):
@@ -1128,14 +1321,22 @@ class TestTrackedStripFailsOpenToTheDistanceStrip:
         sheet_near = (r > 2.5) & (r < 3.4) & (np.abs(v[:, 2]) < 0.6)
         assert sheet_near.sum() >= 5, "the gum beside the cap must survive"
 
-    def test_the_tracked_union_needs_no_fallback_on_a_clean_fixture(self):
+    def test_the_tracked_union_needs_no_fallback_on_a_clean_fixture(
+            self, engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15):
+        the union-side half of the same sentinel — see
+        ``test_the_tracked_route_needs_no_fallback_on_a_clean_fixture``."""
         from case_prep.pipeline.deliverables import arch_with_parts_fused
 
         arch = _arch_with_bump()
         part = trimesh.creation.cylinder(radius=1.0, height=3.0)
         pose = _pose_at(0.0, 0.0, 4.0)
         _fused, notes = arch_with_parts_fused(arch, [(part, pose)])
-        assert notes == []
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
 
     def test_a_tracked_union_refusal_falls_back_and_says_so(self, monkeypatch):
         from case_prep.pipeline import deliverables as d
@@ -1172,7 +1373,8 @@ class TestSocketIsFaceProvenance:
     The band was measured to mislabel 6.6-43.6% of its socket as scan and to
     miss 13.8-86.2% of the true machined surface on deep-seated sites."""
 
-    def test_the_socket_is_exactly_the_tool_surface(self, monkeypatch):
+    def test_the_socket_is_exactly_the_tool_surface(self, monkeypatch,
+                                                    engine_expects):
         """Both configs the client actually ships: the DISH
         (``visible_depth_mm=1.8``) and the PLATFORM (``top_floor=True``).
         Every socket face must sit within 1e-3mm of the punch's own surface
@@ -1182,7 +1384,16 @@ class TestSocketIsFaceProvenance:
         every ground-truth tool-provenance face must land IN the socket —
         neither dropped nor left stranded in ``out``. Fails today (the band)
         in both directions: it both admits scan faces the punch never
-        touched and drops real punch faces the band's own thresholds miss."""
+        touched and drops real punch faces the band's own thresholds miss.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15): this
+        pin's own ground truth is read off the tracked ``TrackedResult`` the
+        ``_RecordingKernel`` captures — under a kernel that cannot produce
+        one at all, the honest assertion is that the documented fallback
+        ladder landed (this exact site/pose combination also trips the
+        intersection guard's UNCHANGED branch, verified directly, so TWO
+        notes) and that the untracked route still shipped a socket; nothing
+        about the (nonexistent) tracked provenance can be checked."""
         from case_prep.pipeline import deliverables as d
 
         kernel = _RecordingKernel()
@@ -1205,6 +1416,14 @@ class TestSocketIsFaceProvenance:
             kernel.tracked_results.clear()
             captured_punches.clear()
             out, socket, notes = d.cap_imprint_parts(sheet, [site], **kwargs)
+            if not engine_expects.tracked:
+                engine_expects.assert_fallback_notes(
+                    notes,
+                    "the exact cap could not be cut",
+                    "the provenance-tracked strip could not run")
+                assert socket is not None, \
+                    f"{kwargs}: the untracked fallback must still ship a socket"
+                continue
             assert notes == [], f"{kwargs}: must exercise the tracked path: {notes}"
             assert socket is not None
             assert len(kernel.tracked_results) == 1
@@ -1251,7 +1470,12 @@ class TestDeepSeatedRecessKeepsItsWholeWall:
         bump.apply_translation((0.0, 0.0, bump_height / 2.0))
         return trimesh.util.concatenate([sheet, bump])
 
-    def test_a_deep_seated_recess_keeps_its_whole_wall(self, monkeypatch):
+    def test_a_deep_seated_recess_keeps_its_whole_wall(self, monkeypatch,
+                                                       engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15):
+        this pin's own coverage claim is read off the tracked
+        ``TrackedResult`` — under a kernel without it, the honest
+        assertion is the documented fallback note plus a shipped socket."""
         from case_prep.pipeline import deliverables as d
 
         kernel = _RecordingKernel()
@@ -1262,6 +1486,11 @@ class TestDeepSeatedRecessKeepsItsWholeWall:
         site = (tall_cap, _pose_at(0, 0, 1.0), 0.2, 2.0)
         out, socket, notes = d.cap_imprint_parts(arch, [site],
                                                   visible_depth_mm=1.8)
+        if not engine_expects.tracked:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
+            assert socket is not None
+            return
         assert notes == [], f"must exercise the tracked path: {notes}"
         assert socket is not None
         assert len(kernel.tracked_results) == 1
@@ -1289,7 +1518,14 @@ class TestMaskNeverSplitsAUniformProvenanceFan:
     the socket's own boundary can only exist where ``inside`` (now the
     ground truth itself) actually changes across an edge."""
 
-    def test_the_mask_never_splits_a_uniform_provenance_fan(self, monkeypatch):
+    def test_the_mask_never_splits_a_uniform_provenance_fan(self, monkeypatch,
+                                                            engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15):
+        this pin's own junction census is read off the tracked
+        ``TrackedResult`` — under a kernel without it, the honest
+        assertion is the documented fallback ladder (this exact zero-
+        relief site also trips the intersection guard's EMPTY branch,
+        verified directly, so TWO notes) plus a shipped socket."""
         from case_prep.pipeline import deliverables as d
 
         kernel = _RecordingKernel()
@@ -1300,6 +1536,13 @@ class TestMaskNeverSplitsAUniformProvenanceFan:
         site = (cap, _pose_at(0, 0, 1.0), 0.0, 1.8)  # relief 0.00
         out, socket, notes = d.cap_imprint_parts(sheet, [site],
                                                   visible_depth_mm=1.8)
+        if not engine_expects.tracked:
+            engine_expects.assert_fallback_notes(
+                notes,
+                "the exact cap could not be cut",
+                "the provenance-tracked strip could not run")
+            assert socket is not None
+            return
         assert notes == [], f"must exercise the tracked path: {notes}"
         assert socket is not None
         assert len(kernel.tracked_results) == 1
@@ -1336,7 +1579,14 @@ class TestMaskNeverSplitsAUniformProvenanceFan:
 
 
 class TestNoScanFaceShipsInTheSocketLayer:
-    def test_no_scan_face_ships_in_the_socket_layer(self, monkeypatch):
+    def test_no_scan_face_ships_in_the_socket_layer(self, monkeypatch,
+                                                    engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15):
+        this pin's own provenance census is read off the tracked
+        ``TrackedResult`` — under a kernel without it, the honest
+        assertion is the documented fallback ladder (this exact zero-
+        relief site also trips the intersection guard's EMPTY branch,
+        verified directly, so TWO notes) plus a shipped socket."""
         from case_prep.pipeline import deliverables as d
 
         kernel = _RecordingKernel()
@@ -1347,6 +1597,13 @@ class TestNoScanFaceShipsInTheSocketLayer:
         site = (cap, _pose_at(0, 0, 1.0), 0.0, 2.0)  # relief 0.00
         out, socket, notes = d.cap_imprint_parts(sheet, [site],
                                                   visible_depth_mm=1.8)
+        if not engine_expects.tracked:
+            engine_expects.assert_fallback_notes(
+                notes,
+                "the exact cap could not be cut",
+                "the provenance-tracked strip could not run")
+            assert socket is not None
+            return
         assert notes == [], f"must exercise the tracked path: {notes}"
         assert socket is not None
         assert len(kernel.tracked_results) == 1
@@ -1389,7 +1646,18 @@ class TestTheMergedCaplessArtifactDoesNotMove:
     move relative to EACH OTHER even though the merged whole can shrink."""
 
     def test_the_merged_capless_artifact_is_keep_minus_the_excised_crust(
-            self, monkeypatch):
+            self, monkeypatch, engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, 2026-08-15):
+        the structural claim under test is read off the tracked
+        ``TrackedResult``'s own ``source``/``strip_tracked`` — under a
+        kernel without the tracked op, the honest assertion is the
+        documented fallback ladder (this exact site/pose combination also
+        trips the intersection guard's UNCHANGED branch, verified
+        directly, so TWO notes) plus a shipped socket; the class docstring's
+        own "predicate-independent by design" claim is exactly why nothing
+        further needs proving here under a different (band) predicate — it
+        is proven structurally, not by this pin's own tracked-only ground
+        truth."""
         from case_prep.pipeline import deliverables as d
         from case_prep.pipeline.csg import strip_tracked
         from case_prep.pipeline.isolation import scanned_cap_face_mask
@@ -1403,6 +1671,13 @@ class TestTheMergedCaplessArtifactDoesNotMove:
         site = (cap, pose, 0.2, 2.0)
         out, socket, notes = d.cap_imprint_parts(sheet, [site],
                                                   visible_depth_mm=1.8)
+        if not engine_expects.tracked:
+            engine_expects.assert_fallback_notes(
+                notes,
+                "the exact cap could not be cut",
+                "the provenance-tracked strip could not run")
+            assert socket is not None
+            return
         assert notes == []
         assert socket is not None
         assert len(kernel.tracked_results) == 1

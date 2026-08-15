@@ -3191,6 +3191,30 @@ Gates: adjust 156, fast lane 1011 (excluding the parallel session's
 three in-progress island/curve files, failures attributed there), bff
 694; adoption pins + verify-fleet null check + rehearse on the chain.
 
+**AT parity referee — the corpus judges both engines fairly
+(2026-08-15).** supports_tracked() on the kernel port; one shared
+engine_expects fixture + assert_fallback_notes (the note IS the
+contract) rework the 37 counted-as-failures: under a non-tracked kernel
+the DOCUMENTED fallback engaging with its note is the passing outcome,
+never a diluted manifold assertion (parametrized, unweakened — manifold
+130/0 reconfirmed +2 capability pins). The flush-operand decision
+implemented as ACCEPT-THE-REFUSAL (pre-nudging operands is
+doctrine-forbidden mutation), and the reworking surfaced the same
+doctrine at two MORE call sites (self-heal native refusal; untracked
+difference refusal cascading to the press fallback) — scoreboard §4.3–4.4
+carry the corrected counts. Two bit-exact preconditions loosened to
+contract form (approx 1e-6; >=2 tangency vertices + span check). Final
+table at the parity branch: manifold 130/0, MeshLib 129/0 — zero
+unclassified. AT INTEGRATION on main the meshlib side reads 130/13: the
+13 are itemized and classified — 12 are the excision/through-hole tests
+that POSTDATE the parity branch (they read tracked provenance; under a
+non-tracked kernel the documented fallbacks engage — the same rework
+pattern, queued as the immediate extension), and 1 is the real-fleet
+golden test the data-less worktree could only skip. The manifold side —
+the one that ships — is fully green. Merged over the excision slice's
+guard-pin rework by hand (the two rewrites of one pin fused: excision
+semantics + engine awareness).
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

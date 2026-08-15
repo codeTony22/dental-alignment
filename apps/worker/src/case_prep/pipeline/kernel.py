@@ -144,7 +144,31 @@ class BooleanKernel(Protocol):
     base against its tools (the arch cut, the closed model), ``intersection``
     of exactly two operands (the floor clip) — and ``is_valid_solid``, the
     watertightness question every one of those calls implicitly depends on
-    its operands answering truthfully."""
+    its operands answering truthfully.
+
+    CAPABILITY INTROSPECTION (kernel-parity scoreboard, 2026-08-15 — the
+    "try both engines for real" slice's own follow-up): ``supports_tracked()``
+    lets a caller — today, only the referee corpus itself — branch honestly
+    on whether THIS kernel can answer ``difference_tracked``/``union_tracked``
+    rather than try/except-probing the tracked ops to find out. It is a
+    query about ``difference_tracked``/``union_tracked`` specifically, named
+    for exactly what it answers; it is not a general "how capable is this
+    kernel" score. In THIS repo, today, there are exactly two concrete
+    kernels, and ``MeshLibKernel`` happens to be uniformly the reduced one
+    across every axis the referee corpus exercises against it — tracked
+    provenance (this flag's own literal subject), ``minkowski_sphere``
+    (raises ``NotImplementedError`` there too), and native robustness on
+    certain self-intersecting/coplanar operands its boolean refuses outright
+    rather than silently mishandling (the guard, and MeshLib's own
+    ``res.valid()`` check). The referee suites' own ``engine_expects``
+    fixture (``tests/conftest.py``) reads this ONE flag and reuses it as the
+    general "is this the full-fidelity reference kernel, or the reduced
+    evaluation adapter" signal for all three axes, since a second, distinct
+    capability read would be pure redundancy while exactly two kernels with
+    exactly this capability profile exist — a future THIRD kernel with a
+    genuinely different profile (say, tracked ops but not minkowski, or vice
+    versa) would need a second, narrower capability read at that point, not
+    before."""
 
     def union(self, meshes: Sequence[trimesh.Trimesh]) -> trimesh.Trimesh:
         ...
@@ -173,6 +197,9 @@ class BooleanKernel(Protocol):
 
     def minkowski_sphere(self, mesh: trimesh.Trimesh, radius: float,
                         subdivisions: int = 3) -> trimesh.Trimesh:
+        ...
+
+    def supports_tracked(self) -> bool:
         ...
 
 
@@ -448,6 +475,13 @@ class ManifoldKernel:
             raise ValueError(
                 f"manifold3d minkowski_sum failed ({result.status()})")
         return _mesh_from_gl(result.to_mesh())
+
+    def supports_tracked(self) -> bool:
+        """True — ``difference_tracked``/``union_tracked`` above are real,
+        manifold3d-originalID-backed implementations, not a raise. See
+        ``BooleanKernel.supports_tracked``'s own docstring for what this
+        flag is (and is not) a proxy for."""
+        return True
 
 
 _ENGINE_ENV_VAR = "CASE_PREP_BOOLEAN_KERNEL"
