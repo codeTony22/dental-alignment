@@ -38,6 +38,7 @@ from case_prep.adapters.cap_detection import measure_rim_diameter
 from case_prep.application.cases import CaseRecord
 from case_prep.domain.cap_catalog import propose_variant
 from case_prep.domain.capture_gate import assess_capture
+from case_prep.domain.island import segment_island
 from case_prep.pipeline.auto_flow import _crowns_frame, _fit_circle_xy, propose_sites
 
 # The demo's crop fallback: when no rim is measurable at a site, capture is assessed at
@@ -325,6 +326,29 @@ def _capture_at(ctx: CaptureContext, centre_xy, rim_r_hint: float) -> dict:
     return assess_capture(ctx.local_points, centre_xy, rim_r_hint).to_dict()
 
 
+def island_curve_honesty(local_points, centre_xy, radius_hint: float
+                         ) -> Tuple[Optional[float], Optional[Tuple[float, ...]]]:
+    """Shadow-island DP honesty for Intake (P4.1 leftover). Reports
+    ``(dp_gap_fraction, bearing_margin)`` when the island converges; otherwise
+    ``(None, None)``. An exception is swallowed — the same posture
+    ``auto_flow``'s SHADOW_ISLAND row already keeps: a shadow must never take
+    down detect, and absence is None, never 0.0. Does not move a pose."""
+    try:
+        reading = segment_island(np.asarray(local_points, float),
+                                 np.asarray(centre_xy, float),
+                                 radius_hint=float(radius_hint))
+    except Exception:
+        return None, None
+    if not reading.converged:
+        return None, None
+    gap = reading.dp_gap_fraction
+    margin = reading.bearing_margin
+    return (
+        (float(gap) if gap is not None else None),
+        (tuple(float(x) for x in margin) if margin is not None else None),
+    )
+
+
 def detect(case: CaseRecord) -> DetectionResult:
     """Ranked cap-site proposals + per-site capture assessments for one case —
     deterministic given the case (the detector and the gate own no randomness)."""
@@ -341,6 +365,7 @@ def detect(case: CaseRecord) -> DetectionResult:
         seed = ctx.frame.T @ (np.asarray(p.center, float) - ctx.origin)
         dia = measure_rim_diameter(ctx.local_points, ctx.xy_tree, seed)
         hint = dia / 2.0 if dia else FALLBACK_RIM_RADIUS_MM
+        gap, margin = island_curve_honesty(ctx.local_points, seed[:2], hint)
         proposals.append(DetectedSite(
             center=tuple(float(c) for c in p.center),
             void_ratio=float(p.void_ratio),
@@ -348,9 +373,8 @@ def detect(case: CaseRecord) -> DetectionResult:
             tooth_guess=tooth_guess_for(p.center, case.suggested_sites),
             capture=_capture_at(ctx, seed[:2], hint),
             density_prior_used=bool(p.density_prior_used),
-            # island has not run at Intake; DP fields stay None (honest absence)
-            dp_gap_fraction=None,
-            bearing_margin=None,
+            dp_gap_fraction=gap,
+            bearing_margin=margin,
         ))
 
     variant_table = _variant_table_for(case)

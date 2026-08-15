@@ -26,6 +26,7 @@ from case_prep.application.detection import (CaptureContext, CandidateEvidence,
                                              ScanUnreadable, SuggestedSiteCapture,
                                              candidate_evidence_for,
                                              capture_context, detect,
+                                             island_curve_honesty,
                                              jaw_from_crown_axis, measured_cap_height_mm,
                                              site_capture_inputs, tooth_guess_for)
 
@@ -251,6 +252,40 @@ class TestSuggestedSiteCaptureEvidenceFields:
         assert site.density_prior_used is False
         assert site.dp_gap_fraction is None
         assert site.bearing_margin is None
+
+
+class TestIslandCurveHonesty:
+    """P4.1 leftover: Intake can serve DP gap / bearing margin only if detect
+    actually reads the shadow island. The helper reports, never seats — a
+    refusal or exception is honest None, never 0.0."""
+
+    def test_a_clean_synthetic_cap_reports_gap_and_margin(self):
+        from test_island import TRUE_CENTRE, TRUE_RIM_R, cap_and_gingiva_cloud
+        gap, margin = island_curve_honesty(
+            cap_and_gingiva_cloud(), TRUE_CENTRE, TRUE_RIM_R)
+        assert gap is not None
+        assert 0.0 <= gap <= 1.0
+        assert margin is not None
+        assert len(margin) >= 8
+        assert all(isinstance(x, float) for x in margin)
+
+    def test_an_empty_cloud_is_honest_none_never_zero(self):
+        gap, margin = island_curve_honesty(np.zeros((0, 3)), [0.0, 0.0], 2.5)
+        assert gap is None
+        assert margin is None
+
+    def test_an_island_exception_does_not_take_down_detect(self, monkeypatch):
+        import case_prep.application.detection as det
+
+        def boom(*_a, **_k):
+            raise RuntimeError("shadow must never take down detect")
+
+        monkeypatch.setattr(det, "segment_island", boom)
+        gap, margin = island_curve_honesty(
+            np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+            [0.0, 0.0], 2.5)
+        assert gap is None
+        assert margin is None
 
 
 class TestMeasuredCapHeight:

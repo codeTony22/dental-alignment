@@ -117,8 +117,10 @@ Delivered: `CandidateEvidence` borrows density/DP from the matching proposal
 `site_bearing_margin` (empty on pre-field documents). Intake
 `curveHonestySentence` renders "density prior off" only when the served bool
 is `false`; a null DP gap is no clause; a real `0` gap is "inferred across 0%".
-Statuses-walk test stays green. Island still does not run at detect — DP
-fields are `None` until a later island reading exists.
+Statuses-walk test stays green. `detect()` now calls `island_curve_honesty`
+(shadow `segment_island`, exceptions swallowed) so a converged reading
+fills DP gap / bearing margin at Intake; a refusal stays `None`, never
+`0.0`. The island still does not move a pose.
 
 **P4.2 Hard capture-gate refusal at Intake** (backend, frontend) — **done** 2026-08-15
 
