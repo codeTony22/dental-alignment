@@ -56,6 +56,22 @@ def test_save_then_load_round_trips_every_field(tmp_path):
     assert (tmp_path / "case-a" / "session.json").is_file()
 
 
+def test_rim_points_round_trip(tmp_path):
+    """§10-AL: ``SiteSession.rim_points`` persists exactly like ``marked_center``
+    (the field its docstring says it mirrors) — Optional[List[List[float]]],
+    absent by default, present only on a site the operator clicked a rim on."""
+    store = SessionStore(tmp_path)
+    s = store.load("case-a")
+    s.sites["4"] = SiteSession(
+        rim_points=[[1.0, 0.0, 3.0], [1.0, 1.0, 3.0], [0.0, 1.0, 3.0]])
+    s.sites["13"] = SiteSession()   # a neighbour that never got the tool
+    store.save(s)
+    again = store.load("case-a")
+    assert again.sites["4"].rim_points == [[1.0, 0.0, 3.0], [1.0, 1.0, 3.0],
+                                           [0.0, 1.0, 3.0]]
+    assert again.sites["13"].rim_points is None
+
+
 def test_a_document_predating_jaw_reading_loads_with_it_honestly_absent(tmp_path):
     """§10-AM built: ``DetectionRecord.jaw_reading`` is ADDITIVE Optional (default
     None) exactly so a document written before the field existed loads cleanly

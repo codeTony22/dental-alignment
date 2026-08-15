@@ -68,6 +68,7 @@ from ..session import (ACT_ADJUST_DECISION, ACT_CHOICES_SET, ACT_DETECTED,
                        ACT_SITE_EXCEPTION_ACKNOWLEDGED,
                        ACT_SITE_EXCEPTION_WITHDRAWN, ACT_SITE_MARKED,
                        ACT_SITE_PREVIEWED, ACT_SITE_REMARKED,
+                       ACT_SITE_RIM_POINTS_CLEARED, ACT_SITE_RIM_POINTS_SET,
                        ACT_SITE_REVIEW_WITHDRAWN,
                        ACT_SITE_REVIEWED, ACT_SITE_WITHHOLD_INTENT,
                        ACT_SYSTEM_DECLARED,
@@ -141,9 +142,26 @@ class SiteView(BaseModel):
     suggested_variant: Optional[str]
     suggested_variant_source: Optional[Literal["curated", "measured"]] = None
     center: Optional[List[float]]       # a coordinate FACT from intake, passed through
+    # THE RIM BORDER-POINTS INTAKE AID (§10-AL), echoed exactly as recorded — the
+    # operator's own measurement, not a worker fact, so this is a pass-through like
+    # ``center`` rather than a derivation like ``capture``. None on a site nobody
+    # has clicked points on yet, or after a re-mark retired them.
+    rim_points: Optional[List[List[float]]] = None
     # the worker's capture assessment (CaptureAssessment.to_dict), once detection ran —
     # the chair-side verdict Intake surfaces BEFORE any work is invested (plan §4)
     capture: Optional[dict] = None
+    # THE MAX LEAVE-ONE-OUT PLANE DISTANCE over the operator's own border clicks
+    # (auto_flow's ``_border_click_disagreement``, n>=4 — rule 8: a fact the
+    # pipeline computes and the UI omits is a bug, and this one already told a
+    # Copy-run-report reader "why did this seat tilt" without a surface to show
+    # it). Read from the CURRENT run's own row for this tooth
+    # (``_run_summary_row``) — a RUN fact, never a client's, and never the
+    # ``rim_points`` above's own echo: the run measures disagreement over
+    # whatever border clicks the SHIPPED package's site record carried, which may
+    # predate this route entirely (the demo's own clicks, curated ``sites.json``
+    # rim_points). None before any run exists, or when the row itself has fewer
+    # than four border clicks to disagree over.
+    border_click_disagreement_mm: Optional[float] = None
     # THE PREVIEW'S SEAT FACTS on the wire (client 2026-07-27 #2: the attestation is
     # faced again "at the time to move forward", so Declare's footer must say what
     # each site's tick actually attested). Persisted by the preview route from what
@@ -590,6 +608,49 @@ class RemarkedSiteIn(BaseModel):
     center: List[float]
 
 
+# a fit needs at least three points to be a circle at all, and the demo's own tool
+# capped the click count at twelve (server.py's ``_bounded_rim_points``) — kept here
+# as the product route's own ceiling rather than imported, because THIS route's floor
+# (3) is a decision the demo never made: the demo also accepted 1-2 points for an
+# averaged-radius fallback (server.py's ``_site_capture_inputs``), a mode this route
+# does not serve at all — the product tool's one job is the circle fit (§10-AL: "fed
+# the rim diameter"), so fewer than three points is refused rather than silently
+# falling back to a reading nobody asked for.
+_MIN_RIM_POINTS = 3
+_MAX_RIM_POINTS = 12
+
+
+class RimPointsIn(BaseModel):
+    """THE RIM BORDER-POINTS INTAKE AID (§10-AL, client: "we lost the tool we had in
+    the demo where we made points around the border of the healing cap in the
+    scan"). ``RemarkedSiteIn``'s conventions, one field wider: several clicks around
+    a cap's visible rim, world-frame, sent exactly as clicked — the re-click
+    pair-integrity rule applies here exactly as it does to a mark: points are fixed
+    at the UI or refused, never averaged, snapped or reordered server-side.
+
+    Bounded at 3..12 points (see ``_MIN_RIM_POINTS``/``_MAX_RIM_POINTS`` just
+    above): fewer than three cannot fit a circle, so a refusal here is honest rather
+    than a silent 1-2-point degrade the product route does not implement. Each
+    point is an [x, y, z] triple like every other mark in this module."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    points: List[List[float]]
+
+    @field_validator("points")
+    @classmethod
+    def _bounded_and_shaped(cls, v):
+        if not _MIN_RIM_POINTS <= len(v) <= _MAX_RIM_POINTS:
+            raise ValueError(
+                f"rim_points needs between {_MIN_RIM_POINTS} and {_MAX_RIM_POINTS} "
+                f"points to fit a rim circle honestly, got {len(v)}")
+        for p in v:
+            if len(p) != 3 or not all(math.isfinite(c) for c in p):
+                raise ValueError("every rim point must be a finite [x, y, z] triple "
+                                 "in the scan's own frame")
+        return [[float(c) for c in p] for p in v]
+
+
 class WithholdIntentIn(BaseModel):
     """DROP THIS CAP / BRING IT BACK (design flow.dc.html dropSite 1345-1354) — one
     boolean, both directions, and nothing else.
@@ -638,12 +699,29 @@ def _suggested_variant(tooth: int, curated: Optional[str],
     return (measured, "measured") if measured is not None else (None, None)
 
 
+def _border_click_disagreement_view(run: Optional[RunSession],
+                                    tooth: int) -> Optional[float]:
+    """One tooth's ``border_click_disagreement_mm`` off the CURRENT run's own row
+    (rule 8 — a fact the pipeline computes and the UI omits is a bug, and this one
+    already had a home in the summary; only the surface was missing). Shares
+    ``_run_summary_row`` with ``post_acknowledge_exception`` rather than a second
+    tooth->row scan — one derivation of "this tooth's current-run row", not two
+    that could disagree about which row that is. None before any run, or when the
+    row itself never computed the number (fewer than four border clicks, or no
+    border clicks at all — the row's own honest gap, passed through)."""
+    if run is None:
+        return None
+    row = _run_summary_row(run, tooth)
+    return row.get("border_click_disagreement_mm") if row is not None else None
+
+
 def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
     """Worker-suggested sites overlaid with session state; session-only sites (a later
     slice can add one at Declare) still render. Capture verdicts join from the session's
     detection record — worker facts, persisted by the detect route, never a client's."""
     capture: Dict[str, dict] = (
         session.detection.site_capture if session.detection is not None else {})
+    run = session.run
     views = {}
     for s in case.suggested_sites:
         tooth = int(s["tooth"])
@@ -661,9 +739,11 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
             # places rather than the surface and the run disagreeing about the centre
             center=((sess.marked_center if sess and sess.marked_center is not None
                      else s.get("center"))),
+            rim_points=(sess.rim_points if sess else None),
             capture=capture.get(str(tooth)),
             seat_method=(sess.seat_method if sess else None),
             rim_agreement_mm=(sess.rim_agreement_mm if sess else None),
+            border_click_disagreement_mm=_border_click_disagreement_view(run, tooth),
             withhold_intent=(sess.withhold_intent if sess else False),
             alignment_evidence_count=(len(sess.alignment_evidence)
                                       if sess else 0),
@@ -682,9 +762,12 @@ def _site_views(case: CaseRecord, session: CaseSession) -> List[SiteView]:
                                     # marking, and reporting None here would have the
                                     # surface deny what the run is about to use
                                     center=sess.marked_center,
+                                    rim_points=sess.rim_points,
                                     capture=capture.get(key),
                                     seat_method=sess.seat_method,
                                     rim_agreement_mm=sess.rim_agreement_mm,
+                                    border_click_disagreement_mm=(
+                                        _border_click_disagreement_view(run, tooth)),
                                     withhold_intent=sess.withhold_intent,
                                     alignment_evidence_count=len(
                                         sess.alignment_evidence),
@@ -1888,6 +1971,13 @@ def put_remarked_site(case_id: str, tooth: int, body: RemarkedSiteIn,
         # pairs were measured against the OLD centre's crop — a moved centre
         # retires them rather than letting a future run re-apply stale geometry
         site.alignment_evidence = []
+        # THE RIM BORDER-POINTS AID RETIRES HERE TOO (§10-AL): the points were
+        # clicked around THIS centre's rim, and a centre the operator has just
+        # said is wrong cannot go on anchoring a rim reading nobody re-clicked —
+        # the exact same pair-integrity reasoning as the line above, one field
+        # over (session.py's ``SiteSession.rim_points`` docstring is this
+        # invariant's other pin).
+        site.rim_points = None
         # the run boundary (5c, mirrored for a fourth trigger): the current run
         # was cropped around the OLD centre, so stale physics can never
         # masquerade as current the instant the centre moves
@@ -1902,6 +1992,67 @@ def put_remarked_site(case_id: str, tooth: int, body: RemarkedSiteIn,
                         "healing cap centre re-marked by hand — the previous "
                         "mark's preview, review, the run cropped around it and "
                         "any confirmation over it were retired", tooth=tooth)
+
+    session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
+@router.put("/{case_id}/sites/{tooth}/rim-points", response_model=CaseSessionDetail)
+def put_rim_points(case_id: str, tooth: int, body: RimPointsIn,
+                   request: Request) -> CaseSessionDetail:
+    """Record the operator's rim border-points for one site (§10-AL, "we lost the
+    tool we had in the demo where we made points around the border of the healing
+    cap in the scan"). Scoped to INTAKE by the plan's own measurement (§10-AH: a
+    pair-shaped centre+rim seed LOST to the bare click on the DEV metric) — this
+    body feeds the capture assessment's rim-diameter read, never a seat.
+
+    NOT a reset boundary: unlike ``put_remarked_site``, setting rim points changes
+    no centre and derives no new physics for a preview or a run to disagree with,
+    so no rung falls and no confirmation retires. Idempotent under the
+    ``SeatedSelection`` precedent this module already uses everywhere else — an
+    identical re-PUT records no second act.
+
+    Requires the tooth already be a site (``_require_known_tooth``): a border
+    reading is measured relative to a centre, so there must be one to measure
+    against, exactly the ordering ``put_remarked_site`` requires for the same
+    reason."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+
+    def apply(session: CaseSession) -> None:
+        _require_known_tooth(case, session, tooth)
+        site = session.sites.get(str(tooth), SiteSession())
+        if site.rim_points == body.points:
+            return   # an identical re-assertion states nothing new (no act)
+        site.rim_points = body.points
+        session.sites[str(tooth)] = site
+        record_activity(session, ACT_SITE_RIM_POINTS_SET,
+                        f"{len(body.points)} rim border points recorded — feeds "
+                        f"this site's capture read, never its seat", tooth=tooth)
+
+    session = _mutate_session(store, case_id, apply)
+    return _detail(case, session, settings)
+
+
+@router.delete("/{case_id}/sites/{tooth}/rim-points", response_model=CaseSessionDetail)
+def delete_rim_points(case_id: str, tooth: int, request: Request) -> CaseSessionDetail:
+    """Clear a standing rim border-points reading — ``put_rim_points``'s reverse,
+    reachable the same way back (``put_withhold_intent``'s "bring it back" rule,
+    applied here). Refuses 422 for a tooth carrying no standing points: clearing
+    nothing is not an act either (``delete_acknowledge_exception``'s own posture)."""
+    settings, store = _context(request)
+    case = _case_or_404(settings, case_id)
+
+    def apply(session: CaseSession) -> None:
+        _require_known_tooth(case, session, tooth)
+        site = session.sites.get(str(tooth), SiteSession())
+        if site.rim_points is None:
+            raise HTTPException(
+                422, f"tooth {tooth} carries no standing rim border points to clear")
+        site.rim_points = None
+        session.sites[str(tooth)] = site
+        record_activity(session, ACT_SITE_RIM_POINTS_CLEARED,
+                        "rim border points cleared", tooth=tooth)
 
     session = _mutate_session(store, case_id, apply)
     return _detail(case, session, settings)
@@ -2253,6 +2404,22 @@ def _authorized_selection(case: CaseRecord, case_id: str,
             str(view.tooth): session.sites[str(view.tooth)].marked_center
             for view in sites
             if session.sites[str(view.tooth)].marked_center is not None
+        },
+        # THE RIM BORDER-POINTS INTAKE AID (§10-AL), threaded beside the centres
+        # for the same reason and the same shape — only sites holding any appear.
+        # NOT YET CONSUMED past the wire: ``bff.ports.worker.InProcessWorker.
+        # _selection`` reads named keys off this dict into ``RunSelection``, which
+        # carries no ``rim_points`` field today (nor does ``application.run.
+        # ConfirmedSite``'s own rim_points, fed elsewhere from the CASE's curated
+        # ``sites.json`` — see that module's docstring). Consuming this key is a
+        # worker-source change (out of this slice's scope, which is BFF-only) —
+        # the plan's own §10-AL scoping is intake-capture-only regardless, so this
+        # key exists to be forward-compatible with a future worker slice, never a
+        # promise that it seats anything today.
+        "rim_points": {
+            str(view.tooth): session.sites[str(view.tooth)].rim_points
+            for view in sites
+            if session.sites[str(view.tooth)].rim_points is not None
         },
         # PER-SITE RELIEF OVERRIDES (§10-B/C): each site's own ask rides beside
         # the case-level value it overrides

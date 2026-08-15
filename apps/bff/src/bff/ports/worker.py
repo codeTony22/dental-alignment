@@ -219,6 +219,19 @@ class InProcessWorker:
 
     @staticmethod
     def _selection(request: dict[str, Any]) -> RunSelection:
+        # THE REMAINING WIRE (§10-AL, the rim border-points intake aid): the
+        # session route (resources/case_sessions.py's ``_authorized_selection``)
+        # already threads ``sel["rim_points"]`` onto this same dict, beside
+        # ``marked_centers`` — but ``RunSelection`` below has no field to catch it
+        # in, and ``application.detection.site_capture_inputs``'s own rim_points
+        # parameter (verified live, not touched here) is reachable only from
+        # ``detect()``'s intake pass, which this job-submission path never calls
+        # at all. Consuming the key past this dict is a worker-source change
+        # (``application/run.py``'s ``RunSelection``, or ``application/
+        # detection.py``'s ``detect()`` signature) — out of scope for a BFF-only
+        # slice, and arguably the wrong place anyway per the plan's own §10-AL
+        # scoping (an intake capture aid, never a seat input). Left named here so
+        # the gap is found by reading this function, not by re-discovering it.
         sel = request.get("selection") or {}
         return RunSelection(
             model=sel.get("model"),

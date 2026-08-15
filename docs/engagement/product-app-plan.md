@@ -3046,6 +3046,20 @@ Standing correction the memo's A.6 records: the catalog sweep certifies
 the MINKOWSKI path; the vertex-normal default is certified by the fleet
 battery, not that sweep.
 
+**AT rim-points seam — §10-AL's server half (2026-08-15).** SiteSession
+gains rim_points beside marked_center; PUT/DELETE
+.../sites/{tooth}/rim-points (RimPointsIn, extra=forbid, 3–12 finite
+triples) with the statuses-walk allowlist earned honestly; retirement
+wired INSIDE put_remarked_site beside the evidence reset (a moved centre
+invalidates points measured against it — with the equality guard: an
+identical re-mark retires nothing). border_click_disagreement_mm and the
+rim_points echo ride SiteView via the shared summary-row derivation. The
+port emits rim_points beside marked_centers — additive; the worker-side
+RunSelection hook does NOT exist yet and is named in a comment rather
+than smuggled (per §10-AL the tool is an intake CAPTURE aid, never a
+seat input). bff 691 (+21). The Intake client half is the remaining
+piece of task #33.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

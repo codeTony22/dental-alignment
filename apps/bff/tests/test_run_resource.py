@@ -300,6 +300,10 @@ class TestTheRunLands:
             # case, and shipping a redundant copy would invite the two drifting
             # apart. The map carries the marked ones and nothing else.
             "marked_centers": {},
+            # §10-AL: the rim border-points intake aid, threaded the same way —
+            # empty here, nobody clicked a rim on either site (test_rim_points.py
+            # pins the non-empty case)
+            "rim_points": {},
             # §10-B/C: per-site relief overrides ride beside the case value —
             # empty here: nobody overrode a site
             "site_reliefs": {},
@@ -330,6 +334,10 @@ class TestTheRunLands:
             # case, and shipping a redundant copy would invite the two drifting
             # apart. The map carries the marked ones and nothing else.
             "marked_centers": {},
+            # §10-AL: the rim border-points intake aid, threaded the same way —
+            # empty here, nobody clicked a rim on either site (test_rim_points.py
+            # pins the non-empty case)
+            "rim_points": {},
             # §10-B/C: per-site relief overrides ride beside the case value —
             # empty here: nobody overrode a site
             "site_reliefs": {},
@@ -354,6 +362,35 @@ class TestTheRunLands:
         assert persisted.sites["4"].status is SiteStatus.FLAGGED
         assert persisted.sites["13"].status is SiteStatus.READY
         assert persisted.run is not None and persisted.run.state == "done"
+
+    def test_the_border_click_disagreement_surfaces_on_the_site_view(
+            self, settings, product_root):
+        """RULE 8 (disclose what you know): auto_flow's own
+        ``border_click_disagreement_mm`` — the max leave-one-out plane distance
+        over the operator's border clicks, the Copy-run-report loop's answer to
+        "why did this seat tilt" — already lands in the run's summary row
+        (``row()``'s own default key, above). Before this pin nothing served it
+        past the session's stored run facts; ``SiteView`` is the surface a client
+        actually reads."""
+        seed_ready(product_root)
+        r4 = row(4)
+        r4["border_click_disagreement_mm"] = 0.87
+        worker = FakeWorker(summary=summary_for([r4, row(13)]))
+        client = client_with(settings, worker)
+        detail = client.post("/api/case-sessions/neodent-gm/run").json()
+        by_tooth = {s["tooth"]: s for s in detail["sites"]}
+        assert by_tooth[4]["border_click_disagreement_mm"] == 0.87
+        # the row's own honest gap (fewer than four border clicks) passes through
+        assert by_tooth[13]["border_click_disagreement_mm"] is None
+
+    def test_no_current_run_serves_no_disagreement_reading(self, settings):
+        # before any run exists there is no row to read it off — None, not a
+        # stale number from a prior run this session no longer points at
+        worker = FakeWorker()
+        client = client_with(settings, worker)
+        detail = client.get("/api/case-sessions/neodent-gm").json()
+        by_tooth = {s["tooth"]: s for s in detail["sites"]}
+        assert by_tooth[4]["border_click_disagreement_mm"] is None
 
     def test_the_run_facts_serve_from_get_run(self, settings, product_root):
         seed_ready(product_root)

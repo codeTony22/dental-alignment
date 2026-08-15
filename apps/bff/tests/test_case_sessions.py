@@ -1752,6 +1752,14 @@ class TestStatusesAreNeverClientWritable:
         # field at all.
         ("POST", "/api/case-sessions/{case_id}/sites/{tooth}/acknowledge"),
         ("DELETE", "/api/case-sessions/{case_id}/sites/{tooth}/acknowledge"),
+        # THE RIM BORDER-POINTS INTAKE AID (§10-AL): {"points": [[x,y,z], ...]} —
+        # WHERE the operator clicked around a cap's visible rim, an operator
+        # MEASUREMENT in this allowlist's sense exactly like ``RemarkedSiteIn``'s
+        # centre, never a status/verdict/gate. It moves no rung (unlike the mark
+        # route, this is not a reset boundary — see ``put_rim_points``'s
+        # docstring) and feeds only the capture assessment's rim-diameter read.
+        ("PUT", "/api/case-sessions/{case_id}/sites/{tooth}/rim-points"),
+        ("DELETE", "/api/case-sessions/{case_id}/sites/{tooth}/rim-points"),
     }
     STATUS_SHAPED = {"status", "state", "verdict", "gate", "flagged", "ready",
                      "confirmed"}
@@ -2085,6 +2093,46 @@ class TestReMarkingAnExistingSite:
         assert by_tooth[29]["status"] == "ready"
         # the changed site itself keeps the deeper reset its own boundary owes
         assert by_tooth[4]["status"] == "declared"
+
+    def test_re_marking_retires_the_sites_rim_border_points(
+            self, client, product_root):
+        """§10-AL, the pair-integrity rule applied one field over from
+        ``SiteSession.marked_center``: rim border points are measured relative to
+        a centre, and a re-mark says that centre is wrong — the points measured
+        against it cannot survive the click that retired it, exactly like
+        ``alignment_evidence`` above them in ``put_remarked_site``'s mutation."""
+        store = SessionStore(product_root)
+        session = store.load("neodent-gm")
+        session.sites["4"] = SiteSession(
+            rim_points=[[1.0, 0.0, 3.0], [1.0, 1.0, 3.0], [0.0, 1.0, 3.0]])
+        store.save(session)
+
+        r = client.put("/api/case-sessions/neodent-gm/sites/4/mark",
+                       json={"center": [9.0, 8.0, 7.0]})
+        assert r.status_code == 200, r.text
+        site = next(s for s in r.json()["sites"] if s["tooth"] == 4)
+        assert site["rim_points"] is None
+        assert SessionStore(product_root).load(
+            "neodent-gm").sites["4"].rim_points is None
+
+    def test_an_identical_re_mark_does_not_retire_the_rim_points(
+            self, client, product_root):
+        """The equality guard above (``effective_before == new_center``) returns
+        before any field is touched — an identical re-assertion is not the act
+        this boundary exists for, and the standing points must not be collateral
+        damage of a no-op."""
+        store = SessionStore(product_root)
+        session = store.load("neodent-gm")
+        session.sites["4"] = SiteSession(
+            rim_points=[[1.0, 0.0, 3.0], [1.0, 1.0, 3.0], [0.0, 1.0, 3.0]])
+        store.save(session)
+
+        # tooth 4's suggested centre is [1.0, 2.0, 3.0] (conftest.make_data_tree)
+        r = client.put("/api/case-sessions/neodent-gm/sites/4/mark",
+                       json={"center": [1.0, 2.0, 3.0]})
+        assert r.status_code == 200, r.text
+        assert SessionStore(product_root).load(
+            "neodent-gm").sites["4"].rim_points is not None
 
     def test_a_standing_document_with_flagged_but_no_run_heals_on_load(
             self, client, product_root):

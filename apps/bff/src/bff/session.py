@@ -143,6 +143,26 @@ class SiteSession(BaseModel):
     # the case record. Present ONLY on sites someone marked; a detected site leaves
     # it None and reads its centre from the case as it always did.
     marked_center: Optional[List[float]] = None
+    # THE RIM BORDER-POINTS INTAKE AID (§10-AL, "we lost the tool we had in the demo
+    # where we made points around the border of the healing cap"): several clicks
+    # around a cap's visible rim, world-frame, exactly as clicked. Scoped to INTAKE
+    # by the plan's own measurement (§10-AH: a pair-shaped centre+rim seed LOST to
+    # the bare click on the DEV metric) — this is never a seat input, only the
+    # capture assessment's rim-diameter read, so a site's SEAT never depends on
+    # whether this field is set.
+    #
+    # PERSISTENCE MIRRORS ``marked_center``'s: present only on a site the operator
+    # actually clicked points on, survives run boundaries (it is not physics the
+    # run produced — an operator measurement, like a mark), and RETIRES on a
+    # re-mark of the site's centre (``put_remarked_site``, case_sessions.py) — the
+    # pair-integrity rule applied one field further: border points were measured
+    # relative to a specific centre, so a centre the operator has just said is
+    # WRONG cannot go on anchoring a rim reading nobody re-clicked. A re-declared
+    # variant or a system switch does NOT retire this field (unlike
+    # ``AlignmentEvidence``'s "pairs" kind) — the points describe the SCAN's own
+    # rim, not any part, so they stay valid across a variant change exactly as the
+    # scan-frame alignment-evidence kinds do.
+    rim_points: Optional[List[List[float]]] = None
     # THE PREVIEW'S SEAT FACTS (plan §7 slice 5b): the two numbers the operator judges
     # a seat by, persisted by the preview route from what the application derived —
     # worker facts, never a client's. The payload's mesh is response-only and never
@@ -507,6 +527,11 @@ ACT_SITE_MARKED = "site-marked"
 # have a reader of the case's narrative unable to tell "detection missed this
 # site" from "the operator corrected a bad centre" apart without opening the diff.
 ACT_SITE_REMARKED = "site-remarked"
+# the rim border-points intake aid (§10-AL) — set/cleared as its own pair, the same
+# reason ACT_SITE_WITHHOLD_INTENT's sibling pair is: a reader tells "the operator
+# clicked a fresh rim" from "the points were taken back" without opening the detail
+ACT_SITE_RIM_POINTS_SET = "site-rim-points-set"
+ACT_SITE_RIM_POINTS_CLEARED = "site-rim-points-cleared"
 ACT_SITE_DECLARED = "site-declared"
 ACT_SITE_WITHHOLD_INTENT = "site-withhold-intent"
 # the accept-as-flagged-exception draft (client ruling 2026-08-02) — the sibling
