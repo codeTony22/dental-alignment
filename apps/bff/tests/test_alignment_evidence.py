@@ -54,6 +54,47 @@ class TestTheEvidencePersists:
         assert entry.pairs[0]["scan_point"] == [1.0, 2.0, 3.0]
         assert entry.applied_at  # the act carries its own timestamp
 
+    def test_fit_by_points_stamps_the_fold_that_read_it(
+            self, settings, product_root, monkeypatch):
+        """THE VERSIONING SEAM (client ruling 2026-08-15). The pair fold now has two
+        interpretations, and §10-AD re-applies this entry to every future run. The act
+        therefore records WHICH fold measured it, at the moment it was measured — an
+        entry that did not would be re-read years later under whatever the fold means
+        then, which is the backend re-interpreting calibrated operator input."""
+        from case_prep.application.adjust import PAIR_FIT_VERSION
+
+        client, _ = tooled(settings, product_root, monkeypatch)
+        assert client.post(
+            f"{BASE}/4/fit-by-points",
+            json={"pairs": [{"feature_id": "trench-01",
+                             "scan_point": [1.0, 2.0, 3.0]}]}).status_code == 200
+        (entry,) = evidence_of(product_root, 4)
+        assert entry.fit_version == PAIR_FIT_VERSION
+        # the worker's own constant, never a second literal pinned equal to it
+        assert PAIR_FIT_VERSION >= 2
+
+    def test_only_the_pairs_kind_carries_a_fold_version(
+            self, settings, product_root, monkeypatch):
+        """A mark and a best-fit have one interpretation each; stamping them would
+        invent a versioning story they do not have."""
+        client, _ = tooled(settings, product_root, monkeypatch)
+        client.post(f"{BASE}/4/mark-trench", json={"scan_point": [1.0, 1.0, 1.0]})
+        client.post(f"{BASE}/4/best-fit", json={"matching_diameter_mm": 0.3})
+        assert [e.fit_version for e in evidence_of(product_root, 4)] == [None, None]
+
+    def test_an_entry_persisted_before_the_ruling_still_loads(
+            self, settings, product_root, monkeypatch):
+        """SCHEMA ADDITIVITY, the pin that matters for a document store: the field is
+        Optional with no default value on disk, so every session written before today
+        round-trips unchanged and reads as 'no marker' — which the worker maps to the
+        azimuth-only fold."""
+        from bff.session import AlignmentEvidence
+
+        entry = AlignmentEvidence.model_validate(
+            {"kind": "pairs", "applied_at": "2026-08-01T00:00:00",
+             "pairs": [{"scan_point": [1.0, 2.0, 3.0]}]})
+        assert entry.fit_version is None
+
     def test_mark_trench_persists_its_point(self, settings, product_root,
                                             monkeypatch):
         client, _ = tooled(settings, product_root, monkeypatch)

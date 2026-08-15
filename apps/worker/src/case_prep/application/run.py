@@ -131,7 +131,15 @@ def _reapply_evidence(case: CaseRecord, run_dir: Path,
     the two hand-written copies drifting), and rewritten file names join
     ``package_files``. A re-applied pairs fit rebuilds the correspondence QC block
     from the entry's own pair count — the canonical fold retired this function's
-    earlier documented under-claim."""
+    earlier documented under-claim.
+
+    AND IT IS RE-APPLIED UNDER THE FOLD IT WAS MEASURED UNDER (client ruling
+    2026-08-15). A pairs entry carries ``fit_version``; one recorded before the ruling
+    carries none, and is read azimuth-only — the interpretation it was measured,
+    judged and receipted under. The alternative is the backend silently re-reading a
+    calibrated operator measurement as something else the next time a run fires, which
+    is the re-click integrity rule's own prohibition and the reason §10-AR.1 RECORDED
+    a stale part frame instead of quietly repairing it."""
     from . import adjust  # heavy import, deferred like the pipeline's own
 
     outcomes: list = []
@@ -154,8 +162,12 @@ def _reapply_evidence(case: CaseRecord, run_dir: Path,
                         part_point=p.get("part_point"),
                         part_point_end=p.get("part_point_end"))
                         for p in (entry.get("pairs") or [])]
-                    outcome = adjust.align_to_correspondence(case, run_dir,
-                                                             tooth, pairs)
+                    recorded = entry.get("fit_version")
+                    outcome = adjust.align_to_correspondence(
+                        case, run_dir, tooth, pairs,
+                        fit_version=(int(recorded)
+                                     if isinstance(recorded, int)
+                                     else adjust.PAIR_FIT_AZIMUTH_ONLY))
                 elif kind == "best_fit":
                     outcome = adjust.best_fit_site(
                         case, run_dir, tooth,

@@ -60,6 +60,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from case_prep.application.adjust import (_CORRESPONDENCE_MAX_PAIRS, AdjustInvalid,
                                           AdjustOutcome, AdjustRefused,
                                           AlreadyOptimal, Correspondence,
+                                          PAIR_FIT_VERSION,
                                           align_to_correspondence, align_to_mark,
                                           best_fit_site, clock_landmarks,
                                           cross_checked, fold_outcome_into_row,
@@ -665,7 +666,14 @@ def post_fit_by_points(case_id: str, tooth: int, body: FitByPointsIn,
     """FIT BY POINTS: the operator names a feature on the part and where they see it on
     the scan — one click, or BOTH ENDS of it (the two-point span, plan §5). Several
     pairs give a QC number the operator can read: each observation's residual at its
-    own lever arm, and their RMS."""
+    own lever arm, and their RMS.
+
+    THE ACT RECORDS THE FOLD THAT READ IT (``fit_version``, client ruling 2026-08-15):
+    plain point pairs now MOVE the part onto the clicked points as well as turning it,
+    and evidence re-applied by a future run (§10-AD) has to be read under the meaning
+    it was measured under. The version is the application's own constant, imported —
+    never a second literal here pinned equal to it (the §10-AG review's rule, applied
+    when ``_MAX_PAIRS`` was this same shape of duplicate)."""
     pairs = [Correspondence(scan_point=p.scan_point, scan_point_end=p.scan_point_end,
                             feature_id=p.feature_id, part_point=p.part_point,
                             part_point_end=p.part_point_end)
@@ -674,10 +682,12 @@ def post_fit_by_points(case_id: str, tooth: int, body: FitByPointsIn,
                        lambda case, run_dir: align_to_correspondence(
                            case, run_dir, tooth, pairs),
                        correspondence_pairs=len(pairs),
-                       # wire-shaped, replayable: exactly what the operator placed
+                       # wire-shaped, replayable: exactly what the operator placed,
+                       # under the fold that read it
                        evidence=AlignmentEvidence(
                            kind="pairs", applied_at=_now_iso(),
-                           pairs=[p.model_dump() for p in body.pairs]))
+                           pairs=[p.model_dump() for p in body.pairs],
+                           fit_version=PAIR_FIT_VERSION))
 
 
 @router.post("/{case_id}/sites/{tooth}/best-fit", response_model=AdjustResultView)

@@ -121,6 +121,17 @@ class AlignmentEvidence(BaseModel):
     pairs: Optional[List[dict]] = None
     # kind="best_fit": the search diameter the operator ran with
     matching_diameter_mm: Optional[float] = None
+    # kind="pairs": WHICH FOLD READ THESE PAIRS (client ruling 2026-08-15 — a point
+    # pair now moves the part as well as turning it). The interpretation is stamped at
+    # the moment of the act because §10-AD re-applies this entry to every future run:
+    # without the marker, a receipt measured, judged and shown under one meaning would
+    # silently acquire another the next time a run fired. That is the backend
+    # self-correcting calibrated operator input, which this codebase does not do (the
+    # re-click integrity rule; §10-AR.1 chose to RECORD a stale part frame rather than
+    # repair it). ABSENT on every entry written before the ruling, and the worker reads
+    # an absent marker as the older azimuth-only fold — see
+    # ``case_prep.application.adjust.fit_shape``.
+    fit_version: Optional[int] = None
 
 
 class SiteSession(BaseModel):

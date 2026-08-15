@@ -3162,6 +3162,35 @@ place of it — §10-AD's evidence contract pinned. Known trade-off,
 recorded: every apply now costs a full run, including dial nudges;
 batching is the follow-up only if real use asks.
 
+**AT matched points — the pair fit gains translation (2026-08-15,
+client: "it needs to match the points where the user added them").** The
+ladder: 1 pair = pure translation onto the operator's own points (the A1
+caution reworded — position fixed exactly, nothing cross-checks it);
+2 pairs = translation + rotation ABOUT THE SEATED AXIS (full 6-DOF from
+two clicks invites tilt from noise; the axis is the pipeline's own
+measurement); 3+ = axis-locked least squares with the RMS residual as
+the headline. fit_axis_locked (domain/geometry.py) is the one closed-form
+primitive. Honest negatives, measured before shipping (20k trials):
+matched-points is WORSE than azimuth-only on 2 pairs with a clean centre
+(7.05° vs 6.11° — translation costs DOF) and only wins once the ring
+offset reaches ~0.38mm; a short chord is catastrophic, so
+MIN_CLOCK_CHORD_MM=3.0 was DERIVED (RMS-by-chord table) — below it the
+fit slides without rotating and says so. Pivot parallax is structurally
+gone for plain pairs (centred points only — §10-AR.2's queued bias
+cannot enter). Spans keep the azimuth-only fold whole (a bearing has no
+translation to give; folding one act two ways births two truths). THE
+VERSION SEAM: AlignmentEvidence.fit_version — unstamped evidence
+re-applies azimuth-only forever (the re-click doctrine on a semantics
+change); the served sentences of old receipts are byte-identical, pinned.
+THE GUARD RELAX, by the client's own sentence ("pointing to the holes" —
+the screw access IS the hole): under the matched fold only, a near-axis
+pair is admitted as a position observation, its clock voice earned
+through the lever² weight (~zero) rather than granted; the azimuth-only
+refusal stands verbatim, so the old fold never admits what it refused.
+Gates: adjust 156, fast lane 1011 (excluding the parallel session's
+three in-progress island/curve files, failures attributed there), bff
+694; adoption pins + verify-fleet null check + rehearse on the chain.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

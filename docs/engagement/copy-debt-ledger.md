@@ -337,6 +337,31 @@ Row 5 record (slice 6, 2026-07-28) — divergences, per the rules above:
 - `confirm-alignment` (2247-2324) is deliberately NOT lifted: the product's confirmation
   is the sealed evidence bundle at Deliver (slice 8), not a per-site doctor note.
 
+Row 5 record, ADDENDUM (client ruling 2026-08-15) — THE PAIR FOLD DIVERGES IN MEANING,
+which is the one kind of divergence this ledger most needs to carry:
+- THE CLIENT'S WORDS: "Point pair tools should not only be rotating, also down or up, it
+  needs to match the points where the user added them, because the user is pointing to
+  the holes in the library and scan and matching it." The demo's
+  `align-to-correspondence` (server.py:1745-1994) reads ONE number out of each pair —
+  the azimuth about the rim centre — and answers only with a rotation. The product's
+  `align_to_correspondence` now reads a PLAIN point pair as the 3-D correspondence it
+  is: 1 pair = pure translation, 2+ = translation plus the turn about the seated axis
+  (`domain.geometry.fit_axis_locked`, `adjust.solve_matched_points`,
+  `adjust.slide_onto_clicks`). The demo keeps its own copy behind the freeze and is not
+  touched; this row is where the two stop meaning the same thing.
+- WHAT DID NOT DIVERGE, deliberately: the ring-fixed kinematics, the stability bound and
+  every certification gate still judge the proposal (the gates run again over the slid
+  pose); the lever guards still refuse the same clicks in the same words; the evidence
+  bound is still `MAX_PAIR_DISAGREEMENT_MM` at 1.00mm of miss.
+- SPANS DO NOT DIVERGE AT ALL. A set containing any span (scan or library) is folded
+  exactly as before — a bearing is translation-invariant, so it has no translation to
+  contribute, while its midpoint reading is an azimuth whose meaning depends on the part
+  not having been slid. `adjust.fit_shape` is the one place that decides.
+- AND THE OLD MEANING IS PRESERVED WHERE IT WAS RECORDED: `AlignmentEvidence.fit_version`
+  (BFF, additive) stamps the fold that read each pairs act, and `run._reapply_evidence`
+  re-applies an unstamped entry azimuth-only. A receipt does not change meaning between
+  runs — the re-click integrity rule, applied to a semantics change.
+
 Row 5 record, ADDENDUM (adversarial review 2026-07-28) — four DIVERGENCES the fixes
 introduce, each recorded because each departs from the lifted region:
 - THE OBSERVATION WEIGHTS are now INVERSE-VARIANCE, where the demo's circular mean

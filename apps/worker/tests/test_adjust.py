@@ -34,12 +34,17 @@ import pytest
 
 from case_prep.application.adjust import (ADVISORY_DISAGREEMENT_MM,
                                           CROSS_CHECK_MIN_OBSERVATIONS,
-                                          MAX_PAIR_DISAGREEMENT_MM, MIN_SPAN_MM,
+                                          MAX_PAIR_DISAGREEMENT_MM,
+                                          MIN_CLOCK_CHORD_MM, MIN_SPAN_MM,
+                                          PAIR_FIT_AZIMUTH_ONLY,
+                                          PAIR_FIT_MATCHED_POINTS, PAIR_FIT_VERSION,
                                           SPAN_RADIAL_TOLERANCE_DEG,
                                           STALE_AFTER_REWORK, AdjustInvalid,
                                           AdjustRefused, AlreadyOptimal, Correspondence,
                                           SiteClicks, agreement_words,
-                                          align_to_correspondence,
+                                          align_to_correspondence, fit_shape,
+                                          matched_point_rows, matched_point_words,
+                                          slide_onto_clicks, solve_matched_points,
                                           align_to_mark, anchor_certified_pose,
                                           azimuth_deg, best_fit_refusal, best_fit_site,
                                           Observation, circular_mean_deg, clock_landmarks,
@@ -585,6 +590,323 @@ class TestCrossCheck:
             require_pair_agreement(rows, MAX_PAIR_DISAGREEMENT_MM + 1e-9)
         # and the last value that is NOT refused is worded, not raised
         assert require_pair_agreement(rows, MAX_PAIR_DISAGREEMENT_MM) is None
+
+
+# --- THE MATCHED-POINT LADDER (client ruling 2026-08-15) ---------------------------------
+#
+# "Point pair tools should not only be rotating, also down or up, it needs to match the
+# points where the user added them, because the user is pointing to the holes in the
+# library and scan and matching it."
+#
+# The operator clicks THE SAME FEATURE on the library part and on the scan — a 3-D
+# correspondence — and the fold used to keep its azimuth and throw the rest away. These
+# pin the ladder that replaces it, rung by rung, in the flat fixture where every number
+# is hand-computable.
+
+
+class TestTheLadderChoosesItsRungByWhatWasClicked:
+    def _plain(self, n=2):
+        return [Correspondence(scan_point=[2.0, 0.0, 0.0], part_point=[2.0, 0.0, 1.0])
+                for _ in range(n)]
+
+    def _with_span(self):
+        return self._plain(1) + [Correspondence(scan_point=[2.0, 0.0, 0.0],
+                                                scan_point_end=[3.0, 0.0, 0.0],
+                                                part_point=[2.5, 0.0, 1.0])]
+
+    def test_plain_pairs_recorded_today_match_points(self):
+        assert fit_shape(self._plain(), PAIR_FIT_MATCHED_POINTS) == "matched-points"
+
+    def test_evidence_recorded_before_the_ruling_keeps_the_azimuth_only_fold(self):
+        """THE RE-CLICK DOCTRINE APPLIED TO A SEMANTICS CHANGE: a receipt written
+        under the old interpretation must not silently acquire a new one when a
+        future run re-applies it (§10-AD re-application, §10-AR.1's own caveat about
+        evidence carrying an older frame)."""
+        assert fit_shape(self._plain(), PAIR_FIT_AZIMUTH_ONLY) == "azimuth-only"
+
+    def test_a_span_anywhere_in_the_set_keeps_the_whole_fit_azimuth_only(self):
+        """A SPAN MEASURES A BEARING (and, on a diameter, a width) — readings that are
+        invariant to where the part sits, so they carry no translation to give. Its
+        midpoint observation, by contrast, IS an azimuth about the rim centre and
+        would change meaning under a free translation. Rather than fold two estimators
+        into one act, a set containing any span stays exactly the fit it was."""
+        assert fit_shape(self._with_span(), PAIR_FIT_MATCHED_POINTS) == "azimuth-only"
+
+    def test_a_library_span_keeps_it_too(self):
+        pairs = [Correspondence(scan_point=[2.0, 0.0, 0.0], scan_point_end=[3.0, 0.0, 0.0],
+                                part_point=[2.0, 0.0, 1.0],
+                                part_point_end=[3.0, 0.0, 1.0])]
+        assert fit_shape(pairs, PAIR_FIT_MATCHED_POINTS) == "azimuth-only"
+
+
+class TestRungOneIsPureTranslation:
+    """ONE PAIR: three constraints, three degrees of freedom — exactly determined.
+    The honest fact is 'matched your point exactly, and nothing cross-checks it'."""
+
+    def test_the_part_point_lands_on_the_scan_click_and_the_clock_holds_still(self):
+        fit = solve_matched_points([[2.0, 0.0, 1.0]], [[2.35, -0.1, 1.0]])
+        assert fit.rotation_deg == pytest.approx(0.0)
+        assert fit.rotation_read is False
+        assert fit.translation_canon == pytest.approx(np.array([0.35, -0.1, 0.0]))
+        assert fit.residuals_mm == pytest.approx(np.array([0.0]))
+
+    def test_the_note_says_why_one_pair_never_turns_the_part(self):
+        fit = solve_matched_points([[2.0, 0.0, 1.0]], [[2.35, -0.1, 1.0]])
+        assert fit.note is not None
+        assert "one pair" in fit.note
+
+    def test_one_pair_reports_no_agreement_number_and_says_it_matched_the_point(self):
+        """The A1 caution keeps firing — reworded by the fold to say TRANSLATION,
+        because 'fixes the rotation' is no longer what one pair does."""
+        words = agreement_words(1, 0.0, determined="a single point pair fixes the position")
+        assert "mm" not in words
+        assert "RMS" not in words
+        assert "single point pair fixes the position" in words
+        assert "no second mark" in words
+
+
+class TestRungTwoTurnsAboutTheSeatedAxisAndSlides:
+    """TWO PAIRS: the translation from the centroid correspondence, the azimuth from
+    the chord. Full 6-DoF from two clicks would invite a wild tilt out of click noise;
+    the axis constraint is the clinically sane middle."""
+
+    def test_a_known_turn_and_a_known_slide_both_come_back(self):
+        part = np.array([[2.4, 0.0, 1.0], [-1.2, 2.1, 1.0]])
+        offset = np.array([0.4, -0.25, 0.15])
+        c, s = math.cos(math.radians(24.0)), math.sin(math.radians(24.0))
+        rot = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+        scan = part @ rot.T + offset
+        fit = solve_matched_points(part, scan)
+        assert fit.rotation_deg == pytest.approx(24.0)
+        assert fit.rotation_read is True
+        assert fit.translation_canon == pytest.approx(offset)
+        assert fit.note is None
+
+    def test_two_marks_too_close_to_carry_a_clock_name_a_position_only(self):
+        """MEASURED, NOT BORROWED (2026-08-15). ``MIN_SPAN_MM`` was the floor for an
+        observation that arrived carrying an inverse-variance weight to discount it
+        with; the chord here IS the whole clock, so its floor is where the clock stops
+        being as good as one centre click — 3.0mm, 8.1° RMS at the fleet's own click
+        scatter. At 1.2mm the same marks read 22° RMS with a 175° worst case, which is
+        what this branch exists to refuse to publish as an answer."""
+        part = np.array([[2.0, -0.6, 1.0], [2.0, 0.6, 1.0]])
+        scan = np.array([[2.3, -0.6, 1.0], [2.0, 0.6, 1.0]])
+        fit = solve_matched_points(part, scan)
+        assert fit.clock_baseline_mm == pytest.approx(1.2)
+        assert fit.rotation_read is False
+        assert fit.rotation_deg == 0.0
+        assert fit.note is not None and f"{MIN_CLOCK_CHORD_MM:.2f}mm" in fit.note
+        # ...and it says what would fix it, because a locked clock the operator cannot
+        # act on is a silent no-op with extra words
+        assert "further across the cap" in fit.note
+
+    def test_a_chord_at_the_measured_floor_reads_its_clock(self):
+        part = np.array([[2.0, -MIN_CLOCK_CHORD_MM / 2.0, 1.0],
+                         [2.0, MIN_CLOCK_CHORD_MM / 2.0, 1.0]])
+        assert solve_matched_points(part, part.copy()).rotation_read is True
+
+    def test_two_trenches_of_a_coded_cap_clear_the_floor(self):
+        """The configuration this rung is FOR: two of three coded trenches at the
+        2.0mm coded-band radius are 3.46mm apart — 7.0° RMS, comfortably readable."""
+        part = np.array([[2.0, 0.0, 1.0],
+                         [2.0 * math.cos(math.radians(120.0)),
+                          2.0 * math.sin(math.radians(120.0)), 1.0]])
+        fit = solve_matched_points(part, part.copy())
+        assert fit.clock_baseline_mm == pytest.approx(3.464, abs=1e-3)
+        assert fit.rotation_read is True
+
+    def test_the_floor_is_where_the_clock_stops_beating_a_single_centre_click(self):
+        """THE DERIVATION, PINNED (20,000 trials, σ = 0.3mm, closed form √2σ/L to two
+        decimals). The module's own published table puts one plain centre click at
+        7.40-8.79° RMS; the floor is the shortest chord inside that band, and one step
+        shorter is outside it."""
+        at_floor = math.degrees(math.sqrt(2) * 0.3 / MIN_CLOCK_CHORD_MM)
+        below = math.degrees(math.sqrt(2) * 0.3 / (MIN_CLOCK_CHORD_MM - 0.5))
+        assert 7.40 <= at_floor <= 8.79
+        assert below > 8.79
+
+
+class TestRungThreeIsConstrainedLeastSquares:
+    def test_the_residual_is_a_measurement_and_rides_the_served_rows(self):
+        rng = np.random.default_rng(11)
+        part = np.array([[2.4, 0.0, 1.0], [-1.2, 2.1, 1.0], [-0.9, -2.2, 1.0]])
+        scan = part + np.array([0.3, 0.0, 0.0]) + rng.normal(0.0, 0.05, part.shape)
+        fit = solve_matched_points(part, scan)
+        rows, rms = matched_point_rows(["point-1", "point-2", "point-3"], part, fit)
+        assert [r["feature_id"] for r in rows] == ["point-1", "point-2", "point-3"]
+        assert {r["observation"] for r in rows} == {"point"}
+        assert {r["residual_kind"] for r in rows} == {"point-to-point"}
+        assert rms == pytest.approx(
+            float(np.sqrt(np.mean(fit.residuals_mm ** 2))), abs=1e-9)
+        assert cross_checked(len(rows)) is True
+
+    def test_the_rms_is_the_plain_one_because_the_estimator_weights_clicks_equally(self):
+        """NOT the equal-weighting bug reappearing: the v1 mean combined observations
+        of DIFFERENT variances (a midpoint against a direction). Here every row is one
+        click of the same kind, the least-squares objective IS the sum of squared point
+        misses, and the statistic that judges it must be its own root-mean-square. The
+        per-point lever still rides the row as its ``weight`` — the say it had in the
+        CLOCK half of the answer."""
+        part = np.array([[3.0, 0.0, 1.0], [-3.0, 0.0, 1.0]])
+        fit = solve_matched_points(part, part + np.array([0.1, 0.0, 0.0]))
+        rows, rms = matched_point_rows(["a", "b"], part, fit)
+        assert rms == pytest.approx(
+            math.sqrt(sum(r["residual_mm"] ** 2 for r in rows) / 2.0), abs=1e-9)
+
+    def test_each_rows_weight_is_its_lever_about_the_centroid_squared(self):
+        """The lever doctrine, at the lever THIS estimator reads: with the position
+        free, only the spread about the centroid carries clock information — a mark at
+        the centroid says nothing about rotation however far it sits from the rim."""
+        part = np.array([[3.0, 0.0, 1.0], [-1.0, 0.0, 1.0]])
+        fit = solve_matched_points(part, part)
+        rows, _rms = matched_point_rows(["far", "near"], part, fit)
+        assert rows[0]["clock_lever_mm"] == pytest.approx(2.0)
+        assert rows[0]["weight"] == pytest.approx(observation_weight("point", 2.0))
+        assert rows[1]["weight"] == pytest.approx(rows[0]["weight"])
+
+    def test_marks_that_disagree_are_refused_by_the_standing_bound(self):
+        """The evidence gate is unchanged and still reads millimetres of miss — it
+        just reads the miss of the fit that was actually applied."""
+        part = np.array([[2.0, 0.0, 1.0], [-2.0, 0.0, 1.0]])
+        scan = np.array([[2.0, 0.0, 1.0], [-2.0, 0.0, 4.0]])   # 3mm of z disagreement
+        fit = solve_matched_points(part, scan)
+        rows, rms = matched_point_rows(["a", "b"], part, fit)
+        assert rms > MAX_PAIR_DISAGREEMENT_MM
+        with pytest.raises(AdjustInvalid) as exc:
+            require_pair_agreement(rows, rms)
+        assert "disagree with each other" in str(exc.value)
+
+
+class TestTheServedSentenceSaysWhatMoved:
+    def test_a_translating_fit_states_the_millimetres_and_the_degrees(self):
+        part = np.array([[2.0, 0.0, 1.0], [-1.0, 1.5, 1.0]])
+        fit = solve_matched_points(part, part @ np.eye(3) + np.array([0.4, 0.0, 0.0]))
+        words = matched_point_words(2, 0.400, fit, cumulative_deg=0.0,
+                                    agreement="marks agree to 0.000mm RMS")
+        assert words.startswith("fit by 2 point pair(s) → 2 observation(s): ")
+        assert "moved 0.400mm" in words
+        assert "marks agree to 0.000mm RMS" in words
+
+    def test_a_locked_clock_says_so_in_the_sentence_the_operator_reads(self):
+        """NEVER A SILENT NO-OP: an operator who placed two marks and got no rotation
+        is owed the reason on the answer itself, not in a record on disk."""
+        part = np.array([[2.0, 0.0, 1.0], [2.0, 0.6, 1.0]])
+        fit = solve_matched_points(part, part + np.array([0.2, 0.0, 0.0]))
+        words = matched_point_words(2, 0.200, fit, cumulative_deg=0.0,
+                                    agreement="marks agree to 0.000mm RMS")
+        assert "no rotation" in words
+        assert fit.note in words
+
+    def test_a_turning_fit_names_the_cumulative_rotation_like_every_other_tool(self):
+        part = np.array([[2.0, 0.0, 1.0], [-2.0, 0.0, 1.0]])
+        rot = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+        fit = solve_matched_points(part, part @ rot.T)
+        words = matched_point_words(2, 0.0, fit, cumulative_deg=95.0,
+                                    agreement="marks agree to 0.000mm RMS")
+        assert "rotated +90.0°" in words
+        assert "(cumulative +95.0°)" in words
+
+
+class TestTheFramesTheLadderReadsIn:
+    """THE ARITHMETIC THIS PROJECT HAS BEEN BURNED BY TWICE (§10-AJ's two pivots,
+    §10-AR.1's vendor-frame part clicks). A click is measured in the world; the clock
+    is solved in the part's canonical frame; the slide is applied in the site's. All
+    three readings must be the same point."""
+
+    def _posed(self):
+        frame = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+        pose_local = np.eye(4)
+        pose_local[:3, :3] = np.array([[0.0, 0.0, 1.0], [0.0, 1.0, 0.0],
+                                       [-1.0, 0.0, 0.0]])
+        pose_local[:3, 3] = np.array([2.0, 3.0, -1.0])
+
+        class _Site:
+            pass
+
+        site = _Site()
+        site.frame = frame
+        site.origin = np.array([10.0, -5.0, 3.0])
+        site.pose_local = pose_local
+        return SiteClicks(context=site, rim_centre_xy=np.zeros(2)), site
+
+    def test_a_canonical_point_read_back_from_its_own_world_position_is_itself(self):
+        """THE GHOST IDENTITY IN PURE FORM: where the current pose puts a part point,
+        read back through the click mapping, IS that part point. Anything else is the
+        parallax class of defect, before any operator is involved."""
+        clicks, site = self._posed()
+        for q in ([2.0, 0.0, 1.0], [-1.5, 0.7, -0.3], [0.0, 3.0, 2.0]):
+            canonical = np.asarray(q, float)
+            local = site.pose_local[:3, :3] @ canonical + site.pose_local[:3, 3]
+            world = site.origin + site.frame @ local
+            np.testing.assert_allclose(clicks.to_canon(world), canonical, atol=1e-12)
+            np.testing.assert_allclose(clicks.to_local(world), local, atol=1e-12)
+
+    def test_the_two_dimensional_read_is_the_three_dimensional_one_truncated(self):
+        """``to_canon_xy`` is the azimuth-only fold's whole view of a click. That it is
+        literally this read with the height dropped is what makes the matched-point
+        fold an EXTENSION of it rather than a second measurement of the same thing."""
+        clicks, _site = self._posed()
+        world = np.array([11.0, -4.0, 5.0])
+        np.testing.assert_allclose(clicks.to_canon_xy(world),
+                                   clicks.to_canon(world)[:2], atol=1e-12)
+
+
+class TestTheSlideLandsThePartOnTheClicks:
+    """The composition the tool performs: the ring-fixed candidate carries the turn,
+    and the slide is solved against THAT pose — so whatever small rim-holding
+    correction the kinematics applied is inside the fit, not left over beside it."""
+
+    def _cand(self, deg: float, translation) -> np.ndarray:
+        c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+        cand = np.eye(4)
+        cand[:3, :3] = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+        cand[:3, 3] = np.asarray(translation, float)
+        return cand
+
+    def test_one_pair_lands_exactly_on_the_click_whatever_the_candidate_was(self):
+        part = np.array([[2.0, 0.0, 1.0]])
+        cand = self._cand(37.0, [1.0, -2.0, 0.5])
+        click = np.array([[3.4, -1.1, 1.9]])
+        slid, seat = slide_onto_clicks(part, click, cand)
+        landed = part @ slid[:3, :3].T + slid[:3, 3]
+        np.testing.assert_allclose(landed, click, atol=1e-12)
+        assert seat.residuals_mm == pytest.approx(np.array([0.0]))
+
+    def test_the_slide_never_touches_the_rotation_it_was_handed(self):
+        part = np.array([[2.0, 0.0, 1.0], [-1.0, 1.0, 1.0]])
+        cand = self._cand(-12.0, [0.3, 0.4, 0.5])
+        clicks = part @ cand[:3, :3].T + cand[:3, 3] + np.array([0.2, 0.1, 0.0])
+        slid, _seat = slide_onto_clicks(part, clicks, cand)
+        np.testing.assert_allclose(slid[:3, :3], cand[:3, :3], atol=1e-15)
+        np.testing.assert_allclose(slid[:3, 3] - cand[:3, 3],
+                                   np.array([0.2, 0.1, 0.0]), atol=1e-12)
+
+    def test_the_landed_pose_is_the_least_squares_one_and_its_residuals_say_so(self):
+        part = np.array([[2.0, 0.0, 1.0], [-2.0, 0.0, 1.0], [0.0, 2.0, 1.0]])
+        cand = self._cand(5.0, [0.1, 0.0, 0.0])
+        posed = part @ cand[:3, :3].T + cand[:3, 3]
+        clicks = posed + np.array([[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0], [0.0, 0.0, 0.2]])
+        slid, seat = slide_onto_clicks(part, clicks, cand)
+        landed = part @ slid[:3, :3].T + slid[:3, 3]
+        np.testing.assert_allclose(np.linalg.norm(landed - clicks, axis=1),
+                                   seat.residuals_mm, atol=1e-12)
+        # the mean miss of a least-squares slide is zero by construction — the fit
+        # took the whole systematic part and left only the disagreement
+        np.testing.assert_allclose((landed - clicks).mean(axis=0), np.zeros(3),
+                                   atol=1e-12)
+
+
+class TestTheV1WordsAreUntouched:
+    """The old interpretation still has to speak its own sentences verbatim — old
+    receipts are re-read, and a changed word there is a changed record."""
+
+    def test_the_single_observation_clause_is_byte_identical(self):
+        assert agreement_words(1, 0.0) == (
+            "a single observation fixes the rotation exactly — there is no second "
+            "mark for it to disagree with, so this fit has no agreement number")
+
+    def test_the_cross_checked_clause_is_byte_identical(self):
+        assert agreement_words(3, 0.021) == "marks agree to 0.021mm RMS"
 
 
 # --- TOOL 1 OF THE CLIENT'S TWO (2026-08-01): THE LIBRARY SPAN ---------------------------
@@ -1267,11 +1589,40 @@ class TestFitByPointsAndSpans:
 
     def test_a_free_point_inside_the_lever_arm_names_the_axis_not_a_clock_angle(
             self, warmed_run):
+        """The refusal is the AZIMUTH-ONLY fold's, verbatim — the fold every piece
+        of pre-ruling evidence still selects. Under that fold a near-axis mark
+        really does carry nothing but the axis."""
         pairs = [Correspondence(scan_point=self._site_point(warmed_run, (1.0, 0, 0)),
                                 part_point=[0.0, 0.0, 1.0])]
         with pytest.raises(AdjustInvalid) as exc:
-            align_to_correspondence(_real_case(), warmed_run, WARMED_TOOTH, pairs)
+            align_to_correspondence(_real_case(), warmed_run, WARMED_TOOTH, pairs,
+                                    fit_version=PAIR_FIT_AZIMUTH_ONLY)
         assert "names the axis, not a clock angle" in str(exc.value)
+
+    def test_the_screw_access_pair_slides_the_part_under_the_matched_fold(
+            self, warmed_run):
+        """THE 2026-08-15 RULING, on the adoption path: "the user is pointing to
+        the holes in the library and scan and matching it" — the hole they mean is
+        the screw access, ON the axis, and the old guard refused exactly that
+        click. Under the matched-points fold (the default for evidence recorded
+        now) the same pair is a POSITION observation: the part slides so the
+        clicked points meet, the clock holds still (the pair's lever² clock
+        weight is ~zero), and nothing refuses."""
+        offset = (0.4, -0.3, 0.0)
+        scan_click = self._site_point(warmed_run, offset)
+        part_point = [0.0, 0.0, 1.0]
+        pairs = [Correspondence(scan_point=scan_click, part_point=part_point)]
+        record = json.loads(
+            (warmed_run / f"{WARMED_CASE}-{WARMED_TOOTH}-implant.json").read_text())
+        pose = np.asarray(record["pose_matrix"], float)
+        posed = (pose @ np.array([*part_point, 1.0]))[:3]
+        expected = float(np.linalg.norm(np.asarray(scan_click, float) - posed))
+        outcome = align_to_correspondence(_real_case(), warmed_run, WARMED_TOOTH,
+                                          pairs)
+        assert outcome.applied
+        assert outcome.fit_version == PAIR_FIT_MATCHED_POINTS
+        assert outcome.translation_mm == pytest.approx(expected, abs=0.05)
+        assert abs(float(outcome.applied_delta_deg or 0.0)) < 0.5
 
     def test_marks_that_name_different_rotations_refuse_without_touching_a_byte(
             self, warmed_run):
@@ -1324,6 +1675,165 @@ class TestFitByPointsAndSpans:
             assert "direction" in kinds
         else:
             assert "direction_note" in span
+
+
+@pytest.mark.slow
+@warmed_only
+class TestTheMatchedPointFoldOnTheAdoptionPath:
+    """THE CLIENT'S RULING, END TO END (2026-08-15): "it needs to match the points
+    where the user added them".
+
+    The instrument is the GHOST — the exact world position the current pose assigns a
+    part landmark (§10-AI/§10-AJ). A pair of a landmark with its own ghost asks for
+    nothing; a pair of a landmark with its ghost DISPLACED BY A KNOWN OFFSET asks for
+    exactly that displacement, and nothing else. That makes the whole fold measurable
+    against an offset we chose, on the real geometry, without a synthetic mesh."""
+
+    def _ghost(self, ctx, canonical) -> np.ndarray:
+        pose = np.asarray(ctx.record["pose_matrix"], float)
+        return pose[:3, 3] + pose[:3, :3] @ np.asarray(canonical, float)
+
+    def _pose_of(self, run_dir: Path) -> np.ndarray:
+        return np.asarray(json.loads(
+            (run_dir / f"{WARMED_CASE}-{WARMED_TOOTH}-implant.json").read_text()
+        )["pose_matrix"], float)
+
+    def test_one_pair_slides_the_part_by_exactly_the_displacement_and_turns_nothing(
+            self, warmed_run):
+        case = _real_case()
+        before = self._pose_of(warmed_run)
+        ctx = load_site(case, warmed_run, WARMED_TOOTH)
+        canonical = np.asarray(clock_landmarks(ctx.template)[0]["point"], float)
+        offset = np.array([0.12, -0.05, 0.03])       # world mm, inside every gate
+        pairs = [Correspondence(scan_point=(self._ghost(ctx, canonical)
+                                            + offset).tolist(),
+                                part_point=canonical.tolist())]
+        fingerprint = _fingerprint(warmed_run)
+        try:
+            outcome = align_to_correspondence(case, warmed_run, WARMED_TOOTH, pairs)
+        except AdjustRefused as exc:
+            # a gate said no — then NOTHING moved, which is the other half of the
+            # contract and the only honest alternative
+            assert str(exc).strip() and _fingerprint(warmed_run) == fingerprint
+            pytest.skip(f"a certification gate refused this slide: {exc}")
+        after = self._pose_of(warmed_run)
+        np.testing.assert_allclose(after[:3, 3] - before[:3, 3], offset, atol=2e-3)
+        # ... and the part did not turn to do it: one pair carries no clock at all
+        np.testing.assert_allclose(after[:3, :3], before[:3, :3], atol=1e-6)
+        assert outcome.applied_delta_deg == pytest.approx(0.0, abs=0.05)
+        assert outcome.translation_mm == pytest.approx(
+            float(np.linalg.norm(offset)), abs=2e-3)
+        assert outcome.fit_version == PAIR_FIT_MATCHED_POINTS
+        # the A1 caution keeps firing, reworded to say what one pair fixed
+        assert outcome.cross_checked is False
+        assert outcome.residual_rms_mm is None
+        assert "single point pair fixes the position" in outcome.detail
+
+    def test_two_pairs_recover_a_known_turn_and_a_known_slide_together(
+            self, warmed_run):
+        case = _real_case()
+        ctx = load_site(case, warmed_run, WARMED_TOOTH)
+        landmarks = clock_landmarks(ctx.template)
+        if len(landmarks) < 2:
+            pytest.skip("this template offers one clock landmark — no chord to read")
+        a = np.asarray(landmarks[0]["point"], float)
+        b = next((np.asarray(l["point"], float) for l in landmarks[1:]
+                  if np.linalg.norm(np.asarray(l["point"], float)[:2] - a[:2])
+                  >= MIN_CLOCK_CHORD_MM), None)
+        if b is None:
+            pytest.skip("no second landmark a readable chord away — this template's "
+                        "clock needs three marks, and the fold says so")
+        turn, slide = 4.0, np.array([0.08, 0.0, 0.0])     # canonical mm
+        rot = np.array([[math.cos(math.radians(turn)), -math.sin(math.radians(turn)), 0],
+                        [math.sin(math.radians(turn)), math.cos(math.radians(turn)), 0],
+                        [0.0, 0.0, 1.0]])
+        before = self._pose_of(warmed_run)
+        pairs = [Correspondence(
+            scan_point=(before[:3, 3] + before[:3, :3] @ (rot @ q + slide)).tolist(),
+            part_point=q.tolist()) for q in (a, b)]
+        fingerprint = _fingerprint(warmed_run)
+        try:
+            outcome = align_to_correspondence(case, warmed_run, WARMED_TOOTH, pairs)
+        except AdjustRefused as exc:
+            assert _fingerprint(warmed_run) == fingerprint
+            pytest.skip(f"a certification gate refused this move: {exc}")
+        assert outcome.applied_delta_deg == pytest.approx(turn, abs=0.15)
+        # the marks land where the operator put them: the residual is the miss, and
+        # this ask is exactly reachable within one turn and one slide
+        assert outcome.residual_rms_mm == pytest.approx(0.0, abs=5e-3)
+        assert outcome.cross_checked is True
+        assert "moved" in outcome.detail and "rotated" in outcome.detail
+
+    def test_the_moved_pose_is_what_every_instrument_then_reads(self, warmed_run):
+        """THE INSTRUMENT INTERACTION. A translating fit rewrites the shipped pose,
+        so the seat metrics, the panes and the lever guard's own reference point must
+        all be re-read from it — a rotation-only fold never moved the rim centre, and
+        a fold that does must not leave a stale one behind."""
+        case = _real_case()
+        seated_before = seated_payload(case, warmed_run, WARMED_TOOTH)
+        ctx = load_site(case, warmed_run, WARMED_TOOTH)
+        canonical = np.asarray(clock_landmarks(ctx.template)[0]["point"], float)
+        offset = np.array([0.10, 0.06, 0.0])
+        pairs = [Correspondence(scan_point=(self._ghost(ctx, canonical)
+                                            + offset).tolist(),
+                                part_point=canonical.tolist())]
+        try:
+            outcome = align_to_correspondence(case, warmed_run, WARMED_TOOTH, pairs)
+        except AdjustRefused as exc:
+            pytest.skip(f"a certification gate refused this slide: {exc}")
+        # the deviation the row will carry was measured over the NEW pose
+        assert outcome.deviation == rederived_reading(outcome.pane_payload)
+        assert outcome.deviation != rederived_reading(seated_before)
+        # what could NOT be re-derived is still named, exactly as every rework names it
+        assert outcome.stale_metrics == list(STALE_AFTER_REWORK)
+        # the guard's own reference point travelled with the part it describes
+        moved = np.asarray(
+            outcome.pane_payload["clock_reference"]["rim_centre"], float)
+        stood = np.asarray(seated_before["clock_reference"]["rim_centre"], float)
+        np.testing.assert_allclose(moved - stood, offset, atol=3e-3)
+
+    def test_the_record_replays_the_fold_it_was_measured_under(self, warmed_run):
+        case = _real_case()
+        ctx = load_site(case, warmed_run, WARMED_TOOTH)
+        canonical = np.asarray(clock_landmarks(ctx.template)[0]["point"], float)
+        pairs = [Correspondence(
+            scan_point=(self._ghost(ctx, canonical) + np.array([0.09, 0.0, 0.0])).tolist(),
+            part_point=canonical.tolist())]
+        try:
+            align_to_correspondence(case, warmed_run, WARMED_TOOTH, pairs)
+        except AdjustRefused as exc:
+            pytest.skip(f"a certification gate refused this slide: {exc}")
+        record = json.loads(
+            (warmed_run / f"{WARMED_CASE}-{WARMED_TOOTH}-implant.json").read_text())
+        evidence = record["adjustments"][-1]["evidence"]
+        assert evidence["fit_version"] == PAIR_FIT_MATCHED_POINTS
+        assert evidence["fit_shape"] == "matched-points"
+        assert evidence["translation_mm"] == pytest.approx(0.09, abs=2e-3)
+        assert evidence["rotation_read"] is False
+
+    def test_evidence_from_before_the_ruling_still_folds_by_azimuth_alone(
+            self, warmed_run):
+        """THE VERSIONING SEAM ON THE REAL PATH: the same clicks, read the old way,
+        must still turn the part and NOT slide it — that is what the receipt on the
+        operator's old run says happened."""
+        case = _real_case()
+        before = self._pose_of(warmed_run)
+        ctx = load_site(case, warmed_run, WARMED_TOOTH)
+        canonical = np.asarray(clock_landmarks(ctx.template)[0]["point"], float)
+        pairs = [Correspondence(
+            scan_point=(self._ghost(ctx, canonical) + np.array([0.12, -0.05, 0.03])).tolist(),
+            part_point=canonical.tolist())]
+        try:
+            outcome = align_to_correspondence(case, warmed_run, WARMED_TOOTH, pairs,
+                                              fit_version=PAIR_FIT_AZIMUTH_ONLY)
+        except AdjustRefused as exc:
+            pytest.skip(f"a certification gate refused this rotation: {exc}")
+        after = self._pose_of(warmed_run)
+        assert outcome.fit_version == PAIR_FIT_AZIMUTH_ONLY
+        assert outcome.translation_mm is None
+        assert "single observation fixes the rotation" in outcome.detail
+        # a ring-fixed rotation holds the rim still: the part turned, it did not slide
+        assert float(np.linalg.norm(after[:3, 3] - before[:3, 3])) < 0.05
 
 
 @pytest.mark.slow

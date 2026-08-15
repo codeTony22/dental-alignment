@@ -30,6 +30,12 @@ physics in this module — see ``span_readings`` and ``direction_delta`` for the
 derivation and the radiality gate that keeps a hole's arbitrary diameter from
 poisoning the mean.
 
+THE MATCHED-POINT LADDER (client ruling 2026-08-15) is the second: a PLAIN point pair
+is a 3-D correspondence, so the part slides onto the operator's clicks as well as
+turning. It is a change of MEANING, not only of arithmetic, so it is versioned —
+``fit_shape`` decides which fold reads a set, and evidence recorded before the ruling
+keeps the azimuth-only one for as long as it is re-applied. Spans are untouched.
+
 DIVERGENCES from the lifted region, recorded here and in ledger row 5 per its rules:
 
   - THE PACKAGE IS THE CALLER'S RUN DIRECTORY — a parameter (AM-1), exactly as
@@ -81,7 +87,7 @@ from __future__ import annotations
 import json
 import math
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -94,6 +100,7 @@ from case_prep.adapters.qc_render import render_alignment_proof
 from case_prep.domain.clock_signature import (canon_point_to_world, notch_reading,
                                               scan_rim_centre, template_signature,
                                               wrap_deg)
+from case_prep.domain.geometry import AxisLockedFit, fit_axis_locked
 from case_prep.domain.part_features import (CLICK_SLACK_MM, MIN_LEVER_ARM_MM,
                                             PartAnnotation, PartFeature,
                                             auto_features,
@@ -735,11 +742,25 @@ class SiteClicks:
     context: SiteContext
     rim_centre_xy: np.ndarray
 
-    def to_canon_xy(self, point_world: Sequence[float]) -> np.ndarray:
+    def to_local(self, point_world: Sequence[float]) -> np.ndarray:
+        """The click in the SITE-LOCAL frame — where the scan, the shipped pose and
+        every candidate this module forms live. The matched-point fold's slide is
+        measured here, because that is the frame the pose's translation is in."""
+        ctx = self.context
+        return ctx.frame.T @ (np.asarray(point_world, float) - ctx.origin)
+
+    def to_canon(self, point_world: Sequence[float]) -> np.ndarray:
+        """The click in the PART's canonical frame under the CURRENT pose — the frame
+        the part's axis is z in, which is what makes the axis-locked fit closed form.
+        ``to_canon_xy`` is this read with the height dropped; the azimuth-only fold
+        never needed the third number, and the matched-point fold is exactly the
+        correction for having thrown it away."""
         ctx = self.context
         t_now = ctx.pose_local
-        p_local = ctx.frame.T @ (np.asarray(point_world, float) - ctx.origin)
-        return ((p_local - t_now[:3, 3]) @ t_now[:3, :3])[:2]
+        return (self.to_local(point_world) - t_now[:3, 3]) @ t_now[:3, :3]
+
+    def to_canon_xy(self, point_world: Sequence[float]) -> np.ndarray:
+        return self.to_canon(point_world)[:2]
 
     def azimuth_of(self, point_world: Sequence[float]) -> float:
         return azimuth_deg(self.to_canon_xy(point_world), self.rim_centre_xy)
@@ -950,6 +971,15 @@ class AdjustOutcome:
     # "there is no figure" and "the figure means nothing" are different facts, and a
     # surface must be able to say the second one out loud.
     cross_checked: Optional[bool] = None
+    # HOW FAR THE PART SLID, mm (client ruling 2026-08-15). Present on a matched-point
+    # fit and None everywhere else — including on an azimuth-only fit, which cannot
+    # translate at all, so a null here means "this act did not move the part", never
+    # "nobody measured".
+    translation_mm: Optional[float] = None
+    # WHICH FOLD READ THE PAIRS (``PAIR_FIT_AZIMUTH_ONLY`` / ``PAIR_FIT_MATCHED_POINTS``)
+    # — the fact that lets a receipt be read under the interpretation it was measured
+    # under, years later. None on every tool that is not a fit-by-points.
+    fit_version: Optional[int] = None
     click_azimuth_deg: Optional[float] = None
     matched_feature_azimuth_deg: Optional[float] = None
     applied: bool = True
@@ -991,7 +1021,10 @@ def fold_outcome_into_row(row: dict, outcome: AdjustOutcome,
       pose that no longer exists must not stand in a sealed document.
       ``cross_checked`` derives HERE from the observation count the same block
       states, so the two numbers in one block can never disagree (the vacuous-RMS
-      defect, 2026-08-01).
+      defect, 2026-08-01). Since the matched-point ruling (2026-08-15) the block also
+      names WHICH FOLD read the pairs and HOW FAR the part slid — both omitted when
+      the act has nothing to say with them, because a 0.0 in a translation field is a
+      measurement claim and an azimuth-only fit never made one.
 
     Package-file bookkeeping stays with the callers — their containers differ
     (session receipt vs run summary); every ROW shape lives here.
@@ -1014,13 +1047,24 @@ def fold_outcome_into_row(row: dict, outcome: AdjustOutcome,
         kinds = [str(p.get("observation") or "") for p in outcome.pairs
                  if isinstance(p, dict)]
         observations = len(outcome.pairs)
-        row["correspondence"] = {"pairs": correspondence_pairs,
-                                 "observations": observations,
-                                 "spans": kinds.count("midpoint"),
-                                 "directions_used": kinds.count("direction"),
-                                 "max_pairs": _CORRESPONDENCE_MAX_PAIRS,
-                                 "residual_rms_mm": outcome.residual_rms_mm,
-                                 "cross_checked": cross_checked(observations)}
+        block = {"pairs": correspondence_pairs,
+                 "observations": observations,
+                 "spans": kinds.count("midpoint"),
+                 "directions_used": kinds.count("direction"),
+                 "max_pairs": _CORRESPONDENCE_MAX_PAIRS,
+                 "residual_rms_mm": outcome.residual_rms_mm,
+                 "cross_checked": cross_checked(observations)}
+        # WHICH FOLD, AND WHAT IT MOVED (client ruling 2026-08-15). Both keys are
+        # omitted when the act has nothing to say with them, so a row folded before
+        # the ruling and a row from an azimuth-only fit stay exactly the shape their
+        # readers already know — the projections pick keys by name
+        # (bff/resources/deliver._correspondence_view), so this is additive by
+        # construction.
+        if outcome.fit_version is not None:
+            block["fit_version"] = outcome.fit_version
+        if outcome.translation_mm is not None:
+            block["translation_mm"] = outcome.translation_mm
+        row["correspondence"] = block
     else:
         row.pop("correspondence", None)
 
@@ -1282,12 +1326,39 @@ class Observation:
     note: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class PartHalf:
+    """WHERE ON THE PART the operator says this pair is, read four ways.
+
+    ``azimuth_deg`` and ``lever_mm`` are what the azimuth-only fold combines;
+    ``point`` is the same half as the CARTESIAN canonical point the matched-point fold
+    lands on the scan click — the two readings of one half, never two halves. A named
+    feature's point is the inverse of the (azimuth, radius, z) it was measured as
+    (``landmark_point``, about the same rim-centre convention); a free click's point is
+    the click. ``direction_deg`` is present only for a LIBRARY SPAN."""
+
+    label: str
+    azimuth_deg: float
+    lever_mm: float
+    audit: dict
+    point: np.ndarray
+    direction_deg: Optional[float] = None
+
+
 def _part_half(pair: Correspondence, ann: PartAnnotation, centre_xy: np.ndarray,
                model: str, variant: Optional[str],
-               free_index: int) -> Tuple[str, float, float, dict, Optional[float]]:
-    """The pair's PART half → (label, azimuth_deg, lever_arm_mm, audit). The lever-arm
-    rule is the demo's, verbatim: a landmark inside ``MIN_LEVER_ARM_MM`` of the part's
-    rim centre names the AXIS, not a clock angle."""
+               free_index: int, shape: str = "azimuth-only") -> PartHalf:
+    """The pair's PART half. The lever-arm rule is the demo's, verbatim, FOR THE
+    AZIMUTH-ONLY FOLD: a landmark inside ``MIN_LEVER_ARM_MM`` of the part's rim
+    centre names the AXIS, not a clock angle. Under the MATCHED-POINTS fold the
+    refusal relaxes by the client's own ruling (2026-08-15, "the user is pointing
+    to the holes in the library and scan and matching it" — the screw access IS
+    the hole they mean): such a pair is a legitimate POSITION observation there,
+    its clock voice discounted to ~nothing by the lever² weight rather than
+    granted. The doctrine ("a guard may never start admitting what it used to
+    refuse") holds because the old fold — the only one old evidence can select —
+    keeps the refusal verbatim; the new fold is new semantics only new evidence
+    reaches."""
     if (pair.feature_id is None) == (pair.part_point is None):
         raise AdjustInvalid("each pair needs exactly one part half — a feature_id or "
                             "a part_point")
@@ -1297,13 +1368,15 @@ def _part_half(pair: Correspondence, ann: PartAnnotation, centre_xy: np.ndarray,
             known = ", ".join(f.id for f in ann.features) or "none"
             raise AdjustInvalid(f"{pair.feature_id!r} is not a marked feature of "
                                 f"{model}/{variant} (known: {known})")
-        if not feature.defines_rotation:
+        if not feature.defines_rotation and shape != "matched-points":
             raise AdjustInvalid(f"{feature.id!r} sits {feature.radius_mm:.2f}mm from "
                                 f"the part's rim centre — inside {MIN_LEVER_ARM_MM}mm "
                                 f"it names the axis, not a clock angle, and cannot "
                                 f"anchor a rotation")
-        return (feature.id, feature.azimuth_deg, feature.radius_mm,
-                {"feature_id": feature.id}, None)
+        return PartHalf(label=feature.id, azimuth_deg=feature.azimuth_deg,
+                        lever_mm=feature.radius_mm,
+                        audit={"feature_id": feature.id},
+                        point=np.asarray(landmark_point(feature, centre_xy), float))
     # FREE POINT: the positional label ("point-1", "point-2" in click order) is this
     # pair's identity everywhere downstream. Free points are measured about the SAME
     # rim centre a feature azimuth is named about (domain/part_features.
@@ -1316,15 +1389,16 @@ def _part_half(pair: Correspondence, ann: PartAnnotation, centre_xy: np.ndarray,
                             f"[x, y, z] triple in the part's own frame")
     off = part_point[:2] - centre_xy
     radius = float(np.linalg.norm(off))
-    if radius < MIN_LEVER_ARM_MM:
+    if radius < MIN_LEVER_ARM_MM and shape != "matched-points":
         raise AdjustInvalid(f"{label!r} sits {radius:.2f}mm from the part's rim "
                             f"centre — inside {MIN_LEVER_ARM_MM}mm it names the axis, "
                             f"not a clock angle, and cannot anchor a rotation")
     part_audit = {"label": label,
                   "part_point": [round(float(c), 3) for c in part_point]}
     if pair.part_point_end is None:
-        return (label, float(np.degrees(np.arctan2(off[1], off[0]))), radius,
-                part_audit, None)
+        return PartHalf(label=label,
+                        azimuth_deg=float(np.degrees(np.arctan2(off[1], off[0]))),
+                        lever_mm=radius, audit=part_audit, point=part_point)
     # THE LIBRARY SPAN. Validated with the SCAN side's own span rule so one operator
     # act cannot be judged two ways, and its MIDPOINT is what the lever-arm guard
     # reads — the same discriminator the scan half uses, for the same reason: a
@@ -1346,15 +1420,22 @@ def _part_half(pair: Correspondence, ann: PartAnnotation, centre_xy: np.ndarray,
     part_audit["part_point_end"] = [round(float(c), 3) for c in end]
     part_audit["part_direction_deg"] = round(direction, 1)
     # the azimuth and arm are the MIDPOINT's, exactly as the scan half averages its
-    # own two clicks — an averaged click is the whole value of spanning
-    return (label, float(np.degrees(np.arctan2(mid_off[1], mid_off[0]))), mid_radius,
-            part_audit, direction)
+    # own two clicks — an averaged click is the whole value of spanning. So is the
+    # point, though no matched-point fit ever reads it: a span sends the whole set
+    # down the azimuth-only fold (``fit_shape``).
+    return PartHalf(label=label,
+                    azimuth_deg=float(np.degrees(np.arctan2(mid_off[1], mid_off[0]))),
+                    lever_mm=mid_radius, audit=part_audit,
+                    point=np.array([mid[0], mid[1],
+                                    float((part_point[2] + end[2]) / 2.0)], float),
+                    direction_deg=direction)
 
 
 def observations_for(pair: Correspondence, label: str, part_azimuth: float,
                      lever_mm: float, clicks: SiteClicks, max_span_mm: float,
                      audit: dict,
-                     part_direction: Optional[float] = None) -> List[Observation]:
+                     part_direction: Optional[float] = None,
+                     shape: str = "azimuth-only") -> List[Observation]:
     """One pair's angular observations, and the audit record that replays them.
 
     A single point is the demo's math plus the scan-side lever guard:
@@ -1371,8 +1452,19 @@ def observations_for(pair: Correspondence, label: str, part_azimuth: float,
     valid direction reading; a chord matched against an assumed radius is not."""
     if not pair.is_span:
         click_xy = clicks.to_canon_xy(pair.scan_point)
-        require_clock_lever(
-            float(np.linalg.norm(click_xy - clicks.rim_centre_xy)), label, span=False)
+        # THE 2026-08-15 RULING ("the user is pointing to the holes in the library
+        # and scan and matching it"): under the MATCHED-POINTS fold — which only
+        # evidence stamped with the new fit_version can select, so the old fold
+        # never starts admitting what it refused — a near-axis click is a
+        # legitimate POSITION observation. Its clock voice is not granted, it is
+        # EARNED through the same lever² weight every observation pays: a
+        # 0.2mm-arm pair speaks with 0.04mm² of clock weight against a trench's
+        # 4mm², while its point carries full weight in the slide. The guard's
+        # refusal stands verbatim for the azimuth-only fold.
+        if shape != "matched-points":
+            require_clock_lever(
+                float(np.linalg.norm(click_xy - clicks.rim_centre_xy)), label,
+                span=False)
         click = azimuth_deg(click_xy, clicks.rim_centre_xy)
         audit["scan_point"] = [round(float(c), 3) for c in pair.scan_point]
         return [Observation(label=label, kind="point", part_azimuth_deg=part_azimuth,
@@ -1536,14 +1628,20 @@ def cross_checked(n_observations: int) -> bool:
     return n_observations >= CROSS_CHECK_MIN_OBSERVATIONS
 
 
-def agreement_words(n_observations: int, rms_mm: float) -> str:
+def agreement_words(n_observations: int, rms_mm: float, *,
+                    determined: str = "a single observation fixes the rotation") -> str:
     """The QC clause of a fit-by-points' outcome sentence.
 
     THE ONE-OBSERVATION BRANCH PRINTS NO MILLIMETRES, deliberately and not merely as
     phrasing: any figure it could print is the arithmetic of a single zero, and a
-    reader who sees millimetres in this clause is entitled to read them as agreement."""
+    reader who sees millimetres in this clause is entitled to read them as agreement.
+
+    ``determined`` names WHAT the lone observation fixed exactly, because that changed
+    with the matched-point ladder (client ruling 2026-08-15): one point pair fixes the
+    POSITION, not the rotation. The default is the azimuth-only fold's own wording, so
+    a v1 fit — live or re-applied — prints the sentence it always printed."""
     if not cross_checked(n_observations):
-        return ("a single observation fixes the rotation exactly — there is no second "
+        return (f"{determined} exactly — there is no second "
                 "mark for it to disagree with, so this fit has no agreement number")
     if rms_mm >= ADVISORY_DISAGREEMENT_MM:
         return (f"marks agree POORLY — {rms_mm:.3f}mm RMS, inside the "
@@ -1613,26 +1711,295 @@ def require_pair_agreement(rows: Sequence[dict], rms_mm: float) -> None:
         f"the feature it was meant to match, rather than starting the set again")
 
 
+# --- THE MATCHED-POINT LADDER (client ruling 2026-08-15) ---------------------------------
+#
+# "Point pair tools should not only be rotating, also down or up, it needs to match the
+# points where the user added them, because the user is pointing to the holes in the
+# library and scan and matching it."
+#
+# WHAT THE OPERATOR IS SAYING. They click one feature on the LIBRARY part and the same
+# feature on the SCAN. That is a 3-D correspondence — three numbers of information. The
+# azimuth-only fold kept ONE of them (the bearing about the rim centre) and discarded
+# the radial and the height difference entirely, so a cap sitting 0.4mm off its socket
+# could only ever be answered by turning it. The client watched exactly that happen
+# ("doing position rather than matching the points", §10-AR).
+#
+# THE LADDER, and why each rung is the shape it is:
+#
+#   1 PAIR  — PURE TRANSLATION. Three constraints, three degrees of freedom: exactly
+#             determined. The part slides so the clicked point lands on the clicked
+#             point. Nothing cross-checks it, and the A1 caution keeps firing — reworded
+#             to say what one pair actually fixed (``agreement_words(determined=...)``).
+#   2 PAIRS — TRANSLATION + THE TURN ABOUT THE SEATED AXIS. Six constraints, four
+#             degrees of freedom, so the residual becomes a measurement (the chord
+#             length and the height difference must agree).
+#   3+      — THE SAME constrained least squares, with more to disagree about. The RMS
+#             point-to-point residual is the served headline fact.
+#
+# WHY NOT FULL 6-DoF FROM TWO PAIRS. Because ±0.3mm of click scatter across a 3mm
+# baseline buys many degrees of TILT, and the seated axis is the pipeline's own
+# measurement over thousands of scan points — the one direction of this pose the whole
+# package stands on. See ``domain.geometry.fit_axis_locked``, which is where that
+# restriction lives and is pinned.
+#
+# WHY THE ANGLE IS SOLVED IN THE PART'S CANONICAL FRAME AND THE SLIDE IN THE SITE'S.
+# The constraint "about the part's own axis" is the canonical frame's z; expressed
+# there, the estimator is the closed-form axis-locked fit. The SLIDE is then re-solved
+# against the pose the ring-fixed kinematics actually formed — which carries its own
+# small rim-holding correction — so the translation that lands is the miss of the pose
+# being adopted, not of an ideal one. Both are the same least-squares optimum (rotating
+# a rigid pair of clouds together changes no distance), which is why the residual the
+# gate reads before the candidate exists and the residual the record serves afterwards
+# are the same numbers.
+#
+# WHAT DID NOT CHANGE, deliberately:
+#   - THE LEVER GUARDS. A part landmark or a scan click inside ``MIN_LEVER_ARM_MM`` of
+#     the rim centre is still refused, in the same words. Under this ladder a
+#     centre-to-centre pair would be a legitimate POSITION observation, but admitting
+#     it is exactly what "guards are restrictive-only" forbids: a new rule may refuse
+#     more than the old, never admit what the old refused. Relaxing it is its own
+#     decision, with its own measurement.
+#   - THE EVIDENCE BOUND. ``MAX_PAIR_DISAGREEMENT_MM`` still refuses at 1.00mm and
+#     still reads millimetres of miss. What it measures is now the miss of the fit that
+#     was applied, in all three axes, rather than the arc of an azimuth disagreement.
+#   - SPANS. See ``fit_shape``.
+
+PAIR_FIT_AZIMUTH_ONLY = 1
+PAIR_FIT_MATCHED_POINTS = 2
+# what the LIVE tools record and compute under today; older evidence carries no marker
+# at all and is re-applied under PAIR_FIT_AZIMUTH_ONLY by ``run._reapply_evidence``
+PAIR_FIT_VERSION = PAIR_FIT_MATCHED_POINTS
+
+# --- THE CHORD FLOOR, MEASURED (2026-08-15) ----------------------------------------------
+#
+# NOT ``MIN_SPAN_MM``, and the difference is the whole point. A span's direction was one
+# of TWO readings and arrived carrying an inverse-variance weight (L²/2) that discounted
+# a short baseline to nothing beside its own midpoint (2R²) — so 1.0mm could be "shorter
+# than this is not a bearing at all" and the estimator handled the rest. Under this fold
+# the chord IS the whole clock: the translation has absorbed the azimuth reading, so
+# there is no second observation to average against and nothing to discount a bad chord
+# with.
+#
+# MEASURED, 20,000 trials at the fleet's own click scatter (σ = 0.3mm per axis), two
+# marks a chord L apart, truth zero — clock RMS (worst case):
+#
+#   L      1.0     1.5     2.0     2.5     3.0     3.46    4.0     5.0   mm
+#   RMS   27.99   16.98   12.39    9.81    8.13    7.03    6.06    4.84  deg
+#   worst 178.3   158.4    62.1    47.2    37.6    32.0    27.1    20.9  deg
+#
+# (The closed form is √2·σ/L and the trials reproduce it to two decimals.)
+#
+# THE LINE, and what it is derived from rather than picked: this module's own published
+# table puts ONE plain centre click on a trench at 7.40-8.79° RMS (see
+# ``observation_weight``). 3.0mm is the shortest chord whose clock lands inside that
+# band — 8.13°. Below it the two marks would name the clock WORSE than the cheapest
+# reading this tool has ever offered, so they name a position and not a clock, and the
+# fit says so instead of turning the part on noise.
+#
+# A REAL CODED CAP CLEARS IT COMFORTABLY: two trenches of three at the 2.0mm coded-band
+# radius are 3.46mm apart (7.03°), and all three together give a 4.0mm baseline (4.96°).
+# Marks on adjacent features, or two clicks on one feature, do not — and should not.
+MIN_CLOCK_CHORD_MM = 3.0
+
+
+def fit_shape(pairs: Sequence[Correspondence], fit_version: int) -> str:
+    """WHICH FOLD THIS SET OF PAIRS IS READ BY — ``"matched-points"`` or
+    ``"azimuth-only"``.
+
+    TWO THINGS SEND A FIT DOWN THE OLD PATH, for two different reasons.
+
+    THE VERSION is the re-click doctrine applied to a semantics change. Evidence
+    recorded before 2026-08-15 was measured, judged and RECEIPTED under the azimuth-only
+    interpretation; §10-AD re-applies it verbatim to every future run, and a receipt
+    that silently changes meaning between runs is the backend self-correcting calibrated
+    operator input — the one thing this codebase never does (five attempts, all
+    reverted). Old evidence therefore keeps the old fold, exactly as §10-AR.1 chose to
+    RECORD the stale part frame rather than quietly repair it.
+
+    A SPAN is a bearing, and a bearing is translation-invariant: it carries no
+    information at all about where the part should sit, so it can contribute nothing to
+    the half of the answer this ladder adds. Worse, a span's other reading — its
+    MIDPOINT — is an azimuth about the rim centre, whose meaning depends on the part
+    not having been translated. Folding one act two ways is how two disagreeing truths
+    are born, so a set containing ANY span (on either half) stays the fit it already
+    was, whole. Spans measure width and rotation by construction; giving them
+    translation is a separate slice with its own measurement."""
+    if int(fit_version) < PAIR_FIT_MATCHED_POINTS:
+        return "azimuth-only"
+    if any(p.is_span or p.is_part_span for p in pairs):
+        return "azimuth-only"
+    return "matched-points"
+
+
+@dataclass(frozen=True)
+class MatchedPointFit:
+    """What one set of plain point pairs asks for, before any gate has judged it.
+
+    ``translation_canon`` is the slide in the PART's own frame — the fit's own answer.
+    The slide that is actually applied is re-solved against the ring-fixed candidate in
+    the site's frame (same optimum, different coordinates), so this one is the
+    replayable record rather than a second truth.
+
+    ``rotation_read`` is whether the clock came from the marks at all: False on one
+    pair, and False when the marks sit closer together than ``MIN_SPAN_MM`` in the clock
+    plane. ``note`` carries the reason in the operator's own sentence whenever it is
+    False — it rides the served detail, never only the record."""
+
+    rotation_deg: float
+    translation_canon: np.ndarray
+    residuals_mm: np.ndarray
+    clock_baseline_mm: float
+    rotation_read: bool
+    note: Optional[str] = None
+
+
+def solve_matched_points(part_points, scan_points_canon) -> MatchedPointFit:
+    """The ladder's arithmetic: the axis-locked least-squares fit of the part's clicked
+    points onto the operator's scan clicks, with the clock read only where there is a
+    lever to read it over.
+
+    THE CLOCK'S LEVER IS THE SPREAD ABOUT THE CENTROID, not about the rim centre: with
+    the position free, only relative geometry says anything about rotation. The floor it
+    is judged against is ``MIN_CLOCK_CHORD_MM`` — measured, not borrowed: at the fleet's
+    click scatter a 3.0mm chord reads the clock at 8.1° RMS, the shortest one that is no
+    worse than a single centre click. Under it the fit SLIDES ONLY and says so; it does
+    not refuse, because the position it recovers is still exactly what the operator
+    asked for, and refusing would delete the rung the client actually asked for."""
+    probe = fit_axis_locked(part_points, scan_points_canon)
+    if probe.clock_baseline_mm >= MIN_CLOCK_CHORD_MM:
+        return MatchedPointFit(
+            rotation_deg=probe.rotation_deg, translation_canon=probe.translation,
+            residuals_mm=probe.residuals_mm,
+            clock_baseline_mm=probe.clock_baseline_mm, rotation_read=True)
+    slid = fit_axis_locked(part_points, scan_points_canon, allow_rotation=False)
+    if len(slid.residuals_mm) < 2:
+        note = ("one pair names a position and not a clock; a second mark at least "
+                f"{MIN_CLOCK_CHORD_MM:.2f}mm across the cap would turn the part as "
+                f"well as move it")
+    else:
+        note = (f"the marks sit {probe.clock_baseline_mm:.2f}mm apart in the clock "
+                f"plane, under the {MIN_CLOCK_CHORD_MM:.2f}mm a chord needs to name a "
+                f"clock as precisely as one centre click does; place a mark further "
+                f"across the cap, or a third one, to turn the part as well as move it")
+    return MatchedPointFit(
+        rotation_deg=0.0, translation_canon=slid.translation,
+        residuals_mm=slid.residuals_mm, clock_baseline_mm=probe.clock_baseline_mm,
+        rotation_read=False, note=note)
+
+
+def matched_point_rows(labels: Sequence[str], part_points,
+                       fit: MatchedPointFit) -> Tuple[List[dict], float]:
+    """Each correspondence's own miss, as the operator's QC table reads it, plus their
+    RMS in millimetres.
+
+    ONE ROW SHAPE with the azimuth-only fold's (``residual_rows``): the surface renders
+    ``feature_id``/``observation``/``residual_mm``/``note`` and nothing else, so both
+    folds feed it unchanged. ``residual_kind`` names WHICH quantity the millimetres are
+    — the point-to-point miss of the pose that was adopted, not the arc of an azimuth
+    disagreement — because the same key carrying two different measurements without
+    saying which is how a QC number stops meaning anything.
+
+    THE RMS IS THE PLAIN ONE, and that is not the equal-weighting bug returning. The v1
+    mean combined observations of genuinely different variances (an averaged midpoint
+    against a direction over a short baseline) and had to weight them. Here every row is
+    one click of one kind, the least-squares objective IS the sum of squared point
+    misses, and the statistic that judges an estimate must be the estimate's own
+    objective. The per-click lever still rides the row — as ``weight``, the say that
+    click had in the CLOCK half of the answer (``observation_weight`` at the lever this
+    estimator reads, the spread about the centroid)."""
+    pts = np.asarray(part_points, float)
+    centroid = pts.mean(axis=0)
+    rows: List[dict] = []
+    for label, point, residual in zip(labels, pts, fit.residuals_mm):
+        lever = float(np.linalg.norm(point[:2] - centroid[:2]))
+        rows.append({
+            "feature_id": label,
+            "observation": "point",
+            "residual_mm": round(float(residual), 3),
+            "residual_kind": "point-to-point",
+            "clock_lever_mm": round(lever, 3),
+            "weight": round(observation_weight("point", lever), 4),
+        })
+    residuals = np.asarray(fit.residuals_mm, float)
+    rms = float(np.sqrt(np.mean(residuals ** 2))) if residuals.size else 0.0
+    return rows, rms
+
+
+def slide_onto_clicks(part_points_canon, scan_points_local,
+                      cand: np.ndarray) -> Tuple[np.ndarray, AxisLockedFit]:
+    """Seat a candidate pose ON the operator's clicks: the least-squares slide that
+    lands the part's clicked points on the scan's, and the pose that results.
+
+    THE SLIDE IS SOLVED AGAINST THE CANDIDATE, not against the pose the operator was
+    looking at, because the ring-fixed kinematics apply their own small rim-holding
+    correction when they turn the part (``_ring_fixed_candidate``). Solving here puts
+    that correction INSIDE the fit: whatever the turn did to the position, the slide
+    answers for it, and the residuals returned are the miss of the pose actually being
+    adopted rather than of an idealized one.
+
+    The rotation is untouched — locked, not re-fitted — so this can never quietly
+    revisit a turn that has already passed ``judge_rotation``'s bounds."""
+    posed = np.asarray(part_points_canon, float) @ cand[:3, :3].T + cand[:3, 3]
+    seat = fit_axis_locked(posed, scan_points_local, allow_rotation=False)
+    slid = np.asarray(cand, float).copy()
+    slid[:3, 3] = slid[:3, 3] + seat.translation
+    return slid, seat
+
+
+def matched_point_words(n_pairs: int, moved_mm: float, fit: MatchedPointFit,
+                        cumulative_deg: float, agreement: str) -> str:
+    """The matched-point fit's outcome sentence — the SERVED words, composed here and
+    rendered verbatim by every surface.
+
+    The pair count and the observation count coincide on this path by construction (a
+    plain point pair is exactly one observation; anything that yields two is a span,
+    and a span never reaches this fold — see ``fit_shape``), and the clause is kept in
+    the azimuth-only fold's own shape so a reader meets one sentence family.
+
+    A LOCKED CLOCK SAYS SO HERE. An operator who placed two marks and got no rotation
+    has been given a silent no-op unless the reason arrives on the answer itself."""
+    head = f"fit by {n_pairs} point pair(s) → {n_pairs} observation(s): "
+    if fit.rotation_read:
+        moved = (f"moved {moved_mm:.3f}mm and rotated {fit.rotation_deg:+.1f}° "
+                 f"(cumulative {cumulative_deg:+.1f}°)")
+    else:
+        moved = (f"moved {moved_mm:.3f}mm, no rotation — {fit.note} "
+                 f"(cumulative {cumulative_deg:+.1f}°)")
+    return f"{head}{moved}, {agreement}"
+
+
 def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
-                            pairs: Sequence[Correspondence]) -> AdjustOutcome:
+                            pairs: Sequence[Correspondence],
+                            fit_version: int = PAIR_FIT_VERSION) -> AdjustOutcome:
     """FIT BY POINTS: the operator names a feature on the LIBRARY PART and the same
-    feature on the SCAN, and the cap rotates so the named pairs meet.
+    feature on the SCAN, and the cap MOVES so the named pairs meet.
 
     This is align-to-mark with the ambiguity removed — nearest-match binds a click to
     whichever code feature happens to be closest, wrong by a whole inter-feature gap on
     a 3-trench cap and unusable where the automatic reader has no evidence at all.
-    More than one pair adds a QC number the operator can read: the per-observation
-    residual in millimetres at its own lever arm.
+    More than one pair adds a QC number the operator can read: each correspondence's
+    own residual in millimetres.
 
-    AND EXACTLY ONE OBSERVATION HAS NO SUCH NUMBER — the concession this docstring made
-    in passing, now stated on the wire (``cross_checked``, the 2026-08-01 defect). One
-    observation is exactly determined for rotation, so its residual is zero by
-    construction. The fit is still legitimate and still applied — it is the documented
-    answer where the automatic reader has no evidence — but it reports NO agreement
-    figure rather than a 0.000mm RMS that means nothing.
+    WHAT "MEET" MEANS DEPENDS ON THE FOLD (client ruling 2026-08-15). Under
+    ``fit_shape`` == "matched-points" the pairs are read as the 3-D correspondences
+    they are: the part SLIDES so the clicked points land on the clicked points, and
+    turns about its own axis where two or more marks give a chord to read (the ladder
+    above). Under "azimuth-only" — a set containing a span, or evidence recorded before
+    the ruling — the fit is the inverse-variance circular mean of the angular
+    observations, unchanged in every digit.
+
+    AND EXACTLY ONE OBSERVATION HAS NO AGREEMENT NUMBER — the concession this docstring
+    made in passing, now stated on the wire (``cross_checked``, the 2026-08-01 defect).
+    One observation is exactly determined (for the rotation under the old fold, for the
+    position under the new), so its residual is zero by construction. The fit is still
+    legitimate and still applied — it is the documented answer where the automatic
+    reader has no evidence — but it reports NO agreement figure rather than a 0.000mm
+    RMS that means nothing.
 
     Still a PROPOSAL: the same ring-fixed kinematics, the same stability bound, the
-    same certification gates, the same re-read and re-emit."""
+    same certification gates, the same re-read and re-emit. The certification gates run
+    AGAIN over the slid pose — a translation is new movement, and the bounds that judge
+    a part riding off the scan are the calibrated instrument for it."""
     pairs = list(pairs)
     if not pairs:
         raise AdjustInvalid("name at least one correspondence — a feature of the part "
@@ -1678,64 +2045,148 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
     # tolerance the part annotator already uses — exact, not a guessed multiple
     max_span_mm = 2.0 * float(sig.rmax) + 2.0 * CLICK_SLACK_MM
 
+    shape = fit_shape(pairs, fit_version)
     observations: List[Observation] = []
     audit_pairs: List[dict] = []
+    labels: List[str] = []
+    part_points: List[np.ndarray] = []
     free_count = 0
     for pair in pairs:
         if pair.part_point is not None:
             free_count += 1
-        label, part_azimuth, lever, audit, part_direction = _part_half(
-            pair, ann, centre_xy, ctx.model, ctx.variant, free_count)
+        half = _part_half(pair, ann, centre_xy, ctx.model, ctx.variant, free_count,
+                          shape=shape)
         for point in ([pair.scan_point] if not pair.is_span
                       else [pair.scan_point, pair.scan_point_end]):
             p = np.asarray(point, float)
             if p.shape != (3,) or not np.isfinite(p).all():
-                raise AdjustInvalid(f"the mark for {label!r} must be a finite "
+                raise AdjustInvalid(f"the mark for {half.label!r} must be a finite "
                                     f"[x, y, z] point on the scan")
             dist = float(np.linalg.norm(p - site_pos))
             if dist > _MARK_MAX_DISTANCE_MM:
-                raise AdjustInvalid(f"the mark for {label!r} is {dist:.1f}mm from "
+                raise AdjustInvalid(f"the mark for {half.label!r} is {dist:.1f}mm from "
                                     f"tooth {tooth}'s seated cap — click the feature "
                                     f"on the cap itself (within "
                                     f"{_MARK_MAX_DISTANCE_MM:.0f}mm)")
-        observations.extend(observations_for(pair, label, part_azimuth, lever,
-                                             clicks, max_span_mm, audit,
-                                             part_direction=part_direction))
-        audit_pairs.append(audit)
-
-    # Rotating the part CCW by delta carries a feature at canonical azimuth f to
-    # f+delta in the scan's frame, so each observation asks for its own delta. With
-    # one that IS the rotation; with several, the least-squares rotation over the
-    # angular residuals is their circular mean, WEIGHTED BY INVERSE VARIANCE — a span
-    # that averaged its click noise must not have that gain handed back to a reading
-    # several times noisier (``observation_weight``).
-    applied = circular_mean_deg([o.delta_deg for o in observations],
-                                [o.weight for o in observations])
-    residuals, rms = residual_rows(observations, applied)
-    # THE MEASUREMENT IS READ, not merely reported (defect cap7030-zimmer-4.5). Before
-    # any candidate pose is formed, because no POSE gate can see this: a ring-fixed turn
-    # moves the rim by almost nothing at any angle, so ``judge_rotation`` would pass a
-    # rotation these marks never agreed on. See ``MAX_PAIR_DISAGREEMENT_MM``.
-    require_pair_agreement(residuals, rms)
-    checked = cross_checked(len(observations))
-    # THE RESIDUAL THAT CANNOT EXIST IS NOT REPORTED AS A NUMBER. ``residual_rms_mm`` is
-    # Optional on this outcome, on the BFF's view, in the row's correspondence block and
-    # on the wire's TypeScript — None was already legal everywhere, and it is the only
-    # honest value here: a 0.000 travelling in a float field is a quality figure to every
-    # surface that renders it, however carefully the sentence beside it is worded.
-    reported_rms = round(rms, 3) if checked else None
+        # EVERY GUARD FIRES ON BOTH FOLDS, BY CALLING THE SAME FUNCTION. The
+        # matched-point path does not USE these angular observations, but
+        # ``observations_for`` is where the scan-side lever rule and the span guards
+        # live, and where the replay audit is written. Re-deriving the guards for the
+        # new fold would be a second copy of a restrictive rule — the drift the
+        # 2026-08-04 audit found in the folds themselves.
+        observations.extend(observations_for(pair, half.label, half.azimuth_deg,
+                                             half.lever_mm, clicks, max_span_mm,
+                                             half.audit,
+                                             part_direction=half.direction_deg,
+                                             shape=shape))
+        audit_pairs.append(half.audit)
+        labels.append(half.label)
+        part_points.append(half.point)
 
     _base, prior_cum = _rotation_state(ctx)
-    cumulative = prior_cum + applied
-    cand, excess = judge_rotation(ctx.template, ctx.local_points, ctx.pose_local,
-                                  applied)
-    detail = (f"fit by {len(pairs)} point pair(s) → {len(observations)} observation(s): "
-              f"rotated {applied:+.1f}° (cumulative {cumulative:+.1f}°), "
-              f"{agreement_words(len(observations), rms)}")
+    if shape == "matched-points":
+        # THE MATCHED-POINT LADDER (client ruling 2026-08-15). The clock is solved in
+        # the part's CANONICAL frame, where its axis is z and the estimator is closed
+        # form; the SLIDE is solved afterwards against the pose the ring-fixed
+        # kinematics actually formed.
+        scan_canon = np.array([clicks.to_canon(p.scan_point) for p in pairs], float)
+        part_arr = np.array(part_points, float)
+        fit = solve_matched_points(part_arr, scan_canon)
+        applied = fit.rotation_deg
+        residuals, rms = matched_point_rows(labels, part_arr, fit)
+        # READ BEFORE THE CANDIDATE EXISTS, exactly as the azimuth-only fold does: no
+        # POSE gate can see marks that disagree with each other, and the operator is
+        # owed the disagreement's own sentence rather than whichever gate fires next.
+        require_pair_agreement(residuals, rms)
+        # THE RING-FIXED PATH IS TAKEN EVEN AT ZERO DEGREES, deliberately: the same
+        # kinematics, the same stability bound and the same gates judge a slide as
+        # judge a turn, and a site whose rim ring cannot be measured refuses here as it
+        # always did rather than acquiring a new, laxer door.
+        cand, excess = judge_rotation(ctx.template, ctx.local_points, ctx.pose_local,
+                                      applied)
+        # THE SLIDE, on the pose that was actually formed — so the ring-fixed rim
+        # correction is inside the fit rather than left over beside it. Its residuals
+        # are the miss of the pose being adopted, which is the number the record and
+        # the QC table then carry (§10-AG: a residual belongs to the act that produced
+        # it).
+        scan_local = np.array([clicks.to_local(p.scan_point) for p in pairs], float)
+        cand, seat = slide_onto_clicks(part_arr, scan_local, cand)
+        # A TRANSLATION IS NEW MOVEMENT and is judged by the same calibrated bounds
+        # that judge a rotation — face mean, top-face p90, the rim band. They are
+        # relative (before vs after over the same points), so they read the whole move.
+        _certification_gates(ctx.template, ctx.local_points, ctx.pose_local, cand)
+        moved_mm = float(np.linalg.norm(seat.translation))
+        # the SAME rows, re-read at the pose that landed. The two sets agree to
+        # floating point — rotating a rigid pair of clouds together changes no
+        # distance between them — and the served one is the adopted pose's own.
+        residuals, rms = matched_point_rows(
+            labels, part_arr, replace(fit, residuals_mm=seat.residuals_mm))
+        # the served number is the adopted pose's own miss, and it is judged too: the
+        # bound must never be passed by a figure the record then publishes
+        require_pair_agreement(residuals, rms)
+        # ONE PAIR IS THREE CONSTRAINTS ON THREE UNKNOWNS: exactly determined, residual
+        # zero by construction, nothing cross-checked. The same floor the azimuth-only
+        # fold uses, counted in the same units — one plain pair is one observation.
+        checked = cross_checked(len(residuals))
+        reported_rms = round(rms, 3) if checked else None
+        cumulative = prior_cum + applied
+        detail = matched_point_words(
+            len(pairs), moved_mm, fit, cumulative,
+            agreement_words(len(residuals), rms,
+                            determined="a single point pair fixes the position"))
+        evidence = {"pairs": audit_pairs, "residuals": residuals,
+                    "residual_rms_mm": reported_rms, "cross_checked": checked,
+                    "fit_version": PAIR_FIT_MATCHED_POINTS, "fit_shape": shape,
+                    "translation_mm": round(moved_mm, 4),
+                    "translation_canon_mm": [round(float(v), 4)
+                                             for v in fit.translation_canon],
+                    "clock_baseline_mm": round(fit.clock_baseline_mm, 3),
+                    "rotation_read": fit.rotation_read}
+        if fit.note:
+            evidence["clock_note"] = fit.note
+        translation_mm: Optional[float] = round(moved_mm, 4)
+        applied_version = PAIR_FIT_MATCHED_POINTS
+    else:
+        # THE AZIMUTH-ONLY FOLD, unchanged in every digit — the fit a span set is, and
+        # the fit every receipt written before the ruling was measured under.
+        # Rotating the part CCW by delta carries a feature at canonical azimuth f to
+        # f+delta in the scan's frame, so each observation asks for its own delta. With
+        # one that IS the rotation; with several, the least-squares rotation over the
+        # angular residuals is their circular mean, WEIGHTED BY INVERSE VARIANCE — a
+        # span that averaged its click noise must not have that gain handed back to a
+        # reading several times noisier (``observation_weight``).
+        applied = circular_mean_deg([o.delta_deg for o in observations],
+                                    [o.weight for o in observations])
+        residuals, rms = residual_rows(observations, applied)
+        # THE MEASUREMENT IS READ, not merely reported (defect cap7030-zimmer-4.5).
+        # Before any candidate pose is formed, because no POSE gate can see this: a
+        # ring-fixed turn moves the rim by almost nothing at any angle, so
+        # ``judge_rotation`` would pass a rotation these marks never agreed on. See
+        # ``MAX_PAIR_DISAGREEMENT_MM``.
+        require_pair_agreement(residuals, rms)
+        checked = cross_checked(len(observations))
+        # THE RESIDUAL THAT CANNOT EXIST IS NOT REPORTED AS A NUMBER.
+        # ``residual_rms_mm`` is Optional on this outcome, on the BFF's view, in the
+        # row's correspondence block and on the wire's TypeScript — None was already
+        # legal everywhere, and it is the only honest value here: a 0.000 travelling in
+        # a float field is a quality figure to every surface that renders it, however
+        # carefully the sentence beside it is worded.
+        reported_rms = round(rms, 3) if checked else None
+        cumulative = prior_cum + applied
+        cand, excess = judge_rotation(ctx.template, ctx.local_points, ctx.pose_local,
+                                      applied)
+        detail = (f"fit by {len(pairs)} point pair(s) → "
+                  f"{len(observations)} observation(s): "
+                  f"rotated {applied:+.1f}° (cumulative {cumulative:+.1f}°), "
+                  f"{agreement_words(len(observations), rms)}")
+        evidence = {"pairs": audit_pairs, "residuals": residuals,
+                    "residual_rms_mm": reported_rms, "cross_checked": checked,
+                    "fit_version": PAIR_FIT_AZIMUTH_ONLY, "fit_shape": shape}
+        translation_mm = None
+        applied_version = PAIR_FIT_AZIMUTH_ONLY
+
     clocking, nudge_fields, files = _adopt_rotation(
-        ctx, cand, applied, cumulative, "fit-by-points", detail,
-        {"pairs": audit_pairs, "residuals": residuals,
-         "residual_rms_mm": reported_rms, "cross_checked": checked})
+        ctx, cand, applied, cumulative, "fit-by-points", detail, evidence)
     payload, deviation, stale = _post_adjustment_reading(ctx)
     return AdjustOutcome(
         tooth=tooth, operation="fit-by-points", detail=detail, files=files,
@@ -1744,6 +2195,7 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
         applied_delta_deg=round(applied, 1), cumulative_deg=round(cumulative, 1),
         stability_excess_mm=(round(excess, 3) if excess is not None else None),
         pairs=residuals, residual_rms_mm=reported_rms, cross_checked=checked,
+        translation_mm=translation_mm, fit_version=applied_version,
         pane_payload=payload)
 
 

@@ -39,6 +39,7 @@ def _outcome(**overrides):
                   files=["case-x-13-implant.json"], clocking={"deg": 3.0},
                   deviation={"deviation_rms_mm": 0.11}, stale_metrics=["guidance"],
                   nudge=None, best_fit=None, pairs=[], residual_rms_mm=None,
+                  translation_mm=None, fit_version=None,
                   applied=True)
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -62,7 +63,7 @@ class TestTheDispatch:
                             calls.append(("mark", tooth, list(point)))
                             or _outcome(operation="align-to-mark"))
         monkeypatch.setattr(adjust, "align_to_correspondence",
-                            lambda case, run_dir, tooth, pairs:
+                            lambda case, run_dir, tooth, pairs, fit_version:
                             calls.append(("pairs", tooth, len(pairs)))
                             or _outcome())
         monkeypatch.setattr(adjust, "best_fit_site",
@@ -166,7 +167,7 @@ class TestTheFoldMatchesTheLiveTools:
             self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             adjust, "align_to_correspondence",
-            lambda case, run_dir, tooth, pairs:
+            lambda case, run_dir, tooth, pairs, fit_version:
             _outcome(pairs=[{"observation": "midpoint"},
                             {"observation": "direction"}],
                      residual_rms_mm=0.05))
@@ -183,11 +184,98 @@ class TestTheFoldMatchesTheLiveTools:
             "max_pairs": 8, "residual_rms_mm": 0.05,
             "cross_checked": adjust.cross_checked(2)}
 
+    def test_a_matched_point_fit_folds_the_fold_it_was_read_by_and_what_it_moved(
+            self, tmp_path, monkeypatch):
+        """The client's ruling made the pair fold two folds (2026-08-15). A row that
+        says only "3 pairs, 0.08mm RMS" no longer describes the act: the same numbers
+        mean different things under the two, so the block names which one moved the
+        part and by how far."""
+        monkeypatch.setattr(
+            adjust, "align_to_correspondence",
+            lambda case, run_dir, tooth, pairs, fit_version:
+            _outcome(pairs=[{"observation": "point"}, {"observation": "point"}],
+                     residual_rms_mm=0.08, translation_mm=0.4123,
+                     fit_version=adjust.PAIR_FIT_MATCHED_POINTS))
+        summary = _summary()
+        _reapply_evidence(_case(tmp_path), tmp_path, {13: [
+            {"kind": "pairs", "pairs": [{"scan_point": [0.0, 0.0, 0.0]},
+                                        {"scan_point": [2.0, 0.0, 0.0]}]},
+        ]}, summary)
+        block = summary["sites"][0]["correspondence"]
+        assert block["fit_version"] == adjust.PAIR_FIT_MATCHED_POINTS
+        assert block["translation_mm"] == 0.4123
+        assert block["spans"] == 0 and block["directions_used"] == 0
+
+    def test_an_azimuth_only_fit_carries_no_translation_key_at_all(
+            self, tmp_path, monkeypatch):
+        """A fold that cannot translate must not publish a 0.0 that reads as "we
+        measured no movement" — the omission IS the honest statement."""
+        monkeypatch.setattr(
+            adjust, "align_to_correspondence",
+            lambda case, run_dir, tooth, pairs, fit_version:
+            _outcome(pairs=[{"observation": "midpoint"}], residual_rms_mm=None,
+                     fit_version=adjust.PAIR_FIT_AZIMUTH_ONLY))
+        summary = _summary()
+        _reapply_evidence(_case(tmp_path), tmp_path, {13: [
+            {"kind": "pairs", "pairs": [{"scan_point": [0.0, 0.0, 0.0],
+                                         "scan_point_end": [1.0, 0.0, 0.0]}]},
+        ]}, summary)
+        block = summary["sites"][0]["correspondence"]
+        assert block["fit_version"] == adjust.PAIR_FIT_AZIMUTH_ONLY
+        assert "translation_mm" not in block
+
+
+class TestEvidenceIsReAppliedUnderTheFoldItWasMeasuredUnder:
+    """THE VERSIONING SEAM (client ruling 2026-08-15, the re-click doctrine applied to
+    a semantics change). §10-AD promises that a re-run re-applies the operator's own
+    measurements; §10-AR.1 records what happens when the meaning underneath them
+    changes — the backend must NEVER self-correct calibrated operator input, so the
+    honest move is to read old evidence the way it was recorded and say so.
+
+    The marker rides the evidence entry itself (``fit_version``, stamped by the BFF at
+    the moment of the act). An entry without one predates the ruling."""
+
+    def _capture(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(
+            adjust, "align_to_correspondence",
+            lambda case, run_dir, tooth, pairs, fit_version:
+            seen.append(fit_version) or _outcome())
+        return seen
+
+    def test_evidence_without_a_marker_re_applies_azimuth_only(
+            self, tmp_path, monkeypatch):
+        seen = self._capture(monkeypatch)
+        _reapply_evidence(_case(tmp_path), tmp_path, {13: [
+            {"kind": "pairs", "pairs": [{"scan_point": [0.0, 0.0, 0.0]}]}]},
+            _summary())
+        assert seen == [adjust.PAIR_FIT_AZIMUTH_ONLY]
+
+    def test_evidence_stamped_by_todays_tool_re_applies_matched_points(
+            self, tmp_path, monkeypatch):
+        seen = self._capture(monkeypatch)
+        _reapply_evidence(_case(tmp_path), tmp_path, {13: [
+            {"kind": "pairs", "fit_version": adjust.PAIR_FIT_MATCHED_POINTS,
+             "pairs": [{"scan_point": [0.0, 0.0, 0.0]}]}]},
+            _summary())
+        assert seen == [adjust.PAIR_FIT_MATCHED_POINTS]
+
+    def test_an_unreadable_marker_falls_back_to_the_older_interpretation(
+            self, tmp_path, monkeypatch):
+        """Fail-closed on the SEMANTICS: a marker nobody can read is not a licence to
+        re-interpret a recorded measurement."""
+        seen = self._capture(monkeypatch)
+        _reapply_evidence(_case(tmp_path), tmp_path, {13: [
+            {"kind": "pairs", "fit_version": "two",
+             "pairs": [{"scan_point": [0.0, 0.0, 0.0]}]}]},
+            _summary())
+        assert seen == [adjust.PAIR_FIT_AZIMUTH_ONLY]
+
     def test_the_block_belongs_to_the_act_that_produced_it(
             self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             adjust, "align_to_correspondence",
-            lambda case, run_dir, tooth, pairs:
+            lambda case, run_dir, tooth, pairs, fit_version:
             _outcome(pairs=[{"observation": "midpoint"}], residual_rms_mm=None))
         monkeypatch.setattr(adjust, "align_to_mark",
                             lambda case, run_dir, tooth, point:
