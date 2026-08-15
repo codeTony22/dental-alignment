@@ -516,3 +516,71 @@ this slice's own scope, untouched — still reads 25 passed / 2 skipped under En
 Engine B — is reached exactly: every failure in §2's table is now a passing, engine-aware
 assertion, and the two "beyond the three" shapes §4.4 found were classified (as the same
 guard-refusal decision, at two more call sites) rather than left as a residue.
+
+---
+
+## 5 · The extension past the parity branch — 13 more, same pattern (2026-08-15)
+
+§4's rework landed on a branch; by the time it reached `main`, `product-app-plan.md`'s
+§10-AT "excision + artifact 6's third ruling" entry (2026-08-15, same day) had added the
+DEFECT-1 excision (`scanned_cap_face_mask`, both `_csg_carve` branches, the healingcaps
+fuse, the press fallback) and retired `closed_model_with_recesses` in favour of
+`open_arch_with_through_holes` — 13 tests the parity branch never saw. The plan's own
+"AT parity referee" entry records the consequence measured AT INTEGRATION, on `main`, where
+`data/real` is present: **manifold 130/0, MeshLib 130/13** — 12 of the 13 read tracked
+provenance directly (`_RecordingKernel`/`tracked.source`) or a real-fleet fixture, and the
+13th is the one true-boolean-recess pin naming a real vendor cap by name. This section is
+that extension, reworked the same way as §4 — one test/class at a time, `engine_expects`,
+never a diluted tracked-path assertion — against the SAME five-file corpus.
+
+### 5.1 · The 13, and the branch chosen for each (verified by running both engines directly
+against the fixture each pin actually uses, this slice's own exploration — not inferred)
+
+| test | non-tracked outcome | why |
+|---|---|---|
+| `test_csg_corpus.py::TestRealFleetGoldenMetrics::test_golden_metrics_on_a_real_cap6030_site` | `pytest.raises(ValueError, match="MeshLib")` on the bare `default_kernel().difference()` call (no fallback wrapper at this call site) | real, feature-rich cap6030 geometry is the §2.1/§4.4 self-intersection/coplanar class; **UNVERIFIED in this worktree** (`data/real` absent — skips before reaching the branch either way; the ledger's own "1 of 13" is the only confirmation it fires, at integration) |
+| `test_deliverables.py::TestCapImprintHoles::test_the_imprint_hugs_the_cap_and_the_gum_survives` | whole-cut falls back to the press carve (`"the true-boolean recess could not be cut" … "MeshLib" … "the pressed carve was used instead"`), CSG-exact wall/floor assertions skipped | same cap6030 fixture as the row above, through the full `cap_imprint_holes` ladder; **UNVERIFIED in this worktree** for the same reason — inferred from the row above plus the established fin/deviated-cap precedent (§4.4), not measured directly here |
+| `TestTheMergedCaplessArtifactDoesNotMove::test_the_excised_set_is_exactly_scan_provenance_intersect_mask` | `assert_fallback_notes(notes, "the exact cap could not be cut", "the provenance-tracked strip could not run")`; the tracked-ground-truth claim is skipped | VERIFIED directly: this exact site/pose trips the SAME coplanar intersection-guard branch its sibling pin already documents (2 notes) — no tracked result exists to re-derive the companion claim from, so the honest assertion is the sibling's own already-established fallback outcome, not a diluted re-proof |
+| `TestDefect1MeasuredCapResidueIsExcised::test_the_bulge_does_not_survive_the_carve` | whole-cut falls back to the press carve; **the bulge-survivor assertion is kept, unweakened** | VERIFIED directly: the untracked `difference` ALSO refuses natively here ("Cannot separate mesh B…self-intersections") — but `_press_carve`'s own DEFECT-1 excision (`excise &= ~face_moved`, over the pristine arch) drops the bulge exactly as the tracked path does (0/128 survivors either way) |
+| `…::test_the_gum_outside_the_mask_survives_untouched` | same whole-cut fallback; gum-survives assertion kept unweakened | VERIFIED directly: same site, same fallback, same result |
+| `…::test_tool_provenance_faces_are_never_excised` | same whole-cut fallback; socket-shipped assertion kept unweakened | VERIFIED directly: the press carve still ships a non-empty recess piece (284 faces) |
+| `…::test_the_bulge_does_not_survive_the_fused_composite` | tracked-strip-fallback note only (the union itself succeeds); **the bulge assertion is the OPPOSITE of the tracked claim — all 128 vertices survive** | VERIFIED directly, a genuine finding, not diluted: `arch_with_parts_fused`'s untracked branch substitutes a 0.45mm proximity-to-the-part-solid test for the tracked path's exact `source == 0`, and this fixture's own bulge sits a measured 0.400–0.403mm from the part surface — inside that radius almost everywhere — so the excision is defeated. Out of scope to fix (tests only, this slice) |
+| `…::test_without_excise_sites_the_fuse_behaves_exactly_as_before` | tracked-strip-fallback note only | VERIFIED directly: the plain union succeeds; same shape as `TestArchWithPartsFused`'s own already-reworked siblings |
+| `TestOpenArchWithThroughHoles::test_the_result_is_not_watertight_open_by_design` | tracked-strip-fallback note only; geometry claim kept unweakened | VERIFIED directly: the untracked `difference` succeeds on this clean-cylinder site |
+| `…::test_zero_closure_provenance_faces_survive` | `assert_fallback_notes` + non-empty result; the tracked-source closure census is skipped (no ground truth) | VERIFIED directly: same clean site, same one-note fallback |
+| `…::test_the_bore_pierces_no_floor_hit_inside_the_punch_footprint` | fallback note branches; the ray-hit assertion kept unweakened | VERIFIED directly: geometry unaffected by which strip mechanism selects it |
+| `…::test_the_excision_holds_here_too` | **the whole artifact is ABSENT** — `out is None`, one note ("could not be built" … "ships without it" … names MeshLib) | VERIFIED directly: unlike `cap_imprint_parts`, this function has no intermediate press-carve rung — its outer `try/except` wraps the untracked fallback too, so the SAME native refusal that hits the bulging-cap carve above fails the whole artifact open to absence, exactly `test_a_totally_unbuildable_scan_fails_open_to_absence`'s own shape |
+| `…::test_a_degenerate_template_falls_back_to_its_envelope_per_site` | 2 notes (the per-site envelope note, unchanged, then the tracked-strip note) | VERIFIED directly: the good site's own untracked difference succeeds |
+
+`TestOpenArchWithThroughHoles::test_a_totally_unbuildable_scan_fails_open_to_absence` — the
+class's 6th test — is untouched: verified byte-identical under both engines (it fails
+before ever reaching the kernel, on an empty scan's own gum-ring band), which is exactly why
+the task's own list names 5 of this class's 6 tests, not 6.
+
+### 5.2 · The after-numbers, this worktree (`data/real` absent — the 2 rows above marked
+UNVERIFIED still skip here; both engines, `-m "not slow"`, individual per-suite runs)
+
+| suite | Engine A (manifold) | Engine B (meshlib) |
+|---|---|---|
+| `test_kernel.py` | 30 pass / 0 fail / 0 skip | 29 pass / 0 fail / 1 skip |
+| `test_csg.py` | 40 pass / 0 fail (1 deselected) | 40 pass / 0 fail (1 deselected) |
+| `test_csg_corpus.py` | 10 pass / 0 fail / 1 skip (2 deselected) | 10 pass / 0 fail / 1 skip (2 deselected) |
+| `test_degeneracy.py` | 11 pass / 0 fail | 11 pass / 0 fail |
+| `test_deliverables.py` | 51 pass / 0 fail / 1 skip (1 deselected) | 51 pass / 0 fail / 1 skip (1 deselected) |
+| **TOTAL** | **142 / 0 / 2** (4 deselected) | **141 / 0 / 3** (4 deselected) |
+
+Combined single-invocation (the same five files, one `pytest` call): manifold 142 passed, 2
+skipped, 4 deselected in 12.60s; MeshLib 141 passed, 3 skipped, 4 deselected in 19.84s. The
+skip-count asymmetry (2 vs 3) is unchanged from §4.6 and remains the same one pin
+(`test_kernel.py::TestEngineSwitch`'s missing-package path).
+
+**Zero failures on both engines — the task's own target for this extension, reached
+exactly**, with two honest qualifications carried over from §5.1 rather than hidden: (1) the
+two real-fleet-gated rows (`TestRealFleetGoldenMetrics`'s pin, `TestCapImprintHoles`'s
+cap6030 pin) skip in every venv available to this worktree — their non-tracked branches are
+STRUCTURALLY correct (they collect, they would run if `data/real` existed) but the actual
+refusal they assert is confirmed only by the plan's own "AT INTEGRATION … MeshLib 130/13"
+reading, not re-verified here; (2) `test_the_bulge_does_not_survive_the_fused_composite`'s
+non-tracked branch asserts a genuine REGRESSION relative to the tracked claim (the bulge
+survives, not "dies more slowly") — recorded as a finding in §5.1's own table, not smoothed
+over, and out of scope to fix under this slice's own tests-only charter.

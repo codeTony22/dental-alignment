@@ -82,6 +82,9 @@ import {
   queueSummary,
   reasonCountWords,
   unverifiedClockNotice,
+  rotationOffTrenchDeg,
+  dockToolGood,
+  ADJUST_DOCK_TOOLS,
   type ClockReferenceLike,
   withPick,
   type AdjustQueueEntry,
@@ -378,6 +381,72 @@ export interface AdjustStageViewProps {
   readonly onCloseCautions?: () => void;
 }
 
+
+/**
+ * THE TOOL CHIP RAIL (UX 2026-08-15) — lifted from AdjustDock's header into its
+ * own strip above the three panes so the operator can see and switch tools without
+ * looking to the bottom of the screen. Stateless: the active/good state is computed
+ * here from the same props AdjustDock already read.
+ *
+ * The `good` highlight uses the same formula as AdjustDock's own `good(id)` call,
+ * computed from `lastOutcome`, `pass`, `drafts`, and `autoMarkLandmarks` — all
+ * props of AdjustStageView, so no new data flows in or out.
+ */
+function AdjustToolRail({
+  tool,
+  onSelectTool,
+  lastOutcome,
+  pass,
+  drafts,
+  autoMarkLandmarks,
+}: {
+  readonly tool: AdjustToolId;
+  readonly onSelectTool: (tool: AdjustToolId) => void;
+  readonly lastOutcome: AdjustOutcomeView | null;
+  readonly pass: AlreadyOptimal | null;
+  readonly drafts: readonly PairDraft[];
+  readonly autoMarkLandmarks: readonly LandmarkView[];
+}) {
+  const notchShiftDeg =
+    typeof lastOutcome?.clocking?.["notch_shift_deg"] === "number"
+      ? (lastOutcome.clocking["notch_shift_deg"] as number)
+      : null;
+  const offDeg = rotationOffTrenchDeg(0, notchShiftDeg);
+  const good = (id: AdjustToolId) =>
+    dockToolGood(id, {
+      offDeg,
+      bestFitPass: pass !== null,
+      drafts,
+      landmarksCount: autoMarkLandmarks.length,
+    });
+  return (
+    <div
+      data-role="tool-tabs"
+      role="tablist"
+      aria-label="Choose a correction tool"
+      className="adjust-tool-bar"
+    >
+      {ADJUST_DOCK_TOOLS.map((info) => (
+        <button
+          key={info.id}
+          type="button"
+          role="tab"
+          data-role="tool-tab"
+          data-tool={info.id}
+          aria-selected={tool === info.id}
+          title={info.tooltip}
+          className={`adjust-dock__chip adjust-tool-bar__chip${
+            tool === info.id ? " adjust-dock__chip--active" : ""
+          }${good(info.id) ? " adjust-dock__chip--good" : ""}`}
+          onClick={() => onSelectTool(info.id)}
+        >
+          <span aria-hidden="true">{info.glyph}</span>
+          <span className="adjust-tool-bar__label">{info.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /** The stage's whole surface, pure props → markup — statically testable. */
 export function AdjustStageView({
@@ -701,6 +770,19 @@ export function AdjustStageView({
           linked={linked}
           onToggleLinked={onToggleLinked}
           endSlot={insightSlot}
+        />
+        {/* THE TOOL CHIP RAIL (UX 2026-08-15): lifted from the dock header so the
+            operator sees and switches tools at the top, not buried at the bottom.
+            The dock body gains the height the chip row previously took; the panes
+            spend one chip-height row (~34px) to put navigation above the 3D views
+            rather than inside the cramped tool strip below them. */}
+        <AdjustToolRail
+          tool={tool}
+          onSelectTool={onSelectTool}
+          lastOutcome={lastOutcome}
+          pass={pass}
+          drafts={drafts}
+          autoMarkLandmarks={autoMarkLandmarks}
         />
         {panes}
         <div className="workspace-drawer workspace-drawer--dock">

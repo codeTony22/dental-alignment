@@ -91,41 +91,25 @@ function view(overrides: Partial<AdjustDockProps> = {}) {
   );
 }
 
-describe("the rail — five glyph chips, the comp's own order (§10-AN)", () => {
-  it("renders all five tools, the active one selected", () => {
-    const html = view({ tool: "best-fit" });
-    for (const tool of ["rotation", "mark-trench", "best-fit", "fit-by-points", "auto-mark"]) {
-      expect(html).toContain(`data-tool="${tool}"`);
-    }
-    expect(html).toContain('data-tool="best-fit" aria-selected="true"');
-  });
+/* RETARGETED 2026-08-15: the tool chip rail moved from the dock header into the
+   stage's own adjust-tool-bar strip above the panes (UX: "barely visible because
+   of lack of real-estate" — chips now live above the panes, always visible, and
+   the dock body gains the height the chip row previously occupied in the header).
+   The chip order, tooltips, and selected-state tests now live in
+   AdjustStage.test.tsx where the chips actually render.
 
-  it("orders the chips rotation, mark-trench, best-fit, fit-by-points, auto-mark", () => {
+   What remains here: the tooltip AMENDMENTS (the withdrawn claims that must NEVER
+   appear, regardless of where the chips are) — a prohibitory invariant, not a
+   location test, so it stays at the dock's own module boundary. */
+describe("the chip rail tooltip amendments — the withdrawn claims must never appear", () => {
+  it("never mentions the withdrawn 'rim reads' claim (§10-AN amendment)", () => {
     const html = view();
-    const positions = ["rotation", "mark-trench", "best-fit", "fit-by-points", "auto-mark"].map(
-      (id) => html.indexOf(`data-tool="${id}"`),
-    );
-    expect(positions).toEqual([...positions].sort((a, b) => a - b));
-  });
-
-  it("carries the spec's own tooltips, with the amended clauses swapped out", () => {
-    const html = view();
-    expect(html).toMatch(/data-tool="rotation"[^>]*title="Rotation — Drag the handle/);
-    expect(html).toMatch(/data-tool="mark-trench"[^>]*title="Mark trench — Click the coded trench/);
-    // §10-AN amendment: never the withdrawn "rim reads" claim
     expect(html).not.toContain("what the scanned rim actually reads");
-    expect(html).toMatch(/data-tool="best-fit"[^>]*title="Best fit[^"]*never a standing measurement/);
-    // the comp's own unverified pair-count physics is dropped
-    expect(html).not.toContain("the first four do the work");
-    // the comp's fixed "four points" is dropped for the served count
-    expect(html).not.toContain("proposes four points");
   });
-
-  it("still opens on the rail before the acts — same DOM contract as the old drawer", () => {
+  it("never mentions the comp's fabricated pair-count physics", () => {
     const html = view();
-    expect(html.indexOf('data-role="tool-tabs"')).toBeLessThan(
-      html.indexOf('data-role="drawer-acts"'),
-    );
+    expect(html).not.toContain("the first four do the work");
+    expect(html).not.toContain("proposes four points");
   });
 });
 

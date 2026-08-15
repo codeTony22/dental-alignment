@@ -1250,27 +1250,11 @@ export function AdjustDock({
       className={`adjust-dock${dockTall ? " adjust-dock--tall" : ""}`}
     >
       <div className="adjust-dock__header">
-        <div data-role="tool-tabs" role="tablist" aria-label="Correction tools"
-             className="adjust-dock__rail">
-          {ADJUST_DOCK_TOOLS.map((info) => (
-            <button
-              key={info.id}
-              type="button"
-              role="tab"
-              data-role="tool-tab"
-              data-tool={info.id}
-              aria-selected={tool === info.id}
-              title={info.tooltip}
-              className={`adjust-dock__chip${
-                tool === info.id ? " adjust-dock__chip--active" : ""
-              }${good(info.id) ? " adjust-dock__chip--good" : ""}`}
-              onClick={() => onSelectTool(info.id)}
-            >
-              <span aria-hidden="true">{info.glyph}</span>
-              <span className="sr-only">{info.label}</span>
-            </button>
-          ))}
-        </div>
+        {/* THE CHIP RAIL IS NOW ABOVE THE PANES (UX 2026-08-15): AdjustToolRail in
+            AdjustStageView renders the five glyph tabs as a persistent strip between
+            the workspace toolbar and the three 3D panes — always visible, never
+            buried at the bottom of the screen. The header carries only the active
+            tool's name + live state, the caution chip, and the "more room" toggle. */}
         <div className="adjust-dock__title">
           <strong data-role="dock-tool-title" className="adjust-dock__tool-title">
             {activeInfo.label}
