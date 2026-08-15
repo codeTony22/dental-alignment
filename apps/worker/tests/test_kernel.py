@@ -10,15 +10,27 @@ difference=4, intersection=4 by construction, not by measurement.
 W2 (boolean-engine plan, "Minkowski-sphere offset replaces vertex-normal
 dilation", 2026-08-14) adds ``minkowski_sphere`` pins at the bottom of this
 file, against a UNIT cube (not the 2x2x2 fixture above) — its Steiner
-volume formula is simplest at unit scale."""
+volume formula is simplest at unit scale.
+
+THE ENGINE SWITCH (this slice, 2026-08-15) adds ``TestEngineSwitch`` at the
+bottom: ``default_kernel()``'s own half of the ``CASE_PREP_BOOLEAN_KERNEL``
+contract — the manifold path is BYTE-IDENTICAL whether the variable is
+unset or explicitly ``"manifold"``, an unknown value is refused by name,
+and the env var is read ONCE per process (a later mutation never changes
+what an already-resolved process hands back). The adapter's own half — a
+missing meshlib package refusing cleanly, the guard, the cube-algebra
+conformance pins — lives beside the adapter in ``test_meshlib_kernel.py``,
+per this file's own scope boundary for the slice."""
 from __future__ import annotations
 
+import importlib.util
 import math
 
 import numpy as np
 import pytest
 import trimesh
 
+import case_prep.pipeline.kernel as kernel_module
 from case_prep.pipeline.kernel import (BooleanKernel, ManifoldKernel,
                                        TrackedResult, default_kernel)
 
@@ -289,3 +301,63 @@ class TestMinkowskiSphere:
 
     def test_is_part_of_the_default_kernels_protocol(self):
         assert hasattr(default_kernel(), "minkowski_sphere")
+
+
+class TestEngineSwitch:
+    """``default_kernel()``'s own half of the ``CASE_PREP_BOOLEAN_KERNEL``
+    contract (this slice, 2026-08-15). Every test resets the module's two
+    private caches (``_engine_name``, ``_kernels_by_engine``) via
+    ``monkeypatch`` — never by hand-mutating them without restoration — so
+    a test earlier in this file (or later in the same session) that
+    already resolved ``default_kernel()`` to the plain manifold singleton
+    is not disturbed by anything below."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_engine_cache(self, monkeypatch):
+        monkeypatch.setattr(kernel_module, "_engine_name", None)
+        monkeypatch.setattr(kernel_module, "_kernels_by_engine", {})
+        monkeypatch.delenv("CASE_PREP_BOOLEAN_KERNEL", raising=False)
+
+    def test_unset_returns_the_plain_manifold_kernel_untouched(self):
+        kernel = kernel_module.default_kernel()
+        assert type(kernel) is ManifoldKernel, (
+            "the manifold path must be byte-identical to before this "
+            "slice — no wrapper, no proxy, the exact same class")
+
+    def test_explicit_manifold_is_the_same_as_unset(self, monkeypatch):
+        monkeypatch.setenv("CASE_PREP_BOOLEAN_KERNEL", "manifold")
+        assert type(kernel_module.default_kernel()) is ManifoldKernel
+
+    def test_an_unset_default_kernel_is_still_the_process_singleton(self):
+        assert kernel_module.default_kernel() is kernel_module.default_kernel()
+
+    def test_selecting_meshlib_without_the_package_raises_naming_the_env_var_and_the_license(
+            self, monkeypatch):
+        if importlib.util.find_spec("meshlib") is not None:
+            pytest.skip("meshlib IS importable in this environment — this "
+                       "pin is specifically the missing-package path, "
+                       "exercised by the production venv this repo ships")
+        monkeypatch.setenv("CASE_PREP_BOOLEAN_KERNEL", "meshlib")
+        with pytest.raises(ImportError) as excinfo:
+            kernel_module.default_kernel()
+        message = str(excinfo.value)
+        assert "CASE_PREP_BOOLEAN_KERNEL" in message
+        assert "license" in message.lower()
+
+    def test_an_unknown_engine_name_is_refused_by_name(self, monkeypatch):
+        monkeypatch.setenv("CASE_PREP_BOOLEAN_KERNEL", "not-a-real-engine")
+        with pytest.raises(ValueError) as excinfo:
+            kernel_module.default_kernel()
+        message = str(excinfo.value)
+        assert "CASE_PREP_BOOLEAN_KERNEL" in message
+        assert "not-a-real-engine" in message
+
+    def test_the_env_var_is_read_once_not_re_read_on_every_call(self, monkeypatch):
+        monkeypatch.setenv("CASE_PREP_BOOLEAN_KERNEL", "manifold")
+        first = kernel_module.default_kernel()
+        assert type(first) is ManifoldKernel
+        # mutating the variable AFTER the first resolution must change
+        # nothing — a running process reads it exactly once
+        monkeypatch.setenv("CASE_PREP_BOOLEAN_KERNEL", "not-a-real-engine")
+        second = kernel_module.default_kernel()
+        assert second is first

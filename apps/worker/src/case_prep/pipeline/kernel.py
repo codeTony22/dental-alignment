@@ -69,9 +69,36 @@ own pin time, 2026-08-14. ``minkowski_sphere`` below checks
 silently handing a caller nothing; ``csg.py``'s own bore-lidding order
 (lid before dilate, always, never the reverse) is the choreography this
 guard exists to catch a violation of.
+
+THE ENGINE SWITCH (this slice, 2026-08-15 — the kernel decision memo's §4,
+"behind the seam that already exists") adds nothing structural to the
+port: no new method, no new call shape. It adds a SECOND concrete
+``BooleanKernel`` ``default_kernel()`` may hand back, chosen by the
+``CASE_PREP_BOOLEAN_KERNEL`` environment variable (``"manifold"``, the
+default, or ``"meshlib"``) — read ONCE per process, the first time
+``default_kernel()`` is ever called, and cached by the engine name it
+resolved to; a later mutation of the variable never retroactively changes
+what an already-running process hands back, the same "stateless but
+stable for the process" contract the singleton docstring below already
+promised, generalised from one engine to however many a process might
+ever resolve to (today, at most one — the read only happens once).
+Leaving the variable unset is BYTE-IDENTICAL to every process before this
+slice existed: the exact same ``ManifoldKernel()``, constructed the exact
+same way, wrapped in nothing. Selecting ``"meshlib"`` when the meshlib
+package is not importable in the current environment fails IMMEDIATELY —
+not on the first boolean call, at selection — naming both the environment
+variable and the fact the memo (§4) records as non-negotiable: the free
+tier this evaluation ran under is non-commercial only, and shipping the
+meshlib adapter in production at all requires AMV's paid license. The
+adapter itself, ``MeshLibKernel`` (``pipeline/meshlib_kernel.py``), and
+the guard the memo makes mandatory for every boolean it performs (§3.2:
+"output ≠ input AND output ≠ empty", the coplanar silent-no-op's own
+detectable signature) are documented at their own definitions — this
+module only ever imports that one, and only when asked to.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import (Dict, List, Optional, Protocol, Sequence,
                     runtime_checkable)
@@ -423,16 +450,69 @@ class ManifoldKernel:
         return _mesh_from_gl(result.to_mesh())
 
 
-_default: Optional[BooleanKernel] = None
+_ENGINE_ENV_VAR = "CASE_PREP_BOOLEAN_KERNEL"
+
+# ``_engine_name`` is the ONE env-var read for the process: ``None`` until
+# ``default_kernel()``'s first call, then frozen at whatever
+# ``os.environ.get(_ENGINE_ENV_VAR, "manifold")`` returned that one time.
+# ``_kernels_by_engine`` memoizes the constructed kernel per engine name —
+# a dict rather than a single slot so the SHAPE of the cache says "keyed by
+# engine", even though today's read-once discipline means it can only ever
+# hold one entry in a real process; tests are the only caller that ever
+# resets both to exercise a second name in the same interpreter.
+_engine_name: Optional[str] = None
+_kernels_by_engine: Dict[str, BooleanKernel] = {}
 
 
 def default_kernel() -> BooleanKernel:
-    """The kernel every caller gets unless a test injects its own — one
-    ``ManifoldKernel`` instance for the process. The kernel is stateless, so
-    the caching buys nothing behaviourally; it exists so ``default_kernel()
-    is default_kernel()`` holds, which is the only property a Stage-1 caller
-    could ever come to depend on."""
-    global _default
-    if _default is None:
-        _default = ManifoldKernel()
-    return _default
+    """The kernel every caller gets unless a test injects its own.
+
+    Unset (or ``CASE_PREP_BOOLEAN_KERNEL=manifold``): the exact
+    ``ManifoldKernel()`` singleton this function always returned, byte-
+    identical to every process before the engine switch existed —
+    ``default_kernel() is default_kernel()`` holds, which is the only
+    property a Stage-1 caller could ever come to depend on, and still
+    does. ``CASE_PREP_BOOLEAN_KERNEL=meshlib`` hands back a
+    ``MeshLibKernel`` instead, raising immediately (not on the first
+    boolean call) if the meshlib package cannot be imported here. Any
+    other value is refused by name. See the module docstring's THE ENGINE
+    SWITCH paragraph for why the read happens only once."""
+    global _engine_name
+    if _engine_name is None:
+        _engine_name = os.environ.get(_ENGINE_ENV_VAR, "manifold")
+    if _engine_name not in _kernels_by_engine:
+        _kernels_by_engine[_engine_name] = _construct_kernel(_engine_name)
+    return _kernels_by_engine[_engine_name]
+
+
+def _construct_kernel(engine: str) -> BooleanKernel:
+    """The one-time construction ``default_kernel()`` memoizes per engine
+    name — never called twice for the same name in a real process, since
+    the name itself is read once."""
+    if engine == "manifold":
+        return ManifoldKernel()
+    if engine == "meshlib":
+        try:
+            # the module itself imports cleanly without meshlib (its own
+            # lazy-import contract, meshlib_kernel.py's docstring) — the
+            # REAL ``ImportError`` only fires on construction, below, so
+            # both are inside this one try/except rather than just the
+            # import line.
+            from case_prep.pipeline.meshlib_kernel import MeshLibKernel
+            return MeshLibKernel()
+        except ImportError as exc:
+            raise ImportError(
+                f"{_ENGINE_ENV_VAR}=meshlib was selected but the meshlib "
+                "package (mrmeshpy/mrmeshnumpy) is not importable in this "
+                "environment. MeshLibKernel is an EVALUATION adapter: the "
+                "free tier this repo's own evaluation ran under is "
+                "non-commercial only (docs/engagement/"
+                "kernel-decision-memo.md §4) — shipping it in production "
+                "requires AMV's paid commercial license. Install meshlib "
+                "in a trial environment to exercise this path, or unset "
+                f"{_ENGINE_ENV_VAR} (or set it to 'manifold') to use the "
+                "default kernel."
+            ) from exc
+    raise ValueError(
+        f"unknown {_ENGINE_ENV_VAR}={engine!r} — expected 'manifold' or "
+        "'meshlib'")

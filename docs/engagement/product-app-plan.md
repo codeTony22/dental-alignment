@@ -3113,6 +3113,24 @@ flake precedents; the real measurement is recorded in its docstring:
 by the per-arch cache, which is exactly the memo's open-shell trigger
 condition. Narrow 120, fast lane 1006.
 
+**AT kernel parity — the try-both switch and the scoreboard (2026-08-15,
+client: "we should do this").** default_kernel() reads
+CASE_PREP_BOOLEAN_KERNEL (manifold default, byte-identical when unset —
+pinned); pipeline/meshlib_kernel.py is the adapter: lazy import, the
+memo's mandatory guard as a PURE function (empty OR face-count+volume
+match to an operand → loud ValueError), honest NotImplementedError on
+tracked ops and minkowski_sphere (the real parity gaps, exercised
+through the existing fallback ladders). pyproject gains NOTHING —
+meshlib lives only in the evaluation venv, license-clean. The referee
+suites ran BOTH ways (docs/engagement/kernel-parity-scoreboard.md):
+manifold 128/0, MeshLib 90/37 with ZERO genuinely-wrong results — every
+failure a guard refusal, a noted fallback (23/23 carve fallbacks landed
+their notes), or a manifold-specific numerical accident encoded in a
+test precondition. The W5 empty-heal guard held under a foreign kernel
+with zero changes. Parity worklist, three items, queued: engine-aware
+corpus assertions where the fallback IS the correct behaviour; the
+flush-operand guard decision; two bit-exact preconditions loosened.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.
