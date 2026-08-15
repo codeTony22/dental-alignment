@@ -3267,16 +3267,10 @@ test) gained its own floor-hit assertion against the actual shipped package
 bytes — skips here (data/real absent in this worktree), runs at
 integration.
 
-KNOWN GAP, flagged rather than papered over: this worktree branched from
-`origin/main` (163f8c7), not from `cap-curve-p4` as briefed — the "AT the
-moat bridge + orphan flaps" defect-A/B work (isolation.orphan_flap_mask,
-deliverables._bridge_recess_collar) lives only on `cap-curve-p4` and is
-ABSENT from this codebase; `open_arch_with_floored_holes` here carries
-DEFECT 1's excision only (scanned_cap_face_mask, already present pre-slice),
-same as the through-hole function it replaces carried. Whichever branch
-lands the moat-bridge/orphan-flap work will need this artifact's own call
-site added to their consumer lists, the same way this entry's own remark on
-`_gingival_floor_a` should be read by anyone reconciling the two branches.
+KNOWN GAP CLOSED on this rebase: the moat-bridge + orphan-flap work
+(`isolation.orphan_flap_mask`, `deliverables._bridge_recess_collar`) lands
+in the same tree as `open_arch_with_floored_holes`. Artifact 6 now runs
+DEFECT 1 excision AND the orphan-flap step after it.
 
 **AT artifact 6, the ghost in the hole — the envelope is the cut (2026-08-15
 night, the fourth ruling refined on its own first emit).** The floored
@@ -3323,6 +3317,26 @@ degenerate-template pin rewrote to the new ladder: a faceless template's
 envelope reads from its point cloud and cuts with NO note (the envelope IS
 the tool now, not a fallback); only an unreadable profile notes its
 cylinder-at-rim shape. Floored-holes class 8/8.
+
+**AT the moat bridge + orphan flaps (2026-08-15 night, client: "a lot
+of space and residue on the scan").** Defect A: orphan_flap_mask —
+scan-provenance components lying entirely within the site cylinder and
+disconnected from the arch are cap remnant BY CONNECTIVITY (real gum
+always connects; no threshold to tune) — dropped in all four consumers;
+red-proven 8/8→0/8 and 112/128→0/128. Defect B: _bridge_recess_collar —
+the machined mouth zipped to the scan's own opening loop (roundness gate
+0.3mm radial std tells a moat ring from an unrelated cut edge; real
+points only, one weld) closing the moat 2 loops→1, with the client's
+verbatim disclosure note per bridged site; fail-open never mangles a
+ring. KNOWN LIMITATION, integration-measured: a real coded cap's imprint
+carries 26–37 boundary loops, so the exactly-one mouth rule SKIPS (with
+its note) on real caps today — two quick classifiers were tried at
+integration and each mis-modelled a different population, so the
+real-cap mouth classifier goes probe-first as the immediate follow-up
+rather than a guess. The two real-template pins read the bridge channel
+(fired OR skipped) as disclosure, never fallback. Gates: deliverables+
+isolation 102 incl. real slow pins, fast lane 1146 FULL (the parallel
+session's curve work landed and green beside this).
 
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —

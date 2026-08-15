@@ -36,7 +36,7 @@ caller's job, not this module's, to turn that into an honest per-site note.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Sequence, Tuple
 
 import numpy as np
 import trimesh
@@ -195,3 +195,91 @@ def isolate_scanned_cap(scan: trimesh.Trimesh, template: trimesh.Trimesh,
     if len(out.faces) == 0:
         return None
     return out
+
+
+def orphan_flap_mask(mesh: trimesh.Trimesh,
+                     site_poses: Sequence[Tuple[np.ndarray, float]],
+                     candidate: Optional[np.ndarray] = None) -> np.ndarray:
+    """DEFECT A — THE ORPHAN FLAPS (client-ruled, live verification
+    2026-08-15): CONNECTIVITY, not a wider threshold. ``scanned_cap_face_
+    mask``'s 0.6mm template-match band (``CAP_MATCH_BAND_MM``) misses
+    cap-margin surface that deviates MORE than the band in the annulus
+    between the core-keep radius and the catalog rim — those triangles
+    dodge the excision and survive as loose slivers at the bore edge.
+    Widening the band would eat real gum (the same classifier serves pane
+    2's own crop, and every other DEFECT-1 excision consumer); the fix is
+    topological instead, run AFTER that excision has already dropped what
+    it could catch:
+
+    A face is ORPHAN when BOTH hold —
+
+    1. it lies ENTIRELY inside SOME site's cylinder — every one of its
+       three vertices within that site's own catalog rim radius of the
+       site's pose axis, radially (the same axis/radius convention every
+       cylinder test in this module and ``deliverables.py`` shares; "any
+       vertex" is the SURVIVAL rule the classifier's own pre-cut uses,
+       but "entirely" is the right-sized test for CANDIDACY here — a face
+       straddling the rim is still attached to whatever lies outside it,
+       so it is connected tissue by definition, never an orphan);
+    2. it belongs to a connected component (mesh face adjacency, shared
+       edges only) that is DISCONNECTED from the mesh's own largest
+       candidate component — real gum always runs into the surrounding
+       arch, so a scrap of surface an implant-neighbourhood excision left
+       behind, with no path back to the main body, is physically nothing
+       but cap remnant.
+
+    ``candidate`` restricts which of ``mesh``'s faces may even be
+    considered eligible — every consumer already knows which of its own
+    faces are scan-provenance (a fused composite also carries each
+    construction part's own surface, which this test must never reach for;
+    a pressed carve's own already-moved recess faces are equally out of
+    scope). ``None`` means every face of ``mesh`` is eligible. THE GUARD:
+    the single LARGEST candidate connected component, by face count, is
+    the main scan body and can never itself be an orphan, however its own
+    faces happen to read against the cylinder test — named explicitly
+    because the doctrine depends on it, not left to fall out of the
+    component-size arithmetic by accident. A component with any face
+    OUTSIDE every site's cylinder is connected tissue reaching in from the
+    arch — kept, unconditionally (the guard's other half: a gum tongue
+    that dips into the annulus and back out is real anatomy, not a flap).
+
+    Returns an all-False mask (never raises) when ``mesh`` carries no
+    faces, ``site_poses`` is empty, ``candidate`` excludes everything, or
+    nothing candidate falls inside any site's cylinder at all — dropping
+    measured cap remnant is the excision's own contract (no note is ever
+    warranted for it), but this function makes no claim it cannot back
+    with a component that actually qualifies."""
+    F = np.asarray(mesh.faces)
+    n = len(F)
+    if n == 0 or not site_poses:
+        return np.zeros(n, dtype=bool)
+    candidate_mask = (np.ones(n, dtype=bool) if candidate is None
+                      else np.asarray(candidate, dtype=bool))
+    if not candidate_mask.any():
+        return np.zeros(n, dtype=bool)
+
+    V = np.asarray(mesh.vertices, dtype=float)
+    inside_any = np.zeros(n, dtype=bool)
+    for pose, rim_r in site_poses:
+        origin, axis = _axis_and_origin(pose)
+        radial = _radial_distances(V, origin, axis)
+        inside_any |= (radial[F] <= float(rim_r)).all(axis=1)
+    if not inside_any.any():
+        return np.zeros(n, dtype=bool)
+
+    nodes = np.flatnonzero(candidate_mask)
+    components = trimesh.graph.connected_components(
+        mesh.face_adjacency, nodes=nodes, min_len=1)
+    if not components:
+        return np.zeros(n, dtype=bool)
+    sizes = [len(comp) for comp in components]
+    main_idx = int(np.argmax(sizes))
+
+    orphan = np.zeros(n, dtype=bool)
+    for i, comp in enumerate(components):
+        if i == main_idx:
+            continue
+        comp_idx = np.asarray(comp, dtype=int)
+        if inside_any[comp_idx].all():
+            orphan[comp_idx] = True
+    return orphan
