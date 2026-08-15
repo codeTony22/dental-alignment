@@ -19,6 +19,7 @@ import trimesh
 from case_prep.pipeline.csg import (exact_cap_punch, fabricated_face_mask,
                                     punch_solid, solidified_shell_cached,
                                     strip_fabricated, strip_tracked)
+from case_prep.pipeline.isolation import scanned_cap_face_mask
 from case_prep.pipeline.kernel import default_kernel
 
 _REGION_MARGIN_MM = 0.6  # cull slightly beyond the cap so no scanned cap sliver survives
@@ -59,7 +60,8 @@ def arch_with_parts(arch: trimesh.Trimesh,
 
 
 def arch_with_parts_fused(arch: trimesh.Trimesh,
-                          posed_parts: Sequence[Tuple[trimesh.Trimesh, np.ndarray]]
+                          posed_parts: Sequence[Tuple[trimesh.Trimesh, np.ndarray]],
+                          excise_sites: "Optional[Sequence[Tuple[trimesh.Trimesh, np.ndarray, float]]]" = None
                           ) -> Tuple[trimesh.Trimesh, List[str]]:
     """THE COMPOSITE BECOMES A TRUE UNION (§10-AT 3b, on §10-AS.16/19's own doctrine:
     the shipped artifact is the open arch, and ``arch_with_parts``'s concatenation left
@@ -100,7 +102,23 @@ def arch_with_parts_fused(arch: trimesh.Trimesh,
     measuring distance. A refusal here (a manifold3d rejection the plain trimesh
     engine tolerated, or the tracked union itself coming back empty) falls back to
     the untracked engine plus the old distance-based strip, with a note — the
-    geometry degrades silently, the manifest never does."""
+    geometry degrades silently, the manifest never does.
+
+    DEFECT 1 EXCISION (client-ruled, live verification 2026-08-15): ``excise_sites``
+    — optional ``(template, pose, rim_r)`` triples, independent of ``posed_parts`` —
+    names the sites whose SCANNED cap must never survive this fuse: "white patches
+    poking through the library cap" was this composite's own symptom of the boolean
+    cutting the template's volume while the scan stands proud of it. The caller for
+    ``arch-with-healingcaps.stl`` passes the SAME templates/poses already carried in
+    ``posed_parts``, plus each site's catalog rim radius — the part's own posed
+    surface REPLACES the scanned cap, never merges with its crust. The caller for
+    ``arch-with-constructions.stl`` passes none: its base (``arch_removed``) already
+    went through ``_csg_carve``'s own excision, so nothing new can have grown proud
+    of it by this second fuse. The shared classifier
+    (``case_prep.pipeline.isolation.scanned_cap_face_mask``) is applied to the FUSED
+    result and restricted to scan-provenance faces ONLY — tool/part-provenance is
+    read straight off the tracked union's own ``source`` array (never approximated),
+    so a part's own material can structurally never be excised by this step."""
     from scipy.spatial import cKDTree
 
     try:
@@ -152,6 +170,38 @@ def arch_with_parts_fused(arch: trimesh.Trimesh,
             else:
                 inside_mask = np.zeros(len(fused.faces), bool)
             keep = strip_fabricated(fused, arch, inside_mask)
+
+        # DEFECT 1 EXCISION — see this function's own docstring. Applied AFTER the
+        # strip decides `keep` (closure is already gone either way), restricted to
+        # SCAN-provenance faces only: on the tracked path that is exact (`source ==
+        # 0`, structurally disjoint from every part's own `source >= base_groups`
+        # — the assertion below is the permanent, cheap version of that fact, the
+        # same idiom rider-b's own guard uses); on the untracked fallback there is
+        # no per-face provenance to read, so the geometric mask is restricted to
+        # `~inside_mask` (the same distance-based "is this a part's own surface"
+        # test the strip itself just used) instead.
+        excise = np.zeros(len(fused.faces), bool)
+        if excise_sites:
+            for e_template, e_pose, e_rim_r in excise_sites:
+                try:
+                    excise |= scanned_cap_face_mask(
+                        fused, e_template, np.asarray(e_pose, float),
+                        float(e_rim_r))
+                except Exception:  # noqa: BLE001 — the excision refines an
+                    # already-successful fuse; a site it cannot read never fails
+                    # the whole composite
+                    continue
+            if tracked_keep is not None:
+                scan_provenance = np.asarray(tracked.source) == 0
+                excise &= scan_provenance
+                assert not (excise & (np.asarray(tracked.source)
+                                      >= tracked.base_groups)).any(), (
+                    "DEFECT-1 excision must be scan-provenance only — a "
+                    "part's own face was about to be dropped from the fuse")
+            else:
+                excise &= ~inside_mask
+            keep = keep & ~excise
+
         F = np.asarray(fused.faces)
         V = np.asarray(fused.vertices, float)
         out = trimesh.Trimesh(V.copy(), F[keep].copy(), process=False)
@@ -608,6 +658,42 @@ def _csg_carve(arch: trimesh.Trimesh,
         # fabricated closure — base plate, skirt, anything the scan never
         # contained — is stripped by the 0.35mm distance fallback.
         keep = strip_fabricated(cut, arch, inside)
+
+    # DEFECT 1 EXCISION (client-ruled, live verification 2026-08-15): the boolean
+    # subtracts the TEMPLATE's own volume, but the scanned cap deviates from it
+    # (fleet RMS 0.25/p90 0.35mm) — wherever it stands proud of template+relief its
+    # own MEASURED surface survives the cut untouched: floating flaps standing in
+    # the recess bore. The real cap physically leaves the mouth; dropping its
+    # measured surface is measurement, using the shared classifier
+    # (``case_prep.pipeline.isolation.scanned_cap_face_mask``) — the SAME rung
+    # ``isolate_scanned_cap``'s own per-site artifact already isolates.
+    #
+    # Dropped from ``keep`` BEFORE the ``out``/``socket`` split, so it can never
+    # land in either: on the tracked path the excision is restricted to ``source
+    # == 0`` (scan-provenance, structurally disjoint from ``inside``'s own
+    # ``source >= base_groups`` — the assertion below is the permanent, cheap
+    # version of that fact, rider-b's own idiom); on the untracked fallback there
+    # is no per-face provenance, so the mask is restricted to ``~inside`` (the
+    # same revolute-band "is this a punch surface" test the strip itself just
+    # used) instead — never a tool/recess face excised, on either path.
+    excise = np.zeros(len(cut.faces), bool)
+    for e_template, e_pose, _e_offset, e_rim_r in sites:
+        try:
+            excise |= scanned_cap_face_mask(
+                cut, e_template, np.asarray(e_pose, float), float(e_rim_r))
+        except Exception:  # noqa: BLE001 — the excision refines an already-
+            # successful cut; a site it cannot read never fails the whole carve
+            continue
+    if tool_provenance is not None:
+        scan_provenance = np.asarray(tracked.source) == 0
+        excise &= scan_provenance
+        assert not (excise & tool_provenance).any(), (
+            "DEFECT-1 excision must be scan-provenance only — a tool face "
+            "was about to be dropped from the cut")
+    else:
+        excise &= ~inside
+    keep = keep & ~excise
+
     F = np.asarray(cut.faces)
     Vc = np.asarray(cut.vertices, float)
     out = trimesh.Trimesh(Vc.copy(), F[keep & ~inside].copy(), process=False)
@@ -790,7 +876,32 @@ def _press_carve(arch: trimesh.Trimesh,
                          f"({exc}) — the site was left uncut")
     faces = np.asarray(arch.faces)
     face_moved = moved_any[faces].any(axis=1)
-    out = trimesh.Trimesh(V.copy(), faces[~face_moved].copy(), process=False)
+
+    # DEFECT 1 EXCISION (client-ruled, live verification 2026-08-15): the press
+    # only relocates vertices INSIDE its own culled rim/floor — a scanned cap
+    # that bulges past that cull (or a site the loop above left uncut, "no gum
+    # ring") can still stand in ``out`` as measured crust. Applied over the
+    # PRISTINE ``arch`` (the loop above moves ``V`` in place, but the classifier
+    # reads geometry, and ``arch``'s own untouched coordinates are exactly what
+    # a genuinely un-pressed face still carries) — the same shared classifier
+    # (``case_prep.pipeline.isolation.scanned_cap_face_mask``) every other
+    # DEFECT-1 consumer uses. NO PER-FACE PROVENANCE EXISTS HERE AT ALL (there
+    # is no boolean, only a vertex press), so the mask is restricted to
+    # ``~face_moved``: a face already pressed onto the floor IS the recess's
+    # own material and is never touched twice.
+    excise = np.zeros(len(faces), bool)
+    for e_template, e_pose, _e_offset, e_rim_r in sites:
+        try:
+            excise |= scanned_cap_face_mask(
+                arch, e_template, np.asarray(e_pose, float), float(e_rim_r))
+        except Exception:  # noqa: BLE001 — the excision refines an already-
+            # successful carve; a site it cannot read never fails the whole
+            # carve
+            continue
+    excise &= ~face_moved
+
+    out = trimesh.Trimesh(V.copy(), faces[~(face_moved | excise)].copy(),
+                          process=False)
     out.remove_unreferenced_vertices()
     socket: Optional[trimesh.Trimesh] = None
     if bool(face_moved.any()):
@@ -800,37 +911,203 @@ def _press_carve(arch: trimesh.Trimesh,
     return out, socket, notes
 
 
-def closed_model_with_recesses(scan: trimesh.Trimesh,
-                               sites: Sequence[Tuple[trimesh.Trimesh,
-                                                     np.ndarray, float,
-                                                     float]]
-                               ) -> Tuple[Optional[trimesh.Trimesh], list]:
-    """ARTIFACT 6 RETURNS (client 2026-08-11: "we lose the artifact 6 we had
-    before"), rebuilt thin on the csg machinery: the solidified lab model —
-    base kept, this is its whole point — with every site's EXACT cap + offset
-    cut out by one manifold difference. §10-AS.19's retirement is reversed by
-    the client's own ask; §10-AS.16's open-arch doctrine still governs every
-    OTHER artifact. FAIL-OPEN as a whole: additive artifact, so any refusal
-    returns (None, [why]) and the package ships without it."""
+def _extend_punch_through_solid(punch: trimesh.Trimesh, solid: trimesh.Trimesh,
+                                pose: np.ndarray,
+                                rim_radius_mm: float) -> trimesh.Trimesh:
+    """THE HOLE ACTUALLY GOES THROUGH (client-ruled defect 2, 2026-08-15): an
+    unfloored ``exact_cap_punch`` stops at the CAP's own natural depth — a few
+    millimetres below the local gum — while ``solidified_shell_cached``'s own
+    base plate sits ``base_margin_mm`` past the WHOLE ARCH's deepest point,
+    routinely far deeper. Subtracting a punch that stops short of that base
+    does not open the hole all the way through the solid the boolean actually
+    cuts: the punch's own bottom cap becomes a NEW, incidental floor exposed
+    deep inside the fabricated interior — a real geometric face, correctly
+    tagged tool-provenance, that a "just don't keep the closure" strip could
+    never remove because it was never the closure. Measurement, not
+    inference, decides how far down is far enough: a downward probe from
+    above the site (mirroring ``_csg_carve``'s own "the solidified shell is
+    the honest source for the model's true material limit" idiom) finds the
+    solid's own deepest surface under this site, and a plain barrel — same
+    axis, a touch narrower than the site's own rim so it never widens the
+    visible opening — is unioned onto the punch from a little above that
+    depth to a little below it. The cap's own exact shape governs the visible
+    mouth entirely unchanged; only the UNSEEN shaft beneath it is extended.
+
+    Returns ``punch`` UNCHANGED when the probe finds nothing below (a
+    genuinely open column — there is nothing there to extend past)."""
+    origin = pose[:3, 3]
+    axis = pose[:3, :3] @ np.array([0.0, 0.0, 1.0])
+    xl = pose[:3, :3] @ np.array([1.0, 0.0, 0.0])
+    yl = pose[:3, :3] @ np.array([0.0, 1.0, 0.0])
+    probes = [origin + axis * 100.0]
+    if rim_radius_mm > 0:
+        for ang in (0.0, np.pi / 2, np.pi, 3 * np.pi / 2):
+            probes.append(origin + axis * 100.0
+                          + (xl * np.cos(ang) + yl * np.sin(ang))
+                          * (rim_radius_mm * 0.6))
+    hits, *_ = solid.ray.intersects_location(
+        ray_origins=probes, ray_directions=[-axis] * len(probes))
+    if not len(hits):
+        return punch
+    deepest_a = float(((np.asarray(hits, float) - origin) @ axis).min())
+    punch_vertices = np.asarray(punch.vertices, float)
+    punch_bottom_a = float(((punch_vertices - origin) @ axis).min())
+    if punch_bottom_a <= deepest_a:
+        # the punch's own natural extent already clears the solid's own
+        # deepest material under this site — nothing to bridge
+        return punch
+    # THE BARREL BRIDGES THE WHOLE GAP — every millimetre from the punch's
+    # own natural bottom down past the solid's true floor, not merely a
+    # short segment AT that floor (a segment that does not reach the punch
+    # leaves empty space between the two solids, and their "union" is two
+    # disjoint pieces that still show the punch's own bottom cap as an
+    # exposed internal face — measured directly at this slice's own pin
+    # time, the defect this whole function exists to close).
+    top_local = punch_bottom_a + 0.5    # overlaps the punch's own body
+    bottom_local = deepest_a - 1.0      # past the solid's own true material limit
+    barrel = trimesh.creation.cylinder(
+        radius=max(float(rim_radius_mm) * 0.9, 0.5),
+        height=(top_local - bottom_local), sections=48)
+    barrel.apply_translation((0.0, 0.0, (top_local + bottom_local) / 2.0))
+    barrel.apply_transform(np.asarray(pose, float))
+    return default_kernel().union([punch, barrel])
+
+
+def open_arch_with_through_holes(scan: trimesh.Trimesh,
+                                 sites: Sequence[Tuple[trimesh.Trimesh,
+                                                       np.ndarray, float,
+                                                       float]]
+                                 ) -> Tuple[Optional[trimesh.Trimesh], list]:
+    """ARTIFACT 6, THE THIRD RULING (client-ruled, 2026-08-15, verbatim: "artifact
+    6 still has a lot of filling the back and it is not working with the open
+    scan, but the hole is perfect just need to be without the backfilling we
+    create which is like a dental model which we don't need — just the open scan,
+    and the hole viewed like it is"). RETIRES ``closed_model_with_recesses``
+    (§10-AS.19's retirement, reversed by AT 4-r, reversed AGAIN here — same
+    authority, same artifact slot, a different shape): the doctor's OPEN scan,
+    not a backfilled model, with each site's cap punched all the way THROUGH.
+
+    THE PUNCH ITSELF IS UNFLOORED — the same ``exact_cap_punch(template,
+    offset_mm, pose)`` call, no ``floor_a``, every other exact-cut call site
+    passes when it wants the whole cap rather than a clipped seat; the
+    visible mouth of every bore is that shape, unchanged. BUT an unfloored
+    punch alone is not a THROUGH hole against this function's own solid: the
+    punch's own natural bottom sits only a few millimetres below the local
+    gum, while ``solidified_shell_cached``'s base plate sits
+    ``base_margin_mm`` past the WHOLE ARCH's deepest point — routinely much
+    deeper. Subtracting a punch that stops short of that base does not open
+    the bore all the way through; it leaves the punch's own bottom cap
+    standing as a NEW, incidental floor deep inside the fabricated interior
+    (measured directly at this slice's own pin time) — correctly tagged tool
+    material, so no strip could ever have removed it. ``_extend_punch_through_
+    solid`` closes that gap: a downward probe (mirroring ``_csg_carve``'s own
+    "the solidified shell is the honest source for the model's true material
+    limit" idiom) measures how deep the solid's own material actually runs
+    under each site, and a plain barrel — the site's own axis, a touch
+    narrower than its rim so it never widens the visible opening — bridges
+    the punch's natural bottom to a point safely past that measured depth.
+    Measurement, not inference, decides how far is far enough.
+
+    THE STRIP drops the fabricated closure exactly as every OTHER open-arch
+    composite does (``strip_tracked``/``strip_fabricated``, fail-open to the
+    untracked engine + distance strip with a note) — unlike
+    ``closed_model_with_recesses``, which KEPT the fabricated base because
+    "this artifact IS the closed printable form", this one never does.
+    DEFECT 1's excision (``case_prep.pipeline.isolation.
+    scanned_cap_face_mask``, restricted to scan-provenance faces) runs over
+    the result too — an unfloored bore is the LAST place a scanned cap's own
+    crust should be allowed to stand, since nothing here even pretends to
+    floor it out.
+
+    Per site ``(template, pose_matrix, offset_mm, rim_radius_mm)``, the SAME
+    per-site fallback every other artifact in this module carries: a template
+    that cannot make an exact watertight punch falls back to its revolute
+    envelope, noted; a shaft that cannot be extended past the solid's own
+    depth falls back to the cap's own natural extent, noted (measured never to
+    fire on the fleet — a barrel union failing is not a failure mode this
+    slice's own fixtures have produced). FAIL-OPEN AS A WHOLE, unchanged from
+    the function it replaces: additive artifact, so any refusal — the shell
+    will not solidify, the boolean itself refuses, nothing survives the strip
+    — returns ``(None, [why])`` and the package ships without it."""
     try:
         solid = solidified_shell_cached(scan)
-        tools = []
+        punches = []
         notes: list = []
         for index, (template, pose, offset_mm, rim_radius_mm) in enumerate(
                 sites, 1):
             pose = np.asarray(pose, float)
             try:
-                tools.append(exact_cap_punch(template, float(offset_mm), pose))
+                punch = exact_cap_punch(template, float(offset_mm), pose)
             except Exception as exc:  # noqa: BLE001 — the envelope stands in
                 zs_p, prof_p = _envelope_profile(template, float(offset_mm))
-                tools.append(punch_solid(zs_p, prof_p, float(zs_p[0]), pose))
+                punch = punch_solid(zs_p, prof_p, float(zs_p[0]), pose)
                 notes.append(f"site {index}: the exact cap could not be cut "
-                             f"in the closed model ({exc}) — its envelope "
-                             f"was used instead")
-        model = default_kernel().difference(solid, tools)
-        if not model.is_watertight:
-            raise ValueError("the boolean result is not watertight")
-        return model, notes
+                             f"through ({exc}) — its envelope was used "
+                             f"instead")
+            try:
+                punch = _extend_punch_through_solid(
+                    punch, solid, pose, float(rim_radius_mm))
+            except Exception as exc:  # noqa: BLE001 — the cap's own natural
+                # extent stands in; measured never to fire on the fleet, but
+                # this artifact never dies over a shaft it could not extend
+                notes.append(f"site {index}: the through-shaft could not be "
+                             f"extended to the model's own base ({exc}) — "
+                             f"the cap's own natural depth was used instead")
+            punches.append(punch)
+
+        tracked_keep: Optional[np.ndarray] = None
+        scan_provenance: Optional[np.ndarray] = None
+        try:
+            fabricated = fabricated_face_mask(scan, solid)
+            tracked = default_kernel().difference_tracked(
+                solid, punches, fabricated.astype(np.int64))
+            cut = tracked.mesh
+            if not cut.is_watertight:
+                raise ValueError("the tracked boolean result is not watertight")
+            tracked_keep = strip_tracked(tracked)
+            scan_provenance = np.asarray(tracked.source) == 0
+        except Exception as exc:  # noqa: BLE001 — fail-open to the untracked
+            # engine and the distance strip
+            cut = default_kernel().difference(solid, punches)
+            if not cut.is_watertight:
+                raise ValueError("the boolean result is not watertight")
+            notes.append(f"the provenance-tracked strip could not run ({exc}) "
+                         f"— the distance-based strip was used instead")
+
+        if tracked_keep is not None:
+            keep = tracked_keep
+        else:
+            # no punch region to keep separately here (this artifact has no
+            # socket layer of its own) — the strip's "keep the recess too"
+            # argument is an honest all-False; the bore's own wall survives as
+            # ordinary cut surface, exactly like every scan-adjacent face
+            keep = strip_fabricated(cut, scan, np.zeros(len(cut.faces), bool))
+
+        # DEFECT 1 EXCISION (client-ruled, live verification 2026-08-15) — see
+        # ``_csg_carve``'s own comment for the full argument. An unfloored bore
+        # is exactly the place a scanned cap's crust would otherwise stand
+        # proudest: nothing here clips a floor to hide it.
+        excise = np.zeros(len(cut.faces), bool)
+        for e_template, e_pose, _e_offset, e_rim_r in sites:
+            try:
+                excise |= scanned_cap_face_mask(
+                    cut, e_template, np.asarray(e_pose, float),
+                    float(e_rim_r))
+            except Exception:  # noqa: BLE001 — the excision refines an
+                # already-successful cut; a site it cannot read never fails
+                # the whole artifact
+                continue
+        if scan_provenance is not None:
+            excise &= scan_provenance
+        keep = keep & ~excise
+
+        F = np.asarray(cut.faces)
+        V = np.asarray(cut.vertices, float)
+        out = trimesh.Trimesh(V.copy(), F[keep].copy(), process=False)
+        out.remove_unreferenced_vertices()
+        if len(out.faces) == 0:
+            raise ValueError("the through-hole cut left nothing to ship")
+        return out, notes
     except Exception as exc:  # noqa: BLE001 — honest absence
-        return None, [f"the closed model could not be built ({exc}) — "
-                      f"the package ships without it"]
+        return None, [f"the open arch with through-holes could not be built "
+                      f"({exc}) — the package ships without it"]

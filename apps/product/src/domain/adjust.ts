@@ -1207,6 +1207,26 @@ export function outcomeMovedTheRow(result: ApiResult<AdjustResultView>): boolean
 }
 
 /**
+ * WHETHER A TOOL'S COMPLETED APPLY CHAINS INTO THE FULL RE-RUN (client ruling
+ * 2026-08-15: "we need to have the ability to apply the fit to re-run, or have
+ * another button in adjustment that re-runs, having two is confusing" — decided
+ * as ONE act, not two: applying ANY adjustment on this stage now fires the
+ * re-run itself, and the standalone "Re-run the alignment" button (client
+ * 2026-08-09) retired from the Adjustment queue).
+ *
+ * Reuses `outcomeMovedTheRow`'s own signal — evidence or pose moved
+ * server-side — because chaining a re-run onto nothing would be exactly the
+ * no-op ritual the retired button used to invite: a refusal chains nothing
+ * (nothing was stored), the already-optimal PASS is narrowed out of `settle`
+ * before this predicate is even reached, and a measure-only best-fit
+ * (`apply: false`) chains nothing — `outcome.applied` is false by
+ * construction, so there is nothing for the automation to re-apply.
+ */
+export function appliedToolChainsRerun(result: ApiResult<AdjustResultView>): boolean {
+  return outcomeMovedTheRow(result);
+}
+
+/**
  * THE OTHER WAY OUT OF A FLAG, POINTED AT — never performed here (design review
  * 2026-07-31; the design's "accept as flagged exception" button, template 1348).
  *

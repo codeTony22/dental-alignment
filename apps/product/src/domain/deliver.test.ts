@@ -1543,13 +1543,16 @@ describe("previewTabs — the demo's three tabs, matched onto the run's own pack
     expect(without.map((t) => t.key)).toEqual(["arch-alone"]);
   });
 
-  it("the closed model rides tab six exactly when the run built it (restored 2026-08-11)", () => {
-    // "we lose the artifact 6 we had before" — §10-AS.19's retirement reversed
-    // by the client's own ask; absent on packages that never built it.
-    const withModel = previewTabs(
-      ["case-a-arch-capless.stl", "case-a-model-closed.stl"], [19]);
-    expect(withModel.map((t) => t.key)).toEqual(["arch-alone", "model-closed"]);
-    expect(withModel[1]!.label).toBe("6 · Closed model");
+  it("the open-holes arch rides tab six exactly when the run built it (artifact 6's third ruling, client-ruled 2026-08-15)", () => {
+    // Client verbatim: "the hole is perfect just need to be without the
+    // backfilling we create which is like a dental model which we don't
+    // need — just the open scan, and the hole viewed like it is." Retires
+    // the closed-model tab AGAIN (§10-AS.19's retirement, reversed once by
+    // AT 4-r, reversed again here); absent on packages that never built it.
+    const withHoles = previewTabs(
+      ["case-a-arch-capless.stl", "case-a-arch-open-holes.stl"], [19]);
+    expect(withHoles.map((t) => t.key)).toEqual(["arch-alone", "arch-open-holes"]);
+    expect(withHoles[1]!.label).toBe("6 · Arch — open holes");
     const without = previewTabs(["case-a-arch-capless.stl"], [19]);
     expect(without.map((t) => t.key)).toEqual(["arch-alone"]);
   });

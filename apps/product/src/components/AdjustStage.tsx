@@ -70,6 +70,7 @@ import {
   adjustQueue,
   adjustUnionCaption,
   alreadyOptimalFrom,
+  appliedToolChainsRerun,
   autoMarkDrafts,
   siteReliefCeilingLine,
   droppedRowWords,
@@ -167,12 +168,22 @@ export function pairMarkers(
 export interface AdjustStageViewProps {
   readonly entries: readonly AdjustQueueEntry[];
   readonly activeTooth: number | null;
-  /** THE EXPLICIT RE-RUN (client 2026-08-09): fire the full authorized run again
-   *  with nothing changed — the BFF has allowed re-authorizing a DONE run
-   *  directly since 2026-08-02, and §10-AD re-applies the operator's evidence
-   *  after the automation. Null/omitted = no button (static callers). */
-  readonly onRerunAlignment?: (() => void) | null;
+  /**
+   * THE CHAINED RE-RUN'S PROGRESS (client ruling 2026-08-15: "apply the fit to
+   * re-run, or have another button ... having two is confusing" — one act, not
+   * two). This is no longer a button's own busy state: `settle` fires the SAME
+   * full authorized re-run itself, the moment a tool's apply actually stores
+   * evidence/pose (`domain/adjust.appliedToolChainsRerun`), and `rerunning`
+   * true is the "running" leg of applying → running → done that this band
+   * renders — see the render site below for AdjustDock's own "applying" leg
+   * immediately before it. §10-AD re-applies the operator's evidence after the
+   * automation either way.
+   */
   readonly rerunning?: boolean;
+  /** A re-run that fired but did not land, VERBATIM — the evidence the triggering
+   *  tool stored is NOT rolled back for this (§10-AD's contract: it is stored
+   *  either way), so this renders beside whatever that apply already put on
+   *  screen, never in place of it. */
   readonly rerunError?: string | null;
   /** §10-AD's answer half: true when the standing run is a §10-AC re-emit whose
    * receipts were CARRIED with the copied poses — the block's title says so. */
@@ -442,7 +453,6 @@ export function AdjustStageView({
   cautionsOpen = false,
   onOpenCautions = () => undefined,
   onCloseCautions = () => undefined,
-  onRerunAlignment = null,
   rerunning = false,
   rerunError = null,
 }: AdjustStageViewProps) {
@@ -469,31 +479,38 @@ export function AdjustStageView({
           <p data-role="queue-summary" className="panel__hint">
             {queueSummary(entries)}
           </p>
-          {/* THE EXPLICIT RE-RUN (client 2026-08-09: "re-run the alignment
-              again, not just when the numbers change"). The same door the
-              Alignment confirm fires — a DONE run re-authorizes directly, the
-              current verdicts retire, and §10-AD re-applies the operator's
-              evidence after the automation. */}
-          {onRerunAlignment !== null && (
+          {/* THE CHAINED RE-RUN (client ruling 2026-08-15: "apply the fit to
+              re-run, or have another button ... having two is confusing" —
+              one act, not two). The standalone "Re-run the alignment" button
+              that used to stand here (client 2026-08-09) is RETIRED: every
+              tool's successful apply now fires this SAME door itself — see
+              the container's `fireRerun`, called from `settle` the instant a
+              tool actually stores evidence/pose
+              (`domain/adjust.appliedToolChainsRerun`). This band is the
+              "running" leg of applying → running → done; AdjustDock's own
+              tool-busy band (`phase === "working"`) is the "applying" leg
+              immediately before it, so the operator is never looking at a
+              silent gap between the two. The evidence-less re-fire this
+              button also used to offer (a re-run with nothing changed) is
+              still reachable from the Alignment page's own "Re-run the
+              alignment" button — retiring the copy here loses no capability,
+              only the confusing second button. */}
+          {rerunning && (
             <div className="adjust-queue__rerun">
-              <button
-                type="button"
-                data-role="rerun-alignment"
-                className="button button--small"
-                disabled={busy || rerunning}
-                onClick={onRerunAlignment}
-              >
-                {rerunning ? "Re-running…" : "Re-run the alignment"}
-              </button>
-              <p className="panel__hint">
-                Your marks, pairs and best fits re-apply after the automation —
-                the receipts land below.
+              <div data-role="run-progress" className="busy-state" role="status">
+                <span className="busy-state__spinner" aria-hidden="true" />
+                <span>
+                  Running the alignment again — your marks, pairs and best
+                  fits re-apply after the automation; the receipts land below.
+                </span>
+              </div>
+            </div>
+          )}
+          {!rerunning && rerunError !== null && (
+            <div className="adjust-queue__rerun">
+              <p data-role="rerun-error" className="panel__error">
+                {rerunError}
               </p>
-              {rerunError !== null && (
-                <p data-role="rerun-error" className="panel__error">
-                  {rerunError}
-                </p>
-              )}
             </div>
           )}
           <ul className="decode-stepper__overview">
@@ -860,16 +877,41 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
   // §10-AN slice C: the pair-caution modal, lifted for the same testability reason
   // as `reasonsFor` below.
   const [cautionsOpen, setCautionsOpen] = useState(false);
-  // THE EXPLICIT RE-RUN (client 2026-08-09). The POST returns the whole new
-  // detail (verdicts landed server-side) or the refusal's words verbatim.
+  /**
+   * THE CHAINED RE-RUN (client ruling 2026-08-15: "apply the fit to re-run, or
+   * have another button ... having two is confusing" — decided as one act).
+   * This USED to be a standalone button's own click handler (client
+   * 2026-08-09); it is now the ONE fire-and-track helper every tool's apply
+   * chains into from `settle` below — see `appliedToolChainsRerun`. The POST
+   * returns the whole new detail (verdicts landed server-side) or the
+   * refusal's words verbatim; either way the evidence the triggering apply
+   * already stored is NOT rolled back here (§10-AD's contract: it stands on
+   * disk regardless of whether the automation that follows it succeeds).
+   *
+   * `firingRef` is a re-entrancy guard, not a queue: a tool's own control
+   * already disables itself while ITS request is in flight (`busy`), so the
+   * only way to ask for a second chained re-run before the first lands is a
+   * DIFFERENT tool applying in that ~30–60s window. A second ask in that
+   * window is dropped, not queued — the evidence it stored is already on
+   * disk (the tool's own endpoint persisted it independently of this POST),
+   * so nothing is lost, only this specific apply's own immediate automation
+   * pass, which the next apply (or the Alignment page's own explicit re-run)
+   * picks back up.
+   */
   const [rerunning, setRerunning] = useState(false);
   const [rerunError, setRerunError] = useState<string | null>(null);
-  const handleRerunAlignment = useCallback(() => {
+  const firingRerunRef = useRef(false);
+  const fireRerun = useCallback(() => {
+    if (firingRerunRef.current) return;
+    firingRerunRef.current = true;
     setRerunning(true);
     setRerunError(null);
     void postRun(caseId).then((result) => {
+      firingRerunRef.current = false;
+      if (!mountedRef.current) return;
       setRerunning(false);
       if (result.kind === "ok") {
+        setRerunError(null);
         onDetail(result.data);
       } else {
         setRerunError(result.detail);
@@ -1088,8 +1130,15 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       // round of matching without a second read the server would answer identically
       setAutoDrafts(autoMarkDrafts(autoMarkLandmarks));
       setTrenchArmed(false);
+      // THE CHAIN (client ruling 2026-08-15): this apply just stored evidence/pose
+      // server-side — fire the SAME full re-run the retired standalone button used
+      // to offer, immediately, with no separate act for the operator to remember.
+      // A measure-only call (best-fit's "Measure") never reaches here — it fails
+      // `outcomeMovedTheRow` and chains nothing, exactly as it should for a call
+      // that stored nothing.
+      if (appliedToolChainsRerun(result)) fireRerun();
     },
-    [onDetail, autoMarkLandmarks],
+    [onDetail, autoMarkLandmarks, fireRerun],
   );
 
   const run = useCallback(
@@ -1507,7 +1556,6 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       cautionsOpen={cautionsOpen}
       onOpenCautions={() => setCautionsOpen(true)}
       onCloseCautions={() => setCautionsOpen(false)}
-      onRerunAlignment={handleRerunAlignment}
       rerunning={rerunning}
       rerunError={rerunError}
       panes={panes}

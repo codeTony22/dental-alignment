@@ -36,7 +36,7 @@ from case_prep.domain.poses import Retention
 from case_prep.pipeline.deliverables import (arch_with_parts_fused,
                                               cap_imprint_holes,
                                               cap_imprint_parts,
-                                              closed_model_with_recesses,
+                                              open_arch_with_through_holes,
                                               remove_cap_region)
 from case_prep.pipeline.isolation import isolate_scanned_cap
 from case_prep.pipeline.final_product import (DEFAULT_GINGIVAL_OFFSET_MM,
@@ -2472,8 +2472,44 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
             # same lane just wrote. Keyed by bare name and handed to
             # ``register_package_files`` alongside the paths it re-hashes.
             composite_facts: Dict[str, MeshFacts] = {}
+
+            # THE SEAT IS THE CAP'S OWN IMPRINT (§10-AO, client 2026-08-06): each
+            # hole is the healing cap's dilated surface — its exact footprint plus
+            # the relief this run applied — floored by the cap's own offset base.
+            # The cylinder socket survives only as the per-site fallback, noted on
+            # the site's own row. BUILT BEFORE THE FUSED COMPOSITES BELOW (moved
+            # here, DEFECT 1 EXCISION slice, client-ruled 2026-08-15): the fused
+            # healing-cap composite needs each site's own catalog rim radius to
+            # excise the scanned cap's crust, and this loop is the one place that
+            # radius is already derived.
+            imprint_sites = []
+            for sp, tmpl, _c in package_sites:
+                dia_h = dims.get(sp.variant_code)
+                if dia_h is None:
+                    # no catalog dims for this variant — derive the fallback radius from the
+                    # template's own canonical geometry (bore on +z) rather than guessing a constant
+                    ext = tmpl.bounds[1] - tmpl.bounds[0]
+                    dia_h = (float(max(ext[0], ext[1])), float(ext[2]))
+                row = _rows_by_tooth_qc.get(sp.tooth) or {}
+                applied = row.get("gingival_offset_applied_mm")
+                offset = (float(applied) if isinstance(applied, (int, float))
+                          else float((site_gingival_offsets or {}).get(
+                              sp.tooth, gingival_offset_mm)))
+                imprint_sites.append((tmpl, sp.pose_matrix, offset,
+                                      float(dia_h[0]) / 2.0))
+
             caps_posed = [(tmpl, sp.pose_matrix) for sp, tmpl, _ in package_sites]
-            arch_caps, caps_composite_notes = arch_with_parts_fused(scan, caps_posed)
+            # DEFECT 1 EXCISION (client-ruled, live verification 2026-08-15): the
+            # SAME templates/poses ``caps_posed`` already carries, plus each
+            # site's own catalog rim radius (``imprint_sites``' own 4th element,
+            # same order) — "white patches poking through the library cap" was
+            # this exact composite's symptom, and the part's own posed surface
+            # must replace the scanned cap's crust, never merge with it.
+            caps_excise_sites = [(tmpl, sp.pose_matrix, rim_r)
+                                 for (sp, tmpl, _c), (_t, _p, _o, rim_r)
+                                 in zip(package_sites, imprint_sites)]
+            arch_caps, caps_composite_notes = arch_with_parts_fused(
+                scan, caps_posed, excise_sites=caps_excise_sites)
             arch_caps_path = _P(out_dir) / f"{case_id}-arch-with-healingcaps.stl"
             arch_caps.export(arch_caps_path)
             composite_facts[arch_caps_path.name] = facts_of(arch_caps)
@@ -2491,27 +2527,6 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                     if target is not None:
                         target.setdefault("production", {})[
                             "composite_note"] = note
-
-            # THE SEAT IS THE CAP'S OWN IMPRINT (§10-AO, client 2026-08-06): each
-            # hole is the healing cap's dilated surface — its exact footprint plus
-            # the relief this run applied — floored by the cap's own offset base.
-            # The cylinder socket survives only as the per-site fallback, noted on
-            # the site's own row.
-            imprint_sites = []
-            for sp, tmpl, _c in package_sites:
-                dia_h = dims.get(sp.variant_code)
-                if dia_h is None:
-                    # no catalog dims for this variant — derive the fallback radius from the
-                    # template's own canonical geometry (bore on +z) rather than guessing a constant
-                    ext = tmpl.bounds[1] - tmpl.bounds[0]
-                    dia_h = (float(max(ext[0], ext[1])), float(ext[2]))
-                row = _rows_by_tooth_qc.get(sp.tooth) or {}
-                applied = row.get("gingival_offset_applied_mm")
-                offset = (float(applied) if isinstance(applied, (int, float))
-                          else float((site_gingival_offsets or {}).get(
-                              sp.tooth, gingival_offset_mm)))
-                imprint_sites.append((tmpl, sp.pose_matrix, offset,
-                                      float(dia_h[0]) / 2.0))
 
             # SCANNED-CAP ISOLATION (clinical pipeline plan Stage 2 slice 2a, boolean
             # plan 4d): per site, exactly what the scanner saw of the healing cap —
@@ -2587,14 +2602,17 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                 composite_facts[f"{case_id}-socket-platform.stl"] = facts_of(socket_platform)
                 _layer_names.append(f"{case_id}-socket-platform.stl")
 
-            # ARTIFACT 6 RETURNS (client 2026-08-11): the closed model
-            _model_closed, _model_notes = closed_model_with_recesses(
+            # ARTIFACT 6, THE THIRD RULING (client-ruled, 2026-08-15): the closed
+            # model retires AGAIN — "just the open scan, and the hole viewed like
+            # it is" — replaced by the open arch wearing each cap's exact
+            # THROUGH-hole, no backfilled body.
+            _model_closed, _model_notes = open_arch_with_through_holes(
                 scan, imprint_sites)
             if _model_closed is not None:
-                (_P(out_dir) / f"{case_id}-model-closed.stl").write_bytes(
+                (_P(out_dir) / f"{case_id}-arch-open-holes.stl").write_bytes(
                     _model_closed.export(file_type="stl"))
-                composite_facts[f"{case_id}-model-closed.stl"] = facts_of(_model_closed)
-                _layer_names.append(f"{case_id}-model-closed.stl")
+                composite_facts[f"{case_id}-arch-open-holes.stl"] = facts_of(_model_closed)
+                _layer_names.append(f"{case_id}-arch-open-holes.stl")
             for _note in _model_notes:
                 if _note.startswith("site "):
                     _teeth = [package_sites[

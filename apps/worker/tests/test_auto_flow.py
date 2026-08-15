@@ -95,13 +95,14 @@ def test_run_auto_case_emits_package_and_report(tmp_path):
 
 
 # THE EIGHT BOOLEAN-COMPOSITE ARTIFACTS a run may write (client spec 2026-07-11
-# through 2026-08-11): the arch fused with caps/constructions, the two capless/
-# platform composites, their socketless/dish/platform layers, and the closed
-# model. Named here once so both the run-lane and re-emit-lane pins (test_emit.py)
-# check the same list.
+# through 2026-08-15): the arch fused with caps/constructions, the two capless/
+# platform composites, their socketless/dish/platform layers, and — since
+# artifact 6's third ruling (client-ruled defect 2, 2026-08-15) — the open arch
+# with through-holes, replacing the retired closed model. Named here once so
+# both the run-lane and re-emit-lane pins (test_emit.py) check the same list.
 _COMPOSITE_SUFFIXES = ("arch-with-healingcaps", "arch-with-constructions",
                       "arch-capless", "arch-platform", "arch-socketless",
-                      "socket-dish", "socket-platform", "model-closed")
+                      "socket-dish", "socket-platform", "arch-open-holes")
 
 
 @pytest.mark.slow

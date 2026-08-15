@@ -224,7 +224,7 @@ class TestReEmitOnTheRealTree:
         sealed = {f["name"]: f for f in reemit_manifest["files"]}
         composite_suffixes = ("arch-with-healingcaps", "arch-with-constructions",
                               "arch-capless", "arch-platform", "arch-socketless",
-                              "socket-dish", "socket-platform", "model-closed")
+                              "socket-dish", "socket-platform", "arch-open-holes")
         composite_names = [f"{case.id}-{suffix}.stl" for suffix in composite_suffixes]
         on_disk = {p.name for p in out_dir.iterdir()}
         emitted = [name for name in composite_names if name in on_disk]
@@ -243,8 +243,9 @@ class TestReEmitOnTheRealTree:
         # manifest ``facts`` block; ``triangle_count`` matches an on-disk reload
         # exactly (STL preserves the triangle list losslessly). ``watertight`` is
         # checked only where the answer is structurally unambiguous — the raw scan
-        # is open, the closed model (when this fixture happens to emit one) is
-        # closed — a naive reload's watertight reading can otherwise disagree with
+        # is open, and so is the open arch with through-holes (artifact 6's third
+        # ruling, client-ruled defect 2, 2026-08-15: open by design, no backfilled
+        # body) — a naive reload's watertight reading can otherwise disagree with
         # the in-memory mesh's own answer purely from STL's float32 quantization
         # (measured on the synthetic fixture, test_auto_flow.py's twin pin), which
         # is exactly why the design calls for the caller's own reading.
@@ -259,8 +260,8 @@ class TestReEmitOnTheRealTree:
         raw_scan_name = f"{case.id}-upper.stl"
         if raw_scan_name in sealed:
             assert sealed[raw_scan_name]["facts"]["watertight"] is False
-        if f"{case.id}-model-closed.stl" in sealed:
-            assert sealed[f"{case.id}-model-closed.stl"]["facts"]["watertight"] is True
+        if f"{case.id}-arch-open-holes.stl" in sealed:
+            assert sealed[f"{case.id}-arch-open-holes.stl"]["facts"]["watertight"] is False
         for name, entry in sealed.items():
             if not name.endswith(".stl"):
                 assert "facts" not in entry, f"{name} is not a mesh — no facts expected"

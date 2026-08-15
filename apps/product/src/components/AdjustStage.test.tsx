@@ -1042,37 +1042,83 @@ describe("the workspace toolbar over the panes", () => {
     expect(html.indexOf('data-role="workspace-toolbar"')).toBeGreaterThan(queue);
   });
 
-  /* THE EXPLICIT RE-RUN (client 2026-08-09: "we need button in adjustment to
-     re-run the alignment again, not just when the numbers change"). The BFF's
-     POST /run has allowed re-authorizing a DONE run with no change since the
-     2026-08-02 ruling; this is that door as a visible act. The §10-AD promise
-     rides the hint: evidence re-applies after the automation. */
-  it("the re-run button renders in the queue panel with the re-apply promise", () => {
-    const html = view({ onRerunAlignment: () => undefined });
+  /*
+   * THE CHAINED RE-RUN (client ruling 2026-08-15: "we need to have the ability
+   * to apply the fit to re-run, or have another button in adjustment that
+   * re-runs, having two is confusing"). RETARGETED from the standalone
+   * "Re-run the alignment" button (client 2026-08-09) this queue panel used to
+   * offer: that decision is superseded — applying ANY adjustment now fires the
+   * re-run itself (`settle` → `appliedToolChainsRerun` → `fireRerun`), so the
+   * button retires and `rerunning`/`rerunError` alone drive what renders here.
+   */
+  it("no button — a static render can never offer the retired standalone act, in any state", () => {
+    expect(view()).not.toContain('data-role="rerun-alignment"');
+    expect(view({ rerunning: true })).not.toContain('data-role="rerun-alignment"');
+    expect(
+      view({ rerunError: "a run is already in flight for case 'x'" }),
+    ).not.toContain('data-role="rerun-alignment"');
+  });
+
+  it("while the chained re-run is in flight the queue panel says so, with a spinner", () => {
+    const html = view({ rerunning: true });
     const queue = html.indexOf('data-role="adjust-queue"');
-    const button = html.indexOf('data-role="rerun-alignment"');
-    expect(button).toBeGreaterThan(queue);
-    expect(html).toContain("Re-run the alignment");
+    const band = html.indexOf('data-role="run-progress"');
+    expect(band).toBeGreaterThan(queue);
+    expect(html).toMatch(/data-role="run-progress"[^>]*role="status"/);
+    expect(html).toContain('busy-state__spinner');
     expect(html).toContain(
       "marks, pairs and best fits re-apply after the automation",
     );
   });
 
-  it("no handler, no button — a static render cannot offer a dead act", () => {
-    expect(view()).not.toContain('data-role="rerun-alignment"');
+  it("idle — no progress band and no error", () => {
+    const html = view({ rerunning: false, rerunError: null });
+    expect(html).not.toContain('data-role="run-progress"');
+    expect(html).not.toContain('data-role="rerun-error"');
   });
 
-  it("while the re-run is in flight the button says so and disables", () => {
-    const html = view({ onRerunAlignment: () => undefined, rerunning: true });
-    expect(html).toMatch(/data-role="rerun-alignment"[^>]*disabled/);
-    expect(html).toContain("Re-running");
-  });
-
-  it("a re-run refusal renders its words beside the button, verbatim", () => {
+  it("a chained re-run's failure renders in the queue panel, verbatim — same words the retired button showed", () => {
     const html = view({
-      onRerunAlignment: () => undefined,
+      rerunning: false,
       rerunError: "a run is already in flight for case 'x'",
     });
+    expect(html).toContain("a run is already in flight");
+    expect(html).not.toContain('data-role="run-progress"');
+  });
+
+  it("failure honesty: the run's own error never hides the apply that already landed", () => {
+    /* §10-AD's contract, pinned at the render layer (item 4 of the 2026-08-15
+       ruling): a chained re-run that fails does NOT roll back the tool's own
+       already-landed apply. `lastOutcome` (what the tool did) and `rerunError`
+       (the chain's own failure) are independent props fed by independent
+       state slots in the container — this proves the View renders BOTH
+       together rather than one crowding out the other. */
+    const outcome: AdjustOutcomeView = {
+      tooth: 13,
+      operation: "rotation",
+      detail: "rotated +9.9°",
+      applied: true,
+      files: [],
+      clocking: null,
+      deviation: null,
+      stale_metrics: [],
+      nudge: null,
+      applied_delta_deg: 9.9,
+      cumulative_deg: 9.9,
+      stability_excess_mm: null,
+      best_fit: null,
+      pairs: [],
+      residual_rms_mm: null,
+      cross_checked: null,
+      click_azimuth_deg: null,
+      matched_feature_azimuth_deg: null,
+    };
+    const html = view({
+      lastOutcome: outcome,
+      rerunning: false,
+      rerunError: "a run is already in flight for case 'x'",
+    });
+    expect(html).toContain("rotated +9.9°");
     expect(html).toContain("a run is already in flight");
   });
 

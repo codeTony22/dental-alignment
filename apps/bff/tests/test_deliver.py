@@ -828,6 +828,15 @@ class TestArtifactsDisclose:
         assert artifact_description("neodent-gm-4-scanned-cap.stl") == (
             "the scan's own surface at the healing cap, isolated — what the scanner "
             "saw of the cap, nothing else")
+        # ARTIFACT 6, THE THIRD RULING (client-ruled defect 2, 2026-08-15): the
+        # "-model-closed.stl" row retired with the closed model itself; the
+        # replacement name-shape carries its own sentence — no model body, the
+        # hole as it is. Also a name-shape, not a fixture file here.
+        assert artifact_description("neodent-gm-arch-open-holes.stl") == (
+            "the open scan with each cap's exact through-hole — no model body, "
+            "the hole as it is")
+        assert artifact_description("neodent-gm-model-closed.stl") is None, \
+            "the retired name-shape must not still be recognised"
 
     def test_each_listed_file_carries_its_size_and_its_site(
             self, settings, product_root):

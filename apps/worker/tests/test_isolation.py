@@ -25,7 +25,8 @@ from case_prep.adapters.cap_library import CapLibrary
 from case_prep.adapters.synthetic import make_gingiva_arch, make_scan_body_mesh
 from case_prep.domain.cap_catalog import CapSpec
 from case_prep.pipeline.auto_flow import ConfirmedSite, run_auto_case
-from case_prep.pipeline.isolation import CAP_MATCH_BAND_MM, isolate_scanned_cap
+from case_prep.pipeline.isolation import (CAP_MATCH_BAND_MM, isolate_scanned_cap,
+                                          scanned_cap_face_mask)
 
 REAL = Path(__file__).resolve().parents[1] / "data" / "real"
 
@@ -173,6 +174,63 @@ class TestIsolateScannedCap:
         # apps/product/src/domain/declare.ts's CAP_MATCH_BAND_MM — the served
         # artifact must be the SAME rung the pane's own caption names
         assert CAP_MATCH_BAND_MM == 0.6
+
+
+class TestScannedCapFaceMask:
+    """THE SHARED CLASSIFIER (client-ruled defect 1, boolean-engine excision
+    slice, 2026-08-15): ``isolate_scanned_cap``'s own mechanism, exposed as a
+    per-face boolean mask so DEFECT 1's excision can apply the identical
+    three-rung test to a boolean result's own scan-provenance faces, not just
+    the raw scan. ``isolate_scanned_cap`` is now a thin wrapper over it —
+    pinned here directly so the two can never silently drift apart."""
+
+    def test_mask_shape_matches_the_meshs_own_face_count(self):
+        scan, template, pose, _patches = TestIsolateScannedCap()._fixture()
+        mask = scanned_cap_face_mask(scan, template, pose, RIM_R)
+        assert mask.dtype == np.dtype(bool)
+        assert mask.shape == (len(scan.faces),)
+
+    def test_isolate_scanned_cap_keeps_exactly_the_faces_the_mask_marks(self):
+        """The wrapper relationship, proved directly: every face
+        ``isolate_scanned_cap`` returns is one the mask marked True, by exact
+        vertex-coordinate identity (nothing is moved, so this is a coordinate
+        comparison, not merely a count)."""
+        scan, template, pose, _patches = TestIsolateScannedCap()._fixture()
+        mask = scanned_cap_face_mask(scan, template, pose, RIM_R)
+        result = isolate_scanned_cap(scan, template, pose, RIM_R)
+        assert result is not None
+
+        scan_v = np.asarray(scan.vertices, float)
+        scan_f = np.asarray(scan.faces)
+        masked_sigs = {
+            tuple(sorted(tuple(np.round(scan_v[v], 6)) for v in f))
+            for f in scan_f[mask]}
+        result_v = np.asarray(result.vertices, float)
+        result_f = np.asarray(result.faces)
+        result_sigs = {
+            tuple(sorted(tuple(np.round(result_v[v], 6)) for v in f))
+            for f in result_f}
+        assert result_sigs == masked_sigs
+
+    def test_an_empty_mesh_returns_an_empty_mask_not_a_raise(self):
+        _scan, template, pose, _patches = TestIsolateScannedCap()._fixture()
+        mask = scanned_cap_face_mask(trimesh.Trimesh(), template, pose, RIM_R)
+        assert mask.shape == (0,)
+
+    def test_the_mask_reads_ANY_mesh_not_only_the_raw_scan(self):
+        """DEFECT 1's own point: the classifier is mesh-agnostic geometry, so
+        it can be applied to a boolean's own result (a DIFFERENT mesh than
+        the scan that fed the boolean) to find scan-provenance crust there —
+        exercised here by feeding a mesh built from the raw scan's own
+        surviving faces, offset by nothing, and confirming the mask reads
+        identically off it."""
+        scan, template, pose, _patches = TestIsolateScannedCap()._fixture()
+        mask = scanned_cap_face_mask(scan, template, pose, RIM_R)
+        copy_mesh = trimesh.Trimesh(np.asarray(scan.vertices, float).copy(),
+                                    np.asarray(scan.faces).copy(),
+                                    process=False)
+        mask_on_copy = scanned_cap_face_mask(copy_mesh, template, pose, RIM_R)
+        assert np.array_equal(mask, mask_on_copy)
 
 
 # --- emission: the auto_flow.py lane --------------------------------------------

@@ -27,6 +27,7 @@ import {
   adjustQueue,
   adjustUnionCaption,
   alreadyOptimalFrom,
+  appliedToolChainsRerun,
   applyBlockedReason,
   autoMarkDrafts,
   autoMarkSourceLabel,
@@ -1515,6 +1516,76 @@ describe("outcomeMovedTheRow — when the run's summary row must be re-read", ()
   it("a refusal moved nothing — the fit on screen is the one that passed the gates", () => {
     expect(
       outcomeMovedTheRow({ kind: "error", status: 409, detail: "refused", refusal: null }),
+    ).toBe(false);
+  });
+});
+
+/**
+ * THE CHAINED RE-RUN'S OWN PREDICATE (client ruling 2026-08-15: "apply the fit
+ * to re-run, or have another button in adjustment that re-runs, having two is
+ * confusing" — decided as one act, not two). This is the PURE wiring the
+ * container's `settle` reads to decide whether a completed apply fires the
+ * full re-run the retired standalone button used to offer — every tool's
+ * apply lands through `settle`, so pinning this one predicate pins the rule
+ * for rotation, mark-trench, best-fit and fit-by-points (auto-mark included,
+ * it shares fit-by-points' apply) all at once, with no per-tool duplicate.
+ */
+describe("appliedToolChainsRerun — the ONE gate on the chained re-run (client 2026-08-15)", () => {
+  const okResult = (applied: boolean): ApiResult<AdjustResultView> => ({
+    kind: "ok",
+    data: {
+      outcome: {
+        tooth: 13,
+        operation: "best-fit",
+        detail: "measured",
+        applied,
+        files: [],
+        clocking: null,
+        deviation: null,
+        stale_metrics: [],
+        nudge: null,
+        applied_delta_deg: null,
+        cumulative_deg: null,
+        stability_excess_mm: null,
+        best_fit: null,
+        pairs: [],
+        residual_rms_mm: null,
+        cross_checked: null,
+        click_azimuth_deg: null,
+        matched_feature_azimuth_deg: null,
+      },
+      pane_payload: null,
+      case: {} as AdjustResultView["case"],
+    },
+  });
+
+  it("a genuinely landed apply chains the re-run", () => {
+    expect(appliedToolChainsRerun(okResult(true))).toBe(true);
+  });
+
+  it("a measure-only call (best-fit's 'Measure') stored nothing — chains nothing", () => {
+    expect(appliedToolChainsRerun(okResult(false))).toBe(false);
+  });
+
+  it("a refusal stored nothing — chains nothing", () => {
+    expect(
+      appliedToolChainsRerun({ kind: "error", status: 409, detail: "refused", refusal: null }),
+    ).toBe(false);
+  });
+
+  it("the already-optimal PASS (a 409 shaped as a pass) chains nothing", () => {
+    expect(
+      appliedToolChainsRerun({
+        kind: "error",
+        status: 409,
+        detail: "already optimal",
+        refusal: {
+          kind: "already_optimal",
+          message: "the seat already stands at Ø0.30",
+          matching_diameter_mm: 0.3,
+          suggested_diameter_mm: 0.3,
+        },
+      }),
     ).toBe(false);
   });
 });

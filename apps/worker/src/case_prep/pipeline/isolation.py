@@ -101,28 +101,41 @@ def _keep_faces_by_vertex_mask(mesh: trimesh.Trimesh,
     return out
 
 
-def isolate_scanned_cap(scan: trimesh.Trimesh, template: trimesh.Trimesh,
-                        pose: np.ndarray, rim_r: float) -> Optional[trimesh.Trimesh]:
-    """Exactly what the scanner saw of the healing cap at ``pose`` — the matched rung
-    of the client's own isolation ladder, run over the doctor's scan bytes.
+def scanned_cap_face_mask(mesh: trimesh.Trimesh, template: trimesh.Trimesh,
+                         pose: np.ndarray, rim_r: float) -> np.ndarray:
+    """THE SHARED CLASSIFIER (client-ruled defect 1, 2026-08-15 live verification):
+    ``isolate_scanned_cap``'s own three-rung test, factored out as a per-face
+    boolean array parallel to ``mesh.faces`` — cylinder pre-cut (whole triangles,
+    axially unbounded), core-keep (unconditional inside ``max(rim_r-1.0, 1.2)``mm),
+    template band (``CAP_MATCH_BAND_MM`` of the posed template's own surface). This
+    IS ``isolate_scanned_cap``'s mechanism, not a second copy of it — that function
+    is now a thin wrapper that keeps the faces this one marks True. Returns an
+    all-False array (never raises) when ``mesh`` carries no faces at all.
 
-    ``template`` is the library cap CAD in its own canonical local frame (the same
-    mesh the alignment fit); ``pose`` carries it into the jaw-scan world frame, and
-    ``rim_r`` is the catalog rim radius (mm) the site's imprint tuple already carries.
-
-    Returns ``None`` when the pose is pathological enough that nothing survives the
-    cylinder pre-cut, or nothing in it lies within the core or the template band — the
-    caller's signal to skip emission and land an honest note instead of an empty file.
-    """
+    ``mesh`` NEED NOT BE THE RAW SCAN. The excision doctrine (DEFECT 1: "the real
+    cap physically leaves the mouth; removing its MEASURED surface is measurement")
+    applies this exact geometric test to a BOOLEAN RESULT's own scan-provenance
+    faces too — their vertex coordinates are inherited, unmoved, from the scan the
+    boolean cut (``solidify_shell``'s append-only ordering, and a boolean split
+    only subdivides a face along an intersection curve, it never relocates the
+    material outside that curve), so the same axis-radial / template-distance test
+    reads a cut result's leftover crust exactly as it reads the raw scan. One
+    geometric rule, shared by every consumer that needs to answer "is this triangle
+    the physical healing cap the scanner saw" — the per-site isolation artifact,
+    the fused composite's excision, the carved recess's excision, and the
+    through-hole artifact's excision all read it, and can never drift apart."""
     origin, axis = _axis_and_origin(pose)
+    V = np.asarray(mesh.vertices, dtype=float)
+    F = np.asarray(mesh.faces)
+    if len(F) == 0:
+        return np.zeros(0, dtype=bool)
 
     # 1. CYLINDER PRE-CUT — the catalog rim radius, whole triangles, axially
     # unbounded (see module docstring).
-    scan_vertices = np.asarray(scan.vertices, dtype=float)
-    pre_cut = _keep_faces_by_vertex_mask(
-        scan, _radial_distances(scan_vertices, origin, axis) <= float(rim_r))
-    if pre_cut is None:
-        return None
+    radial = _radial_distances(V, origin, axis)
+    step1 = (radial <= float(rim_r))[F].any(axis=1)
+    if not step1.any():
+        return np.zeros(len(F), dtype=bool)
 
     # 2. THE POSED TEMPLATE SURFACE, densely sampled (own vertices + a surface
     # sample) — the same idiom ``csg.strip_fabricated`` uses to judge a face
@@ -141,11 +154,44 @@ def isolate_scanned_cap(scan: trimesh.Trimesh, template: trimesh.Trimesh,
         posed_template, _TEMPLATE_SAMPLE_POINTS, seed=0)
     tree = cKDTree(np.vstack([template_vertices, surface_sample]))
 
-    # 3. CORE-KEEP (unconditional) OR template-band (everywhere else).
-    pre_cut_vertices = np.asarray(pre_cut.vertices, dtype=float)
+    # 3. CORE-KEEP (unconditional) OR template-band (everywhere else) — the
+    # distance query is restricted to vertices step 1 actually touched (the
+    # same cost profile the two-stage implementation this replaces had: a
+    # KD-tree query over the pre-cut's own vertices, not the whole mesh).
     core_r = max(float(rim_r) - _CORE_INSET_MM, _CORE_FLOOR_MM)
-    in_core = _radial_distances(pre_cut_vertices, origin, axis) <= core_r
-    distance_to_template, _ = tree.query(pre_cut_vertices)
+    in_core = radial <= core_r
+    used = np.zeros(len(V), dtype=bool)
+    used[F[step1].ravel()] = True
+    distance_to_template = np.full(len(V), np.inf)
+    distance_to_template[used] = tree.query(V[used])[0]
     in_band = distance_to_template <= CAP_MATCH_BAND_MM
+    step2 = (in_core | in_band)[F].any(axis=1)
 
-    return _keep_faces_by_vertex_mask(pre_cut, in_core | in_band)
+    return step1 & step2
+
+
+def isolate_scanned_cap(scan: trimesh.Trimesh, template: trimesh.Trimesh,
+                        pose: np.ndarray, rim_r: float) -> Optional[trimesh.Trimesh]:
+    """Exactly what the scanner saw of the healing cap at ``pose`` — the matched rung
+    of the client's own isolation ladder, run over the doctor's scan bytes.
+
+    ``template`` is the library cap CAD in its own canonical local frame (the same
+    mesh the alignment fit); ``pose`` carries it into the jaw-scan world frame, and
+    ``rim_r`` is the catalog rim radius (mm) the site's imprint tuple already carries.
+
+    A thin wrapper over ``scanned_cap_face_mask`` (the shared classifier, boolean-
+    engine defect-1 slice, 2026-08-15): keeps the faces the mask marks True, moving
+    nothing (``update_faces`` + ``remove_unreferenced_vertices``, exactly as before).
+    Returns ``None`` when the pose is pathological enough that nothing survives the
+    cylinder pre-cut, or nothing in it lies within the core or the template band — the
+    caller's signal to skip emission and land an honest note instead of an empty file.
+    """
+    mask = scanned_cap_face_mask(scan, template, pose, rim_r)
+    if not mask.any():
+        return None
+    out = scan.copy()
+    out.update_faces(mask)
+    out.remove_unreferenced_vertices()
+    if len(out.faces) == 0:
+        return None
+    return out

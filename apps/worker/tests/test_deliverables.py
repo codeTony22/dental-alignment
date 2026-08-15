@@ -114,6 +114,32 @@ def _flat_sheet(n=19, extent=8.0):
     return trimesh.Trimesh(pts, np.asarray(faces), process=False)
 
 
+def _bulging_arch(template_r=2.0, bulge_r=2.4, height=4.0,
+                  bump_center=(0.0, 0.0, 2.0)):
+    """DEFECT 1's own scene (client-ruled, live verification 2026-08-15): a
+    gum sheet plus a cap-SHAPED bump that stands ``bulge_r - template_r``
+    (0.4mm) PROUD of the posed template — the scanned cap deviating from its
+    CAD, exactly the fleet's own measured class (RMS 0.25/p90 0.35mm). The
+    catalog rim radius a real site carries describes the PHYSICAL part (what
+    the scan actually measures), so a caller's ``rim_r`` here must clear the
+    bulge — a rim sized to the template's own (smaller, deviated) radius
+    would refuse the bulge at the cylinder pre-cut before the classifier's
+    band/core rungs ever ran, which is not the defect this fixture is FOR.
+    Returns ``(arch, template, pose, bulge)`` — ``bulge`` on its own, for a
+    caller that wants to name specific proud vertices by coordinate."""
+    sheet = trimesh.creation.box(extents=[40, 20, 1])
+    for _ in range(4):
+        sheet = sheet.subdivide()
+    bulge = trimesh.creation.cylinder(radius=bulge_r, height=height,
+                                      sections=64)
+    bulge.apply_translation(bump_center)
+    arch = trimesh.util.concatenate([sheet, bulge])
+    template = trimesh.creation.cylinder(radius=template_r, height=height,
+                                         sections=64)
+    pose = _pose_at(*bump_center)
+    return arch, template, pose, bulge
+
+
 class TestRemoveCapRegion:
     def test_removes_faces_inside_the_cap_cylinder(self):
         arch = _arch_with_bump()
@@ -1346,18 +1372,35 @@ class TestTheMergedCaplessArtifactDoesNotMove:
     the two pieces can never move: a predicate change is a RELABELLING —
     which face is called socket vs out — never a reshape of the union. This
     pin is predicate-independent by design; see the report for the argument
-    that it must also hold, unrun, on the old band build."""
+    that it must also hold, unrun, on the old band build.
 
-    def test_the_merged_capless_artifact_does_not_move(self, monkeypatch):
+    UPDATED (client-ruled defect 1, live verification 2026-08-15): the carve
+    now also EXCISES scan-provenance faces that fall in DEFECT 1's shared
+    classifier mask (``scanned_cap_face_mask``) — the scanned cap's own
+    measured crust, wherever it stood proud of the template+relief the
+    boolean actually cut. That excision legitimately SHRINKS ``keep`` before
+    the ``out``/``socket`` split ever runs, so ``merged`` is no longer
+    ``keep`` verbatim — it is ``keep`` MINUS whatever the excision dropped.
+    The guard is updated to assert exactly that (recomputed independently,
+    the same way ``_csg_carve`` computes it: the mask restricted to
+    scan-provenance, i.e. ``tracked.source == 0``) rather than retired —
+    the underlying algebra (``inside`` is still a subset of the SHRUNK
+    ``keep``) is unchanged, and remains the reason the two pieces can never
+    move relative to EACH OTHER even though the merged whole can shrink."""
+
+    def test_the_merged_capless_artifact_is_keep_minus_the_excised_crust(
+            self, monkeypatch):
         from case_prep.pipeline import deliverables as d
         from case_prep.pipeline.csg import strip_tracked
+        from case_prep.pipeline.isolation import scanned_cap_face_mask
 
         kernel = _RecordingKernel()
         monkeypatch.setattr(d, "default_kernel", lambda: kernel)
 
         sheet = _ridge_sheet()
         cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
-        site = (cap, _pose_at(0, 0, 1.0), 0.2, 2.0)
+        pose = _pose_at(0, 0, 1.0)
+        site = (cap, pose, 0.2, 2.0)
         out, socket, notes = d.cap_imprint_parts(sheet, [site],
                                                   visible_depth_mm=1.8)
         assert notes == []
@@ -1366,6 +1409,9 @@ class TestTheMergedCaplessArtifactDoesNotMove:
         tracked = kernel.tracked_results[0]
         cut = tracked.mesh
         keep = strip_tracked(tracked)
+        scan_provenance = np.asarray(tracked.source) == 0
+        excised = scanned_cap_face_mask(cut, cap, pose, 2.0) & scan_provenance
+        expected_keep = keep & ~excised
 
         def _sig_set(mesh):
             V = np.asarray(mesh.vertices, float)
@@ -1376,11 +1422,46 @@ class TestTheMergedCaplessArtifactDoesNotMove:
         merged = trimesh.util.concatenate([out, socket])
         merged_sigs = _sig_set(merged)
         Vc = np.asarray(cut.vertices, float)
-        Fc = np.asarray(cut.faces)[keep]
-        kept_sigs = {tuple(sorted(tuple(np.round(Vc[v], 6)) for v in f))
-                    for f in Fc}
-        assert merged_sigs == kept_sigs, \
-            "concat(out, socket) is no longer the same face set as keep"
+        Fc = np.asarray(cut.faces)[expected_keep]
+        expected_sigs = {tuple(sorted(tuple(np.round(Vc[v], 6)) for v in f))
+                        for f in Fc}
+        assert merged_sigs == expected_sigs, \
+            "concat(out, socket) is no longer keep MINUS the excised crust"
+
+    def test_the_excised_set_is_exactly_scan_provenance_intersect_mask(
+            self, monkeypatch):
+        """THE COMPANION PIN (defect 1's own text): the excised set can never
+        contain a tool-provenance face — proved here directly against the
+        SAME tracked result the carve itself used, not merely asserted
+        inside the production code."""
+        from case_prep.pipeline import deliverables as d
+        from case_prep.pipeline.csg import strip_tracked
+        from case_prep.pipeline.isolation import scanned_cap_face_mask
+
+        kernel = _RecordingKernel()
+        monkeypatch.setattr(d, "default_kernel", lambda: kernel)
+
+        sheet = _ridge_sheet()
+        cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
+        pose = _pose_at(0, 0, 1.0)
+        site = (cap, pose, 0.2, 2.0)
+        out, socket, notes = d.cap_imprint_parts(sheet, [site],
+                                                  visible_depth_mm=1.8)
+        assert notes == []
+        tracked = kernel.tracked_results[0]
+        cut = tracked.mesh
+        keep = strip_tracked(tracked)
+        source = np.asarray(tracked.source)
+        scan_provenance = source == 0
+        tool_provenance = source >= tracked.base_groups
+        mask = scanned_cap_face_mask(cut, cap, pose, 2.0)
+        excised = mask & scan_provenance
+
+        assert not (excised & tool_provenance).any(), \
+            "the excised set must never contain a tool-provenance face"
+        # and the algebra the guard above depends on: excision only ever
+        # shrinks a subset of what the strip already kept
+        assert (excised & keep).sum() == excised.sum() or not excised.any()
 
 
 class TestRealFleetSocketCoverage:
@@ -1443,3 +1524,230 @@ class TestRealFleetSocketCoverage:
         assert coverage >= 0.99, \
             f"cap7030-zimmer-4.5 socket covers {coverage:.1%} of the true " \
             "machined surface (measured 45.3% under the band predicate)"
+
+
+class TestDefect1MeasuredCapResidueIsExcised:
+    """CLIENT-RULED DEFECT 1 (live verification, 2026-08-15). The boolean
+    subtracts the TEMPLATE's own volume, but the scanned cap deviates from it
+    (fleet: RMS 0.25, p90 0.35mm) — wherever the scan stands proud of
+    template+relief, its own measured surface used to survive the cut
+    untouched: white patches in the fused composite, floating flaps in the
+    recess bore. ``_bulging_arch`` builds exactly that scene: a cap-shaped
+    bump 0.4mm proud of the posed template, standing where neither the
+    dilated punch nor (for the fuse pin) the posed part itself reaches."""
+
+    def test_the_bulge_does_not_survive_the_carve(self, monkeypatch):
+        from case_prep.pipeline import deliverables as d
+
+        kernel = _RecordingKernel()
+        monkeypatch.setattr(d, "default_kernel", lambda: kernel)
+        arch, template, pose, bulge = _bulging_arch()
+        rim_r = 2.6  # clears the bulge at the cylinder pre-cut (see fixture doc)
+        site = (template, pose, 0.2, rim_r)
+        out, socket, notes = d.cap_imprint_parts(arch, [site],
+                                                  visible_depth_mm=1.8)
+        assert notes == []
+        merged = (trimesh.util.concatenate([out, socket])
+                 if socket is not None else out)
+        merged_v = {tuple(np.round(v, 6))
+                   for v in np.asarray(merged.vertices, float)}
+        # a bulge vertex standing outside even the DILATED punch (template
+        # radius + relief) is untouched by the boolean — if it still reads in
+        # the merged artifact, the scanned cap's crust survived the carve
+        bv = np.asarray(bulge.vertices, float)
+        outside_punch = np.linalg.norm(bv[:, :2], axis=1) > 2.0 + 0.2 + 0.05
+        survivors = [tuple(np.round(v, 6)) for v in bv[outside_punch]
+                    if tuple(np.round(v, 6)) in merged_v]
+        assert survivors == [], \
+            f"{len(survivors)} scanned-cap crust vertex(es) survived the carve"
+
+    def test_the_gum_outside_the_mask_survives_untouched(self, monkeypatch):
+        from case_prep.pipeline import deliverables as d
+
+        kernel = _RecordingKernel()
+        monkeypatch.setattr(d, "default_kernel", lambda: kernel)
+        arch, template, pose, bulge = _bulging_arch()
+        site = (template, pose, 0.2, 2.6)
+        out, socket, notes = d.cap_imprint_parts(arch, [site],
+                                                  visible_depth_mm=1.8)
+        assert notes == []
+        merged = (trimesh.util.concatenate([out, socket])
+                 if socket is not None else out)
+        v = np.asarray(merged.vertices, float)
+        assert (np.abs(v[:, 0]) > 15).any(), \
+            "the sheet's far ends (well outside any mask) must survive"
+
+    def test_tool_provenance_faces_are_never_excised(self, monkeypatch):
+        from case_prep.pipeline import deliverables as d
+
+        kernel = _RecordingKernel()
+        monkeypatch.setattr(d, "default_kernel", lambda: kernel)
+        arch, template, pose, bulge = _bulging_arch()
+        site = (template, pose, 0.2, 2.6)
+        out, socket, notes = d.cap_imprint_parts(arch, [site],
+                                                  visible_depth_mm=1.8)
+        assert notes == []
+        assert socket is not None and len(socket.faces) > 0, \
+            "the recess wall/floor (tool provenance) must survive the excision"
+
+    def test_the_bulge_does_not_survive_the_fused_composite(self, monkeypatch):
+        """DEFECT 1(b): ``arch_with_parts_fused`` (the ``arch-with-
+        healingcaps.stl`` composite) excises the SAME crust from the ARCH's
+        own contribution before/at the union — the part's posed surface
+        replaces the scanned cap's crust rather than merging with it."""
+        from case_prep.pipeline import deliverables as d
+
+        arch, template, pose, bulge = _bulging_arch()
+        rim_r = 2.6
+        part = template.copy()  # the "library cap" fused in — same shape,
+        # posed identically, exactly ``auto_flow.py``'s own caps_posed
+        fused, notes = d.arch_with_parts_fused(
+            arch, [(part, pose)], excise_sites=[(template, pose, rim_r)])
+        assert notes == []
+        fused_v = {tuple(np.round(v, 6))
+                  for v in np.asarray(fused.vertices, float)}
+        bv = np.asarray(bulge.vertices, float)
+        # zero-offset part punch: anything past the RAW template radius is
+        # never covered by the part itself either, so a survivor here is
+        # unambiguously the scan's own crust, not the part's own surface
+        outside_part = np.linalg.norm(bv[:, :2], axis=1) > 2.0 + 0.05
+        survivors = [tuple(np.round(v, 6)) for v in bv[outside_part]
+                    if tuple(np.round(v, 6)) in fused_v]
+        assert survivors == [], \
+            f"{len(survivors)} scanned-cap crust vertex(es) survived the fuse"
+        # the far gum still stands — the excision is scoped to the site
+        v = np.asarray(fused.vertices, float)
+        assert (np.abs(v[:, 0]) > 15).any()
+
+    def test_without_excise_sites_the_fuse_behaves_exactly_as_before(self):
+        """``excise_sites`` defaults to ``None`` — the ``arch-with-
+        constructions.stl`` call site (whose base already went through
+        ``_csg_carve``'s own excision) must see NO behaviour change."""
+        from case_prep.pipeline import deliverables as d
+
+        arch, part, pose = TestArchWithPartsFused()._sunk_part()
+        fused, notes = d.arch_with_parts_fused(arch, [(part, pose)])
+        assert notes == []
+        assert len(fused.faces) > 0
+
+
+class TestOpenArchWithThroughHoles:
+    """CLIENT-RULED DEFECT 2, THE THIRD RULING (live verification, 2026-08-15,
+    client verbatim: "the hole is perfect just need to be without the
+    backfilling we create which is like a dental model which we don't need —
+    just the open scan, and the hole viewed like it is"). Retires
+    ``closed_model_with_recesses``: the open scan, each site's cap punched
+    all the way THROUGH, no backfilled body surviving the strip."""
+
+    def _site(self, offset=0.2, rim_r=2.0):
+        return (trimesh.creation.cylinder(radius=2.0, height=4.0),
+               _pose_at(0, 0, 1.0), offset, rim_r)
+
+    def test_the_result_is_not_watertight_open_by_design(self):
+        from case_prep.pipeline import deliverables as d
+
+        out, notes = d.open_arch_with_through_holes(_ridge_sheet(),
+                                                     [self._site()])
+        assert out is not None
+        assert notes == []
+        assert out.is_watertight is False
+
+    def test_zero_closure_provenance_faces_survive(self, monkeypatch):
+        from case_prep.pipeline import deliverables as d
+
+        kernel = _RecordingKernel()
+        monkeypatch.setattr(d, "default_kernel", lambda: kernel)
+        out, notes = d.open_arch_with_through_holes(_ridge_sheet(),
+                                                     [self._site()])
+        assert notes == []
+        assert len(kernel.tracked_results) == 1
+        tracked = kernel.tracked_results[0]
+        source = np.asarray(tracked.source)
+        closure = source == 1
+        assert closure.any(), \
+            "the fixture must genuinely fabricate a closure, or this pin " \
+            "proves nothing"
+        # every closure-provenance face's own coordinates must be absent
+        # from the shipped result — never merely "the closure mask says so"
+        cut = tracked.mesh
+        Vc = np.asarray(cut.vertices, float)
+        Fc = np.asarray(cut.faces)[closure]
+        closure_sigs = {tuple(sorted(tuple(np.round(Vc[v], 6)) for v in f))
+                       for f in Fc}
+        out_v = np.asarray(out.vertices, float)
+        out_f = np.asarray(out.faces)
+        out_sigs = {tuple(sorted(tuple(np.round(out_v[v], 6)) for v in f))
+                   for f in out_f}
+        assert closure_sigs.isdisjoint(out_sigs), \
+            "a closure-provenance face survived into the shipped result"
+
+    def test_the_bore_pierces_no_floor_hit_inside_the_punch_footprint(self):
+        """A ray down the site's own axis, from well above, must pass
+        through the shipped result with NO hit at all inside the punch's
+        footprint — "the hole goes through", not a blind recess whose floor
+        happens to be the punch's own incidental bottom cap."""
+        from case_prep.pipeline import deliverables as d
+
+        site = self._site()
+        _template, pose, _offset, _rim_r = site
+        out, notes = d.open_arch_with_through_holes(_ridge_sheet(), [site])
+        assert notes == []
+        origin = pose[:3, 3]
+        axis = pose[:3, :3] @ np.array([0.0, 0.0, 1.0])
+        locs, *_ = out.ray.intersects_location(
+            ray_origins=[origin + axis * 100.0], ray_directions=[-axis])
+        assert len(locs) == 0, \
+            f"the bore is blocked — hit(s) at {locs}"
+
+    def test_the_excision_holds_here_too(self, monkeypatch):
+        """DEFECT 1's own classifier, applied to defect 2's own artifact: an
+        unfloored bore is the LAST place a scanned cap's crust should be
+        allowed to stand."""
+        from case_prep.pipeline import deliverables as d
+
+        kernel = _RecordingKernel()
+        monkeypatch.setattr(d, "default_kernel", lambda: kernel)
+        arch, template, pose, bulge = _bulging_arch()
+        rim_r = 2.6
+        out, notes = d.open_arch_with_through_holes(
+            arch, [(template, pose, 0.2, rim_r)])
+        assert notes == []
+        assert out is not None
+        out_v = {tuple(np.round(v, 6))
+                for v in np.asarray(out.vertices, float)}
+        bv = np.asarray(bulge.vertices, float)
+        outside_punch = np.linalg.norm(bv[:, :2], axis=1) > 2.0 + 0.2 + 0.05
+        survivors = [tuple(np.round(v, 6)) for v in bv[outside_punch]
+                    if tuple(np.round(v, 6)) in out_v]
+        assert survivors == [], \
+            f"{len(survivors)} scanned-cap crust vertex(es) survived the bore"
+
+    def test_a_degenerate_template_falls_back_to_its_envelope_per_site(self):
+        """A template with real vertex geometry (so its ENVELOPE profile can
+        still be read as a point cloud) but zero faces (so ``exact_cap_punch``
+        refuses outright — "not a watertight solid") falls back to the
+        envelope tool for that one site, noted; the good site is untouched."""
+        from case_prep.pipeline import deliverables as d
+
+        good = self._site()
+        good_cyl = trimesh.creation.cylinder(radius=2.0, height=4.0)
+        degenerate_template = trimesh.Trimesh(
+            vertices=good_cyl.vertices.copy(),
+            faces=np.zeros((0, 3), dtype=int), process=False)
+        degenerate = (degenerate_template, _pose_at(3.0, 3.0, 1.0), 0.2, 2.0)
+        out, notes = d.open_arch_with_through_holes(
+            _ridge_sheet(), [good, degenerate])
+        assert out is not None
+        assert len(notes) == 1
+        assert notes[0].startswith("site 2")
+        assert "envelope was used instead" in notes[0]
+
+    def test_a_totally_unbuildable_scan_fails_open_to_absence(self):
+        from case_prep.pipeline import deliverables as d
+
+        out, notes = d.open_arch_with_through_holes(
+            trimesh.Trimesh(), [self._site()])
+        assert out is None
+        assert len(notes) == 1
+        assert "could not be built" in notes[0]
+        assert "ships without it" in notes[0]

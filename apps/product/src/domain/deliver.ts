@@ -1505,18 +1505,23 @@ export function previewTabs(
           : [{ filename: platform, role: "arch" }],
     });
   }
-  // ARTIFACT 6 RETURNS (client 2026-08-11: "we lose the artifact 6 we had
-  // before") — §10-AS.19's retirement reversed by the client's own ask; the
-  // open-arch doctrine still governs tabs 1-5. Appears exactly when the run
-  // built it.
-  const modelClosed = packageFiles.find((f) => f.endsWith("-model-closed.stl"));
-  if (modelClosed !== undefined) {
+  // ARTIFACT 6, THE THIRD RULING (client-ruled, live verification 2026-08-15,
+  // verbatim: "the hole is perfect just need to be without the backfilling we
+  // create which is like a dental model which we don't need — just the open
+  // scan, and the hole viewed like it is"). Retires the CLOSED MODEL tab
+  // AGAIN (§10-AS.19's retirement, reversed once by AT 4-r, reversed again
+  // here — same slot, same authority, a different shape): the open scan
+  // wearing each cap's exact through-hole, no backfilled body. The open-arch
+  // doctrine that already governs tabs 1-5 now covers this one too. Appears
+  // exactly when the run built it.
+  const archOpenHoles = packageFiles.find((f) => f.endsWith("-arch-open-holes.stl"));
+  if (archOpenHoles !== undefined) {
     tabs.push({
-      key: "model-closed",
-      label: "6 · Closed model",
-      filename: modelClosed,
+      key: "arch-open-holes",
+      label: "6 · Arch — open holes",
+      filename: archOpenHoles,
       tooth: null,
-      layers: [{ filename: modelClosed, role: "arch" }],
+      layers: [{ filename: archOpenHoles, role: "arch" }],
     });
   }
   return tabs;

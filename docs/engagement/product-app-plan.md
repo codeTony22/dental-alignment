@@ -3131,6 +3131,37 @@ with zero changes. Parity worklist, three items, queued: engine-aware
 corpus assertions where the fallback IS the correct behaviour; the
 flush-operand guard decision; two bit-exact preconditions loosened.
 
+**AT excision + artifact 6's third ruling (2026-08-15, live verification:
+"still residue from the scan healing cap"; "just the open scan, and the
+hole viewed like it is").** The scanned cap's MEASURED surface never
+ships in a boolean result: scanned_cap_face_mask (isolation.py — the
+pane's own three-rung test factored out; isolate_scanned_cap is now its
+thin wrapper, byte-identical) excises scan-provenance crust from the
+carve (both branches), the healingcaps fuse, the press fallback, and
+the new through-hole — with the structural assertion that a tool face is
+never excised. Red-proven: 128/128 crust vertices survived before,
+0/128 after, trap validated by no-op'ing the classifier. The rider-b
+guard pin updated deliberately: merged = keep MINUS the excised crust.
+Artifact 6's third ruling wins: closed_model_with_recesses retires;
+open_arch_with_through_holes ships {case}-arch-open-holes.stl — the
+open scan with each cap's exact THROUGH-hole (unfloored punch, with the
+found-and-fixed subtlety that an unfloored punch's own bottom stands as
+an internal tool-provenance floor deep in the solid: the shaft is
+extended past the solid's measured depth per site). Tab 6 = "6 · Arch —
+open holes"; catalogue row replaced; fidelity extras updated. Every
+artifact is now open-arch — no closed exception remains.
+
+**AT one motion — apply fires the run (2026-08-15, client: "having two
+is confusing").** Every Adjustment tool's successful apply chains into
+the run through the one settle path (fireRerun, re-entrant-guarded);
+refusals/dry-runs chain nothing (appliedToolChainsRerun over the
+existing outcome fold); the standalone re-run button retires from the
+stage (Alignment's own button remains the evidence-less surface). A
+failed chained run surfaces its error BESIDE the stored apply, never in
+place of it — §10-AD's evidence contract pinned. Known trade-off,
+recorded: every apply now costs a full run, including dial nudges;
+batching is the follow-up only if real use asks.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.
