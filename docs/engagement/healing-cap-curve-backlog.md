@@ -16,7 +16,7 @@ Owners: **alignment** (geometry), **backend** (detection record / BFF),
 | id | task | status | acceptance |
 |---|---|---|---|
 | P0.1 | Land the in-flight §10-AT working tree (crust excision, open-arch through-holes, apply-fires-run) | **done** 2026-08-15 `d015f7b` | working tree was the AT slice; freeze line still clean |
-| P0.2 | Measurement probe + design spec | **this commit** | `tests/test_probe_cap_curves.py` green (fast + slow); Appendix A matches a fresh `tools/probe_cap_curves.py` run |
+| P0.2 | Measurement probe + design spec | **done** 2026-08-15 `375178f` | `tests/test_probe_cap_curves.py` green; probe lives in `eval/` (not frozen `tools/`) |
 
 Loop does not start until P0 is closed.
 

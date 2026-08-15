@@ -27,6 +27,8 @@ from typing import List, Optional, Tuple
 import numpy as np
 from scipy.spatial import cKDTree
 
+from case_prep.domain.circle_fit import fit_circle_xy_or_kasa
+
 # validated on the real Neodent healing arch (see docs/engagement + memory 2026-07-03)
 _BAND_MM = 12.0            # candidate band depth below the cusp line (caps sit 4-8mm below)
 _MIN_BELOW_CUSPS_MM = 2.75  # recalibrated on 5 labeled arches (2026-07-11): at 4.0 two real caps
@@ -276,7 +278,7 @@ def find_cap_sites(vertices: np.ndarray, max_sites: int = 8,
 
 def measure_rim_diameter(local_pts: np.ndarray, xy_tree, center_local: np.ndarray,
                          search_r: float = 5.0, slab_mm: float = 0.8) -> Optional[float]:
-    """Fit a circle (Kasa) to the cap's rim ring in the crowns-up LOCAL frame and return its
+    """Fit a circle (Taubin) to the cap's rim ring in the crowns-up LOCAL frame and return its
     diameter (mm) — the size-variant guide (classes sit ~0.8mm apart; scans read within
     ~0.4-0.8mm of a class, so the caller classifies WITH a margin and may refuse). None when
     the ring is too sparse to fit."""
@@ -289,11 +291,7 @@ def measure_rim_diameter(local_pts: np.ndarray, xy_tree, center_local: np.ndarra
     ring = ring_all[np.abs(ring_all[:, 2] - rim) < slab_mm]
     if len(ring) < 40:
         return None
-    x = ring[:, 0] - center_local[0]
-    y = ring[:, 1] - center_local[1]
-    A = np.c_[2 * x, 2 * y, np.ones(len(x))]
-    sol, *_ = np.linalg.lstsq(A, x * x + y * y, rcond=None)
-    r2 = sol[2] + sol[0] ** 2 + sol[1] ** 2
-    if r2 <= 0:
+    fit = fit_circle_xy_or_kasa(ring[:, :2])
+    if fit is None:
         return None
-    return float(2.0 * np.sqrt(r2))
+    return float(2.0 * fit[1])

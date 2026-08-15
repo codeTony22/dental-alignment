@@ -43,6 +43,8 @@ from typing import List, Optional, Tuple
 import numpy as np
 import trimesh
 
+from case_prep.domain.circle_fit import circle_centre_xy
+
 N_THETA = 120                      # 3-degree bins
 N_R = 8
 R_LO, R_HI = 0.42, 0.80           # radial band of the coded features, *rmax
@@ -92,9 +94,7 @@ class NotchReading:
 
 
 def _kasa(xy: np.ndarray) -> np.ndarray:
-    A = np.c_[2.0 * xy, np.ones(len(xy))]
-    sol, *_ = np.linalg.lstsq(A, (xy ** 2).sum(axis=1), rcond=None)
-    return sol[:2]
+    return circle_centre_xy(xy)
 
 
 def _depth_grid(pts: np.ndarray, ztop: float, rmax: float,

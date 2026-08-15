@@ -209,6 +209,25 @@ def code_step_cap_cloud(step0=1.7, step1=2.1, step_drop=0.6) -> np.ndarray:
     return np.vstack(pts)
 
 
+def test_ring_fit_radius_is_stable_across_grid_phases():
+    """P2: a single-phase DP ring must read the true rim at every r-grid phase,
+    so the 25-refit median is no longer load-bearing on the cap6030 anatomy."""
+    from scipy.spatial import cKDTree
+
+    from case_prep.domain.island import RADIUS_GRID_PHASES, _ring_fit
+
+    cloud = code_step_cap_cloud()
+    tree = cKDTree(cloud[:, :2])
+    radii = []
+    for ph in RADIUS_GRID_PHASES:
+        fit = _ring_fit(cloud, tree, TRUE_CENTRE, use_plane=False, phase=ph)
+        assert fit is not None, f"DP ring refused at phase {ph}"
+        radii.append(float(fit.radius))
+    assert max(radii) - min(radii) < 0.35, (
+        f"phase-bistable radii {radii}")
+    assert all(abs(r - TRUE_RIM_R) < 0.35 for r in radii), radii
+
+
 def test_code_step_ring_no_longer_under_reads_the_radius():
     """DEFECT 1 (cap6030, the catastrophe): the single-phase Kasa read this anatomy at
     1.54 on a true 2.5 rim (the shipped 1.81-on-2.68 under-read that flipped the seat
@@ -223,8 +242,12 @@ def test_code_step_ring_no_longer_under_reads_the_radius():
         f"radius {reading.radius:.2f} vs true {TRUE_RIM_R} — inner-ring lock")
     assert reading.island_r > 2.2, (
         f"island_r {reading.island_r:.2f} — the march stopped at the code step")
-    # the bistability is REPORTED, not hidden: the phase pool disagrees with itself
-    assert reading.radius_spread_mm is not None and reading.radius_spread_mm > 0.3
+    # DP retired the grid-phase coin flip: gap_fraction is the honesty number,
+    # not a silent 1.81↔2.64 spread across RADIUS_GRID_PHASES.
+    assert reading.dp_gap_fraction is not None
+    assert reading.radius_spread_mm is not None
+    assert reading.radius_spread_mm < 0.35, (
+        f"radius still phase-bistable: spread {reading.radius_spread_mm:.2f}mm")
 
 
 def test_interior_engraving_dip_no_longer_over_crops():
@@ -354,8 +377,17 @@ def test_shadow_island_row_present_and_pose_byte_identical_without_it():
         isl = row["island"]
         assert isl["converged"] in (True, False)
         if isl["converged"]:
-            assert set(isl) == {"machine_centre_offset_mm", "radius", "converged",
-                                "bins_hit", "contamination_est"}
+            # P2.2 — dp_gap_fraction and bearing_margin are additive fields;
+            # pre-field records omit them so we check the subset, not exact equality.
+            assert {"machine_centre_offset_mm", "radius", "converged",
+                    "bins_hit", "contamination_est"}.issubset(set(isl))
+            # when present, bearing_margin must be a list of per-bearing floats
+            if isl.get("bearing_margin") is not None:
+                assert isinstance(isl["bearing_margin"], list), (
+                    "bearing_margin must be a list of floats")
+            if isl.get("dp_gap_fraction") is not None:
+                assert 0.0 <= isl["dp_gap_fraction"] <= 1.0, (
+                    f"dp_gap_fraction out of [0,1]: {isl['dp_gap_fraction']}")
         else:
             assert "reason" in isl
     assert all("island" not in row for row in without["sites"]), (

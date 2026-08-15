@@ -21,10 +21,11 @@ Three instruments, all deterministic:
    of the doctor's marked rim radius. Partial arcs are the expected case.
 
 CLI is a thin wrapper — every analysis function is importable and covered by
-`tests/test_probe_cap_curves.py`.
+`tests/test_probe_cap_curves.py`. Lives under ``eval/``, not ``tools/`` (the
+latter is on the demo freeze line).
 
-    .venv/bin/python tools/probe_cap_curves.py
-    .venv/bin/python tools/probe_cap_curves.py --scans /path/to/scans
+    .venv/bin/python eval/probe_cap_curves.py
+    .venv/bin/python eval/probe_cap_curves.py --scans /path/to/scans
 """
 from __future__ import annotations
 
@@ -384,7 +385,7 @@ def render_markdown(report: FleetReport) -> str:
     lines = [
         "# Healing-cap curve probe",
         "",
-        "Re-run: `cd apps/worker && .venv/bin/python tools/probe_cap_curves.py`.",
+        "Re-run: `cd apps/worker && .venv/bin/python eval/probe_cap_curves.py`.",
         f"Instruments: cap ball {CAP_BALL_MM:.0f} mm · tissue annulus "
         f"{TISSUE_ANNULUS_MM[0]:.0f}–{TISSUE_ANNULUS_MM[1]:.0f} mm · "
         f"{N_BEARINGS} bearings · radial tol {RADIAL_TOL_MM} mm · "

@@ -3,7 +3,7 @@
 2026-08-15 · engineering design. The algorithm does **not** ship in this
 document. It ships later, shadow-first, behind `make verify-fleet`. Companion
 files: the measurement receipt
-[`apps/worker/tools/probe_cap_curves.py`](../../apps/worker/tools/probe_cap_curves.py)
+[`apps/worker/eval/probe_cap_curves.py`](../../apps/worker/eval/probe_cap_curves.py)
 (Appendix A), the backlog and Loop playbook
 [`healing-cap-curve-backlog.md`](healing-cap-curve-backlog.md). Read alongside
 [`clinical-pipeline-plan.md`](clinical-pipeline-plan.md) Stage 1–3,
@@ -279,7 +279,7 @@ debugging and **no trusted centre**. Keep that contract.
 | Pipeline | alignment | `SHADOW_ISLAND` consumes the new ring; promotion gated on fleet delta |
 | Application / BFF | backend | Additive detection-record fields (pre-field records serve empty). Statuses-walk test stays green |
 | Product | frontend | Honest absence renders nothing (never zeros). Optional: show per-bearing margin and "density prior off" |
-| Eval | data-science | The probe in `tools/probe_cap_curves.py` is the density/colour/closure receipt; phantom remains the truth path |
+| Eval | data-science | The probe in `eval/probe_cap_curves.py` is the density/colour/closure receipt; phantom remains the truth path |
 
 Existing parallel work this design must **not** duplicate: marks-as-locators
 ([`docs/research/marks-as-locators-plan.md`](../research/marks-as-locators-plan.md)),
@@ -310,7 +310,7 @@ millimetre number on a client slide that data-science has not sourced.
 
 ## Appendix A · Measurement receipt (2026-08-15)
 
-Re-run: `cd apps/worker && .venv/bin/python tools/probe_cap_curves.py`.
+Re-run: `cd apps/worker && .venv/bin/python eval/probe_cap_curves.py`.
 Covered by `tests/test_probe_cap_curves.py` (synthetic fast + qualitative slow
 pins on this fleet). Instruments: cap ball 3 mm · tissue annulus 6–12 mm · 24
 bearings · radial tol 0.8 mm · crease 20° / 30°. Binary STL vertices are welded

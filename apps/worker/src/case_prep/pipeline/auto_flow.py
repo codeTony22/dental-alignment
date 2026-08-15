@@ -2386,6 +2386,13 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                     "contamination_est": (round(_reading.contamination_est, 3)
                                           if _reading.contamination_est is not None
                                           else None),
+                    # P2.2 — per-bearing DP confidence (additive; pre-field records omit these)
+                    "dp_gap_fraction": (round(float(_reading.dp_gap_fraction), 4)
+                                        if _reading.dp_gap_fraction is not None
+                                        else None),
+                    "bearing_margin": ([round(float(x), 4) for x in _reading.bearing_margin]
+                                       if _reading.bearing_margin is not None
+                                       else None),
                 }
         finally:
             np.random.set_state(_rng_state)
