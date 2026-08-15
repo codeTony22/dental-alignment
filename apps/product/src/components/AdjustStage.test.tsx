@@ -158,7 +158,7 @@ describe("the tool panel wears the comp's own shape (read directly 2026-08-02)",
     const inActs = acts.slice(0, acts.indexOf('data-role="drop"'));
     expect(inActs).toContain('data-role="re-preview"');
     expect(inActs).toContain('data-role="drop-site"');
-    // after the tabs, not above them
+    // tool-tabs (now the stage's command bar above panes) still precede the dock acts
     expect(html.indexOf('data-role="tool-tabs"')).toBeLessThan(
       html.indexOf('data-role="drawer-acts"'),
     );
@@ -182,12 +182,60 @@ describe("the drawer head is one row, not a stack (client 2026-08-02)", () => {
   it("opens on its tabs — no heading the tabs already say", () => {
     const html = view();
     expect(html).not.toContain("Tools — tooth");
-    // the tabs are the panel's first control: nothing but the (conditional) clock
-    // notice may precede them
-    const panel = html.slice(html.indexOf('data-role="adjust-toolbox"'));
-    expect(panel.indexOf('data-role="tool-tabs"')).toBeLessThan(
-      panel.indexOf('data-role="re-preview"'),
+  });
+});
+
+describe("the tool chip rail — lifted above the panes (UX 2026-08-15)", () => {
+  /* The 5 glyph tool chips moved from the dock header into a dedicated
+     adjust-tool-bar strip between the workspace toolbar and the three panes
+     (UX 2026-08-15: "barely visible because of lack of real-estate" — the chip
+     rail now lives at the top where it is always visible, and the dock body
+     gains the height the header's chip row previously occupied). */
+
+  it("renders the tool chip rail in the stage, before the three panes", () => {
+    const html = view({ panes: <div data-role="stub-panes" /> });
+    const toolTabsPos = html.indexOf('data-role="tool-tabs"');
+    const panesPos = html.indexOf('data-role="stub-panes"');
+    expect(toolTabsPos).toBeGreaterThan(-1);
+    expect(toolTabsPos).toBeLessThan(panesPos);
+  });
+
+  it("renders the tool chip rail OUTSIDE the adjust-toolbox panel — not inside the dock", () => {
+    const html = view();
+    const toolboxPos = html.indexOf('data-role="adjust-toolbox"');
+    const toolTabsPos = html.indexOf('data-role="tool-tabs"');
+    // tabs appear before the toolbox, never inside it
+    expect(toolTabsPos).toBeGreaterThan(-1);
+    expect(toolTabsPos).toBeLessThan(toolboxPos);
+  });
+
+  it("marks the active tool as selected", () => {
+    const html = view({ tool: "best-fit" });
+    expect(html).toContain('data-tool="best-fit" aria-selected="true"');
+  });
+
+  it("renders all five tool chips", () => {
+    const html = view();
+    for (const id of ["rotation", "mark-trench", "best-fit", "fit-by-points", "auto-mark"]) {
+      expect(html).toContain(`data-tool="${id}"`);
+    }
+  });
+
+  it("orders the chips rotation, mark-trench, best-fit, fit-by-points, auto-mark", () => {
+    const html = view();
+    const positions = ["rotation", "mark-trench", "best-fit", "fit-by-points", "auto-mark"].map(
+      (id) => html.indexOf(`data-tool="${id}"`),
     );
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+
+  it("names each tool in the rail — a full-width bar is not glyph-only", () => {
+    const html = view();
+    const railStart = html.indexOf('data-role="tool-tabs"');
+    const rail = html.slice(railStart, html.indexOf("</div>", railStart) + 6);
+    for (const label of ["Rotation", "Mark trench", "Best fit", "Fit by points", "Auto-mark"]) {
+      expect(rail).toContain(`adjust-tool-bar__label">${label}<`);
+    }
   });
 });
 

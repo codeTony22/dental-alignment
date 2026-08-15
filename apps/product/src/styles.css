@@ -7432,10 +7432,47 @@ button.package-files__link:hover {
   padding: 0;
 }
 
+/* THE TOOL CHIP RAIL (UX 2026-08-15): a dedicated strip between the workspace
+   toolbar and the three panes so the five correction-tool chips are always visible
+   at eye level — not buried in the dock header at the bottom of the screen.
+   `flex: 0 0 auto` keeps it out of the pane flex budget; `border-bottom` echoes
+   the workspace toolbar's own separator without adding a new visual idiom. */
+.adjust-tool-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 14px 4px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+/* Full-width command bar: name the tool. The 30×30 glyph-only chip was a
+   dock-gutter compromise; up here there is room to read "Rotation" without a
+   hover. */
+.adjust-tool-bar__chip {
+  width: auto;
+  height: 28px;
+  padding: 0 10px;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.adjust-tool-bar__label {
+  letter-spacing: -0.01em;
+}
+
 .adjust-dock {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* Compact ceiling stays min(324px, 42vh) — the short-window budget at
+     ~1000×500–570 (slice D above) is exact against 42vh. Raising it would
+     steal the three panes, which is the scarce real-estate. The chip row
+     leaving the header already gives the scrollable body ~30px back; "more
+     room" is the explicit opt-in to min(560px, 70vh). */
   max-height: min(324px, 42vh);
   background: var(--color-bg);
   border-top: 1px solid var(--color-border);
@@ -7445,13 +7482,17 @@ button.package-files__link:hover {
   max-height: min(560px, 70vh);
 }
 
+/* UX 2026-08-15: the chip rail moved to .adjust-tool-bar above the panes; the
+   header now holds only tool name + state, caution chip, and "more room" toggle.
+   `flex-wrap: nowrap` keeps it one row; the `gap` reduction matches the toolbar's
+   condensed spacing (client 2026-08-05). */
 .adjust-dock__header {
   flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 5px 8px;
-  padding: 7px 14px;
+  padding: 5px 14px;
   border-bottom: 1px solid #eef1ef;
 }
 
@@ -7486,21 +7527,36 @@ button.package-files__link:hover {
   color: #ffffff;
 }
 
+/* UX 2026-08-15: changed from column (two lines: name above state) to row (one
+   line: name · state inline) now that the chip rail is no longer in the same
+   header. One line saves ~13px of header height, reclaimed by the body. The
+   separator dot is rendered in CSS, keeping both data-role attributes intact. */
 .adjust-dock__title {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   flex: 1 1 auto;
-  min-width: 130px;
-  gap: 1px;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .adjust-dock__tool-title {
+  flex: 0 0 auto;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: -0.01em;
 }
 
+/* The separator dot between tool name and state words, rendered in CSS so
+   neither data-role attribute changes (tests pin both roles). */
+.adjust-dock__tool-title::after {
+  content: " ·";
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
 .adjust-dock__tool-state {
+  flex: 1 1 auto;
   font-size: 10.5px;
   font-weight: 700;
   color: var(--color-text-muted);
@@ -7513,16 +7569,23 @@ button.package-files__link:hover {
   color: var(--color-accent-green-dark);
 }
 
+/* UX 2026-08-15: slightly more prominent than the muted pill it was — matches
+   the toolbar's ghost button weight (same border, same radius, readable text
+   contrast) so it doesn't get lost beside the caution chip. */
 .adjust-dock__more {
   flex: 0 0 auto;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
-  padding: 5px 10px;
-  border-radius: 999px;
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   background: #ffffff;
-  color: var(--color-text-muted);
+  color: var(--color-text);
   cursor: pointer;
+}
+.adjust-dock__more:hover {
+  border-color: var(--color-accent-green);
+  color: var(--color-accent-green-dark);
 }
 
 .adjust-dock__body {
