@@ -429,7 +429,27 @@ class TestRealFleetGoldenMetrics:
     authored guess it replaced. If cap6030 re-lands a different pose these
     numbers move with it; re-measure before loosening."""
 
-    def test_golden_metrics_on_a_real_cap6030_site(self):
+    def test_golden_metrics_on_a_real_cap6030_site(self, engine_expects):
+        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, extended past
+        the parity branch per the §10-AT "parity referee" ledger entry,
+        product-app-plan.md — this is the "1 real-fleet golden test" of the
+        13 it names). This call site is a DIRECT ``default_kernel().
+        difference()`` on the CSG mechanism, no consumer-level fallback
+        wrapper of its own (unlike ``cap_imprint_parts``'s own ladder) — the
+        same shape as ``TestOffsetEngineDidNotFlipTheDefault``'s minkowski
+        pin above. A real, feature-rich vendor cap (screw slot, coded
+        trenches — this repo's own
+        ``test_deliverables.py::TestCapImprintHoles::
+        test_the_imprint_hugs_the_cap_and_the_gum_survives`` names the same
+        cap6030 fixture leaving "up to ~1.9mm proud" of the exact tool) is
+        exactly the class of operand kernel-parity-scoreboard.md §2.1/§4.4
+        measured MeshLib refusing NATIVELY where manifold3d succeeds — the
+        honest non-tracked assertion is that refusal, loud and self-naming.
+        SKIPS cleanly here either way (``data/real`` absent in this
+        worktree): the refusal branch below is UNVERIFIED against real
+        geometry in this worktree — the ledger's own "1 of 13" classification
+        is the only confirmation that it fires, at integration, where
+        ``data/real`` is present."""
         product = (Path(__file__).resolve().parents[1] / "reports" / "product"
                    / "cap6030-neodent-gm" / "runs")
         if not REAL.is_dir() or not product.is_dir():
@@ -458,6 +478,12 @@ class TestRealFleetGoldenMetrics:
         scan = trimesh.load(str(case.scan), force="mesh")
         solid = solidified_shell_cached(scan)
         punch = exact_cap_punch(template, offset, pose)
+
+        if not engine_expects.tracked:
+            with pytest.raises(ValueError, match="MeshLib"):
+                default_kernel().difference(solid, [punch])
+            return
+
         cut = default_kernel().difference(solid, [punch])
 
         assert cut.is_watertight, \
