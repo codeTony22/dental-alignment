@@ -1,7 +1,15 @@
 # The boolean engine: first principles, the industry, and the implementation plan
 
 2026-08-11 · research + engineering plan, requested by the client alongside §10-AT
-front 3 ("booleans"). Two questions answered in order: **(a)** what exists in the
+front 3 ("booleans").
+
+> **Era note (2026-08-14):** Parts I–II describe the system AS IT STOOD when this
+> plan was written; Stage 0–1 have since executed and changed it (the env is now
+> pinned; the strip is provenance-based, not distance-based; the self-heal —
+> which Part I describes as load-bearing — was found to have NEVER fired until
+> fixed on 2026-08-14). Per this repo's convention the original text stands as
+> written; the Stage 2 results below, the Stage 2 addendum, and the §10-AT
+> ledger are the current truth, and `kernel-decision-memo.md` is the decision. Two questions answered in order: **(a)** what exists in the
 open-source mesh-boolean world and what each piece may legally do inside a
 commercial product, and **(b)** an honest, staged path to a PROPRIETARY,
 COMMERCIAL boolean operator for ArTech.
@@ -491,8 +499,12 @@ verdicts, which REFRAME Stage 3:
 3. **As an open-shell boolean: the largest single win.** It cuts the raw
    262k-face open scan in 0.05–0.09s, boundary preserved, matching the
    incumbent solidify→cut→strip route to 1.8e-6mm symmetric Hausdorff —
-   while skipping the 16.8s solidify entirely. (Its voxel path on the same
-   shell returns watertight garbage — mesh path only.)
+   skipping the 16.8s solidify FOR THE CARVE LANE. (Qualifier that must
+   travel with the claim: the closed model and the fused composites are
+   BUILT from the solid, so an emit producing them still pays the
+   solidify; the per-arch cache is what reconciles that cost with W6's
+   ≤5s budget. And its voxel path on the same shell returns watertight
+   garbage — mesh path only.)
 
 **The reframed Stage 3 question** is no longer "swap manifold" but:
 license MeshLib for the OFFSET and OPEN-SHELL lanes behind the seam, keep
@@ -518,11 +530,13 @@ fleet (9 cases, 10 sites, 125 operand pairs; bucketed plane census,
 - **The self-heal is the exception, structurally**: union([p, p]) passes
   the same solid twice — 100% coplanar by construction, 50/50 calls. Run
   against MeshLib on the fleet's own operands: EMPTY output on 16/20
-  (with errorString — a different failure than Stage 2's silent no-op);
-  4/10 clean-cap failures attributable specifically to coplanarity, and
-  ALL 10 dilated caps fail regardless. The kernel disqualification is
-  confirmed on real data; the offset/open-shell lanes are untouched by
-  this result (neither makes a coplanar-operand boolean).
+  (with errorString — a different failure than Stage 2's silent no-op).
+  The 16 decompose as: 6/10 clean (relief-0) caps failed, of which 4 are
+  attributable specifically to the coplanarity (arm A 4/10 non-empty vs
+  decoplanarized arm B 8/10); all 10 dilated caps failed regardless of
+  coplanarity. The kernel disqualification is confirmed on real data;
+  the offset/open-shell lanes are untouched by this result (neither
+  makes a coplanar-operand boolean).
 - **The near miss**: 4–5 of 20 site×lane configurations put the clip
   plane on the cap's own base BY DESIGN (floor_a = envelope-base), and
   at the accepted production relief 0.00 the margin narrows to 2.1e-7mm

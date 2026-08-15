@@ -3029,6 +3029,23 @@ analysisFilesExtra — with the release-gated fallback to package_files
 strings pinned across six cases (loading/error/empty/absent all keep the
 digest working exactly as before). Product 1506 (+11), typecheck clean.
 
+**AT Stage 3 — the kernel decision memo (2026-08-14).**
+docs/engagement/kernel-decision-memo.md: the client-ready decision —
+manifold stays (zero failures anywhere), no money changes hands today,
+the MeshLib license is a costed option confined to the offset and
+open-shell lanes behind the seam, gated on three named triggers, with
+the output≠input ∧ output≠empty guard mandatory. Written by the
+domain-guardian pass, which also flagged eight source inconsistencies —
+the substantive ones fixed in the same commit: the plan's Parts I–II
+carry an era note (they describe the pre-Stage-1 system; the ledger is
+current truth), the "skips solidify" claim regains its for-the-carve
+qualifier (composites still build from the solid; the cache reconciles
+W6), and the fleet self-heal arithmetic now decomposes cleanly (16/20 =
+6/10 clean + 10/10 dilated; 4 of the clean attributable to coplanarity).
+Standing correction the memo's A.6 records: the catalog sweep certifies
+the MINKOWSKI path; the vertex-normal default is certified by the fleet
+battery, not that sweep.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.
