@@ -1776,7 +1776,8 @@ _ARTIFACT_SENTENCES: "list[tuple[str, str]]" = [
     ("-arch-platform.stl",
      "the open arch with the shallow platform countersink — the floor showing the gingival offset"),
     ("-arch-open-holes.stl",
-     "the open scan with each cap's exact through-hole — no model body, the hole as it is"),
+     "the open scan with each cap's exact recess cut to the gingival floor — the hole "
+     "as the lab expects it"),
     ("-arch-socketless.stl",
      "preview layer: the arch without its recess faces (the tinted view's base)"),
     ("-socket-dish.stl",

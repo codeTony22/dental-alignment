@@ -164,9 +164,9 @@ class TestRunOnTheRealTree:
             "neodent-gm-arch-socketless.stl",
             "neodent-gm-socket-dish.stl",
             "neodent-gm-socket-platform.stl",
-            # artifact 6's third ruling (client-ruled defect 2, 2026-08-15):
-            # the closed model retired again, replaced by the open arch
-            # wearing each cap's exact through-hole
+            # artifact 6's fourth ruling (client-ruled, 2026-08-15 night):
+            # the through-hole shape retired in turn, replaced by the open
+            # arch wearing each cap's exact recess cut to the gingival floor
             "neodent-gm-arch-open-holes.stl",
             # pipeline 2a: the per-site scanned-cap isolation, one per selected
             # tooth — the demo can never emit these

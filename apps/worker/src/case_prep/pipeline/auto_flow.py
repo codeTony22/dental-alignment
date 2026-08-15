@@ -37,7 +37,7 @@ from case_prep.domain.poses import Retention
 from case_prep.pipeline.deliverables import (arch_with_parts_fused,
                                               cap_imprint_holes,
                                               cap_imprint_parts,
-                                              open_arch_with_through_holes,
+                                              open_arch_with_floored_holes,
                                               remove_cap_region)
 from case_prep.pipeline.isolation import isolate_scanned_cap
 from case_prep.pipeline.final_product import (DEFAULT_GINGIVAL_OFFSET_MM,
@@ -2591,11 +2591,12 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                 composite_facts[f"{case_id}-socket-platform.stl"] = facts_of(socket_platform)
                 _layer_names.append(f"{case_id}-socket-platform.stl")
 
-            # ARTIFACT 6, THE THIRD RULING (client-ruled, 2026-08-15): the closed
-            # model retires AGAIN — "just the open scan, and the hole viewed like
-            # it is" — replaced by the open arch wearing each cap's exact
-            # THROUGH-hole, no backfilled body.
-            _model_closed, _model_notes = open_arch_with_through_holes(
+            # ARTIFACT 6, THE FOURTH RULING (client-ruled, live call over a
+            # reference image, 2026-08-15 night): the through-hole shape retires
+            # in turn — "why is that cylinder so big" — replaced by the open arch
+            # wearing each cap's exact recess cut to the GINGIVAL FLOOR, no shaft
+            # descending into the solidified interior.
+            _model_closed, _model_notes = open_arch_with_floored_holes(
                 scan, imprint_sites)
             if _model_closed is not None:
                 (_P(out_dir) / f"{case_id}-arch-open-holes.stl").write_bytes(

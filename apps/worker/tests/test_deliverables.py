@@ -2055,30 +2055,34 @@ class TestDefect1MeasuredCapResidueIsExcised:
         assert len(fused.faces) > 0
 
 
-class TestOpenArchWithThroughHoles:
-    """CLIENT-RULED DEFECT 2, THE THIRD RULING (live verification, 2026-08-15,
-    client verbatim: "the hole is perfect just need to be without the
-    backfilling we create which is like a dental model which we don't need —
-    just the open scan, and the hole viewed like it is"). Retires
-    ``closed_model_with_recesses``: the open scan, each site's cap punched
-    all the way THROUGH, no backfilled body surviving the strip."""
+class TestOpenArchWithFlooredHoles:
+    """CLIENT-RULED, THE FOURTH RULING (live call with the lab over a
+    reference image, 2026-08-15 night; client verbatim: "why is that
+    cylinder so big" — on the through-shaft the third ruling extended past
+    the model's own base; "[it] should have the hole with the gingival
+    floor"). Retires ``open_arch_with_through_holes`` (renamed from it, same
+    slot, same authority): the open scan, each site's cap punched to a clean
+    recess floored at the gingival level, no shaft descending into the
+    solidified interior."""
 
     def _site(self, offset=0.2, rim_r=2.0):
         return (trimesh.creation.cylinder(radius=2.0, height=4.0),
                _pose_at(0, 0, 1.0), offset, rim_r)
 
     def test_the_result_is_not_watertight_open_by_design(self, engine_expects):
-        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, extended past
+        """A floored recess is still cut into a SOLIDIFIED shell whose
+        fabricated closure the strip drops afterward — the shipped result
+        is the open scan again, never watertight, exactly as every other
+        open-arch composite in this module reads. Unchanged in shape from
+        the through-hole ruling's own pin: only the recess's own depth
+        differs, and this assertion does not depend on it.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, extended past
         the parity branch per the §10-AT "parity referee" ledger entry,
-        product-app-plan.md). Verified directly (scratch venv,
-        ``CASE_PREP_BOOLEAN_KERNEL=meshlib``): on this site the UNTRACKED
-        ``difference`` succeeds (unlike the bulging-cap sites above), so
-        ``open_arch_with_through_holes`` falls back only as far as the
-        tracked-strip gap — one note — and ships the SAME open-by-design
-        geometry the tracked path does; only the notes check branches."""
+        product-app-plan.md)."""
         from case_prep.pipeline import deliverables as d
 
-        out, notes = d.open_arch_with_through_holes(_ridge_sheet(),
+        out, notes = d.open_arch_with_floored_holes(_ridge_sheet(),
                                                      [self._site()])
         assert out is not None
         if engine_expects.tracked:
@@ -2090,19 +2094,22 @@ class TestOpenArchWithThroughHoles:
 
     def test_zero_closure_provenance_faces_survive(self, monkeypatch,
                                                     engine_expects):
-        """ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, extended past
+        """Unchanged from the through-hole ruling's own pin: the fabricated
+        closure the solidify step adds must never survive the strip,
+        floored recess or not.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, extended past
         the parity branch, product-app-plan.md's §10-AT ledger): this pin's
         own claim is read off the tracked ``TrackedResult``'s own
         ``source`` — under a kernel that never produces one there is no
         closure-provenance census to take, so the honest non-tracked
-        assertion is the documented fallback ladder (verified directly:
-        the untracked ``difference`` succeeds on this site, one note) plus
-        a shipped, non-empty result."""
+        assertion is the documented fallback ladder plus a shipped,
+        non-empty result."""
         from case_prep.pipeline import deliverables as d
 
         kernel = _RecordingKernel()
         monkeypatch.setattr(d, "default_kernel", lambda: kernel)
-        out, notes = d.open_arch_with_through_holes(_ridge_sheet(),
+        out, notes = d.open_arch_with_floored_holes(_ridge_sheet(),
                                                      [self._site()])
         if not engine_expects.tracked:
             engine_expects.assert_fallback_notes(
@@ -2131,50 +2138,114 @@ class TestOpenArchWithThroughHoles:
         assert closure_sigs.isdisjoint(out_sigs), \
             "a closure-provenance face survived into the shipped result"
 
-    def test_the_bore_pierces_no_floor_hit_inside_the_punch_footprint(
-            self, engine_expects):
-        """A ray down the site's own axis, from well above, must pass
-        through the shipped result with NO hit at all inside the punch's
-        footprint — "the hole goes through", not a blind recess whose floor
-        happens to be the punch's own incidental bottom cap.
+    def test_the_hole_has_a_floor_at_the_gingival_level(self, engine_expects):
+        """THE THROUGH-PIERCE PIN DIES WITH THIS RULING (a floored hole must
+        NOT pierce) — this is its inverse: a ray down the site's own axis,
+        from well above, must HIT the shipped result INSIDE the punch's own
+        footprint, at the gingival height.
 
-        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, extended past
-        the parity branch, product-app-plan.md's §10-AT ledger): the
-        untracked fallback succeeds on this site (verified directly) and
-        produces the SAME through-bore — the geometry is unaffected by
-        which strip mechanism selects it; only the notes check branches."""
+        A FLAT gum sheet turns that height into an exact, hand-computed
+        golden value rather than one re-derived from the ring-percentile
+        arithmetic a second time (the same discipline test_csg_corpus's own
+        floor pin uses, ``test_floor_height_matches_the_requested_floor_a``):
+        the site is posed at world z=1.0 and the gum sheet is flat at world
+        z=0.0 everywhere, so the gingival floor at zero visible depth (this
+        ruling's own floor request — see ``_gingival_floor_a``) sits AT the
+        gum, world z=0.0 exactly, whatever the ring arithmetic's internals
+        do to arrive there.
+
+        ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, extended past the
+        parity branch, product-app-plan.md's §10-AT ledger): a single
+        floored punch against a flat, single-surface sheet is the simplest
+        case this corpus builds — the same reasoning the sibling pins in
+        this class lean on for their own single-note fallback shape, not a
+        claim independently re-verified against a second kernel in this
+        worktree (meshlib is not installed here)."""
         from case_prep.pipeline import deliverables as d
 
         site = self._site()
         _template, pose, _offset, _rim_r = site
-        out, notes = d.open_arch_with_through_holes(_ridge_sheet(), [site])
+        out, notes = d.open_arch_with_floored_holes(_flat_sheet(), [site])
         if engine_expects.tracked:
             assert notes == []
         else:
             engine_expects.assert_fallback_notes(
                 notes, "the provenance-tracked strip could not run")
+        assert out is not None
         origin = pose[:3, 3]
         axis = pose[:3, :3] @ np.array([0.0, 0.0, 1.0])
         locs, *_ = out.ray.intersects_location(
             ray_origins=[origin + axis * 100.0], ray_directions=[-axis])
-        assert len(locs) == 0, \
-            f"the bore is blocked — hit(s) at {locs}"
+        assert len(locs) > 0, "the hole must have a floor — no ray hit at all"
+        expected_world_z = 0.0  # the flat gum's own height
+        nearest = float(min(locs[:, 2], key=lambda z: abs(z - expected_world_z)))
+        assert abs(nearest - expected_world_z) < 0.05, \
+            f"floor at {nearest:.3f}, expected {expected_world_z:.3f} " \
+            f"(the gum's own flat height)"
+
+    def test_no_tool_face_stands_more_than_0_3mm_below_the_requested_floor(
+            self, monkeypatch, engine_expects):
+        """THE PIPES' DEATH, PINNED: the through-shaft this ruling retires
+        stood a barrel deep inside the solidified interior — tool-
+        provenance, correctly tagged, and undetectable by any "drop the
+        closure" strip. This artifact carries no such geometry now: every
+        tool-provenance face (read off the tracked ``TrackedResult``'s own
+        ``source``, never approximated) must sit no more than ~0.3mm below
+        the SAME gingival floor this site's punch was cut to — the
+        ray-probe clamp's own tolerance (``_gingival_floor_a``'s
+        docstring). Same flat-sheet fixture as the floor-hit pin above, so
+        the expected floor is the same hand-computed value.
+
+        Reads tracked provenance directly, so it exercises only under the
+        tracked kernel — the non-tracked path has no per-face ``source`` to
+        census, exactly as ``TestSocketIsFaceProvenance`` treats the same
+        gap."""
+        from case_prep.pipeline import deliverables as d
+
+        kernel = _RecordingKernel()
+        monkeypatch.setattr(d, "default_kernel", lambda: kernel)
+        site = self._site()
+        _template, pose, _offset, _rim_r = site
+        out, notes = d.open_arch_with_floored_holes(_flat_sheet(), [site])
+        if not engine_expects.tracked:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
+            assert out is not None
+            return
+        assert notes == []
+        assert len(kernel.tracked_results) == 1
+        tracked = kernel.tracked_results[0]
+        source = np.asarray(tracked.source)
+        tool = source >= tracked.base_groups
+        assert tool.any(), "the fixture must genuinely cut tool surface"
+        cut = tracked.mesh
+        Vc = np.asarray(cut.vertices, float)
+        Fc = np.asarray(cut.faces)[tool]
+        tool_vertex_idx = np.unique(Fc.ravel())
+        origin = pose[:3, 3]
+        axis = pose[:3, :3] @ np.array([0.0, 0.0, 1.0])
+        axial = (Vc[tool_vertex_idx] - origin) @ axis
+        expected_floor_a = -1.0  # world z=0.0 gum, site posed at world z=1.0
+        assert float(axial.min()) > expected_floor_a - 0.31, \
+            f"a tool-provenance vertex sits " \
+            f"{expected_floor_a - float(axial.min()):.3f}mm below the " \
+            f"requested floor — exactly the shaft this ruling retires"
 
     def test_the_excision_holds_here_too(self, monkeypatch, engine_expects):
-        """DEFECT 1's own classifier, applied to defect 2's own artifact: an
-        unfloored bore is the LAST place a scanned cap's crust should be
-        allowed to stand.
+        """DEFECT 1's own classifier, applied to this artifact too: a
+        scanned cap's own crust can still stand proud of the floored recess.
 
         ENGINE-AWARE, THE FAIL-OPEN DESIGN, READ AND ASSERTED (kernel-
         parity-scoreboard.md, item 1, extended past the parity branch,
         product-app-plan.md's §10-AT ledger). Unlike ``cap_imprint_parts``,
-        ``open_arch_with_through_holes`` has no intermediate press-carve
+        ``open_arch_with_floored_holes`` has no intermediate press-carve
         rung — its OUTER ``try/except`` wraps the untracked fallback too,
-        so when the untracked ``difference`` ALSO refuses natively (verified
-        directly, this exact bulging-cap site: "Cannot separate mesh B...
-        self-intersections", the same trigger as the carve tests above) the
-        function fails open to ABSENCE — ``(None, [reason])``, "the package
-        ships without it" — exactly the shape
+        so a bulging-cap fixture that also refuses the untracked
+        ``difference`` natively (the through-hole ruling's own build of
+        this same fixture triggered exactly that, on the self-intersecting
+        bulge itself — a property of the SCAN operand, not of the punch's
+        floor) fails the function open to ABSENCE — ``(None, [reason])``,
+        "the package ships without it" — exactly the shape
         ``test_a_totally_unbuildable_scan_fails_open_to_absence`` already
         pins, not the envelope path (there is no per-site fallback left to
         try once the boolean itself is gone)."""
@@ -2184,7 +2255,7 @@ class TestOpenArchWithThroughHoles:
         monkeypatch.setattr(d, "default_kernel", lambda: kernel)
         arch, template, pose, bulge = _bulging_arch()
         rim_r = 2.6
-        out, notes = d.open_arch_with_through_holes(
+        out, notes = d.open_arch_with_floored_holes(
             arch, [(template, pose, 0.2, rim_r)])
         if not engine_expects.tracked:
             assert out is None
@@ -2202,7 +2273,7 @@ class TestOpenArchWithThroughHoles:
         survivors = [tuple(np.round(v, 6)) for v in bv[outside_punch]
                     if tuple(np.round(v, 6)) in out_v]
         assert survivors == [], \
-            f"{len(survivors)} scanned-cap crust vertex(es) survived the bore"
+            f"{len(survivors)} scanned-cap crust vertex(es) survived the recess"
 
     def test_a_degenerate_template_falls_back_to_its_envelope_per_site(
             self, engine_expects):
@@ -2213,8 +2284,9 @@ class TestOpenArchWithThroughHoles:
 
         ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, extended past
         the parity branch, product-app-plan.md's §10-AT ledger): the good
-        site's own untracked ``difference`` succeeds (verified directly —
-        this is the SAME clean cylinder site as the tests above), so the
+        site's own untracked ``difference`` succeeds (verified directly for
+        the through-hole ruling's own build of this same fixture — this is
+        the SAME clean cylinder site as the tests above), so the
         tracked-strip-fallback note lands SECOND, strictly after the
         per-site envelope note the loop already appends — two notes, not
         one, in that order."""
@@ -2226,7 +2298,7 @@ class TestOpenArchWithThroughHoles:
             vertices=good_cyl.vertices.copy(),
             faces=np.zeros((0, 3), dtype=int), process=False)
         degenerate = (degenerate_template, _pose_at(3.0, 3.0, 1.0), 0.2, 2.0)
-        out, notes = d.open_arch_with_through_holes(
+        out, notes = d.open_arch_with_floored_holes(
             _ridge_sheet(), [good, degenerate])
         assert out is not None
         if engine_expects.tracked:
@@ -2240,7 +2312,7 @@ class TestOpenArchWithThroughHoles:
     def test_a_totally_unbuildable_scan_fails_open_to_absence(self):
         from case_prep.pipeline import deliverables as d
 
-        out, notes = d.open_arch_with_through_holes(
+        out, notes = d.open_arch_with_floored_holes(
             trimesh.Trimesh(), [self._site()])
         assert out is None
         assert len(notes) == 1

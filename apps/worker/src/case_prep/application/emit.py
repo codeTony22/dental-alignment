@@ -57,7 +57,7 @@ from case_prep.pipeline.auto_flow import delivered_channel_offsets
 from case_prep.pipeline.deliverables import (arch_with_parts_fused,
                                              cap_imprint_holes,
                                              cap_imprint_parts,
-                                             open_arch_with_through_holes)
+                                             open_arch_with_floored_holes)
 from case_prep.pipeline.isolation import isolate_scanned_cap
 from case_prep.pipeline.final_product import (DEFAULT_SCREW_RADIUS_MM,
                                               build_final_product,
@@ -390,11 +390,12 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
         socket_platform.export(pth)
         composite_facts[pth.name] = facts_of(socket_platform)
         layer_names.append(pth.name)
-    # ARTIFACT 6, THE THIRD RULING (client-ruled, 2026-08-15): the closed model
-    # retires AGAIN — "just the open scan, and the hole viewed like it is" —
-    # replaced by the open arch wearing each cap's exact THROUGH-hole, no
-    # backfilled body.
-    model_closed, model_notes = open_arch_with_through_holes(scan, imprint_sites)
+    # ARTIFACT 6, THE FOURTH RULING (client-ruled, live call over a reference
+    # image, 2026-08-15 night): the through-hole shape retires in turn —
+    # "why is that cylinder so big" — replaced by the open arch wearing each
+    # cap's exact recess cut to the GINGIVAL FLOOR, no shaft descending into
+    # the solidified interior.
+    model_closed, model_notes = open_arch_with_floored_holes(scan, imprint_sites)
     if model_closed is not None:
         pth = out_dir / f"{case.id}-arch-open-holes.stl"
         model_closed.export(pth)

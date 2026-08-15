@@ -16,6 +16,7 @@ import hashlib
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 import trimesh
 
@@ -243,12 +244,14 @@ class TestReEmitOnTheRealTree:
         # manifest ``facts`` block; ``triangle_count`` matches an on-disk reload
         # exactly (STL preserves the triangle list losslessly). ``watertight`` is
         # checked only where the answer is structurally unambiguous — the raw scan
-        # is open, and so is the open arch with through-holes (artifact 6's third
-        # ruling, client-ruled defect 2, 2026-08-15: open by design, no backfilled
-        # body) — a naive reload's watertight reading can otherwise disagree with
-        # the in-memory mesh's own answer purely from STL's float32 quantization
-        # (measured on the synthetic fixture, test_auto_flow.py's twin pin), which
-        # is exactly why the design calls for the caller's own reading.
+        # is open, and so is the open arch with the gingival-floor holes (artifact
+        # 6's fourth ruling, client-ruled, 2026-08-15 night: the recess floor
+        # never closes the model, the same open-by-design read the retired
+        # through-hole shape carried) — a naive reload's watertight reading can
+        # otherwise disagree with the in-memory mesh's own answer purely from
+        # STL's float32 quantization (measured on the synthetic fixture,
+        # test_auto_flow.py's twin pin), which is exactly why the design calls
+        # for the caller's own reading.
         for name in on_disk:
             if not name.endswith(".stl"):
                 continue
@@ -262,6 +265,21 @@ class TestReEmitOnTheRealTree:
             assert sealed[raw_scan_name]["facts"]["watertight"] is False
         if f"{case.id}-arch-open-holes.stl" in sealed:
             assert sealed[f"{case.id}-arch-open-holes.stl"]["facts"]["watertight"] is False
+            # ARTIFACT 6, THE FOURTH RULING: the hole has a FLOOR now, not a
+            # shaft through the model — a downward ray at the site's own pose
+            # must find one inside the recess, never pass through empty (the
+            # through-shaft's own retirement, "why is that cylinder so big",
+            # read directly against the real package this re-emit just wrote).
+            holes_mesh = trimesh.load(
+                out_dir / f"{case.id}-arch-open-holes.stl", force="mesh")
+            hole_pose = np.asarray(new_record["pose_matrix"], float)
+            hole_origin = hole_pose[:3, 3]
+            hole_axis = hole_pose[:3, :3] @ np.array([0.0, 0.0, 1.0])
+            hole_locs, *_ = holes_mesh.ray.intersects_location(
+                ray_origins=[hole_origin + hole_axis * 100.0],
+                ray_directions=[-hole_axis])
+            assert len(hole_locs) > 0, \
+                "the floored hole must have a floor — no ray hit at all"
         for name, entry in sealed.items():
             if not name.endswith(".stl"):
                 assert "facts" not in entry, f"{name} is not a mesh — no facts expected"

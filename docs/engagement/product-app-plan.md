@@ -3215,6 +3215,69 @@ the one that ships — is fully green. Merged over the excision slice's
 guard-pin rework by hand (the two rewrites of one pin fused: excision
 semantics + engine awareness).
 
+**AT artifact 6, fourth ruling — the gingival floor (2026-08-15 night, live
+call with the lab, over a reference image).** THE FOURTH RULING on this
+artifact's shape (after §10-AS.19's retirement, AT 4-r's restoration as the
+closed model, and "AT excision"'s third ruling to the through-hole shape):
+the through-hole retires in turn. Client verbatim, both quotes the ruling
+rests on — "why is that cylinder so big" (on `_extend_punch_through_solid`,
+the barrel this slice deletes outright: an unfloored punch's own natural
+bottom sat only a few millimetres below the gum, so the function bridged it
+with a plain cylinder down to the solidified shell's base plate — routinely
+several millimetres of fabricated pipe with no clinical meaning, and exactly
+what the client was looking at) and "[it] should have the hole with the
+gingival floor" (their reference tool's own look: a clean shallow recess
+whose floor sits at gum level, not a pipe into the model's interior).
+
+`open_arch_with_through_holes` renames to `open_arch_with_floored_holes`
+(deliverables.py) — the shipped filename (`{case}-arch-open-holes.stl`) and
+the product's tab key/label are UNCHANGED (it is still the open arch with
+holes; only the hole's own shape changed), so every call site (application/
+emit.py, pipeline/auto_flow.py's artifact-6 line only — that file also
+carries the parallel curve session's own landed work, untouched here) and
+the bff catalogue sentence (resources/deliver.py) update in place. THE FLOOR
+IS THE SAME GUM-FOLLOWING MEASUREMENT `_csg_carve` has always cut a socket
+to — the ring-read low quartile just outside the cap's own footprint,
+clamped against the solidified shell's own true material limit by a
+downward ray-probe — factored out of `_csg_carve` into a shared
+`_gingival_floor_a` (deliverables.py) so the dish, the platform countersink
+and this artifact's own recess all share ONE measurement rather than three
+copies of it; `_csg_carve` calls it unchanged in behaviour (its own existing
+pins hold verbatim). The fourth ruling's own request is `depth_mm=0.0`: the
+gingival level itself, the site's relief and nothing more — deliberately
+NOT the 1.8mm inspection dish, which is a different artifact's own visible
+pocket. `exact_cap_punch` is now called WITH `floor_a` at this call site,
+exactly like every other floored recess in the module; `_extend_punch_
+through_solid` is deleted outright (it had no other caller).
+
+TestOpenArchWithThroughHoles renames to TestOpenArchWithFlooredHoles. The
+through-pierce pin (a ray down the axis must find NO hit — "the hole goes
+through") is retired and replaced by its inverse: a ray down the axis over a
+FLAT gum fixture must HIT the recess at an exact, hand-computed world
+height (the flat gum's own plane — the same "golden value is a parameter,
+not re-derived arithmetic" discipline test_csg_corpus's own floor pin
+uses), plus a new pin reading tracked face provenance directly: no
+tool-provenance vertex may stand more than ~0.3mm below that same requested
+floor — the pipes' death, pinned structurally rather than by absence. The
+excision, degenerate-template-per-site and total-failure pins carry over
+renamed, unchanged in shape. Narrow: deliverables+isolation+emit 70 passed/4
+skipped; fast lane 938 passed/188 skipped (0 failed); bff test_deliver.py
+120 passed. The real-mesh slow pin (test_emit.py's re-emit-on-the-real-tree
+test) gained its own floor-hit assertion against the actual shipped package
+bytes — skips here (data/real absent in this worktree), runs at
+integration.
+
+KNOWN GAP, flagged rather than papered over: this worktree branched from
+`origin/main` (163f8c7), not from `cap-curve-p4` as briefed — the "AT the
+moat bridge + orphan flaps" defect-A/B work (isolation.orphan_flap_mask,
+deliverables._bridge_recess_collar) lives only on `cap-curve-p4` and is
+ABSENT from this codebase; `open_arch_with_floored_holes` here carries
+DEFECT 1's excision only (scanned_cap_face_mask, already present pre-slice),
+same as the through-hole function it replaces carried. Whichever branch
+lands the moat-bridge/orphan-flap work will need this artifact's own call
+site added to their consumer lists, the same way this entry's own remark on
+`_gingival_floor_a` should be read by anyone reconciling the two branches.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

@@ -1505,15 +1505,15 @@ export function previewTabs(
           : [{ filename: platform, role: "arch" }],
     });
   }
-  // ARTIFACT 6, THE THIRD RULING (client-ruled, live verification 2026-08-15,
-  // verbatim: "the hole is perfect just need to be without the backfilling we
-  // create which is like a dental model which we don't need — just the open
-  // scan, and the hole viewed like it is"). Retires the CLOSED MODEL tab
-  // AGAIN (§10-AS.19's retirement, reversed once by AT 4-r, reversed again
-  // here — same slot, same authority, a different shape): the open scan
-  // wearing each cap's exact through-hole, no backfilled body. The open-arch
-  // doctrine that already governs tabs 1-5 now covers this one too. Appears
-  // exactly when the run built it.
+  // ARTIFACT 6, THE FOURTH RULING (client-ruled, live call over a reference
+  // image, 2026-08-15 night: "why is that cylinder so big" — on the
+  // through-shaft the third ruling extended past the model's own base;
+  // "[it] should have the hole with the gingival floor"). Same slot, same
+  // filename, same tab key/label — only the recess's own shape changed:
+  // the open scan wearing each cap's exact recess cut to the gingival
+  // floor, no shaft descending into the model. The open-arch doctrine that
+  // already governs tabs 1-5 covers this one too. Appears exactly when the
+  // run built it.
   const archOpenHoles = packageFiles.find((f) => f.endsWith("-arch-open-holes.stl"));
   if (archOpenHoles !== undefined) {
     tabs.push({
