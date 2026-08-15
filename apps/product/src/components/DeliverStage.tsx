@@ -67,6 +67,8 @@ import {
   attestationText,
   acknowledgmentPolicyWords,
   adjustmentsWords,
+  analysisFilesExtra,
+  artifactFactsWords,
   assuranceCountsWords,
   confirmBlockers,
   confirmWireBody,
@@ -1289,32 +1291,46 @@ export function DeliverStageView({
                       </span>
                     </h4>
                     <ul className="package-files__list">
-                      {group.files.map((file) => (
-                        <li key={file.name} className="package-files__item">
-                          {/* the endpoint is release-gated and answers refusals in
-                              JSON, so the download is a fetch, never a bare href */}
-                          <button
-                            type="button"
-                            data-role="artifact-download"
-                            data-file={file.name}
-                            className="package-files__link"
-                            onClick={() => onDownload(file.name)}
-                          >
-                            {file.name}
-                          </button>{" "}
-                          {file.description != null && (
-                            <span
-                              data-role="artifact-description"
-                              className="artifact-group__meta"
+                      {group.files.map((file) => {
+                        const facts = artifactFactsWords(file.facts);
+                        return (
+                          <li key={file.name} className="package-files__item">
+                            {/* the endpoint is release-gated and answers refusals in
+                                JSON, so the download is a fetch, never a bare href */}
+                            <button
+                              type="button"
+                              data-role="artifact-download"
+                              data-file={file.name}
+                              className="package-files__link"
+                              onClick={() => onDownload(file.name)}
                             >
-                              {file.description}
+                              {file.name}
+                            </button>{" "}
+                            {file.description != null && (
+                              <span
+                                data-role="artifact-description"
+                                className="artifact-group__meta"
+                              >
+                                {file.description}
+                              </span>
+                            )}{" "}
+                            {/* THE FACTS SUFFIX (AT pipeline 4c): the manifest's own
+                                triangle count and open/closed, when it measured them.
+                                Honest absence — no facts, no suffix, never a "0". */}
+                            {facts !== null && (
+                              <span
+                                data-role="artifact-facts"
+                                className="artifact-group__meta"
+                              >
+                                {facts}
+                              </span>
+                            )}{" "}
+                            <span className="artifact-group__size">
+                              {formatBytes(file.size_bytes)}
                             </span>
-                          )}{" "}
-                          <span className="artifact-group__size">
-                            {formatBytes(file.size_bytes)}
-                          </span>
-                        </li>
-                      ))}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 ))}
@@ -1573,13 +1589,12 @@ export function DeliverStageView({
                       detail.case.jaw ?? null,
                       assurance.data,
                       {
-                        files:
-                          artifacts?.kind === "ok"
-                            ? artifacts.data.files.map((f) =>
-                                f.description != null
-                                  ? `${f.name} — ${f.description}`
-                                  : f.name)
-                            : undefined,
+                        // RELEASE-GATED, MINDED (AT pipeline 4c): the listing's own
+                        // rows, uncomposed, once they have actually loaded — so
+                        // `_fileLine` sees the served `facts` and can print them;
+                        // the run's plain `package_files` names otherwise, exactly
+                        // as this digest has always composed the section.
+                        files: analysisFilesExtra(artifacts, packageFiles),
                         confirmation: detail.session.confirmation,
                         detection: detail.detection,
                         activity:

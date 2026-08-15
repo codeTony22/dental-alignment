@@ -11,6 +11,8 @@
 import { describe, expect, it } from "vitest";
 import {
   analysisClipboardText,
+  analysisFilesExtra,
+  artifactFactsWords,
   constructionSiteFrame,
   libraryPreviewCaption,
   libraryPreviewTab,
@@ -72,7 +74,7 @@ import {
   flaggedAssuranceSite,
   invoiceView,
 } from "../testing/fixtures";
-import type { ArtifactsView, AssuranceCorrespondence } from "../api/client";
+import type { ArtifactsView, AssuranceCorrespondence, FetchState } from "../api/client";
 
 const TWO_SITES = assuranceView(); // flagged tooth 30 pinned first, ready tooth 19
 
@@ -2142,6 +2144,90 @@ describe("analysisClipboardText — the paste-ready case digest (client 2026-08-
     });
     expect(text).toContain("tooth 3: measured cap height 4.021 mm · measured-variant proposal none");
     expect(text).not.toContain("discriminator:");
+  });
+});
+
+describe("artifactFactsWords — the download row's own facts suffix (AT pipeline 4c)", () => {
+  it("comma-groups the triangle count and names watertight closed", () => {
+    expect(artifactFactsWords({ triangle_count: 12345, watertight: true })).toBe(
+      "12,345 triangles · closed",
+    );
+  });
+
+  it("names a non-watertight mesh open", () => {
+    expect(artifactFactsWords({ triangle_count: 512, watertight: false })).toBe(
+      "512 triangles · open",
+    );
+  });
+
+  it("honest absence: null and undefined both print nothing, never a guessed row", () => {
+    expect(artifactFactsWords(null)).toBeNull();
+    expect(artifactFactsWords(undefined)).toBeNull();
+  });
+});
+
+describe("analysisFilesExtra — the digest's files shape, release-gating minded (AT pipeline 4c)", () => {
+  const richFiles = [
+    {
+      name: "c-model-closed.stl",
+      size_bytes: 1000,
+      tooth: null,
+      description: null,
+      facts: { triangle_count: 48213, watertight: true },
+    },
+  ];
+  const okWithRows: FetchState<ArtifactsView> = {
+    kind: "ok",
+    data: {
+      run_id: "r1",
+      files: richFiles,
+      withheld_teeth: [],
+      withheld_case_files: [],
+    },
+  };
+
+  it("the listing loaded WITH ROWS: the served ArtifactFile objects pass straight through", () => {
+    expect(analysisFilesExtra(okWithRows, ["c-fallback.stl"])).toBe(richFiles);
+  });
+
+  it("the listing loaded ok but EMPTY (release-gated, nothing released yet): falls back to package_files", () => {
+    const okEmpty: FetchState<ArtifactsView> = {
+      kind: "ok",
+      data: { run_id: "r1", files: [], withheld_teeth: [], withheld_case_files: [] },
+    };
+    expect(analysisFilesExtra(okEmpty, ["c-arch-capless.stl"])).toEqual([
+      "c-arch-capless.stl",
+    ]);
+  });
+
+  it("still loading: falls back to package_files — the string branch, exactly as before", () => {
+    expect(analysisFilesExtra({ kind: "loading" }, ["c-arch-capless.stl"])).toEqual([
+      "c-arch-capless.stl",
+    ]);
+  });
+
+  it("the listing errored: falls back to package_files rather than losing the section", () => {
+    expect(
+      analysisFilesExtra({ kind: "error", detail: "409" }, ["c-arch-capless.stl"]),
+    ).toEqual(["c-arch-capless.stl"]);
+  });
+
+  it("no listing at all (null/undefined, e.g. before any release): falls back to package_files", () => {
+    expect(analysisFilesExtra(null, ["c-arch-capless.stl"])).toEqual([
+      "c-arch-capless.stl",
+    ]);
+    expect(analysisFilesExtra(undefined, ["c-arch-capless.stl"])).toEqual([
+      "c-arch-capless.stl",
+    ]);
+  });
+
+  it("neither the listing nor package_files has anything: undefined, so the digest omits the section", () => {
+    const okEmpty: FetchState<ArtifactsView> = {
+      kind: "ok",
+      data: { run_id: "r1", files: [], withheld_teeth: [], withheld_case_files: [] },
+    };
+    expect(analysisFilesExtra(null, [])).toBeUndefined();
+    expect(analysisFilesExtra(okEmpty, [])).toBeUndefined();
   });
 });
 

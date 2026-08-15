@@ -3019,6 +3019,16 @@ solidified_shell_cached still keys on id(arch), the address-reuse class
 W4 retired elsewhere. The hardening pair is queued. Full findings in
 the boolean plan's Stage 2 addendum.
 
+**AT pipeline 4c-r — the facts reach eyes (2026-08-14).** The recorded 4c
+gap closes: DeliverStage was composing plain strings itself even when the
+rich listing had loaded — the root cause, not a missing feature. Now the
+download rows wear "N triangles · open|closed" (data-role artifact-facts,
+the existing meta class, honest absence), and the Copy-for-analysis
+digest receives the listing's own ArtifactFile rows through
+analysisFilesExtra — with the release-gated fallback to package_files
+strings pinned across six cases (loading/error/empty/absent all keep the
+digest working exactly as before). Product 1506 (+11), typecheck clean.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

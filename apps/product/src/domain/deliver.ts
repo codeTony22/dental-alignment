@@ -12,6 +12,7 @@
  */
 import type {
   ApiResult,
+  ArtifactFacts,
   ArtifactFile,
   ArtifactsView,
   AssuranceSite,
@@ -19,6 +20,7 @@ import type {
   ChoicesView,
   ConfirmBody,
   ConfirmationView,
+  FetchState,
   InvoiceView,
   SessionView,
 } from "../api/client";
@@ -1112,6 +1114,24 @@ export function formatBytes(bytes: number | null): string {
 }
 
 /**
+ * ARTIFACT FACTS, WORDED FOR THE ROW (boolean-engine plan 4c / clinical-pipeline-plan
+ * Stage 5): the manifest's own measurement for this one mesh — triangle count and
+ * open/closed — read comma-grouped, the way a person scans a row rather than a JSON
+ * blob (the digest's own `_fileLine` prints the bare integer; that copy is pasted for
+ * a machine reader, this one is read on screen).
+ *
+ * HONEST ABSENCE: `null` for a non-mesh file, a name the manifest never measured, or
+ * a run whose manifest predates this field (schema additivity) — the row renders no
+ * suffix at all rather than a guessed or zeroed one.
+ */
+export function artifactFactsWords(facts: ArtifactFacts | null | undefined): string | null {
+  if (facts == null) return null;
+  return `${facts.triangle_count.toLocaleString()} triangles · ${
+    facts.watertight ? "closed" : "open"
+  }`;
+}
+
+/**
  * GROUPED BY SITE, not one flat list (client 2026-07-27 #6). A six-site package is
  * thirty near-identical filenames differing by a number in the middle; grouped, the
  * operator reads "tooth 19: 3 files" and can check that against the case. The
@@ -1740,12 +1760,14 @@ function _siteBlock(site: AssuranceSite): string {
 /**
  * ARTIFACT FACTS (boolean-engine plan 4c / clinical-pipeline-plan Stage 5): one
  * ``## Package files`` line, composed from either shape ``analysisClipboardText``
- * accepts. A bare string (the legacy call shape — DeliverStage.tsx today composes
- * ``"${name} — ${description}"`` itself) prints VERBATIM, unchanged. A served
- * ``ArtifactFile`` is composed HERE — name, then " — description" when the
- * catalogue named one, then " · N triangles · open|closed" when the manifest
- * measured facts for it. Facts ABSENT (a non-mesh file, an old manifest, a name the
- * manifest never carried) print nothing extra — no verdict invented client-side.
+ * accepts. A bare string (the RELEASE-GATED FALLBACK — ``analysisFilesExtra`` sends
+ * the run's own plain ``package_files`` names here whenever the artifacts listing has
+ * not loaded, or loaded empty) prints VERBATIM, unchanged. A served ``ArtifactFile``
+ * (the listing's own row, sent straight through once it has loaded WITH ROWS) is
+ * composed HERE — name, then " — description" when the catalogue named one, then
+ * " · N triangles · open|closed" when the manifest measured facts for it. Facts
+ * ABSENT (a non-mesh file, an old manifest, a name the manifest never carried) print
+ * nothing extra — no verdict invented client-side.
  */
 function _fileLine(entry: string | ArtifactFile): string {
   if (typeof entry === "string") return entry;
@@ -1756,6 +1778,27 @@ function _fileLine(entry: string | ArtifactFile): string {
       (entry.facts.watertight ? "closed" : "open");
   }
   return line;
+}
+
+/**
+ * WHICH FILES SHAPE THE DIGEST'S ``## Package files`` SECTION READS, RELEASE-GATING
+ * MINDED (AT pipeline 4c gap). ``fetchArtifacts`` answers the release-gated listing —
+ * before release, or on any load/error state, it carries nothing — so the digest
+ * cannot depend on it alone without going silent on every case that has not released
+ * yet. The listing's own served ``ArtifactFile`` rows are read STRAIGHT THROUGH, once
+ * they have actually loaded WITH ROWS, so ``_fileLine`` (never this function) is the
+ * one place a served fact becomes a line of text. Short of that, the fallback is the
+ * run's own ``package_files`` — the plain names the digest has always composed from —
+ * so the section keeps working exactly as it did before facts existed.
+ */
+export function analysisFilesExtra(
+  artifacts: FetchState<ArtifactsView> | null | undefined,
+  packageFiles: readonly string[],
+): readonly (string | ArtifactFile)[] | undefined {
+  if (artifacts?.kind === "ok" && artifacts.data.files.length > 0) {
+    return artifacts.data.files;
+  }
+  return packageFiles.length > 0 ? packageFiles : undefined;
 }
 
 /**

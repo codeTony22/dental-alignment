@@ -657,6 +657,44 @@ describe("the artifacts — grouped by site, with names and sizes (#6)", () => {
     expect(html).toContain("512 B");
   });
 
+  // AT pipeline 4c: the manifest's own facts (triangle count, watertight),
+  // threaded onto the row as a muted suffix — decision under test: whether the
+  // download row shows the facts the manifest measured, honestly absent when
+  // it did not.
+  it("a row with facts gains a muted suffix — triangle count and open/closed", () => {
+    const withFacts = {
+      kind: "ok" as const,
+      data: {
+        run_id: "20260727-120000-abc123",
+        files: [
+          {
+            name: "case-a-19-healingcap-aligned.stl",
+            size_bytes: 2048,
+            tooth: 19,
+            facts: { triangle_count: 12345, watertight: false },
+          },
+          {
+            name: "case-a-manifest.json",
+            size_bytes: 512,
+            tooth: null,
+            facts: { triangle_count: 900, watertight: true },
+          },
+        ],
+        withheld_teeth: [],
+        withheld_case_files: [],
+      },
+    };
+    const html = view({ detail: releasedDetail(), artifacts: withFacts });
+    expect(html).toMatch(/data-role="artifact-facts"[^>]*>12,345 triangles · open</);
+    expect(html).toMatch(/data-role="artifact-facts"[^>]*>900 triangles · closed</);
+  });
+
+  it("a row with no facts (an old manifest, a non-mesh file) renders no suffix — honest absence, never a zero", () => {
+    const html = view({ detail: releasedDetail(), artifacts });
+    expect(html).not.toContain('data-role="artifact-facts"');
+    expect(html).not.toContain("triangles");
+  });
+
   it("every file is a fetch button — the endpoint is gated, so never a bare href", () => {
     const html = view({ detail: releasedDetail(), artifacts });
     expect(html).toMatch(
