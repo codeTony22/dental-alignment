@@ -29,6 +29,7 @@ from case_prep.adapters.rng import PipelineRng, sample_surface
 from case_prep.adapters.site_analysis import measure_site
 from case_prep.domain.cap_catalog import CapSpec, classify_diameter, variant_flags
 from case_prep.domain.channel import channel_from_boundary_loops
+from case_prep.domain.circle_fit import circle_centre_xy, fit_circle_xy, fit_circle_xy_or_kasa
 from case_prep.domain.guidance import advisory_guidance
 from case_prep.domain.island import segment_island
 from case_prep.domain.pose_confidence import confidence_grade, pose_spread
@@ -184,17 +185,18 @@ def _rim_seat(patch: np.ndarray, seed_xy: np.ndarray, rim_r: float,
     # cone it is not a cap rim we should trust (fall through to bounded ICP)
     if n[2] < np.cos(np.radians(45.0)):
         return None
-    # rim circle center: Kasa fit in the rim plane
+    # rim circle center: Taubin fit in the rim plane
     t0 = np.cross(n, [0.0, 0.0, 1.0])
     if np.linalg.norm(t0) < 1e-6:
         t0 = np.array([1.0, 0.0, 0.0])
     t0 /= np.linalg.norm(t0)
     t1 = np.cross(n, t0)
     uv = (band - c0) @ np.c_[t0, t1]
-    A = np.c_[2.0 * uv, np.ones(len(uv))]
-    sol, *_ = np.linalg.lstsq(A, (uv ** 2).sum(axis=1), rcond=None)
-    center = c0 + sol[0] * t0 + sol[1] * t1
-    fitted_rim_r = float(np.sqrt(max(sol[2] + sol[0] ** 2 + sol[1] ** 2, 1e-9)))
+    fit = fit_circle_xy_or_kasa(uv)
+    if fit is None:
+        return None
+    uc, fitted_rim_r = fit
+    center = c0 + uc[0] * t0 + uc[1] * t1
 
     z = np.array([0.0, 0.0, 1.0])
     pivot = np.cross(z, n)
@@ -259,21 +261,18 @@ def _rim_seat(patch: np.ndarray, seed_xy: np.ndarray, rim_r: float,
 
 
 def _fit_circle_xy(pts_xy: np.ndarray) -> Optional[Tuple[np.ndarray, float]]:
-    """Least-squares (Kasa) circle through >=3 xy points — the multi-point rim
-    measurement: each click is ±1mm but the FIT averages the error out. Returns
-    (centre_xy, radius) or None when the points cannot support a circle (collinear,
-    all on one side, or a fit outside any cap's physical size)."""
+    """Least-squares (Taubin) circle through >=3 xy points — the multi-point rim
+    measurement: each click is ±1mm but the FIT averages the error out. Taubin
+    replaces algebraic Kasa because Kasa shrinks partial arcs (the fleet's measured
+    case). Returns (centre_xy, radius) or None when the points cannot support a
+    circle (collinear, all on one side, or a fit outside any cap's physical size)."""
     P = np.asarray(pts_xy, float)
     if len(P) < 3:
         return None
-    x, y = P[:, 0] - P[:, 0].mean(), P[:, 1] - P[:, 1].mean()
-    A = np.c_[2.0 * x, 2.0 * y, np.ones(len(P))]
-    sol, *_ = np.linalg.lstsq(A, x * x + y * y, rcond=None)
-    r2 = sol[2] + sol[0] ** 2 + sol[1] ** 2
-    if r2 <= 0:
+    fit = fit_circle_xy(P)
+    if fit is None:
         return None
-    centre = np.array([P[:, 0].mean() + sol[0], P[:, 1].mean() + sol[1]])
-    r = float(np.sqrt(r2))
+    centre, r = fit
     if not (1.0 <= r <= 8.0):  # outside any healing cap's physical rim radius
         return None
     # the clicks must actually surround the cap: with everything on one side the fit
@@ -285,7 +284,7 @@ def _fit_circle_xy(pts_xy: np.ndarray) -> Optional[Tuple[np.ndarray, float]]:
 
 
 def _fit_circle_plane(Q: np.ndarray) -> Optional[Tuple[np.ndarray, np.ndarray, float]]:
-    """Ungated plane + in-plane Kasa circle through points — the core _fit_circle_3d
+    """Ungated plane + in-plane Taubin circle through points — the core _fit_circle_3d
     builds on (also used to score candidate subsets during outlier arbitration)."""
     Q = np.asarray(Q, float)
     if len(Q) < 3:
@@ -301,12 +300,11 @@ def _fit_circle_plane(Q: np.ndarray) -> Optional[Tuple[np.ndarray, np.ndarray, f
     t0 /= np.linalg.norm(t0)
     t1 = np.cross(n, t0)
     uv = (Q - c0) @ np.c_[t0, t1]
-    A = np.c_[2.0 * uv, np.ones(len(Q))]
-    sol, *_ = np.linalg.lstsq(A, (uv ** 2).sum(axis=1), rcond=None)
-    r2 = sol[2] + sol[0] ** 2 + sol[1] ** 2
-    if r2 <= 0:
+    fit = fit_circle_xy(uv)
+    if fit is None:
         return None
-    return c0 + sol[0] * t0 + sol[1] * t1, n, float(np.sqrt(r2))
+    uc, r = fit
+    return c0 + uc[0] * t0 + uc[1] * t1, n, float(r)
 
 
 def _border_click_disagreement(P: np.ndarray) -> Optional[float]:
@@ -661,17 +659,12 @@ def _ring_fixed_candidate(template: trimesh.Trimesh, R: np.ndarray,
     if len(band) > 600:
         band = band[np.linspace(0, len(band) - 1, 600).astype(int)]
 
-    def _kasa_xy(uv: np.ndarray) -> np.ndarray:
-        A = np.c_[2.0 * uv, np.ones(len(uv))]
-        sol, *_ = np.linalg.lstsq(A, (uv ** 2).sum(axis=1), rcond=None)
-        return sol[:2]
-
     center = np.asarray(center, float)
-    g0 = _kasa_xy((band @ R.T + center)[:, :2])
+    g0 = circle_centre_xy((band @ R.T + center)[:, :2])
     c, s_ = np.cos(phi_rad), np.sin(phi_rad)
     rz = np.array([[c, -s_, 0.0], [s_, c, 0.0], [0.0, 0.0, 1.0]])
     Rp = R @ rz
-    corr = g0 - _kasa_xy((band @ Rp.T + center)[:, :2])
+    corr = g0 - circle_centre_xy((band @ Rp.T + center)[:, :2])
     pred = (R @ (rz @ ring3 - ring3))[:2]
     excess = float(np.linalg.norm(corr + pred))
     out = np.eye(4)
@@ -741,12 +734,7 @@ def _recess_clocking(pts: np.ndarray, template: trimesh.Trimesh, R: np.ndarray,
     if len(band) > 600:
         band = band[np.linspace(0, len(band) - 1, 600).astype(int)]
 
-    def _kasa_xy(uv: np.ndarray) -> np.ndarray:
-        A = np.c_[2.0 * uv, np.ones(len(uv))]
-        sol, *_ = np.linalg.lstsq(A, (uv ** 2).sum(axis=1), rcond=None)
-        return sol[:2]
-
-    g0 = _kasa_xy((band @ R.T + center)[:, :2])  # the invariant: the MEASURED rim centre
+    g0 = circle_centre_xy((band @ R.T + center)[:, :2])  # the invariant: the MEASURED rim centre
     top = v[v[:, 2] > v[:, 2].max() - 1.0]
     rmax = float(np.percentile(np.linalg.norm(top[:, :2], axis=1), 95))
     recess_c = _screw_recess_centre(pts, g0, rmax, expected_radius=lever)
@@ -758,7 +746,7 @@ def _recess_clocking(pts: np.ndarray, template: trimesh.Trimesh, R: np.ndarray,
         c, s_ = np.cos(phi), np.sin(phi)
         rz = np.array([[c, -s_, 0.0], [s_, c, 0.0], [0.0, 0.0, 1.0]])
         Rp = R @ rz
-        corr = g0 - _kasa_xy((band @ Rp.T + center)[:, :2])
+        corr = g0 - circle_centre_xy((band @ Rp.T + center)[:, :2])
         return (Rp @ bore + center)[:2] + corr, corr
 
     phis = np.linspace(0.0, 2.0 * np.pi, 144, endpoint=False)
@@ -873,7 +861,7 @@ def _refine_depth(patch: np.ndarray, template: trimesh.Trimesh,
 
 def _scan_rim_centre(L: np.ndarray, seed_xy: np.ndarray,
                      rim_r: float) -> Optional[np.ndarray]:
-    """Kasa centre (occlusal xy) of the SCANNED cap's visible rim band about ``seed_xy`` at
+    """Circle centre (occlusal xy) of the SCANNED cap's visible rim band about ``seed_xy`` at
     radius ``rim_r`` — the same band+fit the free rim seat uses internally, exposed so the
     winner-centering pass can target the scan's actual rim. None when the band is too sparse."""
     d = np.linalg.norm(L[:, :2] - seed_xy, axis=1)
@@ -883,14 +871,11 @@ def _scan_rim_centre(L: np.ndarray, seed_xy: np.ndarray,
     band = band[band[:, 2] > np.percentile(band[:, 2], 50) - 1.0]
     if len(band) < 40:
         return None
-    uv = band[:, :2]
-    A = np.c_[2.0 * uv, np.ones(len(uv))]
-    sol, *_ = np.linalg.lstsq(A, (uv ** 2).sum(axis=1), rcond=None)
-    return sol[:2]
+    return circle_centre_xy(band[:, :2])
 
 
 def _ring_centre_3d(template: trimesh.Trimesh) -> Optional[np.ndarray]:
-    """The rim ring's 3D circle centre in the CANONICAL frame — Kasa xy plus the ring's
+    """The rim ring's 3D circle centre in the CANONICAL frame — fitted xy plus the ring's
     own height. The z matters: under a tilted pose the xy-projection of the posed ring
     (what every rim measure sees) is the projection of THIS point, and holding a z=0
     stand-in fixed instead lets the true ring centre swing by h*sin(tilt) — measured
@@ -900,14 +885,12 @@ def _ring_centre_3d(template: trimesh.Trimesh) -> Optional[np.ndarray]:
     ring = v[np.linalg.norm(v[:, :2], axis=1) > rmax - 0.4]
     if len(ring) < 20:
         return None
-    uv = ring[:, :2]
-    A = np.c_[2.0 * uv, np.ones(len(uv))]
-    sol, *_ = np.linalg.lstsq(A, (uv ** 2).sum(axis=1), rcond=None)
-    return np.array([sol[0], sol[1], float(ring[:, 2].mean())])
+    cxy = circle_centre_xy(ring[:, :2])
+    return np.array([cxy[0], cxy[1], float(ring[:, 2].mean())])
 
 
 def _posed_rim_centre(template: trimesh.Trimesh, m: np.ndarray) -> Optional[np.ndarray]:
-    """Kasa centre (occlusal xy, in ``m``'s frame) of the POSED template's widest rim ring —
+    """Circle centre (occlusal xy, in ``m``'s frame) of the POSED template's widest rim ring —
     where the cap's rim actually lands on screen. None if the ring is too sparse to fit."""
     v = np.asarray(template.vertices, float)
     rmax = float(np.percentile(np.linalg.norm(v[:, :2], axis=1), 97))
@@ -915,10 +898,7 @@ def _posed_rim_centre(template: trimesh.Trimesh, m: np.ndarray) -> Optional[np.n
     if len(ring) < 20:
         return None
     rw = ring @ m[:3, :3].T + m[:3, 3]
-    uv = rw[:, :2]
-    A = np.c_[2.0 * uv, np.ones(len(uv))]
-    sol, *_ = np.linalg.lstsq(A, (uv ** 2).sum(axis=1), rcond=None)
-    return sol[:2]
+    return circle_centre_xy(rw[:, :2])
 
 
 def _rim_off_centre_anchor_mm(L: np.ndarray, centre_xy: np.ndarray, rim_r: float,
@@ -941,10 +921,7 @@ def _rim_off_centre_anchor_mm(L: np.ndarray, centre_xy: np.ndarray, rim_r: float
     posed = _posed_rim_centre(template, t_local)
     if posed is None:
         return None
-    uv = band[:, :2]
-    A = np.c_[2.0 * uv, np.ones(len(uv))]
-    sol, *_ = np.linalg.lstsq(A, (uv ** 2).sum(axis=1), rcond=None)
-    return float(np.linalg.norm(posed - sol[:2]))
+    return float(np.linalg.norm(posed - circle_centre_xy(band[:, :2])))
 
 
 def _rim_off_centre_mm(L: np.ndarray, center_mark_local: np.ndarray,

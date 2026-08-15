@@ -1711,13 +1711,12 @@ class TestVoidClocking:
     @staticmethod
     def _band_kasa(tmpl, R):
         """The measured rim centre of pose (R, 0) — same band definition as production."""
+        from case_prep.domain.circle_fit import circle_centre_xy
+
         v = np.asarray(tmpl.vertices, float)
         rmax = float(np.percentile(np.linalg.norm(v[:, :2], axis=1), 97))
         band = v[np.linalg.norm(v[:, :2], axis=1) > rmax - 0.4]
-        uv = (band @ R.T)[:, :2]
-        A = np.c_[2.0 * uv, np.ones(len(uv))]
-        sol, *_ = np.linalg.lstsq(A, (uv ** 2).sum(axis=1), rcond=None)
-        return sol[:2]
+        return circle_centre_xy((band @ R.T)[:, :2])
 
     def test_recovers_a_known_clocking_under_a_tilted_seat(self, monkeypatch):
         """The zero-tilt fixture is BLIND to a fixed-point-compensation regression (at
@@ -1998,10 +1997,11 @@ class TestDepthPolish:
 
 
 def _mark_scan_rim_centre(scan, cmark, rmark):
-    """The GUARD's independent estimate of the scanned cap's rim centre: a Kasa fit of the
+    """The GUARD's independent estimate of the scanned cap's rim centre: a Taubin fit of the
     scan's visible rim band about the curated CENTRE mark at the curated pair radius, in the
     crowns-local occlusal plane. Deliberately anchored on the marks (not the seat's internal
     seed) so it is an outside check on where the physical cap sits."""
+    from case_prep.domain.circle_fit import circle_centre_xy
     from case_prep.pipeline.auto_flow import _crowns_frame
 
     pts = np.asarray(scan.vertices, float)
@@ -2013,10 +2013,7 @@ def _mark_scan_rim_centre(scan, cmark, rmark):
     d = np.linalg.norm(L[:, :2] - cm[:2], axis=1)
     band = L[np.abs(d - rim_r) < 0.6]
     band = band[band[:, 2] > np.percentile(band[:, 2], 50) - 1.0]
-    uv = band[:, :2]
-    A = np.c_[2 * uv, np.ones(len(uv))]
-    sol, *_ = np.linalg.lstsq(A, (uv ** 2).sum(1), rcond=None)
-    return frame, origin, sol[:2]
+    return frame, origin, circle_centre_xy(band[:, :2])
 
 
 def _posed_rim_centre_local(scan, lib, rec):
@@ -2030,10 +2027,8 @@ def _posed_rim_centre_local(scan, lib, rec):
     ring = tv[np.linalg.norm(tv[:, :2], axis=1) > rmax - 0.4]
     pose = np.array(rec["pose_matrix"], float)
     ringl = ((ring @ pose[:3, :3].T + pose[:3, 3]) - origin) @ frame
-    uv = ringl[:, :2]
-    A = np.c_[2 * uv, np.ones(len(uv))]
-    sol, *_ = np.linalg.lstsq(A, (uv ** 2).sum(1), rcond=None)
-    return sol[:2]
+    from case_prep.domain.circle_fit import circle_centre_xy
+    return circle_centre_xy(ringl[:, :2])
 
 
 # Full-clean-rim sites: the user's three reported off-centre sites plus the labeled arches.
