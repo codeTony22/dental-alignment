@@ -12,6 +12,7 @@ import {
   defaultToothForMark,
   detectionMarkers,
   discriminatorEvidenceSentence,
+  curveHonestySentence,
   EMPTY_MARK,
   markOnArmMark,
   markOnArmPick,
@@ -539,6 +540,87 @@ describe("discriminatorEvidenceSentence — the detector's WHY, served since 488
       }),
     });
     expect(discriminatorEvidenceSentence(detail, detail.sites[0]!)).toBeNull();
+  });
+});
+
+describe("curveHonestySentence — density prior + DP gap, never zeros for absence (P4.1)", () => {
+  it("says density prior off when the served bool is false — False is a measurement", () => {
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: detectionView([], { site_density_prior_used: { "19": false } }),
+    });
+    expect(curveHonestySentence(detail, detail.sites[0]!)).toBe("density prior off");
+  });
+
+  it("says density prior used when the served bool is true", () => {
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: detectionView([], { site_density_prior_used: { "19": true } }),
+    });
+    expect(curveHonestySentence(detail, detail.sites[0]!)).toBe("density prior used");
+  });
+
+  it("a missing or null prior is honest absence, never 'off' invented from a gap", () => {
+    const missing = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: detectionView([]),
+    });
+    expect(curveHonestySentence(missing, missing.sites[0]!)).toBeNull();
+    const nulled = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: detectionView([], { site_density_prior_used: { "19": null } }),
+    });
+    expect(curveHonestySentence(nulled, nulled.sites[0]!)).toBeNull();
+  });
+
+  it("a real 0 DP gap is a measurement; a null gap is no clause", () => {
+    const zero = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: detectionView([], { site_dp_gap_fraction: { "19": 0 } }),
+    });
+    expect(curveHonestySentence(zero, zero.sites[0]!)).toBe(
+      "rim DP inferred across 0% of bearings",
+    );
+    const absent = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: detectionView([], { site_dp_gap_fraction: { "19": null } }),
+    });
+    expect(curveHonestySentence(absent, absent.sites[0]!)).toBeNull();
+  });
+
+  it("summarises the weakest finite bearing margin; empty or null is absence", () => {
+    const present = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: detectionView([], {
+        site_bearing_margin: { "19": [0.4, 0.05, 0.9] },
+      }),
+    });
+    expect(curveHonestySentence(present, present.sites[0]!)).toBe(
+      "weakest DP margin 0.05",
+    );
+    const empty = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: detectionView([], { site_bearing_margin: { "19": [] } }),
+    });
+    expect(curveHonestySentence(empty, empty.sites[0]!)).toBeNull();
+    const nulled = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: detectionView([], { site_bearing_margin: { "19": null } }),
+    });
+    expect(curveHonestySentence(nulled, nulled.sites[0]!)).toBeNull();
+  });
+
+  it("joins the clauses that exist; a different tooth never leaks", () => {
+    const detail = caseSessionDetail({
+      sites: [siteView({ tooth: 19 })],
+      detection: detectionView([], {
+        site_density_prior_used: { "19": false, "30": true },
+        site_dp_gap_fraction: { "19": 0.18 },
+      }),
+    });
+    expect(curveHonestySentence(detail, detail.sites[0]!)).toBe(
+      "density prior off · rim DP inferred across 18% of bearings",
+    );
   });
 });
 

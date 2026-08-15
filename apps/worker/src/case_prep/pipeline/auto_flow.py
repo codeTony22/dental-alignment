@@ -68,6 +68,11 @@ class ProposedSite:
     # stays as shipped because the web renders it — rename both sides together.
     void_ratio: float
     rim_below_cusps_mm: float
+    # P3.1/P4.1 — whether find_cap_sites applied the tessellation prior at this
+    # candidate. False when faces were omitted, the field was flat, or density
+    # inverted (t4). Additive default so older positional ProposedSite(c, v, r)
+    # constructions keep working.
+    density_prior_used: bool = False
 
 
 @dataclass(frozen=True)
@@ -110,7 +115,9 @@ def propose_sites(scan_points: np.ndarray,
     candidates = find_cap_sites(np.asarray(scan_points, float),
                                 max_sites=max_sites, normals=normals, faces=faces)
     ranked = sorted(candidates, key=lambda c: c.void_ratio)
-    return [ProposedSite(c.center, c.void_ratio, c.rim_below_cusps_mm) for c in ranked]
+    return [ProposedSite(c.center, c.void_ratio, c.rim_below_cusps_mm,
+                         density_prior_used=c.density_prior_used)
+            for c in ranked]
 
 
 def _crowns_frame(pts: np.ndarray, normals: Optional[np.ndarray]):

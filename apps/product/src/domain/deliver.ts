@@ -1840,6 +1840,8 @@ export function analysisClipboardText(
        *  BFF's own `candidate_evidence_for` read), not a client-derived verdict. */
       readonly site_rim_below_cusps_mm?: Record<string, number | null>;
       readonly site_void_ratio?: Record<string, number | null>;
+      readonly site_density_prior_used?: Record<string, boolean | null>;
+      readonly site_dp_gap_fraction?: Record<string, number | null>;
     } | null;
     /** the served case log — every act with its receipt, oldest first */
     readonly activity?: {
@@ -1914,6 +1916,8 @@ export function analysisClipboardText(
     // spell the same measurement two different ways.
     const rimBelowCusps = detection.site_rim_below_cusps_mm ?? {};
     const voidRatios = detection.site_void_ratio ?? {};
+    const densityPrior = detection.site_density_prior_used ?? {};
+    const dpGap = detection.site_dp_gap_fraction ?? {};
     for (const tooth of Object.keys(heights)) {
       const h = heights[tooth];
       const p = proposals[tooth];
@@ -1923,10 +1927,18 @@ export function analysisClipboardText(
         rim != null && voidRatio != null
           ? ` · discriminator: ${rim.toFixed(1)}mm below cusps, void ratio ${voidRatio.toFixed(2)}`
           : "";
+      const prior = densityPrior[tooth];
+      const priorClause =
+        prior === true ? " · density prior used"
+        : prior === false ? " · density prior off"
+        : "";
+      const gap = dpGap[tooth];
+      const gapClause =
+        gap != null ? ` · DP gap ${(gap * 100).toFixed(0)}%` : "";
       detectionLines.push(
         `- tooth ${tooth}: measured cap height ${
           h != null ? `${h} mm` : "not measured"
-        } · measured-variant proposal ${p ?? "none"}${discriminator}`,
+        } · measured-variant proposal ${p ?? "none"}${discriminator}${priorClause}${gapClause}`,
       );
     }
     if (detectionLines.length === 1) detectionLines.length = 0;

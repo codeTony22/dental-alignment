@@ -528,6 +528,33 @@ describe("the site row's discriminator line — the detector's own WHY (pipeline
   });
 });
 
+describe("the site row's curve-honesty line — density prior + DP (P4.1)", () => {
+  it("renders density prior off when the served bool is false", () => {
+    const html = view({
+      detail: caseSessionDetail({
+        sites: [siteView({ tooth: 19 })],
+        detection: detectionView([], {
+          site_density_prior_used: { "19": false },
+        }),
+      }),
+    });
+    expect(html).toContain('data-role="site-curve-honesty"');
+    expect(html).toContain("density prior off");
+  });
+
+  it("absent entirely when the maps are missing — no zeroed 'off' or '0%'", () => {
+    const html = view({
+      detail: caseSessionDetail({
+        sites: [siteView({ tooth: 19 })],
+        detection: detectionView([]),
+      }),
+    });
+    expect(html).not.toContain('data-role="site-curve-honesty"');
+    expect(html).not.toContain("density prior off");
+    expect(html).not.toContain("0% of bearings");
+  });
+});
+
 describe("picking a site by clicking it on the scan (client 2026-07-31)", () => {
   it("offers the door, closed, when nothing is armed", () => {
     const html = view();

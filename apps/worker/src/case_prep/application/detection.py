@@ -81,6 +81,12 @@ class DetectedSite:
     rim_below_cusps_mm: float
     tooth_guess: Optional[int]
     capture: dict                        # CaptureAssessment.to_dict()
+    # P4.1 — curve-honesty fields. density_prior_used is always a bool on a
+    # proposal (False when the informativeness gate was off). DP fields are
+    # None at detect: island has not run; absence is None, never 0.0.
+    density_prior_used: bool = False
+    dp_gap_fraction: Optional[float] = None
+    bearing_margin: Optional[Tuple[float, ...]] = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +122,12 @@ class SuggestedSiteCapture:
     # invented from a nearby but distinct candidate.
     rim_below_cusps_mm: Optional[float] = None
     void_ratio: Optional[float] = None
+    # P4.1 — borrowed from the matching proposal (``candidate_evidence_for``).
+    # None when the automatic pass never proposed this site: never False/0.0
+    # standing in for an untaken measurement. False is a real report ("prior off").
+    density_prior_used: Optional[bool] = None
+    dp_gap_fraction: Optional[float] = None
+    bearing_margin: Optional[Tuple[float, ...]] = None
 
 
 @dataclass(frozen=True)
@@ -177,26 +189,50 @@ def tooth_guess_for(center, suggested_sites: Sequence[Dict],
     return best[1]
 
 
+@dataclass(frozen=True)
+class CandidateEvidence:
+    """The nearest matching proposal's discriminator + curve-honesty numbers
+    (P4.1). Every field defaults to None — honest absence, never False or 0.0
+    standing in for a measurement the detector never took."""
+
+    rim_below_cusps_mm: Optional[float] = None
+    void_ratio: Optional[float] = None
+    density_prior_used: Optional[bool] = None
+    dp_gap_fraction: Optional[float] = None
+    bearing_margin: Optional[Tuple[float, ...]] = None
+
+
 def candidate_evidence_for(center, proposals: Sequence[DetectedSite],
                            max_mm: float = TOOTH_GUESS_RADIUS_MM
-                           ) -> Tuple[Optional[float], Optional[float]]:
-    """The nearest detector PROPOSAL's own (rim_below_cusps_mm, void_ratio) for a
-    CURATED site, when the density stack actually found something within one
-    cap-width of it — the reverse of ``tooth_guess_for`` (there a proposal
-    inherits a site's tooth; here a site borrows a proposal's WHY). (None, None)
-    when no proposal lands this close: a human-marked or manually confirmed site
-    the automatic pass never proposed has no ring density to show, and a nearby
-    but DISTINCT candidate's numbers are never borrowed in its place — the same
-    'a guess is labelled a guess' discipline ``tooth_guess_for`` already keeps."""
+                           ) -> CandidateEvidence:
+    """The nearest detector PROPOSAL's own discriminator + curve-honesty fields
+    for a CURATED site, when the density stack actually found something within
+    one cap-width of it — the reverse of ``tooth_guess_for`` (there a proposal
+    inherits a site's tooth; here a site borrows a proposal's WHY). Empty
+    ``CandidateEvidence`` when no proposal lands this close: a human-marked or
+    manually confirmed site the automatic pass never proposed has no ring
+    density to show, and a nearby but DISTINCT candidate's numbers are never
+    borrowed in its place — the same 'a guess is labelled a guess' discipline
+    ``tooth_guess_for`` already keeps."""
     if center is None:
-        return None, None
+        return CandidateEvidence()
     c = np.asarray(center, float)
-    best: Tuple[float, Optional[float], Optional[float]] = (float("inf"), None, None)
+    best_d = float("inf")
+    best: Optional[DetectedSite] = None
     for p in proposals:
         d = float(np.linalg.norm(np.asarray(p.center, float) - c))
-        if d <= max_mm and d < best[0]:
-            best = (d, p.rim_below_cusps_mm, p.void_ratio)
-    return best[1], best[2]
+        if d <= max_mm and d < best_d:
+            best_d = d
+            best = p
+    if best is None:
+        return CandidateEvidence()
+    return CandidateEvidence(
+        rim_below_cusps_mm=best.rim_below_cusps_mm,
+        void_ratio=best.void_ratio,
+        density_prior_used=best.density_prior_used,
+        dp_gap_fraction=best.dp_gap_fraction,
+        bearing_margin=best.bearing_margin,
+    )
 
 
 def jaw_from_crown_axis(axis) -> Optional[str]:
@@ -311,6 +347,10 @@ def detect(case: CaseRecord) -> DetectionResult:
             rim_below_cusps_mm=float(p.rim_below_cusps_mm),
             tooth_guess=tooth_guess_for(p.center, case.suggested_sites),
             capture=_capture_at(ctx, seed[:2], hint),
+            density_prior_used=bool(p.density_prior_used),
+            # island has not run at Intake; DP fields stay None (honest absence)
+            dp_gap_fraction=None,
+            bearing_margin=None,
         ))
 
     variant_table = _variant_table_for(case)
@@ -330,7 +370,7 @@ def detect(case: CaseRecord) -> DetectionResult:
         height = (measured_cap_height_mm(ctx, centre_xy, measured_dia / 2.0,
                                          cap.get("rim_z_mm"))
                  if measured_dia is not None else None)
-        below, ratio = candidate_evidence_for(center, proposals)
+        evidence = candidate_evidence_for(center, proposals)
         suggested.append(SuggestedSiteCapture(
             tooth=int(s["tooth"]),
             center=(tuple(float(c) for c in center) if center is not None else None),
@@ -338,8 +378,11 @@ def detect(case: CaseRecord) -> DetectionResult:
             measured_cap_height_mm=height,
             proposed_variant=propose_variant(measured_dia, height, variant_table),
             measured_rim_diameter_mm=measured_dia,
-            rim_below_cusps_mm=below,
-            void_ratio=ratio,
+            rim_below_cusps_mm=evidence.rim_below_cusps_mm,
+            void_ratio=evidence.void_ratio,
+            density_prior_used=evidence.density_prior_used,
+            dp_gap_fraction=evidence.dp_gap_fraction,
+            bearing_margin=evidence.bearing_margin,
         ))
 
     axis = tuple(float(c) for c in ctx.frame[:, 2])  # _crowns_frame's third column -- expose, don't recompute
