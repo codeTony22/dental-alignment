@@ -202,6 +202,9 @@ class DetectedProposalView(BaseModel):
     rim_below_cusps_mm: float
     tooth_guess: Optional[int]
     capture: dict
+    density_prior_used: Optional[bool] = None
+    dp_gap_fraction: Optional[float] = None
+    bearing_margin: Optional[List[float]] = None
 
 
 class DetectionView(BaseModel):
@@ -228,6 +231,11 @@ class DetectionView(BaseModel):
     # server-derived breaks no trust rule (rule 8: disclose what the worker knows).
     site_rim_below_cusps_mm: Dict[str, Optional[float]] = Field(default_factory=dict)
     site_void_ratio: Dict[str, Optional[float]] = Field(default_factory=dict)
+    # P4.1 — curve honesty (density prior, DP gap, per-bearing margin). Same
+    # tooth-keyed maps as rim/void; measurements, not statuses.
+    site_density_prior_used: Dict[str, Optional[bool]] = Field(default_factory=dict)
+    site_dp_gap_fraction: Dict[str, Optional[float]] = Field(default_factory=dict)
+    site_bearing_margin: Dict[str, Optional[List[float]]] = Field(default_factory=dict)
 
 
 class EffectiveChoiceView(BaseModel):
@@ -1072,6 +1080,11 @@ def _detection_record(result: DetectionResult) -> DetectionRecord:
             center=list(p.center), void_ratio=p.void_ratio,
             rim_below_cusps_mm=p.rim_below_cusps_mm,
             tooth_guess=p.tooth_guess, capture=p.capture,
+            density_prior_used=getattr(p, "density_prior_used", None),
+            dp_gap_fraction=getattr(p, "dp_gap_fraction", None),
+            bearing_margin=([float(x) for x in p.bearing_margin]
+                            if getattr(p, "bearing_margin", None) is not None
+                            else None),
         ) for p in result.proposals],
         site_capture={str(s.tooth): s.capture for s in result.suggested},
         jaw_reading=result.jaw_reading,
@@ -1093,6 +1106,17 @@ def _detection_record(result: DetectionResult) -> DetectionRecord:
         site_void_ratio={
             str(s.tooth): getattr(s, "void_ratio", None)
             for s in result.suggested},
+        site_density_prior_used={
+            str(s.tooth): getattr(s, "density_prior_used", None)
+            for s in result.suggested},
+        site_dp_gap_fraction={
+            str(s.tooth): getattr(s, "dp_gap_fraction", None)
+            for s in result.suggested},
+        site_bearing_margin={
+            str(s.tooth): ([float(x) for x in s.bearing_margin]
+                           if getattr(s, "bearing_margin", None) is not None
+                           else None)
+            for s in result.suggested},
     )
 
 
@@ -1108,6 +1132,9 @@ def _detection_view(session: CaseSession) -> Optional[DetectionView]:
         site_measured_diameter_mm=session.detection.site_measured_diameter_mm,
         site_rim_below_cusps_mm=session.detection.site_rim_below_cusps_mm,
         site_void_ratio=session.detection.site_void_ratio,
+        site_density_prior_used=session.detection.site_density_prior_used,
+        site_dp_gap_fraction=session.detection.site_dp_gap_fraction,
+        site_bearing_margin=session.detection.site_bearing_margin,
     )
 
 
@@ -2329,6 +2356,18 @@ def _mint_run_id() -> str:
     return f"{stamp}-{uuid.uuid4().hex[:6]}"
 
 
+def _rescan_recapture_sentence(capture: dict) -> str:
+    """The capture gate's own recapture copy — the worst rescan check's message,
+    the same sentence Intake's banner already quotes. Never a second vocabulary
+    invented at the authorized-run gate (P4.2)."""
+    for check in capture.get("checks") or []:
+        if isinstance(check, dict) and check.get("verdict") == "rescan":
+            msg = check.get("message")
+            if isinstance(msg, str) and msg.strip():
+                return msg.strip()
+    return "Capture quality is below the rescan threshold."
+
+
 def _authorized_selection(case: CaseRecord, case_id: str,
                           session: CaseSession) -> dict:
     """THE AUTHORIZED GATE, server-minted (AM-8): the full run fires only when the
@@ -2385,6 +2424,18 @@ def _authorized_selection(case: CaseRecord, case_id: str,
                 missing.append(f"tooth {view.tooth} re-previewed and re-reviewed "
                                f"— its review attested a seat the case's current "
                                f"selection no longer describes")
+    if session.detection is not None:
+        # P4.2 — a capture-gate rescan is a hard run refusal. The instruments
+        # already exist on site_capture; this names the gate's own recapture
+        # sentence so the operator rescans while the patient is still seated.
+        # Missing detection is not a refusal (honest absence — the gate has not
+        # spoken). pass/marginal do not block.
+        for view in sites:
+            cap = session.detection.site_capture.get(str(view.tooth))
+            if isinstance(cap, dict) and cap.get("verdict") == "rescan":
+                missing.append(
+                    f"tooth {view.tooth} recaptured while the patient is in the "
+                    f"chair — {_rescan_recapture_sentence(cap)}")
     if missing:
         raise HTTPException(422, f"the run is not authorized yet — case {case_id!r} "
                                  f"still needs: " + "; ".join(missing))

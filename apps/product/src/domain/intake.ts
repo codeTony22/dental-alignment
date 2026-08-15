@@ -744,6 +744,36 @@ export function discriminatorEvidenceSentence(
   );
 }
 
+/**
+ * P4.1 — density prior + DP ring honesty on the Intake digest.
+ *
+ * False is a measurement ("density prior off"). Missing/null is no sentence.
+ * A DP gap of 0 is a measurement ("inferred across 0%"); null is absence,
+ * never a zero standing in for an island that has not run.
+ */
+export function curveHonestySentence(
+  detail: CaseSessionDetail,
+  site: SiteView,
+): string | null {
+  const key = String(site.tooth);
+  const parts: string[] = [];
+  const prior = detail.detection?.site_density_prior_used?.[key];
+  if (prior === true) parts.push("density prior used");
+  else if (prior === false) parts.push("density prior off");
+  const gap = detail.detection?.site_dp_gap_fraction?.[key];
+  if (gap != null) {
+    parts.push(`rim DP inferred across ${(gap * 100).toFixed(0)}% of bearings`);
+  }
+  const margin = detail.detection?.site_bearing_margin?.[key];
+  if (margin != null && margin.length > 0) {
+    const finite = margin.filter((x) => Number.isFinite(x));
+    if (finite.length > 0) {
+      parts.push(`weakest DP margin ${Math.min(...finite).toFixed(2)}`);
+    }
+  }
+  return parts.length === 0 ? null : parts.join(" · ");
+}
+
 /** The construction dropdown's rows, extracted from the worker-shaped catalog rows
  * (untyped on the wire until Declare gives them real shapes — slice 5a): a row without
  * a string path_id cannot be chosen and is dropped rather than rendered as a lie.

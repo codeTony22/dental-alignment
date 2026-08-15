@@ -277,6 +277,60 @@ class TestTheAuthorizedGate:
         assert "the construction part" in detail
 
 
+    def test_a_starved_rim_refuses_the_run_with_the_gates_own_sentence(
+            self, settings, product_root):
+        """P4.2: a capture-gate rescan is a hard authorized-run refusal, using
+        the gate's own recapture copy — not a new sentence this layer invents.
+        The operator recaptures while the patient can still be scanned."""
+        from bff.session import DetectionRecord
+        seed_ready(product_root)
+        store = SessionStore(product_root)
+        s = store.load("neodent-gm")
+        recapture = ("Too little scan surface at the marked site to measure "
+                     "capture quality — rescan the cap area.")
+        s.detection = DetectionRecord(
+            site_capture={
+                "4": {"verdict": "pass", "checks": []},
+                "13": {
+                    "verdict": "rescan",
+                    "checks": [{"name": "rim_arc", "verdict": "rescan",
+                                "message": recapture}],
+                },
+            },
+        )
+        store.save(s)
+        worker = FakeWorker(summary=summary_for([row(4), row(13)]))
+        client = client_with(settings, worker)
+        res = client.post("/api/case-sessions/neodent-gm/run")
+        assert res.status_code == 422
+        detail = res.json()["detail"]
+        assert "not authorized" in detail
+        assert "tooth 13" in detail
+        assert recapture in detail
+        assert "tooth 4" not in detail  # the healthy site is not named
+        assert worker.submitted == []
+
+    def test_a_healthy_capture_does_not_block_the_authorized_run(
+            self, settings, product_root):
+        """P4.2 acceptance: a cap6030-class (pass) site is not refused for capture."""
+        from bff.session import DetectionRecord
+        seed_ready(product_root)
+        store = SessionStore(product_root)
+        s = store.load("neodent-gm")
+        s.detection = DetectionRecord(
+            site_capture={
+                "4": {"verdict": "pass", "checks": []},
+                "13": {"verdict": "marginal", "checks": []},
+            },
+        )
+        store.save(s)
+        worker = FakeWorker(summary=summary_for([row(4), row(13)]))
+        client = client_with(settings, worker)
+        res = client.post("/api/case-sessions/neodent-gm/run")
+        assert res.status_code == 200, res.text
+        assert worker.submitted  # the run actually fired
+
+
 # --- the authorized run + landing --------------------------------------------------
 
 class TestTheRunLands:

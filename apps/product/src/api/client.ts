@@ -170,6 +170,11 @@ export interface DetectedProposalView {
   rim_below_cusps_mm: number;
   tooth_guess: number | null;
   capture: CaptureAssessmentView;
+  /** P4.1 — whether the tessellation prior fired at this proposal. Optional
+   *  so a payload predating the field still types; false is a real "off". */
+  density_prior_used?: boolean | null;
+  dp_gap_fraction?: number | null;
+  bearing_margin?: number[] | null;
 }
 
 export interface DetectionView {
@@ -202,6 +207,12 @@ export interface DetectionView {
    *  measurement the detector never took. */
   site_rim_below_cusps_mm?: Record<string, number | null>;
   site_void_ratio?: Record<string, number | null>;
+  /** P4.1 — curve honesty, keyed by tooth like the pair above. `false` is
+   *  "density prior off" (a measurement); missing/null is honest absence,
+   *  never rendered as zero or "off". DP fields are null until island ran. */
+  site_density_prior_used?: Record<string, boolean | null>;
+  site_dp_gap_fraction?: Record<string, number | null>;
+  site_bearing_margin?: Record<string, number[] | null>;
 }
 
 /** One case-level choice as the automation consumes it (the SystemView pattern

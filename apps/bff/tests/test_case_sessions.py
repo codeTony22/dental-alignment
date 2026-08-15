@@ -518,6 +518,55 @@ class TestMeasuredVariantSuggestion:
         body = client.get("/api/case-sessions/neodent-gm").json()
         assert body["detection"]["site_rim_below_cusps_mm"] == {}
         assert body["detection"]["site_void_ratio"] == {}
+        # P4.1 — same additivity for the curve-honesty maps
+        assert body["detection"]["site_density_prior_used"] == {}
+        assert body["detection"]["site_dp_gap_fraction"] == {}
+        assert body["detection"]["site_bearing_margin"] == {}
+
+
+class TestCurveHonestyEvidence:
+    """P4.1: density_prior_used / DP gap / per-bearing margin ride the detection
+    view the same way rim_below_cusps / void_ratio already do. Measurements, not
+    statuses. Pre-field records serve empty; None stays None, never a zero."""
+
+    def _client_detected_with(self, settings, monkeypatch, result):
+        def stub(case):
+            return result
+
+        monkeypatch.setattr(case_sessions, "detect", stub)
+        client = TestClient(create_app(settings))
+        client.post("/api/case-sessions/neodent-gm/detect")
+        return client
+
+    def test_curve_honesty_rides_the_detection_view(self, settings, monkeypatch):
+        result = dataclasses.replace(stub_detection(), suggested=(
+            SuggestedSiteCapture(tooth=4, center=(1.0, 2.0, 3.0), capture=CAP_PASS,
+                                 density_prior_used=None, dp_gap_fraction=None,
+                                 bearing_margin=None),
+            SuggestedSiteCapture(tooth=13, center=(4.0, 5.0, 6.0), capture=CAP_RESCAN,
+                                 density_prior_used=False, dp_gap_fraction=0.18,
+                                 bearing_margin=(0.4, 0.05, 0.9)),
+        ))
+        client = self._client_detected_with(settings, monkeypatch, result)
+        body = client.get("/api/case-sessions/neodent-gm").json()
+        assert body["detection"]["site_density_prior_used"] == {"4": None, "13": False}
+        assert body["detection"]["site_dp_gap_fraction"] == {"4": None, "13": 0.18}
+        assert body["detection"]["site_bearing_margin"] == {
+            "4": None, "13": [0.4, 0.05, 0.9],
+        }
+
+    def test_proposals_carry_density_prior_used(self, settings, monkeypatch):
+        result = dataclasses.replace(stub_detection(), proposals=(
+            DetectedSite(center=(1.0, 2.0, 3.0), void_ratio=0.10,
+                         rim_below_cusps_mm=0.5, tooth_guess=4, capture=CAP_PASS,
+                         density_prior_used=True),
+        ))
+        client = self._client_detected_with(settings, monkeypatch, result)
+        body = client.get("/api/case-sessions/neodent-gm").json()
+        assert body["detection"]["proposals"][0]["density_prior_used"] is True
+        # island has not run at detect — DP absence is null, never 0
+        assert body["detection"]["proposals"][0]["dp_gap_fraction"] is None
+        assert body["detection"]["proposals"][0]["bearing_margin"] is None
 
 
 class TestJawReadingCrossCheck:
