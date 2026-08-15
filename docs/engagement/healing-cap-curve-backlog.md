@@ -57,7 +57,7 @@ seed; same closure metric as the probe; `SHADOW_ISLAND` consumes the new ring
 and still does not move shipped poses (`test_island.py` zero-pose-movement
 contract).
 
-**P2.2 Per-bearing confidence** (alignment, then backend)
+**P2.2 Per-bearing confidence** (alignment, then backend) — **done** 2026-08-15
 
 Emit the DP cost margin per 15° bin. Dual-report next to
 `capture_gate._rim_arc_check` until they agree on the fleet. One instrument
@@ -66,11 +66,17 @@ instead of two is the end state, not the first ship.
 Acceptance: additive fields; pre-field records serve empty; statuses-walk test
 stays green.
 
+Delivered: `auto_flow.py` island row now includes `dp_gap_fraction` (0–1 float)
+and `bearing_margin` (list of per-bin floats). Pre-field records already carried
+`None` for both. Slow integration test assertion updated additively — the exact
+key-set assertion is replaced with a superset check plus value-range guards.
+SHADOW_ISLAND stays True; capture_gate NOT retired (dual-report phase).
+
 ---
 
 ## P3 — density as prior
 
-**P3.1 Informativeness gate + additive prior on `find_cap_sites`** (alignment)
+**P3.1 Informativeness gate + additive prior on `find_cap_sites`** (alignment) — **done** 2026-08-15
 
 Percentile-normalise local tessellation per file. If the field is flat, disable
 the prior and say so. **Pin the t4 inversion as a test that the prior must
@@ -82,6 +88,18 @@ Acceptance:
   existing rim-slab stack.
 - Detection recall does not drop below 8/10 on this fleet.
 - Recall gain, if any, is a bonus — not sold as 8/10 → 10/10.
+
+Delivered: `CapSiteCandidate.density_prior_used: bool = False` (additive field,
+defaults False for all existing callers). `find_cap_sites` accepts `faces:
+Optional[np.ndarray]`. Gate: `_density_field_is_informative` (p90/p10 ≥ 1.5 of
+density ratios across FPS candidates). Per-site label: ratio ≥ 1.0 at the
+refined candidate xy AND field informative → `density_prior_used=True`. Inverted
+density (ratio < 1.0, t4 case) → False. Extra FPS seeds from finest 5% face
+centroids in the band when informative (additive only — no candidate removed).
+`propose_sites` now accepts `faces`; `application/detection.py` passes
+`scan.faces`. Tests: `test_density_prior_used_field_exists_and_defaults_false`,
+`test_density_prior_false_on_uniform_mesh`, `test_inverted_density_disables_prior`
+(@slow). Fast tests: 2 passed. No millimetre claim made — needs data-science.
 
 ---
 

@@ -100,10 +100,15 @@ class ConfirmedSite:
 
 def propose_sites(scan_points: np.ndarray,
                   normals: Optional[np.ndarray] = None,
-                  max_sites: int = 8) -> List[ProposedSite]:
-    """Ranked healing-cap proposals for operator confirmation (best evidence first)."""
+                  max_sites: int = 8,
+                  faces: Optional[np.ndarray] = None) -> List[ProposedSite]:
+    """Ranked healing-cap proposals for operator confirmation (best evidence first).
+
+    Pass ``faces`` (integer array, same vertex ordering as ``scan_points``) to enable
+    the P3.1 density informativeness prior — extra seeds at the finest few face
+    centroids when the tessellation field is informative and not inverted."""
     candidates = find_cap_sites(np.asarray(scan_points, float),
-                                max_sites=max_sites, normals=normals)
+                                max_sites=max_sites, normals=normals, faces=faces)
     ranked = sorted(candidates, key=lambda c: c.void_ratio)
     return [ProposedSite(c.center, c.void_ratio, c.rim_below_cusps_mm) for c in ranked]
 

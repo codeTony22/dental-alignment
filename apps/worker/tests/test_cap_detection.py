@@ -186,6 +186,148 @@ def test_dr_arch_batch_caps_are_proposed(rel, center, note):
     assert len(sites) <= 6, f"proposal count {len(sites)} exceeds the accepted candidate budget"
 
 
+# -------------------------------------------------------------------------------------
+# P3.1 — density informativeness gate + density_prior_used field on CapSiteCandidate
+# -------------------------------------------------------------------------------------
+
+def _triangulated_grid(x0, x1, y0, y1, nx, ny, z=0.0):
+    """A flat triangulated grid (nx×ny vertices → 2*(nx-1)*(ny-1) triangles).
+    Smaller grid → larger triangles → coarser tessellation (lower density)."""
+    xs = np.linspace(x0, x1, nx)
+    ys = np.linspace(y0, y1, ny)
+    xx, yy = np.meshgrid(xs, ys)
+    verts = np.c_[xx.ravel(), yy.ravel(), np.full(xx.size, z)]
+    faces = []
+    for i in range(ny - 1):
+        for j in range(nx - 1):
+            v00 = i * nx + j
+            v10 = (i + 1) * nx + j
+            v01 = i * nx + j + 1
+            v11 = (i + 1) * nx + j + 1
+            faces.append([v00, v10, v01])
+            faces.append([v10, v11, v01])
+    return verts, np.array(faces, dtype=int)
+
+
+def _cap_ring_cloud(cap_xy=(0.0, 0.0), rim_r=2.5, rim_z=0.0, n=400):
+    """A cap ring (disk with void centre) that the rim-slab test recognises.
+    Used to build a uniform mesh: join with _triangulated_grid."""
+    ang = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    rad = np.sqrt(np.random.default_rng(99).uniform(1.3**2, 2.6**2, n))
+    pts = np.c_[cap_xy[0] + rad * np.cos(ang),
+                cap_xy[1] + rad * np.sin(ang),
+                np.full(n, rim_z)]
+    return pts
+
+
+def _inverted_density_cap_mesh(cap_xy=(0.0, 0.0)):
+    """Mesh where the cap region (within 3 mm) has COARSER triangles than the surrounding
+    tissue (6–12 mm annulus). This is the neodent-gm t4 inversion: density ratio < 1.
+
+    Strategy: cap area = coarse grid (3×3); tissue = fine grid (30×30). The cap ring
+    structure is embedded as additional vertices with a coarse triangulation, so `find_cap_sites`
+    can see the ring while the triangle density at the cap < tissue.
+    """
+    cx, cy = cap_xy
+
+    # Fine tissue grid (3mm–15mm away, many small triangles)
+    tv, tf = _triangulated_grid(-16, 16, -16, 16, nx=60, ny=60, z=0.0)
+    # Only keep tissue vertices that are in the 6–14 mm annulus from cap (the density check region)
+    tv_d = np.hypot(tv[:, 0] - cx, tv[:, 1] - cy)
+    keep = tv_d > 4.5
+    keep_idx = np.where(keep)[0]
+    idx_map = {old: new for new, old in enumerate(keep_idx)}
+    tv = tv[keep_idx]
+    valid_tf = np.array([[idx_map[i] for i in tri]
+                         for tri in tf if all(i in idx_map for i in tri)])
+    tf = valid_tf if len(valid_tf) else np.zeros((0, 3), dtype=int)
+
+    # Coarse cap grid (within 3 mm — large triangles, inverts the density)
+    cv, cf = _triangulated_grid(cx - 3.5, cx + 3.5, cy - 3.5, cy + 3.5, nx=6, ny=6, z=0.0)
+    offset = len(tv)
+    cf = cf + offset
+
+    # Cap ring points so the rim-slab test can find the structure
+    n_ring = 200
+    ang = np.linspace(0, 2 * np.pi, n_ring, endpoint=False)
+    rad = np.linspace(1.3, 2.6, n_ring)
+    ring_pts = np.c_[cx + rad * np.cos(ang), cy + rad * np.sin(ang), np.full(n_ring, 2.0)]
+    # Wall points below rim
+    wall_pts = np.c_[cx + 2.6 * np.cos(ang), cy + 2.6 * np.sin(ang), np.linspace(0.0, 1.8, n_ring)]
+    # Teeth (needed for height context and arch band)
+    rng = np.random.default_rng(77)
+    tooth_pts = []
+    for tcx in (-7.0, 7.0):
+        t = _dome([tcx, 0, 2.0], radius=3.0, n=2000, rng=rng, roughness=0.2)
+        t[:, 2] += 2.0
+        tooth_pts.append(t)
+    # Gingiva sheet
+    ging = _sheet(rng)
+
+    extra_pts = np.vstack([ring_pts, wall_pts, *tooth_pts, ging])
+    n_extra = len(extra_pts)
+    extra_v_offset = len(tv) + len(cv)
+
+    all_verts = np.vstack([tv, cv, extra_pts])
+    all_faces = np.vstack([tf, cf]) if len(tf) and len(cf) else (tf if len(tf) else cf)
+    return all_verts, all_faces
+
+
+class TestDensityPrior:
+    """P3.1 — density informativeness gate and density_prior_used flag on CapSiteCandidate."""
+
+    def test_density_prior_used_field_exists_and_defaults_false(self):
+        """CapSiteCandidate.density_prior_used is a field that defaults to False.
+        When no faces are provided, every proposal carries density_prior_used=False."""
+        rng = np.random.default_rng(20)
+        cloud = _cap_scene(rng)
+        sites = find_cap_sites(cloud, normals=_up_normals(cloud))
+        # structural: the field must exist
+        for s in sites:
+            assert hasattr(s, "density_prior_used"), (
+                "density_prior_used field missing from CapSiteCandidate")
+            assert s.density_prior_used is False, (
+                "density_prior_used must be False when faces=None")
+
+    def test_density_prior_false_on_uniform_mesh(self):
+        """A uniform tessellation (all triangles same size) has a flat density field.
+        p90/p10 of local densities ≈ 1 → informativeness gate disables the prior."""
+        # Uniform flat mesh: no cap ring structure here, just checking the gate alone.
+        # find_cap_sites may return zero proposals on a flat uniform sheet — that's fine;
+        # the invariant is: ANY proposal must have density_prior_used=False.
+        nx = ny = 40
+        verts, faces = _triangulated_grid(-15, 15, -15, 15, nx=nx, ny=ny, z=0.0)
+        normals = np.tile([0.0, 0.0, 1.0], (len(verts), 1))
+        sites = find_cap_sites(verts, normals=normals, faces=faces)
+        for s in sites:
+            assert not s.density_prior_used, (
+                f"density_prior_used=True on a FLAT uniform mesh — "
+                f"the informativeness gate must disable the prior")
+
+    @pytest.mark.slow
+    def test_inverted_density_disables_prior(self):
+        """t4-like: the cap region has COARSER triangles than tissue (density ratio < 1).
+        The density prior must be disabled (density_prior_used=False) for every proposal.
+        The site must still be proposed by the existing rim-slab stack (recall invariant)."""
+        verts, faces = _inverted_density_cap_mesh()
+        normals = np.tile([0.0, 0.0, 1.0], (len(verts), 1))
+        sites = find_cap_sites(verts, normals=normals, faces=faces)
+        # recall: the ring structure is present, so the rim-slab stack must propose it
+        cx, cy = 0.0, 0.0
+        cap_found = any(
+            np.hypot(np.asarray(s.center)[0] - cx, np.asarray(s.center)[1] - cy) < 3.0
+            for s in sites
+        )
+        assert cap_found, (
+            "recall regression: the cap ring must still be proposed by the rim-slab stack "
+            "even when the density prior is disabled by inversion")
+        # density prior must NOT be active (inverted density = coarser cap than tissue)
+        for s in sites:
+            assert not s.density_prior_used, (
+                f"density_prior_used=True for inverted density — "
+                f"the prior must be disabled, not anti-correlated with the cap")
+
+
 _ALL_REAL_ARCHES = sorted(
     p.name for p in (Path(__file__).parents[1] / "data/real/scans").glob("doctor-*")
 ) if (Path(__file__).parents[1] / "data/real/scans").exists() else []
