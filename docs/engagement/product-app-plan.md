@@ -3215,6 +3215,26 @@ the one that ships — is fully green. Merged over the excision slice's
 guard-pin rework by hand (the two rewrites of one pin fused: excision
 semantics + engine awareness).
 
+**AT the moat bridge + orphan flaps (2026-08-15 night, client: "a lot
+of space and residue on the scan").** Defect A: orphan_flap_mask —
+scan-provenance components lying entirely within the site cylinder and
+disconnected from the arch are cap remnant BY CONNECTIVITY (real gum
+always connects; no threshold to tune) — dropped in all four consumers;
+red-proven 8/8→0/8 and 112/128→0/128. Defect B: _bridge_recess_collar —
+the machined mouth zipped to the scan's own opening loop (roundness gate
+0.3mm radial std tells a moat ring from an unrelated cut edge; real
+points only, one weld) closing the moat 2 loops→1, with the client's
+verbatim disclosure note per bridged site; fail-open never mangles a
+ring. KNOWN LIMITATION, integration-measured: a real coded cap's imprint
+carries 26–37 boundary loops, so the exactly-one mouth rule SKIPS (with
+its note) on real caps today — two quick classifiers were tried at
+integration and each mis-modelled a different population, so the
+real-cap mouth classifier goes probe-first as the immediate follow-up
+rather than a guess. The two real-template pins read the bridge channel
+(fired OR skipped) as disclosure, never fallback. Gates: deliverables+
+isolation 102 incl. real slow pins, fast lane 1146 FULL (the parallel
+session's curve work landed and green beside this).
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.
