@@ -15,10 +15,13 @@ shipped numbers and consumes it nowhere (auto_flow.SHADOW_ISLAND).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import NamedTuple, Optional, Tuple
 
 import numpy as np
 from scipy.spatial import cKDTree
+
+from case_prep.domain.circle_fit import fit_circle_xy_or_kasa
+from case_prep.domain.ring_dp import periodic_min_path
 
 # A scan point counts as explained by the posed template within this distance (the same
 # tolerance production coverage uses — auto_flow._COVERAGE_TOL_MM).
@@ -123,13 +126,28 @@ class IslandReading:
     centre_from_seed_mm: Optional[float] = None
     contamination_est: Optional[float] = None   # see segment_island docstring
     radius_spread_mm: Optional[float] = None    # max-min of the multi-phase radius pool
+    dp_gap_fraction: Optional[float] = None     # share of bearings inferred across a gap
+    bearing_margin: Optional[Tuple[float, ...]] = None  # per-θ DP cost margin
+
+
+class RingFit(NamedTuple):
+    """One closed-ring reading. Indexable like the old 5-tuple (centre, radius,
+    r_edge, plane, rim_z); DP honesty fields trail."""
+    centre: np.ndarray
+    radius: float
+    r_edge: float
+    plane: np.ndarray
+    rim_z: float
+    dp_gap_fraction: Optional[float] = None
+    bearing_margin: Optional[Tuple[float, ...]] = None
 
 
 def _kasa(xy: np.ndarray) -> Tuple[np.ndarray, float]:
-    A = np.c_[2.0 * xy, np.ones(len(xy))]
-    sol, *_ = np.linalg.lstsq(A, (xy ** 2).sum(axis=1), rcond=None)
-    c = sol[:2]
-    return c, float(np.sqrt(max(sol[2] + c @ c, 1e-12)))
+    fit = fit_circle_xy_or_kasa(xy)
+    if fit is not None:
+        return fit
+    c = np.asarray(xy, float).mean(axis=0)
+    return c, 0.0
 
 
 def _rim_slab_ratio(L: np.ndarray, xy_tree: cKDTree, c: np.ndarray) -> Optional[float]:
@@ -158,16 +176,17 @@ def _rim_slab_ratio(L: np.ndarray, xy_tree: cKDTree, c: np.ndarray) -> Optional[
 
 
 def _ring_fit(L: np.ndarray, xy_tree: cKDTree, c0: np.ndarray, use_plane: bool,
-              phase: float = 0.0):
-    """Closed-ring EDGE scan about ``c0``: the cap's ring is CLOSED (>=10/12 bearings
-    within +-0.4 of one height/plane) from the recess outward TO ITS RIM EDGE; closure
-    breaks at the crevice / sulcus gap / tissue step. Kasa on the OUTER ring band only
-    (a full-slab Kasa drags toward gingiva plateaus at rim height — measured 1.5mm
-    jumps). ``phase`` offsets the r-grid start (the multi-phase radius instrument
-    resamples the same anatomy at shifted grid alignments — see RADIUS_GRID_PHASES).
-    Returns (centre, ring_r, r_edge, plane, rim_z) or None."""
+              phase: float = 0.0) -> Optional[RingFit]:
+    """Closed-ring EDGE scan about ``c0``: occupancy on a (θ, r) cylinder, then a
+    periodic DP path (r_0 = r_N) whose outer bias prefers the true rim over an
+    inner code-step. Circle-fit the points near that path. The longest-contiguous
+    -run heuristic this replaced was grid-phase-bistable on cap6030 (1.81 ↔ 2.64).
+    ``phase`` still offsets the r-grid so the multi-phase pool can report spread;
+    a healthy DP reading is stable across phases. Returns RingFit or None."""
     cur = np.asarray(c0, float).copy()
-    out = None
+    out: Optional[RingFit] = None
+    n_theta = 24
+    bin_w = 360.0 / n_theta
     for _ in range(3):
         near = L[xy_tree.query_ball_point(cur, 5.2)]
         rr = np.linalg.norm(near[:, :2] - cur, axis=1)
@@ -193,33 +212,24 @@ def _ring_fit(L: np.ndarray, xy_tree: cKDTree, c0: np.ndarray, use_plane: bool,
         h = near[:, 2] - (near[:, :2] @ pl[:2] + pl[2])
         ang = np.arctan2(near[:, 1] - cur[1], near[:, 0] - cur[0])
         r_grid = np.arange(1.1 + phase, 4.6, 0.15)
-        closed = np.zeros(len(r_grid), bool)
+        th_deg = np.degrees(ang)
+        tb = np.floor((th_deg + 180.0) / bin_w).astype(int) % n_theta
+        w = np.zeros((n_theta, len(r_grid)))
         for i, r0 in enumerate(r_grid):
             m = (rr >= r0) & (rr < r0 + 0.3) & (np.abs(h) < 0.4)
-            if m.sum() >= 8:
-                closed[i] = len(set(((np.degrees(ang[m]) + 180) // 30
-                                     ).astype(int))) >= 10
-        if not closed.any():
+            if m.any():
+                w[:, i] = np.bincount(tb[m], minlength=n_theta).astype(float)
+        if float(w.max()) <= 0.0:
             break
-        # LONGEST contiguous closed run (gaps <=1 cell) — the dominant ring band
-        runs = []
-        i = 0
-        while i < len(r_grid):
-            if not closed[i]:
-                i += 1
-                continue
-            j, gap, last = i, 0, i
-            while j + 1 < len(r_grid) and gap <= 1:
-                j += 1
-                if closed[j]:
-                    last, gap = j, 0
-                else:
-                    gap += 1
-            runs.append((int(closed[i:last + 1].sum()), i, last))
-            i = last + 1
-        _, _i0, i1 = max(runs)
-        r_edge = float(r_grid[i1] + 0.15)
-        band = near[(rr >= r_edge - 0.55) & (rr <= r_edge + 0.15) & (np.abs(h) < 0.45)]
+        pos = w[w > 0]
+        w = w / max(float(np.percentile(pos, 75)), 1.0)
+        path = periodic_min_path(w, lam=0.35, max_step=2, outer_bias=0.04)
+        if path is None:
+            break
+        r_path = r_grid[path.r_index]
+        r_edge = float(np.median(r_path) + 0.15)
+        r_at = r_path[tb]
+        band = near[(np.abs(rr - r_at) < 0.40) & (np.abs(h) < 0.45)]
         if len(band) < 30:
             break
         c2, r2 = _kasa(band[:, :2])
@@ -227,7 +237,11 @@ def _ring_fit(L: np.ndarray, xy_tree: cKDTree, c0: np.ndarray, use_plane: bool,
             break  # contamination jump — keep the previous result
         moved = float(np.linalg.norm(c2 - cur))
         cur = c2
-        out = (c2, float(r2), r_edge, pl, rz)
+        out = RingFit(
+            centre=c2, radius=float(r2), r_edge=r_edge, plane=pl, rim_z=rz,
+            dp_gap_fraction=float(path.gap_fraction),
+            bearing_margin=tuple(float(x) for x in path.bearing_margin),
+        )
         if moved < 0.05:
             break
     return out
@@ -370,15 +384,18 @@ def segment_island(points_local: np.ndarray, seed_xy: np.ndarray,
                              void_ratio=ratio0)
     # STRICT-FIRST centre (see docstring); extent/plane prefer the plane fit
     chosen = fit_strict if fit_strict is not None else fit_plane
-    cur, _ring_r, _r_edge, _pl, rim_z = chosen
+    cur = chosen.centre
+    rim_z = chosen.rim_z
     ext = fit_plane if fit_plane is not None else chosen
-    plane = ext[3]
-    # the rim radius is the multi-phase MEDIAN (see _multi_phase_radius) — the
-    # single-phase fit is grid-phase-bistable on inner-ring caps (the cap6030 defect)
+    plane = ext.plane
+    dp_gap = chosen.dp_gap_fraction
+    bearing_margin = chosen.bearing_margin
+    # the rim radius is the multi-phase MEDIAN (see _multi_phase_radius) — DP
+    # retired the grid-phase coin flip; spread remaining is the honesty leftover
     rim_r, rim_r_spread = _multi_phase_radius(L, xy_tree, c_void,
                                               use_plane=fit_plane is not None)
     if rim_r is None:  # the phase-0 fit above succeeded, so the pool cannot be empty
-        rim_r, rim_r_spread = float(ext[1]), 0.0
+        rim_r, rim_r_spread = float(ext.radius), 0.0
 
     # island extent: radial march per bin outward from JUST INSIDE THE MEASURED RIM
     # (the island cannot end inside the rim circle — the fixed 1.2mm start accepted
@@ -480,7 +497,8 @@ def segment_island(points_local: np.ndarray, seed_xy: np.ndarray,
             n_boundary=len(b_radii), bins_hit=bins_hit,
             boundary_spread_mm=boundary_spread, void_ratio=ratio0,
             centre_from_seed_mm=d_seed, contamination_est=contamination,
-            radius_spread_mm=rim_r_spread)
+            radius_spread_mm=rim_r_spread,
+            dp_gap_fraction=dp_gap, bearing_margin=bearing_margin)
 
     # evidence QUALITY first (the most honest diagnosis on starved/flat geometry —
     # a featureless plane reads ratio ~1 and should say so, not blame the seed),
@@ -502,4 +520,5 @@ def segment_island(points_local: np.ndarray, seed_xy: np.ndarray,
         n_boundary=len(b_radii), bins_hit=bins_hit,
         boundary_spread_mm=boundary_spread, void_ratio=ratio0,
         centre_from_seed_mm=d_seed, contamination_est=contamination,
-        radius_spread_mm=rim_r_spread)
+        radius_spread_mm=rim_r_spread,
+        dp_gap_fraction=dp_gap, bearing_margin=bearing_margin)

@@ -33,6 +33,7 @@ from scipy.spatial import cKDTree
 from case_prep.adapters.booleans import offset_surface, screw_channel
 from case_prep.adapters.ingest import canonicalize_library
 from case_prep.domain import design_rules
+from case_prep.domain.circle_fit import fit_circle_xy_or_kasa
 from case_prep.domain.channel import ChannelGeometry, channel_from_boundary_loops
 
 DEFAULT_SCREW_RADIUS_MM = 1.0   # prosthetic screw-access channels run ~2mm diameter
@@ -137,11 +138,12 @@ class DeliveredChannel:
 
 
 def _kasa_circle(xy: np.ndarray) -> Tuple[np.ndarray, float]:
-    """Least-squares circle (centre, radius) — the project's standard Kasa fit."""
-    A = np.c_[2.0 * xy, np.ones(len(xy))]
-    sol, *_ = np.linalg.lstsq(A, (xy ** 2).sum(axis=1), rcond=None)
-    c = sol[:2]
-    return c, float(np.sqrt(max(sol[2] + c @ c, 0.0)))
+    """Least-squares circle (centre, radius) — Taubin, Kasa if Taubin refuses."""
+    fit = fit_circle_xy_or_kasa(xy)
+    if fit is not None:
+        return fit
+    c = np.asarray(xy, float).mean(axis=0)
+    return c, 0.0
 
 
 def _inside_loop(pt: np.ndarray, poly: np.ndarray) -> bool:

@@ -100,10 +100,15 @@ class ConfirmedSite:
 
 def propose_sites(scan_points: np.ndarray,
                   normals: Optional[np.ndarray] = None,
-                  max_sites: int = 8) -> List[ProposedSite]:
-    """Ranked healing-cap proposals for operator confirmation (best evidence first)."""
+                  max_sites: int = 8,
+                  faces: Optional[np.ndarray] = None) -> List[ProposedSite]:
+    """Ranked healing-cap proposals for operator confirmation (best evidence first).
+
+    Pass ``faces`` (integer array, same vertex ordering as ``scan_points``) to enable
+    the P3.1 density informativeness prior — extra seeds at the finest few face
+    centroids when the tessellation field is informative and not inverted."""
     candidates = find_cap_sites(np.asarray(scan_points, float),
-                                max_sites=max_sites, normals=normals)
+                                max_sites=max_sites, normals=normals, faces=faces)
     ranked = sorted(candidates, key=lambda c: c.void_ratio)
     return [ProposedSite(c.center, c.void_ratio, c.rim_below_cusps_mm) for c in ranked]
 
@@ -2386,6 +2391,13 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                     "contamination_est": (round(_reading.contamination_est, 3)
                                           if _reading.contamination_est is not None
                                           else None),
+                    # P2.2 — per-bearing DP confidence (additive; pre-field records omit these)
+                    "dp_gap_fraction": (round(float(_reading.dp_gap_fraction), 4)
+                                        if _reading.dp_gap_fraction is not None
+                                        else None),
+                    "bearing_margin": ([round(float(x), 4) for x in _reading.bearing_margin]
+                                       if _reading.bearing_margin is not None
+                                       else None),
                 }
         finally:
             np.random.set_state(_rng_state)

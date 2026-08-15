@@ -21,11 +21,13 @@ then reuse the template machinery (``register`` + ``resolve_sites``) per candida
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 import numpy as np
 from scipy.spatial import cKDTree
+
+from case_prep.domain.circle_fit import fit_circle_xy_or_kasa
 
 # validated on the real Neodent healing arch (see docs/engagement + memory 2026-07-03)
 _BAND_MM = 12.0            # candidate band depth below the cusp line (caps sit 4-8mm below)
@@ -48,6 +50,28 @@ _MIN_SEPARATION_MM = 8.0   # two implants are never closer (clinical >=3mm + rad
 _ARCH_BAND_MM = 7.0        # a cap site sits within this of the cusp-level arch trace (implants
 #                            live in the tooth row; palate rugae rings otherwise false-positive)
 
+# --- P3.1 density prior (healing-cap-curve-alignment-design.md §4.3) -----------------
+#
+# Triangle density is a real signal on 7/10 fleet sites (cap-local tessellation
+# 1.34x–4.62x finer than tissue 6–12 mm away) but INVERTS on neodent-gm t4 (0.76x)
+# and is exporter-specific. These constants copy the probe's geometry
+# (eval/probe_cap_curves.py::local_density) into production — do not import from eval/.
+#
+# Informativeness gate: if p90/p10 of density ratios across all FPS candidates is below
+# _DENSITY_INFORM_RATIO, the field is flat (uniform remesh / decimated export) and the
+# prior is disabled. Measured threshold: 1.5–1.8 from the design spec; 1.5 is used here
+# so borderline cases stay disabled rather than silently active.
+#
+# Per-candidate rule: even when the field is informative, a specific candidate whose own
+# density ratio < 1.0 (cap coarser than tissue = inversion) does NOT use the prior.
+# Rationale: adding extra seeds at high-density positions would seed AWAY from the cap,
+# which is anti-recall. density_prior_used=False is the honest report for that site.
+_DENSITY_CAP_MM = 3.0          # ball radius for the local "cap" density region
+_DENSITY_TISSUE_LO_MM = 6.0    # inner radius of the tissue reference annulus
+_DENSITY_TISSUE_HI_MM = 12.0   # outer radius
+_DENSITY_INFORM_RATIO = 1.5    # p90/p10 of density ratios below this → flat, prior off
+_DENSITY_FINEST_PCT = 5.0      # top-N% finest (smallest area) face centroids → extra seeds
+
 
 @dataclass(frozen=True)
 class CapSiteCandidate:
@@ -56,6 +80,8 @@ class CapSiteCandidate:
     center: Tuple[float, float, float]  # world frame, at rim height over the void
     rim_below_cusps_mm: float
     void_ratio: float
+    # P3.1 — additive field; False when faces=None, field is flat, or density inverted
+    density_prior_used: bool = False
 
 
 def _smallest_axis(v: np.ndarray) -> np.ndarray:
@@ -101,6 +127,54 @@ def crown_up_axis(vertices: np.ndarray, normals: Optional[np.ndarray] = None) ->
     return a if _band_spread(v, a) >= _band_spread(v, -a) else -a
 
 
+def _density_ratio_at(cxy: np.ndarray, fc_xy: np.ndarray, face_areas: np.ndarray,
+                       fc_tree: cKDTree) -> Optional[float]:
+    """Local triangle density ratio (cap ball / tissue annulus) at position ``cxy`` (2-D).
+
+    Mirrors the probe's ``local_density`` geometry (eval/probe_cap_curves.py) without
+    importing from eval/. Returns None when either region is too sparse for a reading —
+    the caller treats None as 'unknown', never as 0 or 1.
+    Ratio < 1.0 signals inversion (cap coarser than tissue, e.g. neodent-gm t4)."""
+    cap_idx = fc_tree.query_ball_point(cxy, _DENSITY_CAP_MM)
+    outer_idx = fc_tree.query_ball_point(cxy, _DENSITY_TISSUE_HI_MM)
+    tissue_idx = [i for i in outer_idx
+                  if float(np.linalg.norm(fc_xy[i] - cxy)) >= _DENSITY_TISSUE_LO_MM]
+    cap_area = float(face_areas[cap_idx].sum()) if cap_idx else 0.0
+    tissue_area = float(face_areas[tissue_idx].sum()) if tissue_idx else 0.0
+    if cap_area <= 0.0 or tissue_area <= 0.0 or not cap_idx or not tissue_idx:
+        return None
+    return (len(cap_idx) / cap_area) / (len(tissue_idx) / tissue_area)
+
+
+def _density_setup(local_verts: np.ndarray, faces: np.ndarray
+                   ) -> Optional[Tuple[np.ndarray, np.ndarray, cKDTree]]:
+    """Prepare face-centroid 2-D array, face areas, and KD-tree for density queries.
+
+    Returns None when the faces array is too small to be meaningful. Face indices
+    are into ``local_verts`` (already in the crowns-up local frame)."""
+    fa = np.asarray(faces, int)
+    if fa.ndim != 2 or fa.shape[1] != 3 or len(fa) < 20:
+        return None
+    tris = local_verts[fa]                          # (N, 3, 3) in local frame
+    fc_xy = tris.mean(axis=1)[:, :2]               # (N, 2) face centroids
+    cross = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
+    areas = 0.5 * np.linalg.norm(cross, axis=1)    # (N,) face areas
+    return fc_xy, areas, cKDTree(fc_xy)
+
+
+def _density_field_is_informative(ratios: List[Optional[float]]) -> bool:
+    """True when the density-ratio field across the FPS candidates is informative.
+
+    Informativeness gate: p90 / p10 of valid ratios > _DENSITY_INFORM_RATIO. A flat
+    field (uniform remesh / decimated export) has ratios clustering near 1.0 and fails
+    this gate. Called once per ``find_cap_sites`` invocation — it is a per-file verdict."""
+    valid = [r for r in ratios if r is not None and r > 0.0]
+    if len(valid) < 3:
+        return False
+    p10, p90 = float(np.percentile(valid, 10)), float(np.percentile(valid, 90))
+    return p10 > 0.0 and (p90 / p10) >= _DENSITY_INFORM_RATIO
+
+
 def _interior_mask(xy: np.ndarray, cell: float = 2.0, margin_cells: int = 2) -> np.ndarray:
     """True for points away from the scan's in-plane BOUNDARY. Intraoral scans flare at their
     rim (vestibule/lip tissue where the scanner exits the mouth) and that flare can stand
@@ -123,9 +197,23 @@ def _interior_mask(xy: np.ndarray, cell: float = 2.0, margin_cells: int = 2) -> 
 
 def find_cap_sites(vertices: np.ndarray, max_sites: int = 8,
                    axis: Optional[np.ndarray] = None,
-                   normals: Optional[np.ndarray] = None) -> List[CapSiteCandidate]:
+                   normals: Optional[np.ndarray] = None,
+                   faces: Optional[np.ndarray] = None) -> List[CapSiteCandidate]:
     """Find healing-cap sites on an arch scan via the validated stack (see module docstring).
-    Pass the mesh's ``vertex_normals`` — they anchor the crowns-up orientation."""
+
+    Pass the mesh's ``vertex_normals`` — they anchor the crowns-up orientation.
+
+    ``faces`` (optional): integer face array (N, 3), indices into ``vertices``. When
+    provided, the P3.1 density prior is evaluated:
+    - Per-file informativeness gate: if p90/p10 of local density ratios across FPS
+      candidates < _DENSITY_INFORM_RATIO (field is flat), the prior is disabled for
+      ALL returned candidates (``density_prior_used=False``).
+    - Per-site label: a candidate whose own density ratio < 1.0 (inversion — cap
+      coarser than tissue, e.g. neodent-gm t4) also gets ``density_prior_used=False``
+      even when the field is globally informative. The extra FPS seeds from the finest
+      face centroids would seed AWAY from an inverted cap, so they are not added for
+      that site.
+    - Recall-first: extra seeds are ADDITIVE only. No existing candidate is removed."""
     v = np.asarray(vertices, float)
     a = crown_up_axis(v, normals) if axis is None else np.asarray(axis, float) / np.linalg.norm(axis)
     t0 = np.cross(a, [0, 0, 1.0])
@@ -136,6 +224,11 @@ def find_cap_sites(vertices: np.ndarray, max_sites: int = 8,
     origin = v.mean(axis=0)
     L = (v - origin) @ frame           # z = occlusal height
     h = L[:, 2]
+
+    # --- density setup (P3.1) — prepare face data once for the full call ----------------
+    _density_ctx: Optional[Tuple[np.ndarray, np.ndarray, cKDTree]] = None
+    if faces is not None:
+        _density_ctx = _density_setup(L, np.asarray(faces, int))
 
     # cusp line + arch trace come from INTERIOR points only — the scan's border flare
     # (vestibule tissue) can top the teeth and poison both (see _interior_mask)
@@ -206,6 +299,47 @@ def find_cap_sites(vertices: np.ndarray, max_sites: int = 8,
         chosen.append(i)
         d = np.minimum(d, np.linalg.norm(band[:, :2] - band[i, :2], axis=1))
 
+    # P3.1 density informativeness gate — computed on FPS candidates BEFORE ring search.
+    # Outcome: is_informative (file-level) + density ratio per FPS candidate.
+    # Extra seeds from finest face centroids are added when the field is informative.
+    _density_ratios_at_fps: List[Optional[float]] = []
+    _is_density_informative = False
+    if _density_ctx is not None:
+        fc_xy, face_areas, fc_tree = _density_ctx
+        for i in chosen:
+            _density_ratios_at_fps.append(
+                _density_ratio_at(band[i, :2], fc_xy, face_areas, fc_tree))
+        _is_density_informative = _density_field_is_informative(_density_ratios_at_fps)
+
+        if _is_density_informative:
+            # Additive extra FPS seeds: finest (smallest face area = highest density)
+            # face centroids in the band, up to _DENSITY_FINEST_PCT percent of all faces.
+            # Only face centroids that fall within the band height range qualify.
+            band_h_lo = cusp_line - _BAND_MM
+            band_h_hi = cusp_line + 3.0
+            fc_h = fc_xy  # 2-D; check height via the 3-D face centroid would need L[fa]
+            # Use the 2-D cusp-band spatial extent instead: any face centroid within
+            # xy-distance of the band (generous — the ring is at most 3mm from centre)
+            band_xy_min = band[:, :2].min(axis=0) - 3.0
+            band_xy_max = band[:, :2].max(axis=0) + 3.0
+            in_band_mask = (
+                (fc_xy[:, 0] >= band_xy_min[0]) & (fc_xy[:, 0] <= band_xy_max[0]) &
+                (fc_xy[:, 1] >= band_xy_min[1]) & (fc_xy[:, 1] <= band_xy_max[1])
+            )
+            band_face_idx = np.where(in_band_mask)[0]
+            if len(band_face_idx) > 0:
+                n_extra = max(1, int(len(band_face_idx) * _DENSITY_FINEST_PCT / 100.0))
+                finest = np.argsort(face_areas[band_face_idx])[:n_extra]
+                extra_xys = fc_xy[band_face_idx[finest]]
+                # Convert extra face centroids to band-like indices via nearest
+                # band-vertex lookup (so chosen stays index-based into band)
+                if len(extra_xys):
+                    band_tree_2d = cKDTree(band[:, :2])
+                    for exy in extra_xys:
+                        ei = int(band_tree_2d.query(exy)[1])
+                        if ei not in chosen:
+                            chosen.append(ei)
+
     found: List[Tuple[float, np.ndarray, float, float]] = []  # (void, xy, rim_z, below)
     for i in chosen:
         c0 = band[i, :2]
@@ -262,13 +396,24 @@ def find_cap_sites(vertices: np.ndarray, max_sites: int = 8,
     found.sort(key=lambda f: f[0])
     sites: List[CapSiteCandidate] = []
     kept_xy: List[np.ndarray] = []
-    for ratio, cxy, rim_z, below in found:
+    for void_ratio, cxy, rim_z, below in found:
         if any(np.linalg.norm(cxy - k) < _MIN_SEPARATION_MM for k in kept_xy):
             continue
         kept_xy.append(cxy)
         world = origin + frame @ np.array([cxy[0], cxy[1], rim_z])
+
+        # P3.1 — per-site density_prior_used: informative field AND this site's own
+        # ratio ≥ 1.0 (density co-varies with caps, not inverted). Computed at the
+        # REFINED candidate xy (best[1]), not the coarse FPS seed.
+        used = False
+        if _is_density_informative and _density_ctx is not None:
+            fc_xy_c, face_areas_c, fc_tree_c = _density_ctx
+            site_ratio = _density_ratio_at(cxy, fc_xy_c, face_areas_c, fc_tree_c)
+            used = site_ratio is not None and site_ratio >= 1.0
+
         sites.append(CapSiteCandidate(tuple(float(x) for x in world),
-                                      float(below), float(ratio)))
+                                      float(below), float(void_ratio),
+                                      density_prior_used=used))
         if len(sites) >= max_sites:
             break
     return sites
@@ -276,7 +421,7 @@ def find_cap_sites(vertices: np.ndarray, max_sites: int = 8,
 
 def measure_rim_diameter(local_pts: np.ndarray, xy_tree, center_local: np.ndarray,
                          search_r: float = 5.0, slab_mm: float = 0.8) -> Optional[float]:
-    """Fit a circle (Kasa) to the cap's rim ring in the crowns-up LOCAL frame and return its
+    """Fit a circle (Taubin) to the cap's rim ring in the crowns-up LOCAL frame and return its
     diameter (mm) — the size-variant guide (classes sit ~0.8mm apart; scans read within
     ~0.4-0.8mm of a class, so the caller classifies WITH a margin and may refuse). None when
     the ring is too sparse to fit."""
@@ -289,11 +434,7 @@ def measure_rim_diameter(local_pts: np.ndarray, xy_tree, center_local: np.ndarra
     ring = ring_all[np.abs(ring_all[:, 2] - rim) < slab_mm]
     if len(ring) < 40:
         return None
-    x = ring[:, 0] - center_local[0]
-    y = ring[:, 1] - center_local[1]
-    A = np.c_[2 * x, 2 * y, np.ones(len(x))]
-    sol, *_ = np.linalg.lstsq(A, x * x + y * y, rcond=None)
-    r2 = sol[2] + sol[0] ** 2 + sol[1] ** 2
-    if r2 <= 0:
+    fit = fit_circle_xy_or_kasa(ring[:, :2])
+    if fit is None:
         return None
-    return float(2.0 * np.sqrt(r2))
+    return float(2.0 * fit[1])

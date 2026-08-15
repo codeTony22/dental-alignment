@@ -297,8 +297,11 @@ def detect(case: CaseRecord) -> DetectionResult:
     normals = np.asarray(scan.vertex_normals, float)
     ctx = capture_context(pts, normals)
 
+    scan_faces = getattr(scan, "faces", None)
     proposals = []
-    for p in propose_sites(pts, normals=normals):
+    for p in propose_sites(pts, normals=normals,
+                           faces=(np.asarray(scan_faces, int)
+                                  if scan_faces is not None else None)):
         seed = ctx.frame.T @ (np.asarray(p.center, float) - ctx.origin)
         dia = measure_rim_diameter(ctx.local_points, ctx.xy_tree, seed)
         hint = dia / 2.0 if dia else FALLBACK_RIM_RADIUS_MM

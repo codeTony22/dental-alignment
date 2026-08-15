@@ -34,6 +34,8 @@ from typing import List, Optional, Tuple
 import numpy as np
 import trimesh
 
+from case_prep.domain.circle_fit import fit_circle_xy_or_kasa
+
 _MIN_LOOP_POINTS = 24          # real channel loops discretize to 221-328 points
 _MAX_RADIAL_STD_MM = 0.08      # measured catalog max 0.0023 about the FITTED centre
 #                                (0.052 about the vertex mean was the mean's own bias
@@ -77,9 +79,10 @@ def _circle_read(loop_pts: np.ndarray) -> Optional[Tuple[np.ndarray, float]]:
         return None
     if float(p[:, 2].std()) > _MAX_PLANE_STD_MM:
         return None
-    A = np.c_[2.0 * p[:, :2], np.ones(len(p))]
-    sol, *_ = np.linalg.lstsq(A, (p[:, :2] ** 2).sum(axis=1), rcond=None)
-    cxy = sol[:2]
+    fit = fit_circle_xy_or_kasa(p[:, :2])
+    if fit is None:
+        return None
+    cxy, _r = fit
     radial = np.linalg.norm(p[:, :2] - cxy, axis=1)
     if float(radial.std()) > _MAX_RADIAL_STD_MM:
         return None

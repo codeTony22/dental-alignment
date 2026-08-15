@@ -102,7 +102,13 @@ class TestAutoSeedOnTheRealCatalog:
         the wrong cutout. The seed must name all three so the operator can pick."""
         trenches = [f for f in auto_features(_template("zimmer-4.5", "7030"))
                     if f.kind == "trench"]
-        assert [round(f.azimuth_deg, 1) for f in trenches] == [-177.0, -136.0, -0.1]
+        assert len(trenches) == 3
+        # Tenths moved under Taubin vs the Kasa pin (-177.0 / -136.0 / -0.1);
+        # the load-bearing fact is three named trenches ~40° apart.
+        az = [f.azimuth_deg for f in trenches]
+        assert az[0] == pytest.approx(-177.0, abs=1.0)
+        assert az[1] == pytest.approx(-136.0, abs=1.0)
+        assert az[2] == pytest.approx(0.0, abs=1.0)
 
     @pytest.mark.parametrize("model,variant", CATALOG)
     def test_deterministic_across_calls_and_rng_state_preserved(self, model, variant):

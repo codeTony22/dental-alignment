@@ -1,4 +1,4 @@
-"""Pure/fast tests for tools/probe_cap_curves.py — the measurement appendix probe.
+"""Pure/fast tests for eval/probe_cap_curves.py — the measurement appendix probe.
 
 Pins the three instruments the healing-cap curve design cites: STL colour (attribute
 bytes + trimesh visuals), local triangle density (cap ball vs tissue annulus), and
@@ -6,8 +6,9 @@ dihedral rim closure (24 bearings). Fixtures are synthetic meshes and hand-writt
 binary STLs; the real fleet is a separate slow class that pins the qualitative
 claims (colour is absent; t4 density inverts; most rims close at 20° not 30°).
 
-`tools/` isn't on pythonpath (only `src` is, per pyproject.toml), so this file inserts
-`tools/` onto sys.path itself rather than touching shared config (fle_study precedent).
+Lives under ``eval/``, not ``tools/``: ``apps/worker/tools`` is on the freeze line
+with the demo. ``eval/`` isn't on pythonpath (only ``src`` is), so this file inserts
+it onto sys.path itself rather than touching shared config (fle_study precedent).
 """
 from __future__ import annotations
 
@@ -19,9 +20,9 @@ import numpy as np
 import pytest
 import trimesh
 
-_TOOLS_DIR = Path(__file__).resolve().parents[1] / "tools"
-if str(_TOOLS_DIR) not in sys.path:
-    sys.path.insert(0, str(_TOOLS_DIR))
+_EVAL_DIR = Path(__file__).resolve().parents[1] / "eval"
+if str(_EVAL_DIR) not in sys.path:
+    sys.path.insert(0, str(_EVAL_DIR))
 
 import probe_cap_curves as probe  # noqa: E402  (path bootstrap must run first)
 
