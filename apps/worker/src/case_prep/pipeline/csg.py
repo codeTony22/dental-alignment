@@ -310,8 +310,17 @@ def fabricated_face_mask(original_shell: trimesh.Trimesh,
 
 
 # one emit solidifies the same scan for the dish, the platform and the closed
-# model — cache it for the life of the mesh object (key carries a content
-# checksum so a recycled id can never serve another mesh's solid)
+# model — cache it for the life of the mesh's own CONTENT. Keyed on vertex
+# count plus a sampled coordinate-sum checksum — NOT id(arch) (the key until
+# the boolean-engine plan addendum, 2026-08-14, retired it): a CPython object
+# address is free for the allocator to reuse once the object it named is
+# garbage-collected, the same W4 hazard class ``clock_signature.py``'s own
+# ``_template_cache_key`` retired first (see that function's docstring for
+# the full argument; this cache now uses the identical idiom). Content-only
+# also fixes the quieter half of the same bug: an id-keyed lookup was a
+# GUARANTEED MISS between two distinct objects carrying the same content —
+# defeating the "cache it for the life of the mesh object" comment this one
+# replaces — even though solidifying either would produce the same solid.
 _SOLID_CACHE: dict = {}
 
 
@@ -319,7 +328,8 @@ def solidified_shell_cached(arch: trimesh.Trimesh) -> trimesh.Trimesh:
     from case_prep.adapters.cap_detection import crown_up_axis
 
     v = np.asarray(arch.vertices, float)
-    key = (id(arch), len(v), float(v[:: max(1, len(v) // 97)].sum()))
+    n = len(v)
+    key = (n, float(v[:: max(1, n // 97)].sum()))
     hit = _SOLID_CACHE.get(key)
     if hit is not None:
         return hit
@@ -536,7 +546,28 @@ def exact_cap_punch(template: trimesh.Trimesh, offset_mm: float,
     2.47mm^3 on this slice's own concave fixture, orders of magnitude
     above the ~1e-6mm^3 noise floor), or when watertightness itself
     flipped. A face-count-only change is retriangulation, not a defect
-    fix, and does not set ``heal_fired``."""
+    fix, and does not set ``heal_fired``.
+
+    THE EMPTY-HEAL GUARD (boolean-engine plan addendum — the incidence
+    measurement, 2026-08-14): ``union([punch, punch])`` can come back
+    EMPTY (0 faces, ``is_watertight`` False, volume 0.0) WITHOUT RAISING
+    ANYTHING — measured directly against MeshLib run on this fleet's own
+    operands (16/20 clean caps came back empty, with an ``errorString`` —
+    a different failure shape than Stage 2's silent no-op). Manifold has
+    never produced this here (20/20 on the fleet), so today's kernel
+    cannot reach this branch; it is exactly the hole a kernel swap would
+    fall through, not a bug this fleet has tripped. Left unguarded, an
+    empty or newly-non-watertight ``healed`` result would become
+    ``punch`` outright — the ``try/except`` above never fires, because
+    nothing raised — survive the floor clip below unnoticed (an empty
+    tool clips to an empty tool, so the clip's own "keep the un-clipped
+    punch" branch fires, and the un-clipped punch is already the empty
+    one), and the difference downstream would remove nothing: the
+    package ships with NO recess, silently. So: if the heal's own result
+    is EMPTY, or it LOST watertightness the input already had, the
+    original (pre-heal) punch is kept and the verdict is ``heal_fired =
+    False`` — a heal that vanished the shape or made it strictly worse is
+    heal-not-fired, never a defect "fix" worth adopting."""
     if len(template.faces) == 0:
         raise ValueError("the cap template is not a watertight solid")
     src = template if template.is_watertight else _lid_boundary_loops(template)
@@ -562,12 +593,21 @@ def exact_cap_punch(template: trimesh.Trimesh, offset_mm: float,
     try:
         healed = default_kernel().union([punch, punch])
         heal_changed_faces = len(healed.faces) != before_faces
+        healed_empty = len(healed.faces) == 0
         after_watertight = bool(healed.is_watertight)
-        if before_watertight and after_watertight:
-            heal_fired = abs(float(healed.volume) - before_volume) > 1e-3
+        lost_watertightness = before_watertight and not after_watertight
+        if healed_empty or lost_watertightness:
+            # THE EMPTY-HEAL GUARD — see this function's own docstring.
+            # Neither an empty result nor a degraded one raises, so this
+            # check (not the except below) is the only thing standing
+            # between a bad heal and a shipped package with no recess.
+            heal_fired = False
         else:
-            heal_fired = after_watertight != before_watertight
-        punch = healed
+            if before_watertight and after_watertight:
+                heal_fired = abs(float(healed.volume) - before_volume) > 1e-3
+            else:
+                heal_fired = after_watertight != before_watertight
+            punch = healed
     except Exception:  # noqa: BLE001 — keep the un-healed punch; the
         # cut's own per-site failure handling is the containment here,
         # not this function refusing to return a shape at all

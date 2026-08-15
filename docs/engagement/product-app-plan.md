@@ -3094,6 +3094,25 @@ than smuggled (per §10-AL the tool is an intake CAPTURE aid, never a
 seat input). bff 691 (+21). The Intake client half is the remaining
 piece of task #33.
 
+**AT hardening pair + W6 shape + the battery's one red (2026-08-15).**
+The wave-3 battery's single failure (1/1244) was diagnosed to its cause:
+the jaw-reading pin's fixture was the client's upload-experiment case,
+retired from scans/ by the rehearse resolution — the test now builds a
+one-case root around the RETIRED folder through the same discovery path
+(the geometry that makes the pin valuable is unchanged; skips only if
+the retired tree itself is gone). The incidence measurement's two
+hardening items land: the self-heal rejects an EMPTY or degraded kernel
+result and keeps the original punch (the ship-with-no-recess hole
+closed, red-tested by monkeypatched kernel); solidified_shell_cached's
+key is content-only (the last id()-keyed construct retired — the
+first fixture found its own trap: a centred cube's coordinate sum is 0
+at any size). W6 landed as the OPERATION-SHAPE tripwire (one solidify,
+one batched difference, recording kernel) per the repo's two wall-clock
+flake precedents; the real measurement is recorded in its docstring:
+16.13s CSG stages on the largest arch — 3x over budget, reconciled only
+by the per-arch cache, which is exactly the memo's open-shell trigger
+condition. Narrow 120, fast lane 1006.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

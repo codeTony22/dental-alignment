@@ -356,10 +356,24 @@ class TestJawReadingOnTheRealTree:
     ``discover_cases`` defaults its jaw to "upper" -- but the geometry itself, read
     off the crowns' own axis, says "lower". This is the gap the cross-check exists
     to close (never silently correct -- surface the contradiction and let the
-    operator fix it in one click)."""
+    operator fix it in one click).
 
-    def test_the_arch_upload_geometry_reads_lower_though_its_filename_says_upper(self):
-        case = next(c for c in discover_cases(REAL)
+    The fixture case was RETIRED from ``data/real/scans`` on 2026-08-15 (the
+    rehearse-gate resolution, 3f22e12: the client's upload experiments moved to
+    ``scans-retired`` so the frozen demo's gate stops flagging them). The
+    geometry that makes this pin valuable still exists there, so the test
+    builds a one-case data root around the retired folder and runs the SAME
+    discovery path -- it skips only if the retired tree itself is ever gone."""
+
+    def test_the_arch_upload_geometry_reads_lower_though_its_filename_says_upper(self, tmp_path):
+        retired = REAL / "scans-retired" / "297589851-neodent-gm-arch-with-healingcaps"
+        if not retired.is_dir():
+            pytest.skip("retired upload-experiment case not present")
+        root = tmp_path / "root"
+        (root / "scans").mkdir(parents=True)
+        (root / "scans" / retired.name).symlink_to(retired)
+        (root / "library").symlink_to(REAL / "library")
+        case = next(c for c in discover_cases(root)
                    if c.id == "297589851-neodent-gm-arch-with-healingcaps")
         assert case.jaw == "upper"  # the filename heuristic's wrong default
         result = detect(case)

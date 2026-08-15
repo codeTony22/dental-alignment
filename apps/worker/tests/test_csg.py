@@ -326,6 +326,87 @@ class TestHealRunsUnconditionally:
         assert punch.is_watertight
 
 
+class TestEmptyHealGuard:
+    """Boolean-engine plan addendum — the incidence measurement (2026-08-14):
+    the self-heal's own kernel call (``union([punch, punch])``) can come
+    back a silently EMPTY result — 0 faces, ``is_watertight`` False, volume
+    0.0 — WITHOUT RAISING ANYTHING (measured directly against MeshLib run
+    on this fleet's own operands: 16/20 clean caps came back empty, with an
+    ``errorString`` set — a different failure shape than Stage 2's silent
+    no-op). Manifold has never produced this here (20/20 on the fleet), so
+    today's code cannot reach the branch these pins exercise; it is exactly
+    the hole a kernel swap would fall through, not a bug this fleet has
+    ever tripped.
+
+    Before the guard: an empty (or newly-degraded) heal result was adopted
+    as ``punch`` outright — the ``try/except`` around the heal call never
+    fires here, because nothing raises — it would then survive the floor
+    clip's own "keep the un-clipped punch when the clip comes back empty"
+    branch (an empty tool clips to an empty tool, so that branch's OTHER
+    side fires and keeps the already-empty punch untouched), and the
+    difference downstream would remove nothing: the package ships with NO
+    recess, silently. These pins monkeypatch the kernel's own ``union`` —
+    the one call the heal makes — so the fixture reproduces exactly the
+    silent-empty and silent-degraded failure shapes measured against
+    MeshLib, without needing a kernel that actually produces them."""
+
+    @staticmethod
+    def _cap():
+        return trimesh.creation.cylinder(radius=2.0, height=4.0)
+
+    def test_an_empty_heal_result_is_rejected_the_punch_survives(self, monkeypatch):
+        from case_prep.pipeline import csg as csg_module
+
+        class _EmptyHealKernel:
+            def union(self, meshes):
+                return trimesh.Trimesh()  # 0 faces — the measured MeshLib shape
+
+        monkeypatch.setattr(csg_module, "default_kernel", lambda: _EmptyHealKernel())
+
+        diagnostics: dict = {}
+        punch = csg_module.exact_cap_punch(self._cap(), 0.2, np.eye(4),
+                                           diagnostics=diagnostics)
+
+        assert len(punch.faces) > 0, \
+            "an empty heal result must never become the returned punch"
+        assert punch.is_watertight, \
+            "the pre-heal, dilated punch of a plain cylinder is watertight " \
+            "on its own — the guard must keep exactly that, not the empty " \
+            "kernel result"
+        assert diagnostics["heal_fired"] is False, \
+            "an empty, unusable heal result is heal-not-fired, not a " \
+            "defect fix adopted"
+
+    def test_a_degraded_non_watertight_heal_result_is_also_rejected(self, monkeypatch):
+        """The second failure shape the guard names: not empty, but the
+        heal's own output LOST the watertightness the input already had —
+        a genuine kernel defect, not the input's own. A box with one face
+        dropped stands in: non-empty, definitely not watertight."""
+        from case_prep.pipeline import csg as csg_module
+
+        class _DegradedHealKernel:
+            def union(self, meshes):
+                box = trimesh.creation.box(extents=[1.0, 1.0, 1.0])
+                faces = np.asarray(box.faces)[:-1]
+                return trimesh.Trimesh(np.asarray(box.vertices, float), faces,
+                                       process=False)
+
+        monkeypatch.setattr(csg_module, "default_kernel",
+                            lambda: _DegradedHealKernel())
+
+        diagnostics: dict = {}
+        punch = csg_module.exact_cap_punch(self._cap(), 0.2, np.eye(4),
+                                           diagnostics=diagnostics)
+
+        assert len(punch.faces) > 0
+        assert punch.is_watertight, \
+            "a degraded (non-watertight) heal result must never overwrite " \
+            "an already-watertight punch"
+        assert diagnostics["heal_fired"] is False, \
+            "a heal that lost watertightness the input already had is " \
+            "heal-not-fired, not a defect fix adopted"
+
+
 class TestSelfHealingPunch:
     """§10-AT front 3a: vertex-normal dilation self-intersects at a concave
     crease (a screw slot, a coded cutout) — the two walls converge instead
@@ -803,6 +884,99 @@ class TestSolidifiedShellCachedNamesTheDefect:
         assert "not watertight" in message
         assert "3 open/non-manifold edge(s)" in message
         assert "(" in message and ")" in message
+
+
+class TestSolidifiedShellCachedKeyIsContentOnly:
+    """Boolean-engine plan addendum — the incidence measurement (2026-08-14):
+    ``_SOLID_CACHE`` used to key on ``(id(arch), len, checksum)`` — a
+    CPython object address, the same W4 hazard class ``clock_signature.
+    py``'s ``_template_cache_key`` retired first (its own docstring: an
+    id-keyed cache can hand a caller ANOTHER object's memoized result once
+    the address it named is freed and reused). The fix drops ``id()``
+    entirely rather than merely joining it with a content check, which
+    also retires the quieter half of the same bug: two DISTINCT objects
+    carrying the SAME content used to be a guaranteed cache MISS (their
+    ids always differ), even though solidifying either produces the same
+    solid."""
+
+    @staticmethod
+    def _box(size: float) -> trimesh.Trimesh:
+        # translated OFF the origin by an amount tied to ``size`` — a
+        # plain origin-centred box is centrosymmetric (every vertex has an
+        # exact opposite), so its FULL coordinate sum is 0.0 regardless of
+        # size, which would make two differently-sized centred boxes
+        # collide on this cache's checksum for a reason that has nothing
+        # to do with the fix under test. Translating breaks the
+        # cancellation and ties the sum to ``size``, which is what a real
+        # scan's own asymmetric geometry does for free.
+        b = trimesh.creation.box(extents=[size, size, size])
+        b.apply_translation([size, 0.0, 0.0])
+        return b
+
+    def test_same_content_in_two_distinct_objects_hits_the_cache(self):
+        from case_prep.pipeline import csg as csg_module
+
+        box_a = self._box(6.0)
+        box_b = self._box(6.0)
+        assert box_a is not box_b, \
+            "the pin needs two distinct Python objects, or it proves nothing"
+
+        csg_module._SOLID_CACHE.clear()
+        solid_a = csg_module.solidified_shell_cached(box_a)
+        solid_b = csg_module.solidified_shell_cached(box_b)
+
+        assert solid_b is solid_a, \
+            "two distinct objects carrying identical content must share " \
+            "the same cache entry — id() must play no part in the key"
+
+    def test_different_content_misses_and_does_not_share_the_entry(self):
+        from case_prep.pipeline import csg as csg_module
+
+        box_a = self._box(6.0)
+        box_b = self._box(9.0)  # same vertex COUNT (a cube is always 8), a
+        # different coordinate-sum checksum — proves the checksum, not
+        # merely the length, is doing the distinguishing work
+
+        csg_module._SOLID_CACHE.clear()
+        solid_a = csg_module.solidified_shell_cached(box_a)
+        solid_b = csg_module.solidified_shell_cached(box_b)
+
+        assert solid_b is not solid_a
+        assert abs(float(solid_b.volume) - float(solid_a.volume)) > 1.0
+
+    def test_a_freed_archs_solid_never_reaches_a_later_different_arch(self):
+        """The lifetime-simulated pin: compute for A, drop every reference
+        to A and force a collection (CPython is free to reuse A's old
+        address for the very next allocation — the address-reuse hazard
+        this fix retires — though nothing here depends on that actually
+        happening, which is the point: a content-only key makes the
+        question moot by construction), then compute for a DIFFERENT B.
+        B must read back its OWN solid, distinguished on a property (face
+        count) that a stale hand-me-down from A could not coincidentally
+        share, since A and B are built at different subdivision levels."""
+        import gc
+
+        from case_prep.pipeline import csg as csg_module
+
+        csg_module._SOLID_CACHE.clear()
+
+        arch_a = self._box(6.0)
+        solid_a = csg_module.solidified_shell_cached(arch_a)
+        faces_a = len(solid_a.faces)
+
+        del arch_a
+        gc.collect()
+
+        arch_b = self._box(6.0)
+        for _ in range(3):
+            arch_b = arch_b.subdivide()  # genuinely different content —
+            # more vertices, more faces, a different checksum
+        solid_b = csg_module.solidified_shell_cached(arch_b)
+
+        assert len(solid_b.faces) != faces_a, \
+            "B's own solid must reflect B's own content, never A's, even " \
+            "across A's own deletion"
+        assert solid_b is not solid_a
 
 
 class TestRealFleetJunctionSafety:
