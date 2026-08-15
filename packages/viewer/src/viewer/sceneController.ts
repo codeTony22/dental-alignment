@@ -258,6 +258,20 @@ export function anyPointerToolActive(modes: {
 }
 
 /**
+ * WHETHER A RIM-BORDER-POINTS CLICK MAY LAND (task #33, the intake capture aid's product
+ * wiring). `maxPoints` mirrors a caller's own ceiling (the product's domain constant,
+ * itself mirroring the BFF's `RimPointsIn` bound) — null means uncapped, for a caller
+ * that never set one. A click past the cap must never even PLACE a sphere: the marker
+ * vocabulary's "what the sphere shows IS what gets sent" rule (see setSiteMarker's doc)
+ * would otherwise show a dot the PUT could refuse. Extracted as a pure function so the
+ * boundary arithmetic is unit-testable even though the click flow that calls it is
+ * browser-only (see this file's characterization test's documented boundary).
+ */
+export function withinRimPointsCap(currentCount: number, maxPoints: number | null): boolean {
+  return maxPoints === null || currentCount < maxPoints;
+}
+
+/**
  * The four anatomical presets' camera orientation for a frame: the unit view DIRECTION
  * (target → camera) and the camera UP (was inline in setAnatomyView — see that method's
  * doc for what each view means to the operator). Front/left/right look at the arch from
@@ -403,6 +417,16 @@ export class SceneController {
   private readonly liveRimPoints: THREE.Vector3[] = [];
   private readonly liveRimPointSpheres: THREE.Mesh[] = [];
   private readonly committedRimPoints = new Map<number, THREE.Mesh[]>();
+  // TASK #33's product wiring: an optional per-session callback firing after EVERY
+  // placed click with the running list (the live count a control shows), and an
+  // optional hard ceiling past which a click is ignored rather than growing a draft
+  // the BFF's RimPointsIn would refuse (see withinRimPointsCap above). Both reset on
+  // every enableRimPoints/cancelRimPoints/finishRimPoints exit, same lifecycle as
+  // rimPointsRowIndex, so a stale session's callback can never fire into a fresh one.
+  private rimPointsOnChange:
+    | ((points: readonly (readonly [number, number, number])[]) => void)
+    | null = null;
+  private rimPointsMaxPoints: number | null = null;
 
   // Post-run seated-pose axis triads: one THREE.Group (3 line segments) per TOOTH (not row
   // index — triads are drawn straight from runResult.summary.sites, which is keyed by tooth
@@ -1313,8 +1337,20 @@ export class SceneController {
    * "Done") clicks for another row are discarded (mirrors enableBrush's fresh-liveStroke
    * behavior); a row's previously COMMITTED rim points are untouched until this session finishes.
    * Mutually exclusive with the brush and single-shot mark mode — both are exited first.
+   *
+   * `options.onPointsChanged` (task #33) fires after EVERY placed click with the running
+   * list collected so far — what a live "N points" control reads, without polling
+   * `getRimPointsPatch` on a timer. `options.maxPoints`, when given, is a hard ceiling: a
+   * click once the count reaches it is ignored outright (see `withinRimPointsCap`) rather
+   * than growing a draft the BFF's own 3–12 bound would refuse.
    */
-  enableRimPoints(rowIndex: number): void {
+  enableRimPoints(
+    rowIndex: number,
+    options?: {
+      readonly onPointsChanged?: (points: readonly (readonly [number, number, number])[]) => void;
+      readonly maxPoints?: number;
+    },
+  ): void {
     if (this.brushEnabled) {
       this.disableBrush();
     }
@@ -1322,6 +1358,8 @@ export class SceneController {
     this.exitPointPick();
     this.discardLiveRimPoints();
     this.rimPointsRowIndex = rowIndex;
+    this.rimPointsOnChange = options?.onPointsChanged ?? null;
+    this.rimPointsMaxPoints = options?.maxPoints ?? null;
     this.controls.enabled = false;
     this.renderer.domElement.style.cursor = "crosshair";
   }
@@ -1334,6 +1372,8 @@ export class SceneController {
   cancelRimPoints(): void {
     this.discardLiveRimPoints();
     this.rimPointsRowIndex = null;
+    this.rimPointsOnChange = null;
+    this.rimPointsMaxPoints = null;
     this.controls.enabled = true;
     this.renderer.domElement.style.cursor = "";
     this.controls.mouseButtons.LEFT = this.shiftPanActive ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
@@ -1375,6 +1415,8 @@ export class SceneController {
     }
     this.liveRimPoints.length = 0;
     this.rimPointsRowIndex = null;
+    this.rimPointsOnChange = null;
+    this.rimPointsMaxPoints = null;
     this.controls.enabled = true;
     this.renderer.domElement.style.cursor = "";
     this.controls.mouseButtons.LEFT = this.shiftPanActive ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
@@ -1641,12 +1683,17 @@ export class SceneController {
 
   private readonly handleRimPointsPointerDown = (event: PointerEvent): void => {
     if (this.rimPointsRowIndex === null || !this.meshObject) return;
+    // THE CAP, ENFORCED BEFORE THE RAYCAST (task #33): a click once the session is
+    // already at its ceiling is ignored outright — no sphere, no push — rather than
+    // placing a dot the eventual PUT would refuse (withinRimPointsCap's own doc).
+    if (!withinRimPointsCap(this.liveRimPoints.length, this.rimPointsMaxPoints)) return;
     // Placement clicks are raycast hits on the loaded scan mesh — on-surface by construction,
     // no snap-to-surface needed (unlike setSiteMarker's cosmetic snap for backend-computed points).
     const point = this.raycastClientPoint(event.clientX, event.clientY);
     if (!point) return;
     this.liveRimPoints.push(point);
     this.liveRimPointSpheres.push(this.placeRimPointSphere(point));
+    this.rimPointsOnChange?.(this.liveRimPoints.map((p) => [p.x, p.y, p.z] as const));
   };
 
   private readonly handleMarkPointerDown = (event: PointerEvent): void => {

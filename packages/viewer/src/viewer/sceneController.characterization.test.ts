@@ -26,7 +26,10 @@
  *     every framing method shares;
  *   - the marker scale rule (selection is a size difference, never a color one);
  *   - the routing veto's composition (isToolActive — all four pointer modes);
- *   - the percentile the centre-click placement reads its corridor depth from.
+ *   - the percentile the centre-click placement reads its corridor depth from;
+ *   - the rim-border-points collect-mode's click-acceptance boundary (task #33 —
+ *     the collect-mode ITSELF, like every other pointer flow above, stays browser-only;
+ *     `withinRimPointsCap` is the one piece of its arithmetic extracted pure).
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -38,6 +41,7 @@ import {
   fitDistanceMm,
   fitPaddingFor,
   percentile,
+  withinRimPointsCap,
 } from "./sceneController";
 import { SITE_FRAME_RADIUS_MM } from "./siteRouting";
 import type { AnatomyFrame } from "./anatomyOrientation";
@@ -232,6 +236,32 @@ describe("anyPointerToolActive — the routing veto's composition", () => {
     expect(anyPointerToolActive({ ...idle, mark: true })).toBe(true);
     expect(anyPointerToolActive({ ...idle, rimPoints: true })).toBe(true);
     expect(anyPointerToolActive({ ...idle, pointPick: true })).toBe(true);
+  });
+});
+
+/* task #33: the rim border-points INTAKE client half. The multi-click collect-mode
+   itself (enableRimPoints/handleRimPointsPointerDown/finishRimPoints/cancelRimPoints)
+   is the same class of browser-only pointer flow documented at the top of this file —
+   raycasting against a loaded mesh, placing a THREE.Mesh sphere — and is NOT pinned
+   here for that reason. `withinRimPointsCap` is the one decision that click flow makes
+   which is pure arithmetic with no THREE/DOM dependency at all: whether a click may
+   land, given how many the session already holds and its caller's own ceiling. */
+describe("withinRimPointsCap — the collect-mode's click-acceptance boundary (task #33)", () => {
+  it("uncapped (null maxPoints) always accepts — a caller that never set a ceiling", () => {
+    expect(withinRimPointsCap(0, null)).toBe(true);
+    expect(withinRimPointsCap(11, null)).toBe(true);
+    expect(withinRimPointsCap(1000, null)).toBe(true);
+  });
+
+  it("accepts strictly below the cap and refuses at or past it", () => {
+    expect(withinRimPointsCap(0, 12)).toBe(true);
+    expect(withinRimPointsCap(11, 12)).toBe(true);
+    expect(withinRimPointsCap(12, 12)).toBe(false);
+    expect(withinRimPointsCap(13, 12)).toBe(false);
+  });
+
+  it("a zero cap refuses even the first click — the boundary is exact, not off-by-one", () => {
+    expect(withinRimPointsCap(0, 0)).toBe(false);
   });
 });
 

@@ -45,6 +45,22 @@ Row 3 record (slice 3, 2026-07-27) — trims and divergences, per the rules abov
   dev-registry guards read; apps/web got it from vite/client.
 - NOT debt: the demo's ViewOrientationBar subject toggle was REIMPLEMENTED in
   apps/product/src/components/MainStage.tsx (~40 lines of product chrome), not copied.
+- Task #33 addition (2026-08-15), the rim-points INTAKE client half: `enableRimPoints`
+  gained an optional second parameter (`{onPointsChanged, maxPoints}`, +~20 lines) — the
+  demo's own `enableRimPoints(rowIndex)` took none. `onPointsChanged` fires the running
+  point list after every placed click (the demo only ever read `getRimPointsPatch()`
+  once, at Finish); `maxPoints`, enforced in `handleRimPointsPointerDown` before the
+  raycast, is NEW — the demo's own tool had no per-session ceiling at all (only the
+  BFF's route caps at 12, added `736762b`, after the demo froze). The boundary check
+  is extracted pure as `withinRimPointsCap` and pinned in the characterization test,
+  same pattern as the existing pure-helper extractions above. `finishRimPoints`/
+  `cancelRimPoints` reset the two new fields alongside `rimPointsRowIndex`; nothing
+  else in the copied file changed. `Viewer3D.tsx`'s `enableRimPoints` mirrors the
+  wider signature. NOT debt: `apps/product/src/components/IntakeStage.tsx`'s
+  `RimPointsControl` and `apps/product/src/domain/intake.ts`'s rim-points helpers are
+  REIMPLEMENTED product chrome (read the demo's ConfirmPanel.tsx/App.tsx as reference
+  only, per the task's own instruction), not copied — same posture as the
+  ViewOrientationBar note just above.
 
 Row 4 record (recording started slice 4, 2026-07-27) — what has actually been copied so
 far, into `apps/bff/src/bff/resources/case_sessions.py` (`ChoicesIn` + the choices

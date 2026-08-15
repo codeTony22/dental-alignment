@@ -63,7 +63,13 @@ export interface Viewer3DHandle {
   setSiteMarker(rowIndex: number, kind: MarkKind, point: readonly [number, number, number]): void;
   clearSiteMarker(rowIndex: number, kind: MarkKind): void;
   clearAllSiteMarkers(): void;
-  enableRimPoints(rowIndex: number): void;
+  enableRimPoints(
+    rowIndex: number,
+    options?: {
+      readonly onPointsChanged?: (points: readonly (readonly [number, number, number])[]) => void;
+      readonly maxPoints?: number;
+    },
+  ): void;
   cancelRimPoints(): void;
   isRimPointsActive(): boolean;
   activeRimPointsRow(): number | null;
@@ -202,8 +208,8 @@ export const Viewer3D = forwardRef<Viewer3DHandle, Viewer3DProps>(function Viewe
       clearAllSiteMarkers() {
         controllerRef.current?.clearAllSiteMarkers();
       },
-      enableRimPoints(rowIndex) {
-        controllerRef.current?.enableRimPoints(rowIndex);
+      enableRimPoints(rowIndex, options) {
+        controllerRef.current?.enableRimPoints(rowIndex, options);
       },
       cancelRimPoints() {
         controllerRef.current?.cancelRimPoints();

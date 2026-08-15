@@ -78,6 +78,11 @@ export function siteView(overrides: Partial<SiteView> = {}): SiteView {
     // the drop, as a draft: nobody has held this site back (gap
     // ``drop-a-cap-from-adjust``) — the BFF's own default for a fresh site
     withhold_intent: false,
+    // rim border points (§10-AL/task #33): honestly absent until the operator has
+    // clicked a session, and the run fact beside it absent until a run has read four
+    // or more of them to disagree over
+    rim_points: null,
+    border_click_disagreement_mm: null,
     ...overrides,
   };
 }

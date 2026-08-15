@@ -3046,6 +3046,40 @@ Standing correction the memo's A.6 records: the catalog sweep certifies
 the MINKOWSKI path; the vertex-normal default is certified by the fleet
 battery, not that sweep.
 
+**AT rim-points seam — §10-AL's Intake client half, task #33 (2026-08-15).**
+The remaining piece the server-half entry below named. `packages/viewer`
+already carried the demo's full multi-click collect-mode
+(enableRimPoints/finishRimPoints/cancelRimPoints/committedRimPoints, teal
+spheres) from the wholesale sceneController copy — unwired by any product
+surface until now, and NOT rebuilt: `enableRimPoints` gained one optional
+options arg (`onPointsChanged` firing the running list per click,
+`maxPoints` refusing a click past the cap before it raycasts — see the
+ledger's row-3 addendum). `MainStage` grew a THIRD pointer door
+(`rimPointsTooth`/`onRimPointsChanged`), mutually exclusive with the
+existing mark/pick/remark door by the container's own "one door, one
+owner" discipline (four `setRimPointsArmedTooth(null)` calls, one per
+rival door). `RimPointsControl` (IntakeStage's `RemarkSiteControl`
+sibling) arms per-site, shows the live 3–12 count, Finish disabled below
+the floor; the row echoes "N rim points placed" and, post-run,
+`border_click_disagreement_mm` in the discriminator's own muted line.
+TRADE-OFF, said out loud rather than buried: Finish/Cancel both discard
+the session's on-screen dots on the way out (never `finishRimPoints`'
+commit-and-keep) because nothing re-derives committed spheres from the
+server's echo on the next mount — keeping them after a successful PUT
+would show state the stage cannot actually recover one render later. A
+network failure mid-Finish loses the WHOLE session (up to 12 clicks), not
+one click, matching this app's own established "disarm before the
+request lands" pattern (`handleRemarkResolved` does the same) but at a
+higher cost per failure; a redo-without-reclicking retry was considered
+and dropped for this slice — the discarded dots have no anchor to redraw
+against. packages/viewer 153 (+3, `withinRimPointsCap`'s boundary
+arithmetic — the collect-mode's click flow itself stays browser-only,
+same doctrine as every other pointer flow in that file); apps/product
+1531 (+25: 14 `RimPointsControl`/row-echo pins in IntakeStage.test.tsx, 9
+domain pins in intake.test.ts, 2 client-call pins — MainStage's own
+wiring is untestable under `renderToStaticMarkup` the same way and earns
+no pin of its own, same as `markArmed`'s).
+
 **AT rim-points seam — §10-AL's server half (2026-08-15).** SiteSession
 gains rim_points beside marked_center; PUT/DELETE
 .../sites/{tooth}/rim-points (RimPointsIn, extra=forbid, 3–12 finite

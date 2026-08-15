@@ -626,6 +626,155 @@ describe("re-marking the active site's centre (client 2026-08-01, the tooth-29 g
 });
 
 /**
+ * RIM BORDER POINTS (§10-AL, task #33 — "we lost the tool we had in the demo where we
+ * made points around the border of the healing cap in the scan"). RemarkSiteControl's
+ * sibling: idle / armed / saving, the BFF's own refusal verbatim — but never a reset
+ * door, so there is no confirm step to pin here.
+ */
+describe("rim border points (§10-AL, task #33)", () => {
+  it("offers no door at all without an active site", () => {
+    expect(view()).not.toContain('data-role="rim-points"');
+  });
+
+  it("an active site offers the door, closed, when nothing is in flight", () => {
+    const html = view({ activeTooth: 19 });
+    expect(html).toContain('data-role="rim-points-ask"');
+    expect(html).toContain("Rim border points");
+    expect(html).not.toContain('data-role="rim-points-prompt"');
+    expect(html).not.toContain('data-role="rim-points-count"');
+  });
+
+  it("armed, it states the 3-12 bound and offers Finish (disabled) and Cancel", () => {
+    const html = view({ activeTooth: 19, rimPointsArmedTooth: 19, rimPointsLiveCount: 0 });
+    expect(html).toContain('data-role="rim-points-prompt"');
+    expect(html).toContain("tooth 19");
+    expect(html).toContain("3");
+    expect(html).toContain("12");
+    expect(html).toMatch(/data-role="rim-points-finish"[^>]*disabled/);
+    expect(html).toContain('data-role="rim-points-cancel"');
+    expect(html).not.toContain('data-role="rim-points-ask"');
+  });
+
+  it("below the floor (1-2 points) Finish stays disabled — the BFF would 422 it", () => {
+    const html = view({ activeTooth: 19, rimPointsArmedTooth: 19, rimPointsLiveCount: 2 });
+    expect(html).toContain("1 more");
+    expect(html).toMatch(/data-role="rim-points-finish"[^>]*disabled/);
+  });
+
+  it("at the floor (3 points) Finish is enabled — a live count, not a stale one", () => {
+    const html = view({ activeTooth: 19, rimPointsArmedTooth: 19, rimPointsLiveCount: 3 });
+    expect(html).not.toMatch(/data-role="rim-points-finish"[^>]*disabled/);
+    expect(html).toContain("Finish");
+  });
+
+  it("at the ceiling (12 points) says so — the maximum, not a silent stop", () => {
+    const html = view({ activeTooth: 19, rimPointsArmedTooth: 19, rimPointsLiveCount: 12 });
+    expect(html).toContain("maximum");
+    expect(html).not.toMatch(/data-role="rim-points-finish"[^>]*disabled/);
+  });
+
+  it("saving is stated while the PUT is in flight (optimism is OFF)", () => {
+    const html = view({
+      activeTooth: 19,
+      rimPointsArmedTooth: 19,
+      rimPointsLiveCount: 5,
+      rimPointsSaving: true,
+    });
+    expect(html).toContain('data-role="rim-points-finish"');
+    expect(html).toContain("Saving");
+  });
+
+  it("shows the BFF's own refusal rather than a summary of it", () => {
+    const html = view({
+      activeTooth: 19,
+      rimPointsError: "rim_points needs between 3 and 12 points to fit a rim circle honestly, got 2",
+    });
+    expect(html).toContain('data-role="rim-points-error"');
+    expect(html).toContain("needs between 3 and 12");
+  });
+
+  it("an existing standing session shows its count and a way to clear it, idle only", () => {
+    const html = view({
+      activeTooth: 19,
+      detail: caseSessionDetail({
+        sites: [
+          siteView({
+            tooth: 19,
+            rim_points: [
+              [1, 2, 3],
+              [4, 5, 6],
+              [7, 8, 9],
+            ],
+          }),
+        ],
+      }),
+    });
+    expect(html).toContain('data-role="rim-points-count"');
+    expect(html).toContain("3 rim points placed");
+    expect(html).toContain('data-role="rim-points-clear"');
+  });
+
+  it("armed hides the standing-count chip — the row shows the LIVE prompt instead", () => {
+    const html = view({
+      activeTooth: 19,
+      rimPointsArmedTooth: 19,
+      detail: caseSessionDetail({
+        sites: [siteView({ tooth: 19, rim_points: [[1, 2, 3], [4, 5, 6], [7, 8, 9]] })],
+      }),
+    });
+    expect(html).not.toContain('data-role="rim-points-count"');
+    expect(html).toContain('data-role="rim-points-prompt"');
+  });
+});
+
+describe("the site row's rim-points echo and border-click disagreement (task #33 item 4)", () => {
+  it("a site with no rim points carries no count fact", () => {
+    const html = view({ detail: caseSessionDetail({ sites: [siteView({ tooth: 19 })] }) });
+    expect(html).not.toContain('data-role="site-rim-points-count"');
+  });
+
+  it("a site WITH rim points shows the count, on the row, not just the active-site panel", () => {
+    const html = view({
+      detail: caseSessionDetail({
+        sites: [
+          siteView({
+            tooth: 19,
+            rim_points: [
+              [1, 2, 3],
+              [4, 5, 6],
+              [7, 8, 9],
+            ],
+          }),
+        ],
+      }),
+    });
+    expect(html).toContain('data-role="site-rim-points-count"');
+    expect(html).toContain("3 rim points placed");
+  });
+
+  it("border_click_disagreement_mm renders in the discriminator's own muted styling", () => {
+    const html = view({
+      detail: caseSessionDetail({
+        sites: [siteView({ tooth: 19, border_click_disagreement_mm: 0.734 })],
+      }),
+    });
+    expect(html).toMatch(
+      /data-role="site-border-disagreement" class="decode-stepper__state"/,
+    );
+    expect(html).toContain("0.73");
+  });
+
+  it("absent before any run has read it — never a zero standing in for an untaken read", () => {
+    const html = view({
+      detail: caseSessionDetail({
+        sites: [siteView({ tooth: 19, border_click_disagreement_mm: null })],
+      }),
+    });
+    expect(html).not.toContain('data-role="site-border-disagreement"');
+  });
+});
+
+/**
  * THE COMP'S PAGE CLOTHES (page pass 2026-08-02, §10-AA): the comp's intake puts the
  * SCAN first — a panel whose head names the scan and the centred count, the viewer as
  * its stage, the per-site rows directly under it — and the control cards in a narrow

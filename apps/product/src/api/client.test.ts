@@ -24,6 +24,8 @@ import {
   postRun,
   putChoices,
   putDeclaration,
+  putRimPoints,
+  deleteRimPoints,
   putSystem,
   previewMeshUrl,
   qcImageUrl,
@@ -131,6 +133,32 @@ describe("the action requests (slice 4) — detect and choices", () => {
     expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({
       variant: "5020",
     });
+  });
+
+  it("rim-points PUTs {points} to the tooth's own rim-points path (task #33)", async () => {
+    const calls = capturingFetch();
+    await putRimPoints("case-a", 19, [
+      [1, 2, 3],
+      [4, 5, 6],
+      [7, 8, 9],
+    ]);
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/sites/19/rim-points");
+    expect(calls[0]!.init?.method).toBe("PUT");
+    expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({
+      points: [
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9],
+      ],
+    });
+  });
+
+  it("rim-points DELETEs the same path, body-less — two-way like the review tick", async () => {
+    const calls = capturingFetch();
+    await deleteRimPoints("case-a", 19);
+    expect(calls[0]!.url).toBe("/api/case-sessions/case-a/sites/19/rim-points");
+    expect(calls[0]!.init?.method).toBe("DELETE");
+    expect(calls[0]!.init?.body).toBeUndefined();
   });
 
   it("preview POSTs with no body to the tooth's own path — everything derives from the session", async () => {

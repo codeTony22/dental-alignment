@@ -586,6 +586,60 @@ export function remarkWords(tooth: number): string {
 }
 
 /**
+ * THE RIM BORDER-POINTS INTAKE AID (§10-AL, task #33 — "we lost the tool we had in
+ * the demo where we made points around the border of the healing cap in the scan").
+ * The bounds mirror the BFF's own `RimPointsIn` validator (bff/resources/
+ * case_sessions.py) EXACTLY — 3..12 — so the operator learns the shape BEFORE a
+ * refusal rather than after: the viewer's collect-mode stops accepting clicks at the
+ * ceiling (see packages/viewer's `withinRimPointsCap`), and Finish stays disabled
+ * below the floor rather than firing a PUT the BFF would 422 on. Kept here rather
+ * than imported from the BFF for the same reason the BFF's own docstring gives for
+ * not importing the DEMO's cap: this route's floor is a decision only this app's
+ * request model makes, and the two must be able to read the same number without a
+ * cross-package import.
+ */
+export const MIN_RIM_POINTS = 3;
+export const MAX_RIM_POINTS = 12;
+
+/** Whether the session collected so far is a shape the PUT would accept. */
+export function canFinishRimPoints(count: number): boolean {
+  return count >= MIN_RIM_POINTS && count <= MAX_RIM_POINTS;
+}
+
+/** The live prompt while a rim-points session is armed — states the floor/ceiling and
+ *  how far the operator still has to go, never a bare number with no meaning attached. */
+export function rimPointsCountWords(count: number): string {
+  if (count === 0) {
+    return `Click ${MIN_RIM_POINTS}–${MAX_RIM_POINTS} points around the cap's visible border.`;
+  }
+  if (count < MIN_RIM_POINTS) {
+    const more = MIN_RIM_POINTS - count;
+    return `${count} point${count === 1 ? "" : "s"} so far — ${more} more to finish.`;
+  }
+  if (count >= MAX_RIM_POINTS) {
+    return `${count} points — the maximum. Finish, or cancel and start over to change one.`;
+  }
+  return `${count} points so far — Finish when ready (up to ${MAX_RIM_POINTS}).`;
+}
+
+/** The row's own words for a STANDING (already-PUT) session — never conflated with the
+ *  live in-progress count above, which describes a session not yet sent anywhere. */
+export function rimPointsPlacedWords(count: number): string {
+  return `${count} rim points placed`;
+}
+
+/**
+ * THE BORDER CLICKS' OWN DISAGREEMENT, SAID (SiteView.border_click_disagreement_mm —
+ * the max leave-one-out plane distance auto_flow computes over the operator's own
+ * border clicks, n>=4). A RUN fact, never rendered until now — rule 8's own case: a
+ * fact the pipeline computes and the UI omits is a bug, and this one already told a
+ * run-report reader "why did this seat tilt" with no surface to show it on Intake.
+ */
+export function borderClickDisagreementWords(mm: number): string {
+  return `border clicks disagree by up to ${mm.toFixed(2)}mm`;
+}
+
+/**
  * THE EVIDENCE A SITE ROW CARRIES (client 2026-07-31).
  *
  * The design prototype puts a confidence percentage on every row. There is no such

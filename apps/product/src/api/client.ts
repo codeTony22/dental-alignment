@@ -145,6 +145,22 @@ export interface SiteView {
    *  next run's selection and re-apply after automation. A served COUNT — the
    *  surface says "N measurements ride the next run", never the coordinates. */
   alignment_evidence_count?: number;
+  /** THE RIM BORDER-POINTS INTAKE AID (§10-AL, task #33), echoed exactly as recorded
+   *  — the operator's own measurement, not a worker fact, so this is a pass-through
+   *  like `center` rather than a derivation like `capture`. None/absent on a site
+   *  nobody has clicked points on yet, or after a re-mark retired them (bff
+   *  SiteSession.rim_points's own doc — a moved centre invalidates points measured
+   *  against it). Optional only because fixtures/tests built before this field
+   *  existed omit it; the BFF always sends it. */
+  rim_points?: number[][] | null;
+  /** THE MAX LEAVE-ONE-OUT PLANE DISTANCE over the operator's own border clicks
+   *  (bff SiteView.border_click_disagreement_mm's own doc — auto_flow's
+   *  `_border_click_disagreement`, n>=4) — a RUN fact, read off the CURRENT run's own
+   *  row for this tooth, never `rim_points` above's own echo (which may predate this
+   *  route entirely — the demo's own clicks, curated sites.json rim_points). None
+   *  before any run exists, or when the row itself has fewer than four border clicks
+   *  to disagree over. Optional for the same fixture reason as `rim_points`. */
+  border_click_disagreement_mm?: number | null;
 }
 
 /** A detector proposal: centre + evidence + the NON-BINDING tooth guess + capture. */
@@ -1528,6 +1544,42 @@ export async function putRemarkedSite(
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ center: [...center] }),
+  });
+}
+
+/**
+ * RECORD a site's RIM BORDER POINTS (PUT /{id}/sites/{tooth}/rim-points — §10-AL,
+ * task #33: "we lost the tool we had in the demo where we made points around the
+ * border of the healing cap in the scan"). An INTAKE capture aid, never a seat input
+ * (the BFF's own `RimPointsIn` doc) — feeds the capture assessment's rim-diameter
+ * read, nothing else. 3–12 finite [x, y, z] triples, sent exactly as clicked — the
+ * re-click pair-integrity rule applies here exactly as it does to a mark: the BFF
+ * refuses a shape outside that bound rather than averaging or dropping points to fit.
+ *
+ * NOT a reset boundary (unlike `putRemarkedSite`): no centre changes and no preview,
+ * review or run falls with this write.
+ */
+export async function putRimPoints(
+  caseId: string,
+  tooth: number,
+  points: readonly (readonly number[])[],
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(siteActionPath(caseId, tooth, "rim-points"), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ points: points.map((p) => [...p]) }),
+  });
+}
+
+/** CLEAR a standing rim border-points reading (DELETE, same path) — two-way like the
+ *  review tick and the withhold intent: the act's whole content is the request, so
+ *  no field exists for a claimed outcome to ride in on. */
+export async function deleteRimPoints(
+  caseId: string,
+  tooth: number,
+): Promise<ApiResult<CaseSessionDetail>> {
+  return fetchJson<CaseSessionDetail>(siteActionPath(caseId, tooth, "rim-points"), {
+    method: "DELETE",
   });
 }
 

@@ -259,6 +259,28 @@ export interface MainStageProps {
    *  what every existing mount wants. */
   readonly markArmed?: boolean;
   readonly onMark?: ((point: readonly [number, number, number]) => void) | null;
+  /** RIM BORDER-POINTS COLLECTION (§10-AL intake capture aid, task #33) — the tooth
+   *  currently collecting rim-border points, or null/omitted when idle. Distinct from
+   *  `markArmed`: every click on the scan reports the RUNNING list via
+   *  `onRimPointsChanged` and the pick STAYS ARMED (a multi-click session) rather than
+   *  resolving once. There is no separate finish/cancel call on the stage — the caller
+   *  decides what disarming (setting this back to null) MEANS (PUT the draft, or throw
+   *  it away); the stage only ever DISCARDS its own transient dots on the way out. That
+   *  is a deliberate simplification, not an oversight: nothing re-derives committed rim-
+   *  point spheres from the server's own echo on the next mount, so keeping them on
+   *  screen after a successful PUT would show a state the stage cannot actually recover
+   *  one render later — a discard is the only rendering the stage can keep honest. */
+  readonly rimPointsTooth?: number | null;
+  /** Fires after EVERY click while `rimPointsTooth` is armed, with the running list
+   *  collected this session (world-frame triples) — what a live "N points" control reads. */
+  readonly onRimPointsChanged?:
+    | ((points: readonly (readonly [number, number, number])[]) => void)
+    | null;
+  /** The collection's hard ceiling (the caller's own domain constant, mirroring the
+   *  BFF's RimPointsIn bound) — a click past it is ignored rather than growing a draft
+   *  the eventual PUT would refuse. Omitted = uncapped (no caller sets this yet besides
+   *  Intake's rim-points control). */
+  readonly rimPointsMaxPoints?: number;
   /** THE CASE'S JAW (client 2026-08-09: "we recognize that the scan was an upper jaw but
    *  we didnt set the camara / posisiton to be facing with the teeth downwards"). "upper"
    *  rolls the anatomical presets so the crowns hang DOWN, as they do in the patient.
@@ -277,6 +299,9 @@ export function MainStage({
   activeTooth,
   markArmed = false,
   onMark = null,
+  rimPointsTooth = null,
+  onRimPointsChanged = null,
+  rimPointsMaxPoints,
   jaw = null,
 }: MainStageProps) {
   const viewerRef = useRef<Viewer3DHandle | null>(null);
@@ -382,6 +407,22 @@ export function MainStage({
     // called it on the way out.
     return () => viewerRef.current?.exitPointPick();
   }, [markArmed, onMark, onMarkMissed]);
+
+  /* RIM BORDER-POINTS COLLECTION (§10-AL, task #33) — the same "arm the controller's
+     own machinery, disarm it on the way out" shape as markArmed above, one door over:
+     enableRimPoints/cancelRimPoints are the viewer's own multi-click collect-mode
+     (ported wholesale with the rest of sceneController — copy-debt ledger row 3 — and
+     unused by any product surface until this one). The cleanup ALWAYS cancels rather
+     than finishes: see rimPointsTooth's own doc for why a discard is the only rendering
+     this stage can keep honest on the way out, whichever way the caller disarmed it. */
+  useEffect(() => {
+    if (rimPointsTooth === null || onRimPointsChanged === null) return;
+    viewerRef.current?.enableRimPoints(rimPointsTooth, {
+      onPointsChanged: onRimPointsChanged,
+      maxPoints: rimPointsMaxPoints,
+    });
+    return () => viewerRef.current?.cancelRimPoints();
+  }, [rimPointsTooth, onRimPointsChanged, rimPointsMaxPoints]);
 
   const routeTarget = useMemo(
     () =>

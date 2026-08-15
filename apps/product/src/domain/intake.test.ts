@@ -31,6 +31,12 @@ import {
   type MarkDraft,
   OFF_SCAN_MISS_WORDS,
   turnaroundPillLabel,
+  MIN_RIM_POINTS,
+  MAX_RIM_POINTS,
+  canFinishRimPoints,
+  rimPointsCountWords,
+  rimPointsPlacedWords,
+  borderClickDisagreementWords,
 } from "./intake";
 import {
   captureAssessment,
@@ -876,6 +882,66 @@ describe("re-marking an existing site's centre (client 2026-08-01, the tooth-29 
       expect(words).toContain("current run");
       expect(words).toContain("anything signed over it");
     });
+  });
+});
+
+/**
+ * THE RIM BORDER-POINTS INTAKE AID (§10-AL, task #33). The bounds are the BFF's own
+ * RimPointsIn floor/ceiling (3..12), mirrored client-side so a refusal is never the
+ * first the operator hears of the shape.
+ */
+describe("canFinishRimPoints / MIN_RIM_POINTS / MAX_RIM_POINTS — the BFF's own bound, mirrored", () => {
+  it("the bound is exactly 3..12 — the BFF's RimPointsIn floor/ceiling", () => {
+    expect(MIN_RIM_POINTS).toBe(3);
+    expect(MAX_RIM_POINTS).toBe(12);
+  });
+
+  it("refuses below the floor and above the ceiling", () => {
+    expect(canFinishRimPoints(0)).toBe(false);
+    expect(canFinishRimPoints(2)).toBe(false);
+    expect(canFinishRimPoints(13)).toBe(false);
+  });
+
+  it("accepts the floor, the ceiling, and everything between", () => {
+    expect(canFinishRimPoints(3)).toBe(true);
+    expect(canFinishRimPoints(7)).toBe(true);
+    expect(canFinishRimPoints(12)).toBe(true);
+  });
+});
+
+describe("rimPointsCountWords — the live prompt while a session is armed", () => {
+  it("zero states the whole bound, not a bare instruction", () => {
+    const words = rimPointsCountWords(0);
+    expect(words).toContain("3");
+    expect(words).toContain("12");
+    expect(words).toContain("border");
+  });
+
+  it("below the floor names how many more are needed", () => {
+    expect(rimPointsCountWords(1)).toContain("2 more");
+    expect(rimPointsCountWords(2)).toContain("1 more");
+  });
+
+  it("at or past the ceiling says so — the maximum, not a silent stop", () => {
+    expect(rimPointsCountWords(12)).toContain("maximum");
+  });
+
+  it("between the floor and the ceiling, Finish is offered", () => {
+    expect(rimPointsCountWords(5)).toContain("Finish");
+  });
+});
+
+describe("rimPointsPlacedWords — the standing-session row words (task #33 item 4)", () => {
+  it("states the count exactly as the task's own wording", () => {
+    expect(rimPointsPlacedWords(6)).toBe("6 rim points placed");
+  });
+});
+
+describe("borderClickDisagreementWords — the run's own leave-one-out reading, said", () => {
+  it("states the figure to two decimals with its own words, not a bare number", () => {
+    const words = borderClickDisagreementWords(0.734);
+    expect(words).toContain("0.73");
+    expect(words).toContain("disagree");
   });
 });
 

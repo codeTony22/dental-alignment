@@ -16,10 +16,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  deleteRimPoints,
   postDetect,
   postMarkedSite,
   putChoices,
   putRemarkedSite,
+  putRimPoints,
   type CaseSessionDetail,
   type ChoicesUpdate,
 } from "../api/client";
@@ -53,6 +55,11 @@ import {
   type AdoptableProposal,
   type MarkDraft,
   OFF_SCAN_MISS_WORDS,
+  MAX_RIM_POINTS,
+  canFinishRimPoints,
+  rimPointsCountWords,
+  rimPointsPlacedWords,
+  borderClickDisagreementWords,
 } from "../domain/intake";
 import { MainStage } from "./MainStage";
 import { useDialogEscape } from "./useDialogEscape";
@@ -126,6 +133,17 @@ interface SiteListProps {
   readonly onUseDetectorCentre: (tooth: number, point: readonly number[]) => void;
   readonly onConfirmDetectorCentre: (tooth: number, point: readonly number[]) => void;
   readonly onCancelDetectorCentre: () => void;
+  /** RIM BORDER POINTS (§10-AL, task #33) — see RimPointsControl. Armed for at most
+   *  one tooth at a time, like every other door onto the stage's pointer. */
+  readonly rimPointsArmedTooth: number | null;
+  readonly rimPointsLiveCount: number;
+  readonly rimPointsSaving: boolean;
+  readonly rimPointsDeleting: boolean;
+  readonly rimPointsError: string | null;
+  readonly onArmRimPoints: (tooth: number) => void;
+  readonly onFinishRimPoints: () => void;
+  readonly onCancelRimPoints: () => void;
+  readonly onClearRimPoints: (tooth: number) => void;
 }
 
 /** One adoptable detected cap: the detector's facts, the operator's tooth number,
@@ -292,6 +310,115 @@ function RemarkSiteControl({
   );
 }
 
+interface RimPointsControlProps {
+  readonly tooth: number;
+  /** How many points a STANDING (already-PUT) session carries — `site.rim_points`'s
+   *  own length, never the live in-progress count below. */
+  readonly existingCount: number;
+  /** ARMED: the next several clicks on the scan collect this site's rim border. */
+  readonly armed: boolean;
+  /** The running count the viewer's collect-mode has reported this session. */
+  readonly liveCount: number;
+  readonly saving: boolean;
+  readonly deleting: boolean;
+  /** the BFF's own refusal, verbatim (whichever of PUT/DELETE last failed) */
+  readonly error: string | null;
+  readonly onArm: () => void;
+  readonly onFinish: () => void;
+  readonly onCancel: () => void;
+  readonly onClear: () => void;
+}
+
+/**
+ * RIM BORDER POINTS (§10-AL, task #33 — client: "we lost the tool we had in the demo
+ * where we made points around the border of the healing cap in the scan"). An INTAKE
+ * capture aid: several clicks around a cap's visible rim feed the capture assessment's
+ * rim-diameter read, never a seat (the BFF's own `RimPointsIn` doc; §10-AH already
+ * measured that a pair-shaped re-mark seed loses to the bare click on the DEV metric,
+ * so this tool is scoped to intake capture only, on purpose, not built toward ADJUST).
+ *
+ * `RemarkSiteControl`'s direct sibling in shape (idle / armed / saving, the BFF's own
+ * refusal shown verbatim) but NOT a reset door: recording rim points changes no centre
+ * and retires no preview, review or run, so there is no blast-radius confirmation to
+ * show first the way re-marking the centre has one.
+ */
+function RimPointsControl({
+  tooth,
+  existingCount,
+  armed,
+  liveCount,
+  saving,
+  deleting,
+  error,
+  onArm,
+  onFinish,
+  onCancel,
+  onClear,
+}: RimPointsControlProps) {
+  return (
+    <div data-role="rim-points" className="panel__actions">
+      {armed ? (
+        <>
+          <p data-role="rim-points-prompt" className="panel__hint">
+            Click points around tooth {tooth}&rsquo;s visible border.{" "}
+            {rimPointsCountWords(liveCount)}
+          </p>
+          <button
+            type="button"
+            data-role="rim-points-finish"
+            className="button button--primary button--small"
+            disabled={saving || !canFinishRimPoints(liveCount)}
+            onClick={onFinish}
+          >
+            {saving ? "Saving…" : "Finish"}
+          </button>
+          <button
+            type="button"
+            data-role="rim-points-cancel"
+            className="button button--ghost button--small"
+            disabled={saving}
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            data-role="rim-points-ask"
+            className="button button--ghost button--small"
+            onClick={onArm}
+          >
+            Rim border points
+          </button>
+          {existingCount > 0 && (
+            <>
+              <span data-role="rim-points-count" className="chip chip--gate">
+                {rimPointsPlacedWords(existingCount)}
+              </span>
+              <button
+                type="button"
+                data-role="rim-points-clear"
+                className="button button--ghost button--small"
+                disabled={deleting}
+                onClick={onClear}
+              >
+                {deleting ? "Clearing…" : "Clear"}
+              </button>
+            </>
+          )}
+        </>
+      )}
+      {error !== null && (
+        <div data-role="rim-points-error" role="alert" className="panel__error">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * The site queue's Intake face: tooth, status, the SERVER's evidence for this site,
  * capture chip — the demo's stepper list language.
@@ -325,6 +452,15 @@ function SiteList({
   onUseDetectorCentre,
   onConfirmDetectorCentre,
   onCancelDetectorCentre,
+  rimPointsArmedTooth,
+  rimPointsLiveCount,
+  rimPointsSaving,
+  rimPointsDeleting,
+  rimPointsError,
+  onArmRimPoints,
+  onFinishRimPoints,
+  onCancelRimPoints,
+  onClearRimPoints,
 }: SiteListProps) {
   const picker = sitePickerOffered(detail.sites);
   const adoptable = adoptableProposals(detail);
@@ -335,6 +471,9 @@ function SiteList({
       <ul className="decode-stepper__overview">
         {detail.sites.map((site) => {
           const discriminator = discriminatorEvidenceSentence(detail, site);
+          const rimPointCount = site.rim_points?.length ?? 0;
+          const borderDisagreement = site.border_click_disagreement_mm ?? null;
+          const stacked = discriminator !== null || borderDisagreement !== null;
           return (
             <li key={site.tooth} className="intake-site">
               <button
@@ -343,7 +482,7 @@ function SiteList({
                 data-tooth={site.tooth}
                 aria-pressed={site.tooth === activeTooth}
                 className={`decode-stepper__item intake-site__row${
-                  discriminator !== null ? " decode-stepper__item--stacked" : ""
+                  stacked ? " decode-stepper__item--stacked" : ""
                 }${site.tooth === activeTooth ? " decode-stepper__item--active" : ""}`}
                 title="Frame this site on the scan"
                 onClick={() => onSelectSite(site.tooth)}
@@ -364,6 +503,18 @@ function SiteList({
                     </span>
                   ))}
                 </span>
+                {/* THE RIM BORDER-POINTS ECHO (§10-AL, task #33 item 4): the operator's
+                    own standing measurement, on the SAME fact styling siteEvidence's
+                    array renders — absent for a site nobody has clicked points on. */}
+                {rimPointCount > 0 && (
+                  <span
+                    data-role="site-rim-points-count"
+                    className="intake-site__fact"
+                    title="Rim border points recorded for this site — feeds this site's capture read, never its seat."
+                  >
+                    {rimPointsPlacedWords(rimPointCount)}
+                  </span>
+                )}
                 <span
                   data-role="capture-chip"
                   data-verdict={site.capture?.verdict ?? "none"}
@@ -381,6 +532,15 @@ function SiteList({
                 {discriminator !== null && (
                   <span data-role="site-discriminator" className="decode-stepper__state">
                     {discriminator}
+                  </span>
+                )}
+                {/* THE BORDER CLICKS' OWN DISAGREEMENT (§10-AL, task #33 item 4) — the
+                    same muted full-width line as the discriminator above, served only
+                    post-run and only when the run's row read four or more border
+                    clicks to disagree over. */}
+                {borderDisagreement !== null && (
+                  <span data-role="site-border-disagreement" className="decode-stepper__state">
+                    {borderClickDisagreementWords(borderDisagreement)}
                   </span>
                 )}
               </button>
@@ -483,6 +643,19 @@ function SiteList({
             onAsk={onAskRemark}
             onConfirm={onConfirmRemark}
             onCancel={onCancelRemark}
+          />
+          <RimPointsControl
+            tooth={active.tooth}
+            existingCount={active.rim_points?.length ?? 0}
+            armed={rimPointsArmedTooth === active.tooth}
+            liveCount={rimPointsLiveCount}
+            saving={rimPointsSaving}
+            deleting={rimPointsDeleting}
+            error={rimPointsError}
+            onArm={() => onArmRimPoints(active.tooth)}
+            onFinish={onFinishRimPoints}
+            onCancel={onCancelRimPoints}
+            onClear={() => onClearRimPoints(active.tooth)}
           />
         </>
       )}
@@ -1004,6 +1177,17 @@ export interface IntakeStageViewProps {
   readonly onUseDetectorCentre?: (tooth: number, point: readonly number[]) => void;
   readonly onConfirmDetectorCentre?: (tooth: number, point: readonly number[]) => void;
   readonly onCancelDetectorCentre?: () => void;
+  /** RIM BORDER POINTS (§10-AL, task #33) — see RimPointsControl. */
+  readonly rimPointsArmedTooth?: number | null;
+  readonly rimPointsLiveCount?: number;
+  readonly rimPointsSaving?: boolean;
+  readonly rimPointsDeleting?: boolean;
+  readonly rimPointsError?: string | null;
+  readonly onArmRimPoints?: (tooth: number) => void;
+  readonly onRimPointsChanged?: (points: readonly (readonly [number, number, number])[]) => void;
+  readonly onFinishRimPoints?: () => void;
+  readonly onCancelRimPoints?: () => void;
+  readonly onClearRimPoints?: (tooth: number) => void;
   /** §10-AM built: the jaw cross-check's caution dialog, threaded to `ChoicesPanel`. */
   readonly jawAdvisoryOpen?: boolean;
   readonly onOpenJawAdvisory?: () => void;
@@ -1052,6 +1236,16 @@ export function IntakeStageView({
   onUseDetectorCentre = () => undefined,
   onConfirmDetectorCentre = () => undefined,
   onCancelDetectorCentre = () => undefined,
+  rimPointsArmedTooth = null,
+  rimPointsLiveCount = 0,
+  rimPointsSaving = false,
+  rimPointsDeleting = false,
+  rimPointsError = null,
+  onArmRimPoints = () => undefined,
+  onRimPointsChanged = () => undefined,
+  onFinishRimPoints = () => undefined,
+  onCancelRimPoints = () => undefined,
+  onClearRimPoints = () => undefined,
   jawAdvisoryOpen = false,
   onOpenJawAdvisory = () => undefined,
   onCloseJawAdvisory = () => undefined,
@@ -1095,6 +1289,14 @@ export function IntakeStageView({
               markArmed={markArmed || pickArmed || remarkArmed}
               onMark={onStagePoint}
               onMarkMissed={onStageMiss}
+              // RIM BORDER POINTS' OWN DOOR (§10-AL, task #33) — the viewer's SEPARATE
+              // multi-click collect-mode, not the single-shot pick markArmed shares
+              // above; armed for at most one tooth, mutually exclusive with the pick
+              // by the container's own "one door, one owner" discipline (see
+              // IntakeStage's handleArmRimPoints).
+              rimPointsTooth={rimPointsArmedTooth}
+              onRimPointsChanged={onRimPointsChanged}
+              rimPointsMaxPoints={MAX_RIM_POINTS}
             />
           </div>
           <SiteList
@@ -1121,6 +1323,15 @@ export function IntakeStageView({
             onUseDetectorCentre={onUseDetectorCentre}
             onConfirmDetectorCentre={onConfirmDetectorCentre}
             onCancelDetectorCentre={onCancelDetectorCentre}
+            rimPointsArmedTooth={rimPointsArmedTooth}
+            rimPointsLiveCount={rimPointsLiveCount}
+            rimPointsSaving={rimPointsSaving}
+            rimPointsDeleting={rimPointsDeleting}
+            rimPointsError={rimPointsError}
+            onArmRimPoints={onArmRimPoints}
+            onFinishRimPoints={onFinishRimPoints}
+            onCancelRimPoints={onCancelRimPoints}
+            onClearRimPoints={onClearRimPoints}
           />
         </section>
       </div>
@@ -1247,6 +1458,22 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
   const [pickArmed, setPickArmed] = useState(false);
   const [pickMiss, setPickMiss] = useState<string | null>(null);
 
+  /* RIM BORDER POINTS (§10-AL, task #33). Its own door onto the viewer's SEPARATE
+     multi-click collect-mode (MainStage's rimPointsTooth/onRimPointsChanged, not the
+     single-shot point pick the three doors above share) — but the SAME "one door, one
+     owner" discipline: arming it disarms the pick/mark/remark doors below (see
+     handleArmRimPoints), and each of THEM disarms this one in turn, so the operator is
+     never shown two doors open onto the scan at once. rimPointsDraft mirrors the
+     viewer's own live session via onRimPointsChanged — read at Finish time rather than
+     pulled imperatively, since nothing outside MainStage can reach the controller. */
+  const [rimPointsArmedTooth, setRimPointsArmedTooth] = useState<number | null>(null);
+  const [rimPointsDraft, setRimPointsDraft] = useState<
+    readonly (readonly [number, number, number])[]
+  >([]);
+  const [rimPointsSaving, setRimPointsSaving] = useState(false);
+  const [rimPointsDeleting, setRimPointsDeleting] = useState(false);
+  const [rimPointsError, setRimPointsError] = useState<string | null>(null);
+
   /* THE STAGE OPENS ON A SITE (client 2026-08-04). Until now it opened on none, and
      since the re-mark control renders only for the ACTIVE site, the act was
      unreachable without first clicking a row nothing asked the operator to click —
@@ -1273,6 +1500,11 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
     setRemarkError(null);
     setDetectorConfirming(false);
     setDetectorError(null);
+    // an in-progress rim-points session is ABOUT the previously active site too — a
+    // new selection makes it stale for the same reason the re-mark words above are
+    // (RimPointsControl only renders for the ACTIVE site), so it is discarded.
+    setRimPointsArmedTooth(null);
+    setRimPointsError(null);
   }, []);
 
   const handleArmPick = useCallback(() => {
@@ -1287,6 +1519,11 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
     setRemarkError(null);
     setDetectorConfirming(false);
     setDetectorError(null);
+    // the rim-points door is a SEPARATE viewer mechanism (task #33) but the same
+    // one-door discipline applies — arming the pick must not leave a rim-points
+    // session armed underneath it
+    setRimPointsArmedTooth(null);
+    setRimPointsError(null);
   }, []);
 
   const handleCancelPick = useCallback(() => {
@@ -1323,6 +1560,7 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
       setPickMiss(null);
       setRemarkConfirming(false);
       setRemarkArmed(false);
+      setRimPointsArmedTooth(null);
       const site = detail.sites.find((s) => s.tooth === tooth);
       if (site !== undefined && remarkRetiresSomething(site, detail)) {
         setDetectorConfirming(true);
@@ -1377,6 +1615,9 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
     const active = detail.sites.find((s) => s.tooth === activeTooth) ?? null;
     if (active === null) return;
     setRemarkError(null);
+    // the rim-points door is a separate viewer mechanism (task #33) but the same
+    // one-door discipline applies, whichever branch below this takes
+    setRimPointsArmedTooth(null);
     if (remarkRetiresSomething(active, detail)) {
       setRemarkConfirming(true);
       setRemarkArmed(false);
@@ -1497,6 +1738,78 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
       setMark((prev) => ({ ...prev, error: result.detail }));
     });
   }, [caseId, mark.pending, mark.tooth, onDetail, resetMark]);
+
+  /* RIM BORDER POINTS' OWN ACTS (§10-AL, task #33). Arming disarms every other door
+     (the discipline extended a fourth time, see handleArmPick's own comment for the
+     first three); Finish reads the DRAFT this render already holds (mirrored from the
+     viewer's live callback via handleRimPointsChanged) rather than reaching into
+     MainStage for it — nothing outside that component can reach the controller, and
+     nothing needs to: the draft here is never stale, because onRimPointsChanged fires
+     synchronously with every click. */
+  const handleRimPointsChanged = useCallback(
+    (points: readonly (readonly [number, number, number])[]) => {
+      setRimPointsDraft(points);
+    },
+    [],
+  );
+
+  const handleArmRimPoints = useCallback((tooth: number) => {
+    setPickArmed(false);
+    setPickMiss(null);
+    setMark(markOnArmPick);
+    setRemarkConfirming(false);
+    setRemarkArmed(false);
+    setRemarkError(null);
+    setDetectorConfirming(false);
+    setDetectorError(null);
+    setRimPointsDraft([]);
+    setRimPointsError(null);
+    setRimPointsArmedTooth(tooth);
+  }, []);
+
+  const handleFinishRimPoints = useCallback(() => {
+    const tooth = rimPointsArmedTooth;
+    if (tooth === null) return;
+    const points = rimPointsDraft;
+    // disarm FIRST (the viewer's own cleanup discards the on-screen dots either way —
+    // see MainStage's rimPointsTooth doc) so a second Finish click mid-flight cannot
+    // fire a second PUT for the same session
+    setRimPointsArmedTooth(null);
+    setRimPointsSaving(true);
+    setRimPointsError(null);
+    void putRimPoints(caseId, tooth, points).then((result) => {
+      setRimPointsSaving(false);
+      if (result.kind === "ok") {
+        onDetail(result.data);
+        return;
+      }
+      // the BFF's own words — the 3..12 refusal explains its own shape better than
+      // anything this layer could summarise
+      setRimPointsError(result.detail);
+    });
+  }, [caseId, onDetail, rimPointsArmedTooth, rimPointsDraft]);
+
+  const handleCancelRimPoints = useCallback(() => {
+    setRimPointsArmedTooth(null);
+    setRimPointsError(null);
+  }, []);
+
+  const handleClearRimPoints = useCallback(
+    (tooth: number) => {
+      setRimPointsDeleting(true);
+      setRimPointsError(null);
+      void deleteRimPoints(caseId, tooth).then((result) => {
+        setRimPointsDeleting(false);
+        if (result.kind === "ok") {
+          onDetail(result.data);
+          return;
+        }
+        setRimPointsError(result.detail);
+      });
+    },
+    [caseId, onDetail],
+  );
+
   const mountedRef = useRef(true);
   const [detectPhase, setDetectPhase] = useState<DetectPhase>({ kind: "idle" });
   const [savingChoices, setSavingChoices] = useState(false);
@@ -1574,6 +1887,7 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
         setRemarkConfirming(false);
         setRemarkArmed(false);
         setRemarkError(null);
+        setRimPointsArmedTooth(null); // the fourth door, disarmed the same way
       }}
       onCancelMark={resetMark}
       onMarkTooth={(tooth) => setMark((prev) => ({ ...prev, tooth }))}
@@ -1603,6 +1917,16 @@ export function IntakeStage({ detail, onDetail }: IntakeStageProps) {
       onUseDetectorCentre={handleUseDetectorCentre}
       onConfirmDetectorCentre={commitDetectorCentre}
       onCancelDetectorCentre={handleCancelDetectorCentre}
+      rimPointsArmedTooth={rimPointsArmedTooth}
+      rimPointsLiveCount={rimPointsDraft.length}
+      rimPointsSaving={rimPointsSaving}
+      rimPointsDeleting={rimPointsDeleting}
+      rimPointsError={rimPointsError}
+      onArmRimPoints={handleArmRimPoints}
+      onRimPointsChanged={handleRimPointsChanged}
+      onFinishRimPoints={handleFinishRimPoints}
+      onCancelRimPoints={handleCancelRimPoints}
+      onClearRimPoints={handleClearRimPoints}
       jawAdvisoryOpen={jawAdvisoryOpen}
       onOpenJawAdvisory={() => setJawAdvisoryOpen(true)}
       onCloseJawAdvisory={() => setJawAdvisoryOpen(false)}
