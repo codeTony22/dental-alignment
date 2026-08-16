@@ -3278,6 +3278,52 @@ lands the moat-bridge/orphan-flap work will need this artifact's own call
 site added to their consumer lists, the same way this entry's own remark on
 `_gingival_floor_a` should be read by anyone reconciling the two branches.
 
+**AT artifact 6, the ghost in the hole — the envelope is the cut (2026-08-15
+night, the fourth ruling refined on its own first emit).** The floored
+artifact's first real emit (cap7030 tooth 29, run 20260815-224356-8056c2)
+was depth-mapped before presentation, and the hole failed its own reference:
+the recess interior carried crescent- and slot-shaped geometry from the gum
+floor (−3.08mm, the ring-read's own correct value) up to +1.89mm — measured
+at EXACTLY the site's 0.08mm offset from the posed cap at every probed
+point, i.e. the punch's own cut surface, not scan capture and not a strip
+residue. Mechanism, reproduced deterministically through the application's
+own loaders: the EXACT cap as the punch carries its interior anatomy — the
+screw slot and code windows are VOIDS in the cap's solid (so the scanned
+bump's material there survives the difference as standing columns), and the
+sub-platform connection lobes (the template descends to −3.57mm) print as
+trenches above the floor. The client's verbatim reading of exactly that
+geometry, earlier the same night: "no i see the healing cap". Two wrong
+turns this measurement retired before any code moved: the pits read first as
+scan dive-in capture (refuted: 2.1–3.7mm from any raw-scan vertex), then as
+the docstring's submerged-cap clip no-op (refuted: the clip DID run; the
+floor value itself was right all along).
+
+THE FIX: `open_arch_with_floored_holes` cuts with the cap's revolute
+ENVELOPE (`punch_solid` — max radius per height, floored at the same
+`_gingival_floor_a` read), never `exact_cap_punch`. This is not new
+doctrine: it is the ENVELOPE-SOCKET semantics the client confirmed for the
+capless seat on 2026-08-09 ("never the exact surface"), applied to the
+artifact whose ruling anchor is a reference image of exactly that look — a
+clean revolute recess to the gum floor. §10-AS.14's exact-cut doctrine is
+untouched where it lives (the carve/socket artifacts, where the gum
+genuinely healed around the cap's exact shape). Bonus measured on the
+candidate build: the moat ring-gap around the exact punch's mouth closes
+too — the envelope's silhouette is wider than the torn crust band, so the
+wall meets the scan cleanly. The bff catalogue sentence drops "exact
+recess" for "seat cut clean" (deliver.py + its pin) — the words must not
+promise the anatomy the punch deliberately no longer prints.
+
+Tests first, in the recorded tradition: a new ghost pin
+(`test_the_hole_carries_no_cap_anatomy`) builds the defect's minimal scene —
+a gum sheet with a scanned-cap bump, a template with a slot void — and
+asserts every face inside the recess core sits AT the floor (nothing
+standing above, nothing below the clamp tolerance); it failed on the exact
+punch at anatomy +1.46mm above the floor, and passes on the envelope. The
+degenerate-template pin rewrote to the new ladder: a faceless template's
+envelope reads from its point cloud and cuts with NO note (the envelope IS
+the tool now, not a fallback); only an unreadable profile notes its
+cylinder-at-rim shape. Floored-holes class 8/8.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.

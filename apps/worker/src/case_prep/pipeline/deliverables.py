@@ -983,12 +983,30 @@ def open_arch_with_floored_holes(scan: trimesh.Trimesh,
     ``floor_a`` this time, exactly as every other floored recess in this
     module already is.
 
-    Per site ``(template, pose_matrix, offset_mm, rim_radius_mm)`` — the SAME
-    per-site fallback every other artifact in this module carries: a template
-    that cannot make an exact watertight punch falls back to its revolute
-    envelope, noted; a site with no measurable gum ring is an honest refusal
-    (there is no floor to fall back to that is not a guess) that fails the
-    WHOLE artifact open, never smuggled past as a silent zero.
+    THE ENVELOPE IS THE CUT (the same ruling, refined the same night on its
+    own first emit — cap7030 tooth 29, run 20260815-224356-8056c2): the
+    EXACT cap as the punch prints the cap's interior anatomy into the hole.
+    The screw slot and the code windows are VOIDS in the cap's solid, so the
+    scanned bump's material there survives the difference as standing
+    columns; the sub-platform connection lobes print as trenches (measured:
+    punch-signature surfaces at exactly the site's 0.08mm offset, spanning
+    the gum floor −3.08 up to the dome imprint's +1.89 — the client's
+    verbatim reading of that geometry: "no i see the healing cap"). This
+    artifact therefore cuts with the cap's REVOLUTE ENVELOPE
+    (``punch_solid`` — max radius per height, floored), the semantics the
+    client already confirmed for the capless seat (2026-08-09, the
+    envelope-socket ruling: the seat is "never the exact surface"): a clean
+    revolute recess to the gum floor, no anatomy, the reference look. The
+    exact-cut doctrine (§10-AS.14) is untouched where it lives — the
+    carve/socket artifacts, where the gum genuinely healed around the cap's
+    exact shape.
+
+    Per site ``(template, pose_matrix, offset_mm, rim_radius_mm)``: a
+    template whose envelope profile cannot be read cuts a cylinder recess at
+    the catalog rim radius, noted; a site with no measurable gum ring is an
+    honest refusal (there is no floor to fall back to that is not a guess)
+    that fails the WHOLE artifact open, never smuggled past as a silent
+    zero.
 
     Everything else is unchanged from the through-hole shape it replaces: the
     tracked difference against the solidified shell, ``strip_tracked``/
@@ -1013,11 +1031,9 @@ def open_arch_with_floored_holes(scan: trimesh.Trimesh,
             yl = R @ np.array([0.0, 1.0, 0.0])
             try:
                 zs_p, prof_p = _envelope_profile(template, float(offset_mm))
-                profile_ok = True
             except Exception as exc:  # noqa: BLE001 — cut on, honestly
                 zs_p = np.array([-_HOLE_DEPTH_MM, _HOLE_DEPTH_MM])
                 prof_p = np.full(2, rim_radius_mm + _REGION_MARGIN_MM)
-                profile_ok = False
                 notes.append(f"site {index}: the cap envelope could not be "
                              f"built ({exc}) — a cylinder recess was cut at "
                              f"the rim radius instead")
@@ -1028,16 +1044,11 @@ def open_arch_with_floored_holes(scan: trimesh.Trimesh,
             # no honest floor to fall back to.
             floor_a, _h_low = _gingival_floor_a(
                 V, solid, index, origin, axis, xl, yl, zs_p, prof_p, 0.0)
-            try:
-                punch = exact_cap_punch(template, float(offset_mm), pose,
-                                        floor_a)
-            except Exception as exc:  # noqa: BLE001 — per-site honest fallback
-                if profile_ok:  # a degenerate template already told its story
-                    notes.append(f"site {index}: the exact cap could not be "
-                                 f"cut ({exc}) — its envelope was used "
-                                 f"instead")
-                punch = punch_solid(zs_p, prof_p, floor_a, pose)
-            punches.append(punch)
+            # THE ENVELOPE IS THE CUT — never ``exact_cap_punch`` here (see
+            # this function's own docstring: the exact cap prints its slot,
+            # code windows and connection lobes into the hole as the cap's
+            # ghost). A failed profile already noted its cylinder shape.
+            punches.append(punch_solid(zs_p, prof_p, floor_a, pose))
 
         tracked_keep: Optional[np.ndarray] = None
         scan_provenance: Optional[np.ndarray] = None

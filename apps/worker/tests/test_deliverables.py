@@ -2063,7 +2063,10 @@ class TestOpenArchWithFlooredHoles:
     floor"). Retires ``open_arch_with_through_holes`` (renamed from it, same
     slot, same authority): the open scan, each site's cap punched to a clean
     recess floored at the gingival level, no shaft descending into the
-    solidified interior."""
+    solidified interior. REFINED the same night on the ruling's own first
+    emit (the ghost pin below carries the measurement): the punch is the
+    cap's revolute ENVELOPE, never the exact cap — the exact cap prints its
+    own anatomy into the hole."""
 
     def _site(self, offset=0.2, rim_r=2.0):
         return (trimesh.creation.cylinder(radius=2.0, height=4.0),
@@ -2231,6 +2234,85 @@ class TestOpenArchWithFlooredHoles:
             f"{expected_floor_a - float(axial.min()):.3f}mm below the " \
             f"requested floor — exactly the shaft this ruling retires"
 
+    def test_the_hole_carries_no_cap_anatomy(self, engine_expects):
+        """THE CAP'S GHOST, PINNED (measured on cap7030 tooth 29, run
+        20260815-224356-8056c2, the fourth ruling's own first emit): the
+        EXACT cap as the punch prints the cap's interior anatomy into the
+        hole — the screw slot and code windows are VOIDS in the cap, so
+        the scanned bump's material there survives the difference as
+        standing columns, and the sub-platform connection lobes print as
+        trenches (measured: punch-signature surfaces at exactly the
+        site's own 0.08mm offset, spanning gum −3.08 up to the dome's
+        +1.89). The client's verbatim reading of exactly that geometry:
+        "no i see the healing cap".
+
+        THE ENVELOPE IS THE CUT for this artifact — the cap's revolute
+        silhouette (max radius per height), the semantics the client
+        already confirmed for the capless seat (2026-08-09, the envelope-
+        socket ruling: "never the exact surface") — so the hole is a clean
+        revolute recess to the gum floor, the reference tool's own look.
+
+        The fixture is the defect's minimal scene: a gum sheet with a
+        scanned-cap BUMP standing over the site, and a template whose top
+        face carries a slot VOID. Under the exact punch the bump's
+        material inside the slot survives above the floor; under the
+        envelope punch the interior is swept clean. The pin: every shipped
+        face inside the recess core sits AT the floor — nothing standing
+        above it, nothing sunk below the ray-clamp tolerance the sibling
+        pin already grants."""
+        from case_prep.pipeline import deliverables as d
+        from case_prep.pipeline.kernel import default_kernel
+
+        # the scanned cap: a 1.5mm bump plateauing r<1.2, feathered to the
+        # flat gum at r=1.8 — a height field, so the sheet never self-crosses
+        n, extent = 81, 8.0
+        xs, ys = np.meshgrid(np.linspace(-extent, extent, n),
+                             np.linspace(-extent, extent, n))
+        rr = np.hypot(xs, ys)
+        zz = 1.5 * np.clip((1.8 - rr) / 0.6, 0.0, 1.0)
+        pts = np.column_stack([xs.ravel(), ys.ravel(), zz.ravel()])
+        faces = []
+        for i in range(n - 1):
+            for j in range(n - 1):
+                a = i * n + j
+                faces.append([a, a + 1, a + n + 1])
+                faces.append([a, a + n + 1, a + n])
+        sheet = trimesh.Trimesh(pts, np.asarray(faces), process=False)
+
+        # the template: the class's own cylinder, with a slot void cut
+        # through its top face (1.0mm wide, down to 1.5mm above the base)
+        cyl = trimesh.creation.cylinder(radius=2.0, height=4.0)
+        slot = trimesh.creation.box(extents=[1.0, 6.0, 3.0])
+        slot.apply_translation([0.0, 0.0, 1.0])
+        template = default_kernel().difference(cyl, [slot])
+        assert template.is_watertight, "the slotted fixture must be a solid"
+
+        pose = _pose_at(0.0, 0.0, 1.0)
+        out, notes = d.open_arch_with_floored_holes(
+            sheet, [(template, pose, 0.2, 2.0)])
+        if engine_expects.tracked:
+            assert notes == []
+        else:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
+        assert out is not None
+        origin = pose[:3, 3]
+        axis = pose[:3, :3] @ np.array([0.0, 0.0, 1.0])
+        C = np.asarray(out.triangles_center, float)
+        rel = C - origin
+        a_c = rel @ axis
+        r_c = np.linalg.norm(rel - np.outer(a_c, axis), axis=1)
+        core = r_c < 1.7
+        assert core.any(), "the recess core must carry a floor at all"
+        floor_a = -1.0  # world z=0.0 gum, site posed at world z=1.0
+        worst_above = float(a_c[core].max())
+        assert worst_above < floor_a + 0.15, \
+            f"cap anatomy stands {worst_above - floor_a:.3f}mm above the " \
+            f"gingival floor inside the recess — the ghost the client read " \
+            f"as the healing cap still in the hole"
+        assert float(a_c[core].min()) > floor_a - 0.31, \
+            "the recess core sinks below the floor's own clamp tolerance"
+
     def test_the_excision_holds_here_too(self, monkeypatch, engine_expects):
         """DEFECT 1's own classifier, applied to this artifact too: a
         scanned cap's own crust can still stand proud of the floored recess.
@@ -2275,39 +2357,54 @@ class TestOpenArchWithFlooredHoles:
         assert survivors == [], \
             f"{len(survivors)} scanned-cap crust vertex(es) survived the recess"
 
-    def test_a_degenerate_template_falls_back_to_its_envelope_per_site(
+    def test_a_degenerate_template_still_cuts_and_an_unreadable_one_notes(
             self, engine_expects):
-        """A template with real vertex geometry (so its ENVELOPE profile can
-        still be read as a point cloud) but zero faces (so ``exact_cap_punch``
-        refuses outright — "not a watertight solid") falls back to the
-        envelope tool for that one site, noted; the good site is untouched.
+        """THE FALLBACK LADDER UNDER THE ENVELOPE-IS-THE-CUT REFINEMENT
+        (this class's ghost pin carries the measurement that forced it): a
+        template with real vertex geometry but zero faces reads its
+        ENVELOPE profile from the point cloud and cuts EXACTLY like a
+        healthy site — no note, because the envelope is no longer a
+        fallback, it IS the tool. A template with no usable geometry at
+        all cannot even give a profile: that site cuts a cylinder recess
+        at the catalog rim radius, and says so.
 
         ENGINE-AWARE (kernel-parity-scoreboard.md, item 1, extended past
-        the parity branch, product-app-plan.md's §10-AT ledger): the good
-        site's own untracked ``difference`` succeeds (verified directly for
-        the through-hole ruling's own build of this same fixture — this is
-        the SAME clean cylinder site as the tests above), so the
-        tracked-strip-fallback note lands SECOND, strictly after the
-        per-site envelope note the loop already appends — two notes, not
-        one, in that order."""
+        the parity branch, product-app-plan.md's §10-AT ledger): the
+        tracked strip's own fallback note, when the kernel carries no
+        tracked ops, lands strictly AFTER the per-site cylinder note the
+        loop already appends — the loop runs first."""
         from case_prep.pipeline import deliverables as d
 
         good = self._site()
         good_cyl = trimesh.creation.cylinder(radius=2.0, height=4.0)
-        degenerate_template = trimesh.Trimesh(
+        faceless_template = trimesh.Trimesh(
             vertices=good_cyl.vertices.copy(),
             faces=np.zeros((0, 3), dtype=int), process=False)
-        degenerate = (degenerate_template, _pose_at(3.0, 3.0, 1.0), 0.2, 2.0)
+        faceless = (faceless_template, _pose_at(3.0, 3.0, 1.0), 0.2, 2.0)
         out, notes = d.open_arch_with_floored_holes(
-            _ridge_sheet(), [good, degenerate])
+            _ridge_sheet(), [good, faceless])
         assert out is not None
         if engine_expects.tracked:
-            assert len(notes) == 1
+            assert notes == [], \
+                "a faceless template's envelope reads from its point " \
+                "cloud — the envelope IS the cut, no fallback fired"
         else:
-            assert len(notes) == 2
-            assert "the provenance-tracked strip could not run" in notes[1]
-        assert notes[0].startswith("site 2")
-        assert "envelope was used instead" in notes[0]
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
+
+        empty_template = trimesh.Trimesh()
+        unreadable = (empty_template, _pose_at(3.0, 3.0, 1.0), 0.2, 2.0)
+        out2, notes2 = d.open_arch_with_floored_holes(
+            _ridge_sheet(), [good, unreadable])
+        assert out2 is not None
+        assert notes2[0].startswith("site 2")
+        assert "a cylinder recess was cut at the rim radius instead" \
+            in notes2[0]
+        if engine_expects.tracked:
+            assert len(notes2) == 1
+        else:
+            assert len(notes2) == 2
+            assert "the provenance-tracked strip could not run" in notes2[1]
 
     def test_a_totally_unbuildable_scan_fails_open_to_absence(self):
         from case_prep.pipeline import deliverables as d

@@ -830,11 +830,14 @@ class TestArtifactsDisclose:
             "saw of the cap, nothing else")
         # ARTIFACT 6, THE FOURTH RULING (client-ruled, live call over a reference
         # image, 2026-08-15 night): the through-hole sentence retires in turn —
-        # the recess now reads to the gingival floor, no shaft. The filename
-        # (and its slot) survive unchanged; only the sentence updates. Also a
-        # name-shape, not a fixture file here.
+        # the recess now reads to the gingival floor, no shaft. REFINED the same
+        # night (the worker's ghost pin carries the measurement): the cut is the
+        # cap's envelope, so "exact recess" left the sentence — the words must
+        # not promise the anatomy the punch deliberately no longer prints. The
+        # filename (and its slot) survive unchanged. Also a name-shape, not a
+        # fixture file here.
         assert artifact_description("neodent-gm-arch-open-holes.stl") == (
-            "the open scan with each cap's exact recess cut to the gingival "
+            "the open scan with each cap's seat cut clean to the gingival "
             "floor — the hole as the lab expects it")
         assert artifact_description("neodent-gm-model-closed.stl") is None, \
             "the retired name-shape must not still be recognised"
