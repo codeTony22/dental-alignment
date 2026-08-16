@@ -283,8 +283,11 @@ class DetectedProposal(BaseModel):
     and the site's capture assessment — worker facts, written only by the detect route."""
 
     center: List[float]
-    void_ratio: float
-    rim_below_cusps_mm: float
+    # LOOSENED to Optional at the blind wiring (client 2026-08-16): these two are
+    # the DENSITY detector's own discriminators, honestly absent on a
+    # blind-cylinder proposal. Every pre-wiring document carries floats.
+    void_ratio: Optional[float]
+    rim_below_cusps_mm: Optional[float]
     tooth_guess: Optional[int] = None
     capture: dict
     # P4.1 — additive curve honesty. Pre-field documents omit these; False is a
@@ -292,6 +295,9 @@ class DetectedProposal(BaseModel):
     density_prior_used: Optional[bool] = None
     dp_gap_fraction: Optional[float] = None
     bearing_margin: Optional[List[float]] = None
+    # which instrument found it — "density" | "blind-cylinder"; None on pre-wiring
+    # documents, which are all density's
+    proposer: Optional[str] = None
 
 
 class DetectionRecord(BaseModel):

@@ -330,13 +330,16 @@ export function adoptableProposals(
         SITE_PICK_RADIUS_MM,
     );
     if (represented) return;
-    out.push({
-      index,
-      center: centre,
-      facts:
-        `recess void ${proposal.void_ratio.toFixed(2)} · ` +
-        `rim ${proposal.rim_below_cusps_mm.toFixed(2)}mm below cusps`,
-    });
+    // the density discriminators are honestly null on a blind-cylinder
+    // proposal (the blind wiring, 2026-08-16) — say the provenance instead
+    // of crashing on .toFixed(null)
+    const facts =
+      proposal.void_ratio != null && proposal.rim_below_cusps_mm != null
+        ? `recess void ${proposal.void_ratio.toFixed(2)} · ` +
+          `rim ${proposal.rim_below_cusps_mm.toFixed(2)}mm below cusps`
+        : "found by the blind cylinder scan — no density evidence; " +
+          "judge it on the capture verdict";
+    out.push({ index, center: centre, facts });
   });
   return out;
 }
@@ -693,20 +696,28 @@ export function siteEvidence(
     (p) => p.tooth_guess === site.tooth,
   );
   if (proposal !== undefined) {
-    facts.push({
-      key: "recess",
-      text: `recess void ${proposal.void_ratio.toFixed(2)}`,
-      title:
-        "Screw-recess evidence: the share of the cap's core with no scan in it. Real caps " +
-        "measured 0.37–0.62 on the client's two arches; a palate slope measured 0.79.",
-    });
-    facts.push({
-      key: "rim",
-      text: `rim ${proposal.rim_below_cusps_mm.toFixed(2)}mm below cusps`,
-      title:
-        "How far this rim sits under the neighbouring cusps. Caps measured 0.0–0.66mm " +
-        "across the client's two arches; the worst tissue artifacts 0.79–1.9mm.",
-    });
+    // each number renders only if the proposing instrument measured it — a
+    // blind-cylinder proposal (2026-08-16 wiring) carries neither density
+    // discriminator, and this function's own doctrine already says absent
+    // numbers are absent facts, never borrowed
+    if (proposal.void_ratio != null) {
+      facts.push({
+        key: "recess",
+        text: `recess void ${proposal.void_ratio.toFixed(2)}`,
+        title:
+          "Screw-recess evidence: the share of the cap's core with no scan in it. Real caps " +
+          "measured 0.37–0.62 on the client's two arches; a palate slope measured 0.79.",
+      });
+    }
+    if (proposal.rim_below_cusps_mm != null) {
+      facts.push({
+        key: "rim",
+        text: `rim ${proposal.rim_below_cusps_mm.toFixed(2)}mm below cusps`,
+        title:
+          "How far this rim sits under the neighbouring cusps. Caps measured 0.0–0.66mm " +
+          "across the client's two arches; the worst tissue artifacts 0.79–1.9mm.",
+      });
+    }
   }
   return facts;
 }

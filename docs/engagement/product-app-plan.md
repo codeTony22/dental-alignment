@@ -3364,7 +3364,43 @@ lopsided-cusp rejection). `find_cap_sites`/`propose_sites` untouched —
 frozen-demo-shared. §10-AT front-1's template-matched doctrine untouched:
 this lane exists only where no template can be matched.
 
-**AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
+**AT the blind seeds wire into detect() — density wins ties (2026-08-16,
+client: "Wire it coordinate which is best at detenction... You can also do
+it in propose_sites if this is better").** The wiring the scoreboard entry
+above queued, landed on the client's own instruction — with the placement
+question answered AGAINST their propose_sites suggestion, for the frozen
+line's sake: `propose_sites`/`find_cap_sites` are called by the frozen
+demo's server.py, so new candidates there would change the demo's behaviour
+without touching a frozen file. The plug point is `detect()`'s own proposal
+loop (application/detection.py) — product-only, and every candidate there
+already gets the same evidence treatment (rim read, capture verdict, island
+honesty, tooth guess), which IS the "which is best at detection"
+coordination: one set of instruments judges every proposal regardless of
+which proposer found it.
+
+The lane is JUNIOR and additive: blind seeds run after the density
+proposals (a shadow — any failure inside the lane leaves the density result
+untouched), dedupe at the density detector's own 8mm separation with the
+density proposal winning every tie (it carries the void discriminator; a
+blind seed that close is the same site seen by a weaker instrument), and
+survivors append AFTER the density ranking — they carry no void evidence to
+rank by. Honesty over the wire: `DetectedSite.proposer`
+("density"|"blind-cylinder") rides additively worker→BFF→view→client;
+`void_ratio`/`rim_below_cusps_mm` loosen to Optional and are None on a
+blind proposal — never faked. The words layer was the one real landmine:
+`intake.ts`'s adoptable-proposal facts and `siteEvidence` both called
+`.toFixed` on the discriminators directly (a null = an Intake page crash);
+both now render provenance words ("found by the blind cylinder scan — no
+density evidence; judge it on the capture verdict") or omit the absent
+fact, per siteEvidence's own borrowing-is-a-lie doctrine.
+
+Tests first at all three layers: worker TestBlindSeedsInDetect (provenance +
+honest Nones + same evidence treatment; density wins ties with the survivor
+appended after; a crashing blind lane never takes down detect — all on a
+synthetic sheet with monkeypatched proposers, fast lane); bff
+test_a_blind_proposal_serves_its_provenance_and_honest_nulls (round-trip);
+product intake pins for the provenance words and the guarded facts.
+Product: tsc clean + 1551 vitest; bff test_case_sessions 121.
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.
 Diagnosed by measurement, §10-G style, not assumed: the synthetic case

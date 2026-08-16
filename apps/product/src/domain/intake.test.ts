@@ -720,6 +720,32 @@ describe("adoptableProposals — detected caps no site carries yet", () => {
     expect(adoptableProposals(detail)).toEqual([]);
   });
 
+  it("a blind-cylinder proposal says its provenance instead of crashing on null evidence", () => {
+    // the blind wiring (client 2026-08-16): the density discriminators are
+    // honestly null on a blind seed — .toFixed on them was a page crash
+    const detail = caseSessionDetail({
+      sites: [],
+      detection: detectionView([
+        detectedProposal({
+          tooth_guess: null,
+          center: [4.0, 5.0, 6.0],
+          void_ratio: null,
+          rim_below_cusps_mm: null,
+          proposer: "blind-cylinder",
+        } as never),
+      ]),
+    });
+    expect(adoptableProposals(detail)).toEqual([
+      {
+        index: 0,
+        center: [4.0, 5.0, 6.0],
+        facts:
+          "found by the blind cylinder scan — no density evidence; " +
+          "judge it on the capture verdict",
+      },
+    ]);
+  });
+
   it("a proposal within the pick radius of an existing site IS that site", () => {
     // either the detector re-found a curated cap, or the operator already
     // adopted this one — offering it again would mint a duplicate site

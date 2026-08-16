@@ -34,6 +34,7 @@ import trimesh
 from scipy.spatial import cKDTree
 
 from case_prep.adapters import library_catalog
+from case_prep.adapters.blind_candidates import propose_blind_candidates
 from case_prep.adapters.cap_detection import measure_rim_diameter
 from case_prep.application.cases import CaseRecord
 from case_prep.domain.cap_catalog import propose_variant
@@ -53,6 +54,18 @@ TOOTH_GUESS_RADIUS_MM = 5.0
 # world z on every one of 10 scans). 60 deg is generous headroom over that spread, not
 # a fitted boundary -- a scan that lands outside it is genuinely ambiguous, not unlucky.
 JAW_AXIS_COS_THRESHOLD = 0.5
+
+# The density detector's own dedupe distance (cap_detection._MIN_SEPARATION_MM,
+# mirrored rather than imported: that module is shared with the frozen demo and its
+# private constants are its own). A blind seed within one separation of a density
+# proposal IS that proposal, seen by a weaker instrument — the density detector wins.
+BLIND_SEPARATION_MM = 8.0
+
+# The junior lane's noise budget: the fleet scoreboard measured ~7 spurious blind
+# candidates per case at the proposer's own cap of 8 — appended raw they would flood
+# Intake's adoptable list. The proposer ranks by score, so the top few carry the
+# real finds; everything past this many novel seeds is dropped unserved.
+BLIND_MAX_PROPOSALS = 3
 
 
 class ScanUnreadable(RuntimeError):
@@ -75,11 +88,17 @@ class CaptureContext:
 @dataclass(frozen=True)
 class DetectedSite:
     """One detector proposal with its capture verdict — the demo's proposal row plus
-    the product's non-binding tooth guess."""
+    the product's non-binding tooth guess.
+
+    ``proposer`` names which instrument found it (client 2026-08-16, the blind
+    wiring): ``"density"`` is the rim-slab detector; ``"blind-cylinder"`` is the
+    seed proposer (adapters/blind_candidates.py). The density DISCRIMINATORS
+    (``void_ratio``, ``rim_below_cusps_mm``) are that detector's own reads and
+    are honestly ``None`` on a blind proposal — never faked, never zero."""
 
     center: Tuple[float, float, float]   # world coords, as proposed
-    void_ratio: float
-    rim_below_cusps_mm: float
+    void_ratio: Optional[float]
+    rim_below_cusps_mm: Optional[float]
     tooth_guess: Optional[int]
     capture: dict                        # CaptureAssessment.to_dict()
     # P4.1 — curve-honesty fields. density_prior_used is always a bool on a
@@ -88,6 +107,7 @@ class DetectedSite:
     density_prior_used: bool = False
     dp_gap_fraction: Optional[float] = None
     bearing_margin: Optional[Tuple[float, ...]] = None
+    proposer: str = "density"
 
 
 @dataclass(frozen=True)
@@ -376,6 +396,45 @@ def detect(case: CaseRecord) -> DetectionResult:
             dp_gap_fraction=gap,
             bearing_margin=margin,
         ))
+
+    # THE BLIND SEED PROPOSER (client 2026-08-16: "wire it... which is best at
+    # detection" — docs/engagement/blind-detection-scoreboard.md carries the
+    # measurement this wiring rests on). A JUNIOR, additive lane: the density
+    # detector wins every tie (a blind seed within BLIND_SEPARATION_MM of a
+    # density proposal is that site seen by a weaker instrument, dropped), the
+    # survivors are appended AFTER the density ranking (they carry no void
+    # evidence to rank by) and go through the SAME evidence loop — rim read,
+    # capture verdict, island honesty, tooth guess — so Intake judges every
+    # proposal with one set of instruments. A shadow lane: any failure inside
+    # it leaves detect()'s density result exactly as it was.
+    try:
+        blind = propose_blind_candidates(scan)
+    except Exception:  # noqa: BLE001 — the seed lane must never take down detect
+        blind = []
+    appended = 0
+    for b in blind:
+        if appended >= BLIND_MAX_PROPOSALS:
+            break
+        centre = np.asarray(b.centre, float)
+        if any(np.linalg.norm(centre - np.asarray(q.center, float))
+               < BLIND_SEPARATION_MM for q in proposals):
+            continue
+        seed = ctx.frame.T @ (centre - ctx.origin)
+        dia = measure_rim_diameter(ctx.local_points, ctx.xy_tree, seed)
+        hint = dia / 2.0 if dia else FALLBACK_RIM_RADIUS_MM
+        gap, margin = island_curve_honesty(ctx.local_points, seed[:2], hint)
+        proposals.append(DetectedSite(
+            center=tuple(float(c) for c in b.centre),
+            void_ratio=None,
+            rim_below_cusps_mm=None,
+            tooth_guess=tooth_guess_for(b.centre, case.suggested_sites),
+            capture=_capture_at(ctx, seed[:2], hint),
+            density_prior_used=False,
+            dp_gap_fraction=gap,
+            bearing_margin=margin,
+            proposer="blind-cylinder",
+        ))
+        appended += 1
 
     variant_table = _variant_table_for(case)
     suggested = []

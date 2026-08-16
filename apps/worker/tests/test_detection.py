@@ -350,6 +350,121 @@ class TestDetectRefuses:
             detect(case)
 
 
+class TestBlindSeedsInDetect:
+    """THE WIRING (client 2026-08-16: "wire it... which is best at detection"):
+    the blind cylinder proposer (adapters/blind_candidates.py, its own
+    scoreboard in docs/engagement/blind-detection-scoreboard.md) feeds
+    detect()'s OWN proposal loop as a SECOND, junior proposer — every seed
+    gets the same rim/capture/island evidence treatment the density
+    proposals get, the density detector WINS ties (it carries the void
+    discriminator; a blind seed within the 8mm separation of a density
+    proposal is dropped), and blind proposals wear their provenance
+    (``proposer="blind-cylinder"``) with honestly-None density metrics.
+    NOT ``propose_sites``: that function is shared with the frozen demo
+    (server.py:845), and new candidates there would change the demo's
+    behaviour without touching a frozen file."""
+
+    def _case(self, tmp_path):
+        import trimesh as _t
+
+        n, extent = 41, 8.0
+        xs, ys = np.meshgrid(np.linspace(-extent, extent, n),
+                             np.linspace(-extent, extent, n))
+        pts = np.column_stack([xs.ravel(), ys.ravel(), np.zeros(xs.size)])
+        faces = []
+        for i in range(n - 1):
+            for j in range(n - 1):
+                a = i * n + j
+                faces.extend([[a, a + 1, a + n + 1], [a, a + n + 1, a + n]])
+        scan = tmp_path / "scans" / "doctor-b" / "lower.stl"
+        scan.parent.mkdir(parents=True)
+        _t.Trimesh(pts, np.asarray(faces), process=False).export(scan)
+        return CaseRecord(id="b", doctor="Doctor B", jaw="lower", scan=scan,
+                          data_root=tmp_path, suggested_model=None,
+                          suggested_construction=None)
+
+    @staticmethod
+    def _blind(centre):
+        from case_prep.adapters.blind_candidates import BlindCandidate
+
+        return BlindCandidate(centre=tuple(float(c) for c in centre),
+                              axis=(0.0, 0.0, 1.0), radius_mm=2.6,
+                              inliers=200, wall_span_mm=2.0, score=800.0)
+
+    @staticmethod
+    def _density(centre):
+        from case_prep.pipeline.auto_flow import ProposedSite
+
+        return ProposedSite(tuple(float(c) for c in centre), 0.12, 5.0)
+
+    def test_a_blind_seed_extends_the_proposals_with_its_provenance(
+            self, tmp_path, monkeypatch):
+        from case_prep.application import detection as d
+
+        monkeypatch.setattr(d, "propose_sites", lambda *a, **k: [])
+        monkeypatch.setattr(d, "propose_blind_candidates",
+                            lambda *a, **k: [self._blind([1.0, 2.0, 0.0])])
+        result = detect(self._case(tmp_path))
+        assert len(result.proposals) == 1
+        p = result.proposals[0]
+        assert p.proposer == "blind-cylinder"
+        # the density discriminators are honestly ABSENT, never faked
+        assert p.void_ratio is None
+        assert p.rim_below_cusps_mm is None
+        # and the seed got the SAME evidence treatment as any proposal
+        assert p.capture["verdict"] in ("pass", "marginal", "rescan")
+        assert len(p.capture["checks"]) == 3
+
+    def test_the_density_detector_wins_ties(self, tmp_path, monkeypatch):
+        from case_prep.application import detection as d
+
+        monkeypatch.setattr(d, "propose_sites",
+                            lambda *a, **k: [self._density([1.0, 2.0, 0.0])])
+        monkeypatch.setattr(
+            d, "propose_blind_candidates",
+            lambda *a, **k: [self._blind([2.0, 2.5, 0.0]),      # 1.1mm away
+                             self._blind([-6.0, -5.0, 0.0])])   # novel
+        result = detect(self._case(tmp_path))
+        assert [p.proposer for p in result.proposals] == \
+            ["density", "blind-cylinder"]
+        assert result.proposals[0].void_ratio == 0.12
+        # the near-duplicate seed died at the separation rule; the novel
+        # one survived and sits AFTER the density proposals (it carries no
+        # void evidence to rank by)
+        assert tuple(result.proposals[1].center)[:2] == (-6.0, -5.0)
+
+    def test_the_junior_lane_keeps_its_noise_budget(self, tmp_path,
+                                                    monkeypatch):
+        """The scoreboard measured ~7 spurious blind candidates per case —
+        appended raw they would flood Intake's adoptable list. Only the top
+        BLIND_MAX_PROPOSALS novel seeds (the proposer ranks by score) are
+        served; the rest are dropped unserved."""
+        from case_prep.application import detection as d
+
+        monkeypatch.setattr(d, "propose_sites", lambda *a, **k: [])
+        novel = [self._blind([x, -6.0, 0.0]) for x in
+                 (-6.0, 3.0, 12.0, 21.0, 30.0)]   # all 9mm apart — no dedupe
+        monkeypatch.setattr(d, "propose_blind_candidates",
+                            lambda *a, **k: novel)
+        result = detect(self._case(tmp_path))
+        assert len(result.proposals) == d.BLIND_MAX_PROPOSALS
+        assert all(p.proposer == "blind-cylinder" for p in result.proposals)
+
+    def test_a_crashing_blind_lane_never_takes_down_detect(
+            self, tmp_path, monkeypatch):
+        from case_prep.application import detection as d
+
+        monkeypatch.setattr(d, "propose_sites",
+                            lambda *a, **k: [self._density([1.0, 2.0, 0.0])])
+
+        def boom(*a, **k):
+            raise RuntimeError("the seed lane is a shadow, not a load-bearer")
+
+        monkeypatch.setattr(d, "propose_blind_candidates", boom)
+        result = detect(self._case(tmp_path))
+        assert [p.proposer for p in result.proposals] == ["density"]
+
+
 @real_only
 @pytest.mark.slow  # parses the real scan and runs the detector end to end
 class TestDetectOnTheRealTree:

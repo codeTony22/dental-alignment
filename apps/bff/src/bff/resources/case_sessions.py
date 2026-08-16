@@ -195,16 +195,19 @@ class SiteView(BaseModel):
 
 
 class DetectedProposalView(BaseModel):
-    """A detector proposal: centre + evidence + the NON-BINDING tooth guess + capture."""
+    """A detector proposal: centre + evidence + the NON-BINDING tooth guess + capture.
+    The density discriminators are Optional since the blind wiring (2026-08-16):
+    a ``proposer="blind-cylinder"`` row honestly carries None for both."""
 
     center: List[float]
-    void_ratio: float
-    rim_below_cusps_mm: float
+    void_ratio: Optional[float]
+    rim_below_cusps_mm: Optional[float]
     tooth_guess: Optional[int]
     capture: dict
     density_prior_used: Optional[bool] = None
     dp_gap_fraction: Optional[float] = None
     bearing_margin: Optional[List[float]] = None
+    proposer: Optional[str] = None
 
 
 class DetectionView(BaseModel):
@@ -1085,6 +1088,7 @@ def _detection_record(result: DetectionResult) -> DetectionRecord:
             bearing_margin=([float(x) for x in p.bearing_margin]
                             if getattr(p, "bearing_margin", None) is not None
                             else None),
+            proposer=getattr(p, "proposer", None),
         ) for p in result.proposals],
         site_capture={str(s.tooth): s.capture for s in result.suggested},
         jaw_reading=result.jaw_reading,

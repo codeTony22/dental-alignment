@@ -568,6 +568,27 @@ class TestCurveHonestyEvidence:
         assert body["detection"]["proposals"][0]["dp_gap_fraction"] is None
         assert body["detection"]["proposals"][0]["bearing_margin"] is None
 
+    def test_a_blind_proposal_serves_its_provenance_and_honest_nulls(
+            self, settings, monkeypatch):
+        """The blind wiring (client 2026-08-16): a ``blind-cylinder`` proposal
+        round-trips the store with its provenance, and the density
+        discriminators are null — the words layer must never see a fake 0."""
+        result = dataclasses.replace(stub_detection(), proposals=(
+            DetectedSite(center=(1.0, 2.0, 3.0), void_ratio=0.10,
+                         rim_below_cusps_mm=0.5, tooth_guess=4,
+                         capture=CAP_PASS),
+            DetectedSite(center=(9.0, 8.0, 7.0), void_ratio=None,
+                         rim_below_cusps_mm=None, tooth_guess=None,
+                         capture=CAP_PASS, proposer="blind-cylinder"),
+        ))
+        client = self._client_detected_with(settings, monkeypatch, result)
+        body = client.get("/api/case-sessions/neodent-gm").json()
+        rows = body["detection"]["proposals"]
+        assert rows[0]["proposer"] == "density"
+        assert rows[1]["proposer"] == "blind-cylinder"
+        assert rows[1]["void_ratio"] is None
+        assert rows[1]["rim_below_cusps_mm"] is None
+
 
 class TestJawReadingCrossCheck:
     """§10-AM built: the jaw reads itself off the scan. ``application.detection``

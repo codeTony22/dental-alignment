@@ -163,11 +163,13 @@ export interface SiteView {
   border_click_disagreement_mm?: number | null;
 }
 
-/** A detector proposal: centre + evidence + the NON-BINDING tooth guess + capture. */
+/** A detector proposal: centre + evidence + the NON-BINDING tooth guess + capture.
+ *  The density discriminators are nullable since the blind wiring (2026-08-16):
+ *  a `proposer: "blind-cylinder"` row honestly carries null for both. */
 export interface DetectedProposalView {
   center: number[];
-  void_ratio: number;
-  rim_below_cusps_mm: number;
+  void_ratio: number | null;
+  rim_below_cusps_mm: number | null;
   tooth_guess: number | null;
   capture: CaptureAssessmentView;
   /** P4.1 — whether the tessellation prior fired at this proposal. Optional
@@ -175,6 +177,9 @@ export interface DetectedProposalView {
   density_prior_used?: boolean | null;
   dp_gap_fraction?: number | null;
   bearing_margin?: number[] | null;
+  /** which instrument found it — "density" | "blind-cylinder"; absent on
+   *  payloads predating the wiring, which are all density's */
+  proposer?: string | null;
 }
 
 export interface DetectionView {
