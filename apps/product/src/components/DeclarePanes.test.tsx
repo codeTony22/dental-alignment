@@ -181,14 +181,9 @@ describe("the pane chrome the demo's same surface carries (parity fix, ledger ro
   it("the toolbar offers the link-orbits toggle, honest about its state", () => {
     const off = view({ linked: false, onToggleLinked: () => undefined });
     expect(off).toContain("verify-panels__toolbar");
-    expect(off).toMatch(/aria-pressed="false"[^>]*>[^<]*link panes/);
+    expect(off).toMatch(/aria-pressed="false"[^>]*>[^<]*⇹/);
     const on = view({ linked: true, onToggleLinked: () => undefined });
-    // Retargeted 2026-08-05 (client, live-testing: "condense this buttons in
-    // adjustments tab") — the shared paneLinkLabel(true) shortened from
-    // "⛓ rotating together" to "⛓ linked"; this strip only renders while a
-    // pane is maximized, but it imports the same domain word, so the pin
-    // follows workspace.test.ts's.
-    expect(on).toMatch(/aria-pressed="true"[^>]*>[^<]*linked/);
+    expect(on).toMatch(/aria-pressed="true"[^>]*>[^<]*⇹/);
     expect(on).toContain("button--active");
   });
 
@@ -212,7 +207,7 @@ describe("the pane chrome the demo's same surface carries (parity fix, ledger ro
     expect(html).not.toContain('data-role="pane-scan"');
     expect(html).toContain("show all three");
     // linking needs more than one panel on screen — the toggle goes down, not away
-    expect(html).toMatch(/disabled[^>]*>[^<]*link panes/);
+    expect(html).toMatch(/disabled[^>]*>[^<]*⇹/);
   });
 
   it("the union pane offers both scales; signed is the default and says so", () => {

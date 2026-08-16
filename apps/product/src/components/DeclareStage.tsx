@@ -165,23 +165,21 @@ interface SiteQueueProps {
   readonly onSelectSite: (tooth: number) => void;
 }
 
-/** The site queue: every site, its server facts, one click = active — the demo's
- * stepper-list clothes (.decode-stepper__item), status/capture as chips. */
+/** The site queue: compact rows matching the HTML prototype — tooth badge,
+ * variant, state sentence, status chip — while every tested data-role stays. */
 function SiteQueue({ detail, activeTooth, runRows, onSelectSite }: SiteQueueProps) {
   const active = activeSiteFrom(detail.sites, activeTooth);
   return (
-    <aside data-role="declare-queue" aria-label="Site queue" className="panel">
-      <h3 className="panel__title">Sites in this case</h3>
-      {/* THE PROGRESS LINE (gap `declare-queue-header`): Adjust's queue has headed
-          with its counts since slice 6 and Declare's did not, so the stage with a
-          per-site obligation was the one that never said how many were left. Hidden
-          on an empty queue only because `declare-empty` below says it better. */}
-      {detail.sites.length > 0 && (
-        <p data-role="queue-summary" className="panel__hint">
-          {declareQueueSummary(detail.sites)}
-        </p>
-      )}
-      <ul className="decode-stepper__overview">
+    <aside data-role="declare-queue" aria-label="Site queue" className="workspace-queue">
+      <div className="workspace-queue__head">
+        <h3 className="workspace-queue__title">Sites in this case</h3>
+        {detail.sites.length > 0 && (
+          <p data-role="queue-summary" className="workspace-queue__note">
+            {declareQueueSummary(detail.sites)}
+          </p>
+        )}
+      </div>
+      <ul className="workspace-queue__list">
         {detail.sites.map((site) => (
           <li key={site.tooth}>
             <button
@@ -189,48 +187,48 @@ function SiteQueue({ detail, activeTooth, runRows, onSelectSite }: SiteQueueProp
               data-role="queue-site"
               aria-pressed={active?.tooth === site.tooth}
               data-tooth={site.tooth}
-              className={`decode-stepper__item decode-stepper__item--stacked${
-                active?.tooth === site.tooth ? " decode-stepper__item--active" : ""
-              }${site.status === "ready" ? " decode-stepper__item--reviewed" : ""}`}
+              className={`workspace-queue__row${
+                active?.tooth === site.tooth ? " workspace-queue__row--active" : ""
+              }${site.status === "ready" ? " workspace-queue__row--reviewed" : ""}`}
               onClick={() => onSelectSite(site.tooth)}
             >
-              <span className="decode-stepper__position">Tooth {site.tooth}</span>
-              <span className="decode-stepper__chips">
+              <span className="workspace-queue__row-top">
+                <span data-role="queue-tooth" className="workspace-queue__num">
+                  {site.tooth}
+                </span>
+                <span className="workspace-queue__meta">
+                  <span data-role="declared-variant" className="workspace-queue__variant">
+                    {declaredLabel(site)}
+                  </span>
+                  <span data-role="queue-state" className="workspace-queue__state">
+                    {siteStateSentence(site, runRows)}
+                  </span>
+                </span>
                 <span
                   data-role="status-chip"
                   data-status={site.status}
                   className="chip chip--status"
                 >
                   {site.status}
-                </span>{" "}
-                <span
-                  data-role="capture-chip"
-                  data-verdict={site.capture?.verdict ?? "none"}
-                  className={
-                    site.capture === null
-                      ? "chip chip--capture-none"
-                      : `chip chip--capture-${site.capture.verdict}`
-                  }
-                >
-                  {captureChipLabel(site.capture)}
-                </span>{" "}
-                <span data-role="declared-variant" className="decode-stepper__declared">
-                  {declaredLabel(site)}
                 </span>
               </span>
-              {/* THE ROW'S STATE IN WORDS (gap `queue-row-state-sentence`). The chip
-                  above keeps the wire's rung — it is the colour key, and data-status
-                  is what the stylesheet reads — but the operator gets a sentence that
-                  names their next act, and the RUN's own number once one exists. */}
-              <span data-role="queue-state" className="decode-stepper__state">
-                {siteStateSentence(site, runRows)}
+              <span
+                data-role="capture-chip"
+                data-verdict={site.capture?.verdict ?? "none"}
+                className={
+                  site.capture === null
+                    ? "chip chip--capture-none workspace-queue__extra"
+                    : `chip chip--capture-${site.capture.verdict} workspace-queue__extra`
+                }
+              >
+                {captureChipLabel(site.capture)}
               </span>
             </button>
           </li>
         ))}
       </ul>
       {detail.sites.length === 0 && (
-        <p data-role="declare-empty" className="panel__hint">
+        <p data-role="declare-empty" className="workspace-queue__note workspace-queue__empty">
           No sites to declare on this case yet.
         </p>
       )}
@@ -258,6 +256,7 @@ function VariantChip({ card, declared, archived, onDeclare }: VariantChipProps) 
       className={`decode-variant${declared ? " decode-variant--selected" : ""}${
         archived ? " decode-variant--archived" : ""
       }`}
+      title={card.dims}
       onClick={() => onDeclare(card.id)}
     >
       {/* the part's own face (client 2026-08-09): the SERVED top-view render —
@@ -920,7 +919,7 @@ export function DeclareStageView({
                     disabled={forkSaving !== "idle"}
                     onClick={onSkipAdjustments}
                   >
-                    Skip adjustments — go to the construction library
+                    skip Adjustment → construction library
                   </button>
                   <button
                     type="button"
@@ -931,7 +930,9 @@ export function DeclareStageView({
                     disabled={forkSaving !== "idle"}
                     onClick={onAdjustFits}
                   >
-                    Adjust the fits
+                    {facts.siteFlagged > 0
+                      ? `go to Adjustment · ${facts.siteFlagged} flagged`
+                      : "go to Adjustment"}
                   </button>
                 </div>
                 {decided !== null && (
@@ -959,14 +960,14 @@ export function DeclareStageView({
                       which since the library landed can read "pick a construction part
                       in the library first" — advice about a page two stages on, offered
                       as the reason this door is shut. */}
-                  Skip adjustments — {blockedReason("library", facts)}
+                  skip Adjustment — {blockedReason("library", facts)}
                 </span>
                 <span
                   data-role="fork-adjust"
                   aria-disabled="true"
                   className="button button--small button--secondary button--blocked"
                 >
-                  Adjust the fits — {blockedReason("deliver", facts)}
+                  go to Adjustment — {blockedReason("deliver", facts)}
                 </span>
               </>
             )}
@@ -1046,6 +1047,7 @@ export function DeclareStageView({
             ⊞ Arch context
           </button>
         </WorkspaceToolbar>
+        <div data-role="workspace-center" className="workspace-center">
         {panesSlot}
         {/* ONE CONTROLS ROW, NOT TWO CARD DECKS (client 2026-08-02: "There is
             multiple scrolling sections here which is really weird, we need to be more
@@ -1071,6 +1073,7 @@ export function DeclareStageView({
               onCancel={onCancelSwitch}
             />
           )}
+        </div>
         </div>
       </div>
       {archOpen && (

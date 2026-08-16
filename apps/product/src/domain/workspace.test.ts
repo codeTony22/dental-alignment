@@ -19,8 +19,8 @@ describe("the pane link", () => {
     // carries the full sentence ("Rotate all three panels together (same angles
     // and zoom, each around its own content)"), so the word dropped from the
     // label is not lost, only moved off the row.
-    expect(paneLinkLabel(true)).toBe("⛓ linked");
-    expect(paneLinkLabel(false)).toBe("⛓ link panes");
+    expect(paneLinkLabel(true)).toBe("⇹");
+    expect(paneLinkLabel(false)).toBe("⇹");
   });
 });
 

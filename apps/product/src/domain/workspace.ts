@@ -9,7 +9,7 @@
  *
  * The toggle EXISTED on both stages (the viewer's OrbitLinkGroup mirrors a user
  * orbit into the sibling panes, each around its own content) — and it opened OFF
- * behind a terse "⛓ link" chip, which is how a built feature gets reported as
+ * behind a terse chip, which is how a built feature gets reported as
  * missing. The panes are read side by side; rotating together is the reading the
  * comparison exists for, so LINKED is the opening state and unlinking is the
  * deliberate act. One constant, imported by both stages, so they cannot open in
@@ -19,13 +19,10 @@ export const PANES_OPEN_LINKED = true;
 
 /** The toggle's face, shared by both stages for the same reason.
  *
- * Condensed 2026-08-05 (client, live-testing: "condense this buttons in
- * adjustments tab it takes a lot of space which is unnecessary"). The LINKED
- * word was the widest thing on the toolbar's control row; the act it names is
- * unchanged, and the button's own `title` still spells the full sentence, so
- * shortening the face loses no meaning that was reachable before. */
-export function paneLinkLabel(linked: boolean): string {
-  return linked ? "⛓ linked" : "⛓ link panes";
+ * The HTML prototype uses a single ⇹ glyph; pressed state is `aria-pressed` and
+ * the green outline, and the button's `title` still spells the full sentence. */
+export function paneLinkLabel(_linked: boolean): string {
+  return "⇹";
 }
 
 

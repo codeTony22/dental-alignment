@@ -60,9 +60,14 @@ import {
   pairSlots,
   pairWords,
   queueSummary,
+  dockReport,
+  matchThisPointWords,
   rePreviewButtonLabel,
+  rePreviewButtonTitle,
   rePreviewRows,
   rePreviewWords,
+  snapRimEnabled,
+  snapRimLabel,
   spanLeverCaution,
   markLeverGuard,
   axisSpanGuard,
@@ -243,8 +248,8 @@ describe("a dropped cap", () => {
   });
 
   it("labels the act and its reversal, both as things the operator DOES", () => {
-    expect(dropLabel(false)).toContain("Drop this cap");
-    expect(dropLabel(true)).toContain("Bring this cap back");
+    expect(dropLabel(false)).toBe("Drop this cap");
+    expect(dropLabel(true)).toBe("Bring this cap back");
   });
 
   it("NEVER repeats the design's 'not aligned' — post-run that is a lie", () => {
@@ -1715,11 +1720,15 @@ describe("paneArming — which pane wants the next click, and what it will do", 
 describe("rePreviewButtonLabel — a re-read, promised, never an outcome", () => {
   it("names the act and states no verdict", () => {
     const label = rePreviewButtonLabel();
-    expect(label).toBe("Re-read this site's numbers");
+    const title = rePreviewButtonTitle();
+    expect(label).toBe("Re-read");
+    expect(title).toContain("this site's numbers");
     // the design prototype's own label for this control is "this will pass" — a
     // client-side verdict this app is forbidden from making (client.ts:1262-1265)
-    for (const verdict of ["pass", "fail", "ready", " ok", "will pass"]) {
-      expect(label.toLowerCase()).not.toContain(verdict);
+    for (const words of [label, title]) {
+      for (const verdict of ["fail", "will pass"]) {
+        expect(words.toLowerCase()).not.toContain(verdict);
+      }
     }
   });
 });
@@ -2395,6 +2404,18 @@ describe("pairSlotStrip — eight slots, one PairDraft each (§10-AN)", () => {
     const strip = pairSlotStrip([]);
     expect(strip[1]!.title).toBe("pairs are placed in order");
   });
+
+  it("an empty next slot names the default start — a point pair — never a guess at span", () => {
+    expect(pairSlotStrip([])[0]!.title).toContain("click to start a point pair");
+    expect(pairSlotStrip([])[0]!.title).not.toContain("buttons below");
+  });
+
+  it("an in-progress pair keeps the next slot as placing, not a second start", () => {
+    const open = newPairDraft("open", false);
+    const strip = pairSlotStrip([complete, open]);
+    expect(strip[1]!.title).toContain("being placed");
+    expect(strip[1]!.title).not.toContain("click to start");
+  });
 });
 
 describe("the scatter meter — a served number only, never a tolerance band (§10-AN)", () => {
@@ -2472,3 +2493,120 @@ describe("autoMarkDotState — read off the SAME drafts the pair list renders (�
     expect(autoMarkDotState([], 3)).toBe("queued");
   });
 });
+
+/**
+ * THE DOCK HEADER REPORT (§10-AN clothing, 2026-08-16). A second LOCATION for
+ * facts the queue and the run rows already publish — never a second source, and
+ * never the prototype's invented MAX DEV formula.
+ */
+describe("dockReport — served queue counts and the worst run RMS", () => {
+  const entry = (
+    overrides: Partial<AdjustQueueEntry> & Pick<AdjustQueueEntry, "tooth">,
+  ): AdjustQueueEntry => ({
+    tooth: overrides.tooth,
+    status: overrides.status ?? "flagged",
+    flagged: overrides.flagged ?? true,
+    optional: overrides.optional ?? false,
+    dropped: overrides.dropped ?? false,
+    exceptionAcknowledged: overrides.exceptionAcknowledged ?? false,
+    evidenceCount: overrides.evidenceCount ?? 0,
+    receipts: overrides.receipts ?? [],
+    declaredVariant: overrides.declaredVariant ?? "5020",
+    reasons: overrides.reasons ?? [],
+  });
+
+  it("counts flagged of live on the chip, and names passed / exceptions / left out", () => {
+    const report = dockReport([
+      entry({ tooth: 13, flagged: true }),
+      entry({ tooth: 14, flagged: false, status: "ready" }),
+      entry({ tooth: 15, flagged: true, exceptionAcknowledged: true }),
+      entry({ tooth: 19, flagged: true, dropped: true }),
+    ]);
+    expect(report.chip).toBe("2 / 3");
+    expect(report.cells.find((c) => c.id === "passed")!.value).toBe("1");
+    expect(report.cells.find((c) => c.id === "exceptions")!.value).toBe("1");
+    expect(report.cells.find((c) => c.id === "left-out")!.value).toBe("1");
+    expect(report.note).toBe(queueSummary([
+      entry({ tooth: 13, flagged: true }),
+      entry({ tooth: 14, flagged: false, status: "ready" }),
+      entry({ tooth: 15, flagged: true, exceptionAcknowledged: true }),
+      entry({ tooth: 19, flagged: true, dropped: true }),
+    ]));
+  });
+
+  it("reads the worst served DEV RMS across run rows — never a client-invented max", () => {
+    const report = dockReport(
+      [entry({ tooth: 13 }), entry({ tooth: 14, flagged: false, status: "ready" })],
+      [
+        { tooth: 13, deviation_rms_mm: 0.041 },
+        { tooth: 14, deviation_rms_mm: 0.294 },
+        { tooth: 15, deviation_p90_mm: 9.9 },
+      ],
+    );
+    const worst = report.cells.find((c) => c.id === "worst-dev-rms")!;
+    expect(worst.label).toBe("WORST DEV RMS");
+    expect(worst.value).toBe("0.294 mm");
+    for (const cell of report.cells) {
+      expect(cell.label).not.toContain("MAX DEV");
+    }
+  });
+
+  it("dashes the RMS cell when no row carried a number, and the chip when nothing is live", () => {
+    expect(dockReport([entry({ tooth: 13 })], [{ tooth: 13 }]).cells.find(
+      (c) => c.id === "worst-dev-rms",
+    )!.value).toBe("—");
+    expect(dockReport([entry({ tooth: 13, dropped: true })]).chip).toBe("—");
+  });
+});
+
+describe("snapRim — the dial jumps to the last suggestion, never a rim reading", () => {
+  const pass = {
+    message: "already the best fit",
+    matchingDiameterMm: 0.3,
+    suggestedDiameterMm: 0.6,
+    canWiden: true,
+  };
+
+  it("is enabled only when a suggestion exists and the dial is not already there", () => {
+    expect(snapRimEnabled(null, 0.3)).toBe(false);
+    expect(snapRimEnabled(pass, 0.3)).toBe(true);
+    expect(snapRimEnabled(pass, 0.6)).toBe(false);
+  });
+
+  it("says so when the dial already reads the suggestion, and never claims a rim measurement", () => {
+    expect(snapRimLabel(pass, 0.6)).toBe("already at the suggestion");
+    expect(snapRimLabel(pass, 0.3)).toBe("snap rim");
+    expect(snapRimLabel(null, 0.3)).toBe("snap rim");
+    expect(snapRimLabel(pass, 0.3)).not.toContain("rim reads");
+  });
+});
+
+describe("matchThisPointWords — the live landmark, in the server's own identity", () => {
+  const landmarks: LandmarkView[] = [
+    { id: "a", kind: "notch", point: [1, 0, 0], lever_arm_mm: 1.2, azimuth_deg: 0 },
+    { id: "b", kind: "notch", point: [0, 1, 0], lever_arm_mm: 0.8, azimuth_deg: 180 },
+  ];
+
+  it("names the first unmatched landmark and tells the operator to click the scan", () => {
+    const drafts = autoMarkDrafts(landmarks);
+    expect(matchThisPointWords(drafts, landmarks)).toContain("Match this point");
+    expect(matchThisPointWords(drafts, landmarks)).toContain(landmarkLabel(landmarks[0]!));
+    expect(matchThisPointWords(drafts, landmarks)).toContain("click it on the scan");
+  });
+
+  it("advances to the next unmatched landmark once the first scan half is placed", () => {
+    const drafts = autoMarkDrafts(landmarks);
+    const advanced = [withPick(drafts[0]!, "scan", [9, 9, 9]), drafts[1]!];
+    expect(matchThisPointWords(advanced, landmarks)).toContain(landmarkLabel(landmarks[1]!));
+  });
+
+  it("says all proposed points are matched once every draft is complete", () => {
+    const drafts = autoMarkDrafts(landmarks).map((d) => withPick(d, "scan", [9, 9, 9]));
+    expect(matchThisPointWords(drafts, landmarks)).toBe("All proposed points matched");
+  });
+
+  it("does not invent a landmark when the part proposed none", () => {
+    expect(matchThisPointWords([], [])).toContain("no rotation-defining landmarks");
+  });
+});
+

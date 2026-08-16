@@ -52,12 +52,14 @@ import {
   bestFitToolStateWords,
   clampDiameterMm,
   diameterBandWords,
+  dockReport,
   dockToolGood,
   dropLabel,
   dropNote,
   evidenceReceiptsTitle,
   flaggedExceptionWords,
   isComplete,
+  matchThisPointWords,
   observationWords,
   outcomeWords,
   pairCautions,
@@ -72,6 +74,7 @@ import {
   receiptOutcomeWords,
   reconfirmControl,
   rePreviewButtonLabel,
+  rePreviewButtonTitle,
   rePreviewRows,
   rePreviewWords,
   reworkWords,
@@ -82,6 +85,8 @@ import {
   scatterFillFraction,
   fitCrossCheckCaution,
   scatterWords,
+  snapRimEnabled,
+  snapRimLabel,
   spanSplitRecoveryHint,
   splitSpanDraft,
   staleMetricsPhrase,
@@ -93,6 +98,7 @@ import {
   type AdjustToolId,
   type AlreadyOptimal,
   type ClockReferenceLike,
+  type DockReport,
   type PairDraft,
   type PairSlot as PairSlotKey,
   type SeatedPhase,
@@ -210,6 +216,8 @@ function PairsList({
   clearLabel,
   sourceLabelFor,
   clock,
+  foldList = false,
+  showClear = true,
 }: {
   readonly drafts: readonly PairDraft[];
   readonly busy: boolean;
@@ -226,10 +234,15 @@ function PairsList({
   readonly onClearPairs: () => void;
   readonly clearLabel: string;
   readonly sourceLabelFor?: (draft: PairDraft) => string | null;
+  /** Fold the pair rows so the tool's own widget (slot strip / auto-mark map)
+   *  stays the face. Apply/clear stay outside: they are the acts. */
+  readonly foldList?: boolean;
+  /** False when the caller already offers clear on the tool face. */
+  readonly showClear?: boolean;
 }) {
   const applyBlocked = applyBlockedReason(drafts, pose, clock);
   const openDraft = drafts.find((d) => !isComplete(d)) ?? null;
-  return (
+  const list = (
     <>
       <p data-role="pair-status" role="status" className="panel__hint">
         {pairStatusLine(drafts, openDraft)}
@@ -325,6 +338,18 @@ function PairsList({
           </li>
         ))}
       </ul>
+    </>
+  );
+  return (
+    <>
+      {foldList ? (
+        <details data-role="pair-list-fold" className="adjust-dock__fold">
+          <summary>Pairs and marks</summary>
+          {list}
+        </details>
+      ) : (
+        list
+      )}
       <div className="adjust-tool__row">
         {applyBlocked === null ? (
           <button
@@ -346,7 +371,7 @@ function PairsList({
             Apply the fit
           </span>
         )}
-        {drafts.length > 0 && (
+        {showClear && drafts.length > 0 && (
           <button
             type="button"
             data-role="clear-pairs"
@@ -529,9 +554,10 @@ function RotationWidget({
           data-role="rotation-reset"
           className="button button--ghost button--small"
           disabled={busy}
+          title="Reset to the certified pose"
           onClick={onResetRotation}
         >
-          Reset to the certified pose
+          Reset
         </button>
       </div>
       <p data-role="rotation-residual" className="adjust-tool__readout">
@@ -720,6 +746,24 @@ function BestFitWidget({
         </button>
         <button
           type="button"
+          data-role="snap-rim"
+          className="button button--ghost button--small"
+          disabled={busy || !snapRimEnabled(pass, diameterMm)}
+          title={
+            pass === null
+              ? "No suggestion yet — Measure only or Run refinement first. This " +
+                "sets the dial to the last check's suggested diameter, never a " +
+                "standing rim measurement."
+              : `Set the dial to the last check's suggested diameter Ø${pass.suggestedDiameterMm.toFixed(2)} mm — not a standing rim measurement.`
+          }
+          onClick={() =>
+            pass !== null && onChangeDiameter(pass.suggestedDiameterMm)
+          }
+        >
+          {snapRimLabel(pass, diameterMm)}
+        </button>
+        <button
+          type="button"
           data-role="diameter-reset"
           className="button button--ghost button--small"
           disabled={busy}
@@ -753,20 +797,28 @@ function BestFitWidget({
   );
 }
 
-/** Slot strip shared by fit-by-points (the operator's own hand-built pairs). Locked
- *  and next slots are inert — starting a pair is already three explicit buttons below
- *  (point / span-the-scan / span-both), and this strip does not guess which one a bare
- *  numbered click would have meant (§10-AN: "do not invent an act"). */
+/** Slot strip shared by fit-by-points (the operator's own hand-built pairs). An
+ *  empty NEXT slot starts a point pair — the default act, the same as Add pair.
+ *  Locked slots stay inert. Span modes stay their own buttons, so a numbered
+ *  click never guesses "span the scan" vs "span both". */
 function PairSlotStrip({
   drafts,
+  busy,
   onDropFrom,
+  onStartNext,
 }: {
   readonly drafts: readonly PairDraft[];
+  readonly busy: boolean;
   readonly onDropFrom: (index: number) => void;
+  readonly onStartNext: () => void;
 }) {
+  const placing = drafts.some((d) => !isComplete(d));
   return (
     <div data-role="pair-slot-strip" className="adjust-dock__slots">
-      {pairSlotStrip(drafts).map((entry) => (
+      {pairSlotStrip(drafts).map((entry) => {
+        const canStart = entry.state === "next" && !placing && !busy;
+        const canDrop = entry.state === "placed" && !busy;
+        return (
         <button
           key={entry.index}
           type="button"
@@ -775,15 +827,19 @@ function PairSlotStrip({
           data-state={entry.state}
           data-spare={entry.spare}
           title={entry.title}
-          disabled={entry.state !== "placed"}
+          disabled={!canStart && !canDrop}
           className={`adjust-dock__slot adjust-dock__slot--${entry.state}${
             entry.spare ? " adjust-dock__slot--spare" : ""
           }`}
-          onClick={() => entry.state === "placed" && onDropFrom(entry.index)}
+          onClick={() => {
+            if (canDrop) onDropFrom(entry.index);
+            else if (canStart) onStartNext();
+          }}
         >
           {entry.index}
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -823,9 +879,11 @@ function FitByPointsWidget({
     <div data-role="fit-by-points-widget">
       <PairSlotStrip
         drafts={drafts}
+        busy={busy}
         onDropFrom={(index) =>
           pairIdsFromSlot(drafts, index).forEach((id) => onRemovePair(id))
         }
+        onStartNext={() => onStartPair(false)}
       />
       {ghostsActive && (
         <p data-role="ghost-note" className="panel__hint">
@@ -843,8 +901,23 @@ function FitByPointsWidget({
           title="1 click on the library part, 1 on the scan."
           onClick={() => onStartPair(false)}
         >
-          Point pair
+          Add pair
         </button>
+        {drafts.length > 0 && (
+          <button
+            type="button"
+            data-role="clear-pairs"
+            className="button button--ghost button--small"
+            disabled={busy}
+            onClick={onClearPairs}
+          >
+            Clear all pairs
+          </button>
+        )}
+      </div>
+      <details data-role="span-modes" className="adjust-dock__fold">
+        <summary>Span instead</summary>
+        <div className="adjust-tool__row">
         <button
           type="button"
           data-role="start-span-pair"
@@ -875,7 +948,8 @@ function FitByPointsWidget({
         >
           Span both
         </button>
-      </div>
+        </div>
+      </details>
       <PairsList
         drafts={drafts}
         busy={busy}
@@ -887,6 +961,8 @@ function FitByPointsWidget({
         onApplyPairs={onApplyPairs}
         onClearPairs={onClearPairs}
         clearLabel="Clear all pairs"
+        foldList
+        showClear={false}
       />
       <ScatterMeter residualRmsMm={residualRmsMm} />
       {fitCrossCheckCaution(crossChecked) !== null && (
@@ -975,6 +1051,9 @@ function AutoMarkWidget({
           )}
           {autoMarkPhase === "ready" && (
             <>
+              <p data-role="match-this-point" className="adjust-dock__match">
+                {matchThisPointWords(drafts, autoMarkLandmarks)}
+              </p>
               <p data-role="auto-mark-summary" className="panel__hint">
                 {autoMarkSummary(autoMarkLandmarks)}
               </p>
@@ -1001,6 +1080,7 @@ function AutoMarkWidget({
         onClearPairs={onClearPairs}
         clearLabel="Start the matching over"
         sourceLabelFor={(draft) => autoMarkSourceLabel(draft, autoMarkLandmarks)}
+        foldList
       />
       <ScatterMeter residualRmsMm={residualRmsMm} />
       {fitCrossCheckCaution(crossChecked) !== null && (
@@ -1084,6 +1164,13 @@ export interface AdjustDockProps {
     readonly error: string | null;
     readonly onApply: (value: number | null) => void;
   } | null;
+
+  /**
+   * THE DOCK HEADER REPORT — a second location for queue counts and the worst
+   * served DEV RMS (`dockReport`). Optional with an empty default so static
+   * callers predate it still render the popover rather than hiding a control.
+   */
+  readonly report?: DockReport;
 
   /**
    * THE DOCK-HEIGHT TOGGLE, LIFTED (§10-AN slice C). "more room" used to be state
@@ -1170,6 +1257,7 @@ export function AdjustDock({
   dropSaving,
   dropError,
   relief,
+  report,
   dockTall,
   onToggleDockTall,
   cautionsOpen,
@@ -1211,6 +1299,7 @@ export function AdjustDock({
   const reconfirm = reconfirmControl(activeStatus, seatedPhase, seatedPayloadPresent);
   const exceptionWords = flaggedExceptionWords(activeStatus);
   const reworkNote = lastOutcome !== null ? reworkWords(lastOutcome) : null;
+  const resolvedReport = report ?? dockReport(active !== null ? [active] : []);
   // THE SPLIT TOOL'S POINTER (client live-testing 2026-08-09), folded into the
   // post-422 recovery note below — see `spanSplitRecoveryHint`'s own doc for why
   // this is null (and says nothing) unless the split button is actually on screen.
@@ -1250,11 +1339,31 @@ export function AdjustDock({
       className={`adjust-dock${dockTall ? " adjust-dock--tall" : ""}`}
     >
       <div className="adjust-dock__header">
-        {/* THE CHIP RAIL IS NOW ABOVE THE PANES (UX 2026-08-15): AdjustToolRail in
-            AdjustStageView renders the five glyph tabs as a persistent strip between
-            the workspace toolbar and the three 3D panes — always visible, never
-            buried at the bottom of the screen. The header carries only the active
-            tool's name + live state, the caution chip, and the "more room" toggle. */}
+        <div
+          data-role="tool-tabs"
+          role="tablist"
+          aria-label="Choose a correction tool"
+          className="adjust-dock__rail"
+        >
+          {ADJUST_DOCK_TOOLS.map((info) => (
+            <button
+              key={info.id}
+              type="button"
+              role="tab"
+              data-role="tool-tab"
+              data-tool={info.id}
+              aria-selected={tool === info.id}
+              aria-label={info.label}
+              title={info.tooltip}
+              className={`adjust-dock__chip${
+                tool === info.id ? " adjust-dock__chip--active" : ""
+              }${active !== null && good(info.id) ? " adjust-dock__chip--good" : ""}`}
+              onClick={() => onSelectTool(info.id)}
+            >
+              <span aria-hidden="true">{info.glyph}</span>
+            </button>
+          ))}
+        </div>
         <div className="adjust-dock__title">
           <strong data-role="dock-tool-title" className="adjust-dock__tool-title">
             {activeInfo.label}
@@ -1288,6 +1397,53 @@ export function AdjustDock({
             ⚠ {cautionCount === 1 ? "1 caution" : `${cautionCount} cautions`}
           </button>
         )}
+        <details data-role="dock-report" className="adjust-dock__report">
+          <summary data-role="dock-report-summary">report</summary>
+          <div className="adjust-dock__report-panel">
+            <span data-role="dock-report-chip" className="adjust-dock__report-chip">
+              {resolvedReport.chip}
+            </span>
+            <dl className="adjust-dock__report-cells">
+              {resolvedReport.cells.map((cell) => (
+                <div
+                  key={cell.id}
+                  data-role="dock-report-cell"
+                  data-id={cell.id}
+                  className="adjust-dock__report-cell"
+                >
+                  <dt>{cell.label}</dt>
+                  <dd>{cell.value}</dd>
+                </div>
+              ))}
+            </dl>
+            <p data-role="dock-report-note" className="adjust-dock__report-note">
+              {resolvedReport.note}
+            </p>
+            {active !== null && active.receipts.length > 0 && (
+              <div data-role="evidence-receipts" className="adjust-receipts">
+                <h4 className="adjust-receipts__title">
+                  {evidenceReceiptsTitle(receiptsCarried)}
+                </h4>
+                <ul className="adjust-receipts__list">
+                  {active.receipts.map((receipt, index) => (
+                    <li
+                      key={`${receipt.kind}-${receipt.appliedAt ?? index}`}
+                      data-role="evidence-receipt"
+                      data-outcome={receipt.outcome}
+                      className="adjust-receipts__item"
+                    >
+                      <strong className="adjust-receipts__verdict">
+                        {receiptKindWords(receipt.kind)} —{" "}
+                        {receiptOutcomeWords(receipt.outcome)}.
+                      </strong>{" "}
+                      {receipt.detail}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </details>
         <button
           type="button"
           data-role="dock-more-room"
@@ -1479,30 +1635,6 @@ export function AdjustDock({
             {exceptionWords}
           </p>
         )}
-
-        {active !== null && active.receipts.length > 0 && (
-          <div data-role="evidence-receipts" className="adjust-receipts">
-            <h4 className="adjust-receipts__title">
-              {evidenceReceiptsTitle(receiptsCarried)}
-            </h4>
-            <ul className="adjust-receipts__list">
-              {active.receipts.map((receipt, index) => (
-                <li
-                  key={`${receipt.kind}-${receipt.appliedAt ?? index}`}
-                  data-role="evidence-receipt"
-                  data-outcome={receipt.outcome}
-                  className="adjust-receipts__item"
-                >
-                  <strong className="adjust-receipts__verdict">
-                    {receiptKindWords(receipt.kind)} —{" "}
-                    {receiptOutcomeWords(receipt.outcome)}.
-                  </strong>{" "}
-                  {receipt.detail}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
       </div>
 
       {active !== null && (
@@ -1513,9 +1645,10 @@ export function AdjustDock({
               data-role="re-preview"
               className="button button--primary button--small"
               disabled={busy || rePreviewWorking || seatedPhase === "loading"}
+              title={rePreviewButtonTitle()}
               onClick={onRePreview}
             >
-              {rePreviewWorking ? "Re-reading this site's numbers…" : rePreviewButtonLabel()}
+              {rePreviewWorking ? "Re-reading…" : rePreviewButtonLabel()}
             </button>
             {rePreviewError !== null ? (
               <div data-role="re-preview-error" role="alert" className="run-refusal">
@@ -1580,23 +1713,31 @@ export function AdjustDock({
               active.dropped ? "button--secondary" : "button--ghost"
             }`}
             disabled={dropSaving}
-            title={dropNote(active.dropped)}
+            title={
+              (active.dropped
+                ? "Bring this cap back into the case. "
+                : "Drop this cap — hold it back from the release and the bill. ") +
+              dropNote(active.dropped)
+            }
             onClick={() => onDrop(active.tooth, !active.dropped)}
           >
             {dropSaving ? "Recording the decision…" : dropLabel(active.dropped)}
           </button>
+          {relief !== null && (
+            <details data-role="site-relief-fold" className="adjust-dock__fold">
+              <summary>Relief</summary>
+              <SiteReliefControl
+                siteValue={relief.siteValue}
+                caseValue={relief.caseValue}
+                ceilingLine={relief.ceilingLine}
+                runDone={relief.runDone}
+                saving={relief.saving}
+                error={relief.error}
+                onApply={relief.onApply}
+              />
+            </details>
+          )}
         </div>
-      )}
-      {active !== null && relief !== null && (
-        <SiteReliefControl
-          siteValue={relief.siteValue}
-          caseValue={relief.caseValue}
-          ceilingLine={relief.ceilingLine}
-          runDone={relief.runDone}
-          saving={relief.saving}
-          error={relief.error}
-          onApply={relief.onApply}
-        />
       )}
       {active !== null && (
         <div data-role="drop" className="adjust-drop">
