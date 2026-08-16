@@ -3075,12 +3075,15 @@ class TestDefectAOrphanFlapsDodgeTheBandButNotTheGuard:
             f"orphan cleanup drops measured cap remnant silently: {notes}"
         assert _flap_survivor_count([out, socket], flap) == 0
 
-    def test_without_orphan_cleanup_the_same_scene_would_have_shipped_it(
+    def test_without_orphan_cleanup_the_same_scene_still_dies_now(
             self, monkeypatch):
-        """THE BEFORE, proved directly against production code (not merely
-        asserted): neutralise ``orphan_flap_mask`` and the SAME scene's
-        flap survives — the connectivity step is what this defect needed,
-        not the pre-existing band excision alone."""
+        """RE-AIMED at the erase ruling (client 2026-08-16): this pin used
+        to prove the connectivity guard was load-bearing (the band excision
+        alone shipped the flap). Under full-footprint excision the SAME
+        scene's flap — inside the catalog cylinder — dies by excision
+        alone, orphan cleanup disabled or not: the ruling subsumes this
+        scene. The guard itself stays for remnants past the rim, where the
+        footprint erase never reaches."""
         from case_prep.pipeline import deliverables as d
 
         arch, template, pose, flap, rim_r = _orphan_flap_scene()
@@ -3091,7 +3094,7 @@ class TestDefectAOrphanFlapsDodgeTheBandButNotTheGuard:
                 np.zeros(len(mesh.faces), bool))
         out, socket, notes = d.cap_imprint_parts(arch, [site],
                                                   visible_depth_mm=1.8)
-        assert _flap_survivor_count([out, socket], flap) == len(flap.vertices)
+        assert _flap_survivor_count([out, socket], flap) == 0
 
     def test_a_connected_gum_tongue_reaching_into_the_cylinder_survives(
             self, engine_expects):

@@ -186,7 +186,8 @@ def arch_with_parts_fused(arch: trimesh.Trimesh,
                 try:
                     excise |= scanned_cap_face_mask(
                         fused, e_template, np.asarray(e_pose, float),
-                        float(e_rim_r))
+                        float(e_rim_r),
+                    full_footprint=True)
                 except Exception:  # noqa: BLE001 — the excision refines an
                     # already-successful fuse; a site it cannot read never fails
                     # the whole composite
@@ -1189,7 +1190,8 @@ def _csg_carve(arch: trimesh.Trimesh,
     for e_template, e_pose, _e_offset, e_rim_r in sites:
         try:
             excise |= scanned_cap_face_mask(
-                cut, e_template, np.asarray(e_pose, float), float(e_rim_r))
+                cut, e_template, np.asarray(e_pose, float), float(e_rim_r),
+                    full_footprint=True)
         except Exception:  # noqa: BLE001 — the excision refines an already-
             # successful cut; a site it cannot read never fails the whole carve
             continue
@@ -1441,7 +1443,8 @@ def _press_carve(arch: trimesh.Trimesh,
     for e_template, e_pose, _e_offset, e_rim_r in sites:
         try:
             excise |= scanned_cap_face_mask(
-                arch, e_template, np.asarray(e_pose, float), float(e_rim_r))
+                arch, e_template, np.asarray(e_pose, float), float(e_rim_r),
+                    full_footprint=True)
         except Exception:  # noqa: BLE001 — the excision refines an already-
             # successful carve; a site it cannot read never fails the whole
             # carve
@@ -1608,7 +1611,8 @@ def open_arch_with_floored_holes(scan: trimesh.Trimesh,
             try:
                 excise |= scanned_cap_face_mask(
                     cut, e_template, np.asarray(e_pose, float),
-                    float(e_rim_r))
+                    float(e_rim_r),
+                    full_footprint=True)
             except Exception:  # noqa: BLE001 — the excision refines an
                 # already-successful cut; a site it cannot read never fails
                 # the whole artifact

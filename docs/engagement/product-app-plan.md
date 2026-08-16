@@ -3522,3 +3522,27 @@ annulus). test_deliverables 85/85; fast lane 1165. Remaining in this arc,
 queued: the tab-1 overlay drape (the white ring around the green aligned
 cap — the overlay's excision hole needs a drape to the cap wall) and the
 full battery + live re-emit proof on 276794487.
+
+**AT the erase ruling — full-footprint excision (2026-08-16, client live:
+"we should completely remove it from the deliverables, artifacts erasing
+the original parts of the scan"; then "the extra residue of the scan after
+the boolean operations continious to show").** Measured on 295811960's own
+POST-seams run (20260816-232048): 5,341 crust faces stood inside the
+catalog cylinder — the 0.6mm template band deliberately spares deviated
+crust, and the core cut's ragged edge sprays ~20 tiny loops that also
+starve the collar bridge of a round mouth. The client's ruling overrules
+the band for DELIVERABLES: `scanned_cap_face_mask` gains
+`full_footprint=True` (the cylinder pre-cut alone decides — everything
+scan inside the catalog rim dies), passed at all four excision sites
+(fused composites, the carve, floored holes, imprint holes). The ISOLATION
+artifact — what did the scanner SEE — keeps the three-rung measurement
+mask untouched. The orphan-flap guard's counterfactual pin re-aimed: the
+erase ruling subsumes its in-cylinder scene (the flap dies by excision
+alone now); the guard stays for remnants past the rim. Proof on the
+client's own tab-5 view: the curling flap and torn crust are gone; a moat
+sliver at one azimuth remains (the bridge stayed note-silent on this
+case's structure — the next measured nibble, not a guess tonight).
+isolation+deliverables 109; fast lane 1166. Queued still: tab 1's base
+switches to the capless artifact (the fused base's own cap solid z-fights
+the green display cap — the "tan blob" reading), and the fork-panel button
+condensation (chip spawned).

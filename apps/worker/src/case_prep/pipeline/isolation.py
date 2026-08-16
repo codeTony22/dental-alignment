@@ -102,7 +102,8 @@ def _keep_faces_by_vertex_mask(mesh: trimesh.Trimesh,
 
 
 def scanned_cap_face_mask(mesh: trimesh.Trimesh, template: trimesh.Trimesh,
-                         pose: np.ndarray, rim_r: float) -> np.ndarray:
+                         pose: np.ndarray, rim_r: float,
+                         full_footprint: bool = False) -> np.ndarray:
     """THE SHARED CLASSIFIER (client-ruled defect 1, 2026-08-15 live verification):
     ``isolate_scanned_cap``'s own three-rung test, factored out as a per-face
     boolean array parallel to ``mesh.faces`` — cylinder pre-cut (whole triangles,
@@ -136,6 +137,18 @@ def scanned_cap_face_mask(mesh: trimesh.Trimesh, template: trimesh.Trimesh,
     step1 = (radial <= float(rim_r))[F].any(axis=1)
     if not step1.any():
         return np.zeros(len(F), dtype=bool)
+
+    # THE ERASE RULING (client 2026-08-16, on the deliverables: "we should
+    # completely remove it... erasing the original parts of the scan"):
+    # where a CAD part REPLACES the cap, the excision takes the whole
+    # footprint — the 0.6mm band deliberately spares deviated crust
+    # (measured 5,341 faces standing inside 295811960's cylinder), and that
+    # spared crust is exactly the "extra of the scan" the client keeps
+    # seeing. ``full_footprint`` is the DELIVERABLES' reading of this
+    # classifier; the isolation artifact (what did the scanner SEE) keeps
+    # the three-rung measurement below.
+    if full_footprint:
+        return step1
 
     # 2. THE POSED TEMPLATE SURFACE, densely sampled (own vertices + a surface
     # sample) — the same idiom ``csg.strip_fabricated`` uses to judge a face

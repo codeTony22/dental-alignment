@@ -218,6 +218,34 @@ class TestScannedCapFaceMask:
         mask = scanned_cap_face_mask(trimesh.Trimesh(), template, pose, RIM_R)
         assert mask.shape == (0,)
 
+    def test_full_footprint_marks_everything_inside_the_cylinder(self):
+        """THE ERASE RULING (client 2026-08-16: "we should completely remove
+        it from the deliverables, artifacts erasing the original parts of
+        the scan"): where a CAD part replaces the cap, the deliverables'
+        excision takes the WHOLE footprint — the middle-ground crust the
+        0.6mm band spared (measured: 5,341 faces standing inside
+        295811960's cylinder on the post-band run, the client's own "extra
+        of the scan") dies too. Outside the cylinder: untouched, exactly as
+        before. The ISOLATION artifact keeps the three-rung mask — this
+        flag belongs to the deliverables' excision only."""
+        scan, template, pose, patches = TestIsolateScannedCap()._fixture()
+        mask = scanned_cap_face_mask(scan, template, pose, RIM_R,
+                                     full_footprint=True)
+        scan_v = np.asarray(scan.vertices, float)
+        scan_f = np.asarray(scan.faces)
+        marked_pts = {tuple(np.round(scan_v[v], 6))
+                      for f in scan_f[mask] for v in f}
+        unmarked_pts = {tuple(np.round(scan_v[v], 6))
+                        for f in scan_f[~mask] for v in f}
+        # the band-spared middle ground is now marked
+        for v in patches["dropped"]:
+            assert tuple(np.round(np.asarray(v, float), 6)) in marked_pts, \
+                "band-spared in-cylinder crust must die under full_footprint"
+        # past the catalog rim nothing changes
+        for v in patches["outside"]:
+            assert tuple(np.round(np.asarray(v, float), 6)) not in marked_pts
+        assert unmarked_pts, "the mask must not eat the whole scan"
+
     def test_the_mask_reads_ANY_mesh_not_only_the_raw_scan(self):
         """DEFECT 1's own point: the classifier is mesh-agnostic geometry, so
         it can be applied to a boolean's own result (a DIFFERENT mesh than
