@@ -3474,3 +3474,51 @@ DEFECT 1 excision, matching the same pattern `open_arch_with_through_holes`
 already carried in this branch. The orphan-flap consumer test in
 `TestDefectAOrphanCleanupEveryConsumer` is updated from the old function name
 to the new one.
+
+**AT the white seams close — the measured mouth rule, chained banks, floor
+lids (2026-08-16, client live on 276794487 with two screenshots: "we still
+have the white part which we are removing - we need it blend into the
+scan"; "still see recidues or left over").** The loop census on the case's
+own run named three defects, each landed measurement-first:
+
+1. THE MOUTH RULE. The collar bridge's delivered exactly-one-loop gate
+   skipped every real cap (the ledgered known limitation — 26–37 loops).
+   Census: the machined mouth is BY CONSTRUCTION the outermost round
+   substantial tool boundary (mouth r 2.9–3.1, std ≤0.28; every trench
+   edge r ≤2.2). Landed as outermost-round selection with two honest
+   refusals: no round substantial loop at all (coarse/jagged tool
+   boundaries — measured std 0.606 on the 0.4mm-grid fixtures vs 0.18–0.28
+   real — now disclose instead of silently passing) and a same-radius
+   same-height tie (0.15mm — a real wall always has height; the shallowest
+   fixture wall measures 0.38mm). Stacked same-radius rings (deep or
+   interrupted walls) read their most OCCLUSAL ring as the mouth — the
+   recess's actual opening — regardless of fragment connectivity (a
+   connectivity variant was tried and executed fragmented single walls).
+2. CHAINED BANKS. Measured on the census (two round banks at r 2.92/3.05)
+   and on the fixture (mouth → crust-remnant ring → shadow bank): one
+   strip to one bank leaves the next gap standing white, and the old
+   more-than-one-candidate skip left ALL of it white. Qualifying rings now
+   chain by radius, one welded strip per consecutive pair — every pair
+   still individually gated, "never a mangled ring" per strip.
+3. FLOOR LIDS + the floored artifact's own bridge. The white breach INSIDE
+   the recess: where the scan dove below the gingival floor (the pocket
+   the scanner saw through the cap's own openings — a 395-vertex boundary
+   loop AT the floor plane on the case's run), the floor plane cut
+   nothing. `_lid_planar_holes` fan-lids every floor-height round opening
+   inside 0.8× the silhouette radius (min 12 vertices; roundness ≤ 0.5 —
+   flush-cut stitching junk measures 0.73), noted per site. And
+   `open_arch_with_floored_holes` gains the collar-bridge wiring it never
+   had (the reconciliation its own ledger entry flagged), tracked-path
+   only.
+
+Pin migration, all re-aimed to measured actuals: the two coarse-fixture
+notes disclose; the deviated-cap fixture's crescent moat now genuinely
+BRIDGES (the pin asserts the client's required sentence); the deep-seated /
+bulge / excision trios read their occlusal mouths silently; the junction
+family splits into stacked-mouths-read-occlusally and the same-height-tie
+skip; the chained-banks pin replaces the multi-candidate skip pin. Two new
+floored-holes pins carry the defect scenes (the crater pocket; the shadow
+annulus). test_deliverables 85/85; fast lane 1165. Remaining in this arc,
+queued: the tab-1 overlay drape (the white ring around the green aligned
+cap — the overlay's excision hole needs a drape to the cap wall) and the
+full battery + live re-emit proof on 276794487.

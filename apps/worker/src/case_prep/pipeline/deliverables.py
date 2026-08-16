@@ -575,6 +575,19 @@ _BRIDGE_Z_BAND_MM = 3.0     # a real moat sits close to the mouth's own height �
 #                             (a boundary loop on the model's own FAR side, e.g. a
 #                             box fixture's underside) must never read as the near
 #                             side's own moat
+# THE MOUTH RULE'S OWN NUMBERS (2026-08-16, the loop census on 276794487's
+# run 20260816-155459: a real coded cap's tool surface carries dozens of
+# boundary loops — trench edges, floor cuts, deviation windows — but the
+# machined mouth is BY CONSTRUCTION the outermost: the punch is a revolute
+# whose widest cut rings the mouth. Measured: mouth r 2.9-3.1 with radial
+# std 0.18-0.28; every internal edge r <= 2.2).
+_FLOOR_LID_BAND_MM = 0.3    # a floor-height loop sits AT the floor plane
+_FLOOR_LID_MIN_VERTICES = 12  # a real pocket breach is a ring (measured: 395
+                              # vertices on 276794487) — a flush cut's own
+                              # degenerate slivers are not floor gaps
+_MOUTH_MIN_VERTICES = 24    # a mouth is a ring, not a sliver
+_MOUTH_ROUNDNESS_MM = 0.45  # measured mouth std 0.28 max, with headroom
+_MOUTH_TIE_MM = 0.3         # two round loops this close in radius = a junction
 _BRIDGE_ROUNDNESS_MM = 0.3  # "roughly concentric" made a number: a loop's own
 #                             radial std about the axis past this is not a ring at
 #                             all — it is some other cut edge that merely passed
@@ -718,9 +731,12 @@ def _bridge_recess_collar(out_boundary_loops: "Sequence[np.ndarray]",
     exactly, with no radial search needed to find it.
 
     Extraction is two loops, each required to stand alone. The MOUTH is the
-    socket submesh's own single boundary loop — more or fewer is a
-    junction, and this site's bridge is skipped, with a note naming the
-    count. The SCAN'S OPENING BOUNDARY is, among ``out_boundary_loops``,
+    socket submesh's OUTERMOST substantial round boundary loop (the
+    2026-08-16 measured rule — a real coded cap's tool surface carries
+    dozens of boundary loops, but the punch is a revolute whose widest cut
+    rings the mouth; a radius near-tie between two round loops is a genuine
+    junction and skips with the count). The SCAN'S OPENING BOUNDARY is,
+    among ``out_boundary_loops``,
     the one loop whose every point sits radially beyond the mouth's own
     farthest point (excluding the mouth's own duplicate — ``out`` always
     carries one too, at the shared cut edge, and it fails this test because
@@ -766,25 +782,56 @@ def _bridge_recess_collar(out_boundary_loops: "Sequence[np.ndarray]",
     xl = R @ np.array([1.0, 0.0, 0.0])
     yl = R @ np.array([0.0, 1.0, 0.0])
 
-    # THE EXACTLY-ONE RULE, as delivered: the mouth must be the machined
-    # surface's single boundary loop, else the honest skip with the count —
-    # "never a mangled ring". KNOWN LIMITATION, integration-measured
-    # 2026-08-15: a REAL coded cap's imprint carries ~26–37 boundary loops
-    # (trench edges, floor cuts, deviation windows), so on real caps the
-    # bridge currently SKIPS with its note rather than firing — two quick
-    # window/height classifiers were tried at integration and each
-    # mis-modelled a different fixture population, so per the probe-first
-    # discipline the real-cap mouth classifier is a measured follow-up, not
-    # a guess landed tonight.
-    if len(mouth_loops) != 1:
-        return None, (
-            f"the machined mouth could not be read as one clean loop "
-            f"({len(mouth_loops)} found) — the collar bridge was skipped")
-    mouth = mouth_loops[0]
-
     def _radial_axial(pts: np.ndarray) -> "Tuple[np.ndarray, np.ndarray]":
         rel = pts - origin
         return np.hypot(rel @ xl, rel @ yl), rel @ axis
+
+    # THE OUTERMOST-ROUND MOUTH RULE (the exactly-one rule's measured
+    # replacement, 2026-08-16 — the loop census that the delivered rule's
+    # own KNOWN LIMITATION comment queued as probe-first follow-up): a real
+    # coded cap's tool surface carries dozens of boundary loops (26-37 was
+    # the integration measurement; 276794487's own run showed the same),
+    # but the machined MOUTH is BY CONSTRUCTION the outermost of them — the
+    # punch is a revolute whose widest cut rings the mouth (measured: mouth
+    # r 2.9-3.1 vs <= 2.2 for every trench/floor edge). The mouth is the
+    # SUBSTANTIAL, ROUND loop with the largest mean radius; two round loops
+    # in a radius near-tie is a genuine junction, skipped with the count —
+    # "never a mangled ring" stands.
+    candidates = []
+    for lp in mouth_loops:
+        if len(lp) < _MOUTH_MIN_VERTICES:
+            continue
+        r, a = _radial_axial(lp)
+        if float(r.std()) > _MOUTH_ROUNDNESS_MM:
+            continue
+        candidates.append((float(r.mean()), float(a.mean()), lp))
+    if not candidates:
+        return None, (
+            f"no round machined mouth stands among the {len(mouth_loops)} "
+            f"boundary loops at this site — the collar bridge was skipped")
+    candidates.sort(key=lambda t: -t[0])
+    top_r = candidates[0][0]
+    rivals = [c for c in candidates if top_r - c[0] < _MOUTH_TIE_MM]
+    if len(rivals) > 1:
+        # STACKED WALL EDGES AT ONE RADIUS: a deep or interrupted socket's
+        # wall leaves several round rings at the same radius (floor edge,
+        # wall top, disjoint wall fragments). The MOUTH is where the
+        # machined surface meets the outside world — the most OCCLUSAL of
+        # them, whatever the fragments' connectivity. The only genuine
+        # ambiguity left is two round rings at one radius AND one height —
+        # nothing physical to choose between — and that skips, "never a
+        # mangled ring".
+        rivals.sort(key=lambda t: -t[1])
+        # 0.15mm: a real wall always has height (the shallowest measured
+        # fixture wall is 0.38mm); only a degenerate sliver has none
+        if rivals[0][1] - rivals[1][1] < 0.15:
+            return None, (
+                f"{len(rivals)} rival round mouths sit within "
+                f"{_MOUTH_TIE_MM:.1f}mm of one radius at one height — the "
+                f"collar bridge was skipped")
+        mouth = rivals[0][2]
+    else:
+        mouth = candidates[0][2]
 
     mouth_r, mouth_a = _radial_axial(mouth)
     mouth_r_max = float(mouth_r.max())
@@ -808,32 +855,84 @@ def _bridge_recess_collar(out_boundary_loops: "Sequence[np.ndarray]",
             outer_candidates.append(loop)
     if not outer_candidates:
         return None, None
-    if len(outer_candidates) > 1:
-        return None, (
-            f"{len(outer_candidates)} candidate boundary loops sit near the "
-            "recess mouth — the collar bridge was skipped")
-    outer = outer_candidates[0]
+    # CONCENTRIC MULTI-BANK MOATS (measured 2026-08-16, both on the real
+    # 276794487 census — two round banks at r 2.92/3.05 — and on the moat
+    # fixture: mouth → crust-remnant ring → shadow bank): one strip to one
+    # bank leaves the next gap standing white. The banks CHAIN: sort the
+    # qualifying rings by radius and zip each consecutive pair, mouth
+    # outward — every pair still individually gated by the roundness/
+    # height/radius tests above, so "never a mangled ring" holds per strip.
+    outer_candidates.sort(key=lambda lp: float(np.mean(
+        np.hypot((lp - origin) @ xl, (lp - origin) @ yl))))
+    chain = [mouth] + outer_candidates
 
     # THE TRIANGULATION reuses the envelope-era collar's own idiom (see
-    # ``_zip_loop_bridge``'s docstring) — an inner-to-outer strip — but
-    # joins the two loops' OWN REAL points (never an interpolated one),
-    # which is what lets the caller WELD the bridge onto ``out``'s own
-    # pre-existing "scan's opening boundary" loop by an exact-coordinate
-    # vertex merge: the OUTER ring here is built from the SAME vertex
-    # values as that pre-existing loop, so after the caller's
-    # ``merge_vertices()`` the moat closes for real, not merely visually.
-    mouth_theta = np.arctan2((mouth - origin) @ yl, (mouth - origin) @ xl)
-    outer_theta = np.arctan2((outer - origin) @ yl, (outer - origin) @ xl)
-    inner_sorted, outer_sorted, faces = _zip_loop_bridge(
-        mouth, mouth_theta, outer, outer_theta)
-    verts = np.vstack([inner_sorted, outer_sorted])
-    bridge = trimesh.Trimesh(verts, faces, process=False)
-    if float(np.asarray(bridge.face_normals, float).mean(axis=0) @ axis) < 0:
-        bridge = trimesh.Trimesh(verts, faces[:, ::-1], process=False)
+    # ``_zip_loop_bridge``'s docstring) — an inner-to-outer strip per
+    # consecutive pair of the chain — joining each pair's OWN REAL points
+    # (never an interpolated one), which is what lets the caller WELD the
+    # bridge onto ``out``'s own pre-existing loops by an exact-coordinate
+    # vertex merge: every ring here is built from the SAME vertex values as
+    # its pre-existing loop, so after the caller's ``merge_vertices()`` the
+    # moat closes for real, not merely visually.
+    strips: list = []
+    for inner_lp, outer_lp in zip(chain[:-1], chain[1:]):
+        inner_theta = np.arctan2((inner_lp - origin) @ yl,
+                                 (inner_lp - origin) @ xl)
+        outer_theta = np.arctan2((outer_lp - origin) @ yl,
+                                 (outer_lp - origin) @ xl)
+        inner_sorted, outer_sorted, faces = _zip_loop_bridge(
+            inner_lp, inner_theta, outer_lp, outer_theta)
+        verts = np.vstack([inner_sorted, outer_sorted])
+        strip = trimesh.Trimesh(verts, faces, process=False)
+        if float(np.asarray(strip.face_normals, float).mean(axis=0)
+                 @ axis) < 0:
+            strip = trimesh.Trimesh(verts, faces[:, ::-1], process=False)
+        strips.append(strip)
+    bridge = (strips[0] if len(strips) == 1
+              else trimesh.util.concatenate(strips))
     note = ("the collar between the recess mouth and the scan's edge is "
            "bridged — the tissue there sat under the cap and was never "
            "scanned")
     return bridge, note
+
+
+def _lid_planar_holes(mesh: trimesh.Trimesh, origin: np.ndarray,
+                      axis: np.ndarray, floor_a: float, r_ref: float
+                      ) -> "Tuple[list, int]":
+    """FAN LIDS FOR FLOOR-HEIGHT OPENINGS (client live, 2026-08-16): every
+    boundary loop of ``mesh`` that sits AT the site's floor plane
+    (``_FLOOR_LID_BAND_MM``) and INSIDE the hole's own footprint
+    (mean radius under ``0.8 * r_ref`` — the mouth ring itself lives at the
+    silhouette radius and must never be sealed, flush cap or not) is closed
+    with a centroid fan wound to face occlusally. The lids reuse the loop's
+    own real vertex values, so the caller's ``merge_vertices()`` welds them
+    on for real. Returns ``(lid_meshes, count)``."""
+    lids: list = []
+    for lp in _boundary_loops_of(mesh):
+        if len(lp) < _FLOOR_LID_MIN_VERTICES:
+            continue
+        rel = np.asarray(lp, float) - origin
+        a = rel @ axis
+        r = np.linalg.norm(rel - np.outer(a, axis), axis=1)
+        if float(np.abs(a - floor_a).max()) > _FLOOR_LID_BAND_MM:
+            continue
+        if float(r.mean()) > 0.8 * r_ref:
+            continue
+        if float(r.std()) > 0.5:
+            # a real pocket breach is roughly round (measured 0.30 on
+            # 276794487's own loop); a flush-coplanar cut's stitching junk
+            # is star-shaped (measured 0.73) and is not a floor gap
+            continue
+        pts = np.asarray(lp, float)
+        centroid = pts.mean(axis=0)
+        verts = np.vstack([pts, centroid[None, :]])
+        n = len(pts)
+        faces = np.asarray([[i, (i + 1) % n, n] for i in range(n)], int)
+        lid = trimesh.Trimesh(verts, faces, process=False)
+        if float(np.asarray(lid.face_normals, float).mean(axis=0) @ axis) < 0:
+            lid = trimesh.Trimesh(verts, faces[:, ::-1], process=False)
+        lids.append(lid)
+    return lids, len(lids)
 
 
 def _gingival_floor_a(V: np.ndarray, solid: trimesh.Trimesh, index: int,
@@ -1441,6 +1540,7 @@ def open_arch_with_floored_holes(scan: trimesh.Trimesh,
         V = np.asarray(scan.vertices, float)
         punches = []
         notes: list = []
+        site_geoms: list = []   # (pose, floor_a, r_ref) — the lids/bridge below
         for index, (template, pose, offset_mm, rim_radius_mm) in enumerate(
                 sites, 1):
             pose = np.asarray(pose, float)
@@ -1469,6 +1569,7 @@ def open_arch_with_floored_holes(scan: trimesh.Trimesh,
             # code windows and connection lobes into the hole as the cap's
             # ghost). A failed profile already noted its cylinder shape.
             punches.append(punch_solid(zs_p, prof_p, floor_a, pose))
+            site_geoms.append((pose, float(floor_a), float(np.max(prof_p))))
 
         tracked_keep: Optional[np.ndarray] = None
         scan_provenance: Optional[np.ndarray] = None
@@ -1531,6 +1632,60 @@ def open_arch_with_floored_holes(scan: trimesh.Trimesh,
         out.remove_unreferenced_vertices()
         if len(out.faces) == 0:
             raise ValueError("the floored hole cut left nothing to ship")
+
+        # THE FLOOR LIDS (client live, 2026-08-16: "still see residues or
+        # left over" — the white patch INSIDE the recess). Where the scan
+        # dove BELOW the gingival floor (a pocket the scanner saw through
+        # the cap's own openings — measured on 276794487's own run as a
+        # 395-vertex boundary loop AT the floor plane), the floor plane cut
+        # nothing and the disc is left holed. Every floor-height boundary
+        # loop inside the hole's own footprint is fan-lidded flat — the
+        # floor itself is the fourth ruling's own client-ruled fabrication
+        # at gum level, and lidding its holes is the same ruling, noted.
+        for index, (pose, floor_a, r_ref) in enumerate(site_geoms, 1):
+            origin = pose[:3, 3]
+            R = pose[:3, :3]
+            axis = R @ np.array([0.0, 0.0, 1.0])
+            lids, lid_count = _lid_planar_holes(out, origin, axis, floor_a,
+                                                r_ref)
+            if lid_count:
+                out = trimesh.util.concatenate([out] + lids)
+                out.merge_vertices()
+                notes.append(
+                    f"site {index}: {lid_count} gap"
+                    f"{'' if lid_count == 1 else 's'} in the gingival floor "
+                    f"{'was' if lid_count == 1 else 'were'} lidded — the "
+                    f"scan there dove below the floor through the cap's own "
+                    f"openings")
+
+        # THE COLLAR BRIDGE, here too (client live, 2026-08-16, the second
+        # screenshot's moat crescents — this artifact never received the
+        # wiring ``_csg_carve`` got; the reconciliation the floored-holes
+        # ledger entry flagged). Tracked provenance names each site's own
+        # tool faces; the untracked fallback path stays bridge-less — its
+        # note already discloses the degraded build.
+        if tracked_keep is not None:
+            out_boundary_loops = _boundary_loops_of(out)
+            kept_source = np.asarray(tracked.source)[keep]
+            out_F = np.asarray(cut.faces)[keep]
+            bridges: list = []
+            for index, ((pose, _floor_a, _r_ref), (_t, _p, _o, site_rim_r)) \
+                    in enumerate(zip(site_geoms, sites), 1):
+                site_tool = out_F[kept_source == (tracked.base_groups
+                                                  + (index - 1))]
+                if len(site_tool) == 0:
+                    continue
+                bridge, note = _bridge_recess_collar(
+                    out_boundary_loops, Vc, site_tool, pose,
+                    float(site_rim_r))
+                if note is not None:
+                    notes.append(f"site {index}: {note}")
+                if bridge is not None:
+                    bridges.append(bridge)
+            if bridges:
+                out = trimesh.util.concatenate([out] + bridges)
+                out.merge_vertices()
+
         return out, notes
     except Exception as exc:  # noqa: BLE001 — honest absence
         return None, [f"the open arch with floored holes could not be built "

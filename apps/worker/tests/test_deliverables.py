@@ -575,14 +575,12 @@ class TestCapImprintHoles:
             assert len(out.faces) > 0, \
                 "the pressed-carve fallback must still ship a recess"
             return
-        # DEFECT B (client-ruled, live verification 2026-08-15): the fin
-        # makes the socket's own boundary genuinely non-simple (3 loops,
-        # verified directly) — the collar bridge fails OPEN here, honestly,
-        # rather than guess at a mangled ring; the fin's own recess claims
-        # below are unaffected.
-        assert notes == [
-            "site 1: the machined mouth could not be read as one clean "
-            "loop (3 found) — the collar bridge was skipped"]
+        # DEFECT B, under the outermost-round mouth rule (2026-08-16): the
+        # fin's extra loops fail the roundness/size gates, the round main
+        # mouth is read cleanly, and THIS fixture carries no moat ring at
+        # all — nothing to bridge, no note, an honest silence (the old
+        # 3-loops skip note was the exactly-one rule's own confusion).
+        assert notes == []
 
         # the reference shapes: the EXACT cut tool (cap+fin, dilated by the
         # offset only — mirrors ``_exact_cap_punch``) and the OLD fat
@@ -645,7 +643,13 @@ class TestCapImprintHoles:
         sheet = trimesh.Trimesh(pts, np.asarray(faces), process=False)
         out, notes = cap_imprint_holes(sheet, [self._site()])
         if engine_expects.tracked:
-            assert notes == []
+            # the coarse 0.4mm grid leaves a genuinely jagged tool boundary
+            # (measured std 0.606 vs 0.18-0.28 on real scans) — the
+            # outermost-round mouth rule (2026-08-16) discloses it honestly
+            assert notes == [
+                "site 1: no round machined mouth stands among the 1 "
+                "boundary loops at this site — the collar bridge was "
+                "skipped"]
         else:
             engine_expects.assert_fallback_notes(
                 notes, "the provenance-tracked strip could not run")
@@ -1016,15 +1020,14 @@ class TestCapImprintHoles:
             assert len(out.faces) > 0, \
                 "the pressed-carve fallback must still ship something"
             return
-        # DEFECT B (client-ruled, live verification 2026-08-15): the
-        # off-pose scan makes the cut asymmetric — the socket's own
-        # boundary is genuinely non-simple here (2 loops, verified
-        # directly) — the collar bridge fails OPEN, honestly, rather than
-        # guess at a mangled ring; the torn-flap cull claims below are
-        # unaffected.
+        # DEFECT B, resolved rather than dodged (2026-08-16 mouth rule):
+        # the off-pose cut's stacked rings read their occlusal ring as the
+        # mouth, and the crescent gap the deviation leaves — the client's
+        # own moat — is now genuinely BRIDGED, with the required sentence.
         assert notes == [
-            "site 1: the machined mouth could not be read as one clean "
-            "loop (2 found) — the collar bridge was skipped"]
+            "site 1: the collar between the recess mouth and the scan's "
+            "edge is bridged — the tissue there sat under the cap and was "
+            "never scanned"]
         v = np.asarray(out.vertices, float)
         r = np.linalg.norm(v[:, :2], axis=1)
         # WITHOUT the cull clearance, a crescent of the shifted bump survives
@@ -1065,7 +1068,12 @@ class TestCapImprintHoles:
                                                 0.2, 2.0)],
                                        top_floor=True)
         if engine_expects.tracked:
-            assert notes == []
+            # coarse-grid jagged tool boundary — honest disclosure, see the
+            # sibling per-azimuth pin's own comment (2026-08-16 mouth rule)
+            assert notes == [
+                "site 1: no round machined mouth stands among the 1 "
+                "boundary loops at this site — the collar bridge was "
+                "skipped"]
         else:
             engine_expects.assert_fallback_notes(
                 notes,
@@ -1541,17 +1549,12 @@ class TestDeepSeatedRecessKeepsItsWholeWall:
                 notes, "the provenance-tracked strip could not run")
             assert socket is not None
             return
-        # DEFECT B (client-ruled, live verification 2026-08-15): the tall,
-        # NARROWER bump leaves the wall's own boundary split across two
-        # heights (the floor ring and, well above it, the ring where the
-        # punch's own reach ends and the bump's untouched surface resumes —
-        # verified directly) — genuinely non-simple, so the collar bridge
-        # fails OPEN, honestly. The whole-wall coverage claim below is
-        # unaffected; it is what this test exists to prove.
-        assert notes == [
-            "site 1: the machined mouth could not be read as one clean "
-            "loop (2 found) — the collar bridge was skipped"
-        ], f"must exercise the tracked path: {notes}"
+        # Under the physical mouth rule (2026-08-16) the wall split across
+        # two heights reads its most OCCLUSAL ring as the mouth — the
+        # recess's actual opening — and this fixture offers no moat ring,
+        # so the notes are honestly silent. The whole-wall coverage claim
+        # below is unaffected; it is what this test exists to prove.
+        assert notes == [], f"must exercise the tracked path: {notes}"
         assert socket is not None
         assert len(kernel.tracked_results) == 1
         tracked = kernel.tracked_results[0]
@@ -1950,9 +1953,8 @@ class TestDefect1MeasuredCapResidueIsExcised:
             # genuinely non-simple here (3 loops, verified directly) — the
             # collar bridge fails OPEN, honestly; the crust-excision claim
             # below is unaffected.
-            assert notes == [
-                "site 1: the machined mouth could not be read as one "
-                "clean loop (3 found) — the collar bridge was skipped"]
+            assert notes == []  # the occlusal mouth read resolves the stack;
+                # this fixture offers no moat ring to bridge (2026-08-16 rule)
         merged = (trimesh.util.concatenate([out, socket])
                  if socket is not None else out)
         merged_v = {tuple(np.round(v, 6))
@@ -1990,9 +1992,8 @@ class TestDefect1MeasuredCapResidueIsExcised:
         else:
             # DEFECT B — see ``test_the_bulge_does_not_survive_the_carve``'s
             # own comment (same site, same measured 3-loop fail-open).
-            assert notes == [
-                "site 1: the machined mouth could not be read as one "
-                "clean loop (3 found) — the collar bridge was skipped"]
+            assert notes == []  # the occlusal mouth read resolves the stack;
+                # this fixture offers no moat ring to bridge (2026-08-16 rule)
         merged = (trimesh.util.concatenate([out, socket])
                  if socket is not None else out)
         v = np.asarray(merged.vertices, float)
@@ -2023,9 +2024,8 @@ class TestDefect1MeasuredCapResidueIsExcised:
         else:
             # DEFECT B — see ``test_the_bulge_does_not_survive_the_carve``'s
             # own comment (same site, same measured 3-loop fail-open).
-            assert notes == [
-                "site 1: the machined mouth could not be read as one "
-                "clean loop (3 found) — the collar bridge was skipped"]
+            assert notes == []  # the occlusal mouth read resolves the stack;
+                # this fixture offers no moat ring to bridge (2026-08-16 rule)
         assert socket is not None and len(socket.faces) > 0, \
             "the recess wall/floor (tool provenance) must survive the excision"
 
@@ -2381,6 +2381,94 @@ class TestOpenArchWithFlooredHoles:
         assert float(a_c[core].min()) > floor_a - 0.31, \
             "the recess core sinks below the floor's own clamp tolerance"
 
+    def test_a_scan_pocket_below_the_floor_is_lidded(self, engine_expects):
+        """THE FLOOR BREACH (client live, 2026-08-16: "still see residues or
+        left over" — the white patch INSIDE the recess; measured on
+        276794487's own run: a 395-vertex boundary loop AT the floor plane).
+        Where the scan dove BELOW the gingival floor (a pocket the scanner
+        saw through the cap's own openings), the floor plane cuts nothing
+        and the disc is left with a hole. The fix lids every floor-height
+        opening inside the hole's own footprint, with a note."""
+        from case_prep.pipeline import deliverables as d
+
+        # flat gum at z=0 with a CRATER dropping to z=-2 inside r<0.6 —
+        # the dive-in pocket, as a height field (no self-crossing)
+        n, extent = 121, 8.0
+        xs, ys = np.meshgrid(np.linspace(-extent, extent, n),
+                             np.linspace(-extent, extent, n))
+        rr = np.hypot(xs, ys)
+        zz = np.where(rr < 0.6, -2.0 * (1.0 - rr / 0.6), 0.0)
+        pts = np.column_stack([xs.ravel(), ys.ravel(), zz.ravel()])
+        faces = []
+        for i in range(n - 1):
+            for j in range(n - 1):
+                a = i * n + j
+                faces.extend([[a, a + 1, a + n + 1], [a, a + n + 1, a + n]])
+        sheet = trimesh.Trimesh(pts, np.asarray(faces), process=False)
+
+        site = self._site()
+        _template, pose, _offset, _rim_r = site
+        out, notes = d.open_arch_with_floored_holes(sheet, [site])
+        if not engine_expects.tracked:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
+            assert out is not None
+            return
+        assert out is not None
+        assert any("gingival floor" in nt and "lidded" in nt for nt in notes), \
+            f"no lid note in {notes}"
+        origin = pose[:3, 3]
+        axis = pose[:3, :3] @ np.array([0.0, 0.0, 1.0])
+        locs, *_ = out.ray.intersects_location(
+            ray_origins=[origin + axis * 100.0], ray_directions=[-axis])
+        assert len(locs) > 0
+        nearest = float(max(locs[:, 2]))   # the topmost hit under the probe
+        assert abs(nearest - 0.0) < 0.1, \
+            f"the crater still shows through — topmost hit z={nearest:.2f}, " \
+            f"expected the lid at the gum floor z=0"
+
+    def test_the_moat_is_bridged_on_the_floored_artifact(self,
+                                                         engine_expects):
+        """THE MOAT (client live, 2026-08-16, second screenshot): the
+        floored artifact never received the collar-bridge wiring _csg_carve
+        got — the census showed its two moat banks unbridged. A sheet with
+        a genuinely missing annulus (the scanner's own shadow) must come
+        back bridged, with the client's required sentence."""
+        from case_prep.pipeline import deliverables as d
+
+        n, extent = 121, 8.0
+        xs, ys = np.meshgrid(np.linspace(-extent, extent, n),
+                             np.linspace(-extent, extent, n))
+        rr = np.hypot(xs, ys)
+        # a CAP-SIZED proud bump (the punch cuts a real wall through its
+        # ramp) with the scanner's shadow annulus genuinely absent BEYOND
+        # it — the real moat mechanism: mouth at the wall, gum resuming
+        # only past the shadow. The bump must end before the gum ring band
+        # (r 2.3+) or the floor reads the bump itself as "gum".
+        zz = 1.5 * np.clip((2.3 - rr) / 0.4, 0.0, 1.0)
+        pts = np.column_stack([xs.ravel(), ys.ravel(), zz.ravel()])
+        faces = []
+        for i in range(n - 1):
+            for j in range(n - 1):
+                a = i * n + j
+                cx = (xs[i, j] + xs[i, j + 1] + xs[i + 1, j + 1]) / 3.0
+                cy = (ys[i, j] + ys[i, j + 1] + ys[i + 1, j + 1]) / 3.0
+                if 2.4 < np.hypot(cx, cy) < 3.0:
+                    continue
+                faces.extend([[a, a + 1, a + n + 1], [a, a + n + 1, a + n]])
+        sheet = trimesh.Trimesh(pts, np.asarray(faces), process=False)
+
+        out, notes = d.open_arch_with_floored_holes(sheet, [self._site()])
+        if not engine_expects.tracked:
+            engine_expects.assert_fallback_notes(
+                notes, "the provenance-tracked strip could not run")
+            assert out is not None
+            return
+        assert out is not None
+        assert any("the collar between the recess mouth and the scan's edge "
+                   "is bridged" in nt for nt in notes), \
+            f"no bridge note in {notes}"
+
     def test_the_excision_holds_here_too(self, monkeypatch, engine_expects):
         """DEFECT 1's own classifier, applied to this artifact too: a
         scanned cap's own crust can still stand proud of the floored recess.
@@ -2634,22 +2722,73 @@ class TestBridgeRecessCollar:
         assert bridge is None
         assert note is None
 
-    def test_a_junction_mouth_fails_open_with_the_loop_count(self):
+    def test_stacked_mouths_read_the_most_occlusal_one(self):
+        """Two same-radius rings at different heights — the physical rule
+        (2026-08-16): the mouth is where the machined surface meets the
+        outside world, the most OCCLUSAL round ring. With no moat loops
+        offered there is then nothing to bridge and nothing to confess —
+        honest silence, not the old junction-count note."""
         from case_prep.pipeline.deliverables import _bridge_recess_collar
 
         pose = np.eye(4)
         Vc, socket_faces_1 = self._cup_mesh(2.0, 0.0, n=32)
         Vc2, socket_faces_2 = self._cup_mesh(2.0, 5.0, n=32)
-        # two disjoint cups concatenated as ONE "socket" — two mouths, not one
+        V = np.vstack([Vc, Vc2])
+        F = np.vstack([socket_faces_1, socket_faces_2 + len(Vc)])
+        bridge, note = _bridge_recess_collar([], V, F, pose, 2.0)
+        assert bridge is None
+        assert note is None
+
+    def test_a_same_height_radius_tie_is_a_genuine_junction(self):
+        """Two round rings at ONE radius and ONE height — nothing physical
+        to choose between: the honest skip, "never a mangled ring"."""
+        from case_prep.pipeline.deliverables import _bridge_recess_collar
+
+        pose = np.eye(4)
+        Vc, socket_faces_1 = self._cup_mesh(2.0, 0.0, n=32)
+        Vc2, socket_faces_2 = self._cup_mesh(2.0, 0.05, n=32)
         V = np.vstack([Vc, Vc2])
         F = np.vstack([socket_faces_1, socket_faces_2 + len(Vc)])
         bridge, note = _bridge_recess_collar([], V, F, pose, 2.0)
         assert bridge is None
         assert note == (
-            "the machined mouth could not be read as one clean loop "
-            "(2 found) — the collar bridge was skipped")
+            "2 rival round mouths sit within 0.3mm of one radius at one "
+            "height — the collar bridge was skipped")
 
-    def test_more_than_one_candidate_outer_loop_fails_open_with_the_count(self):
+    def test_a_real_cap_population_still_finds_its_mouth(self):
+        """THE MEASURED REAL-CAP SHAPE (the loop census, 2026-08-16): the
+        tool surface carries the mouth PLUS many small interior loops
+        (trench edges, floor cuts — measured r <= 2.2 vs mouth r 2.9-3.1).
+        The delivered exactly-one rule skipped exactly this population;
+        the outermost-round rule bridges it."""
+        from case_prep.pipeline.deliverables import _bridge_recess_collar
+
+        pose = np.eye(4)
+        mouth_r, moat_r = 2.9, 3.3
+        Vc, socket_faces = self._cup_mesh(mouth_r, 0.0, n=48)
+        # interior anatomy: three small trench rings well inside the mouth,
+        # each its own boundary loop on the tool surface
+        parts = [(Vc, socket_faces)]
+        for tr_r, tz in ((1.5, -0.4), (1.8, -0.5), (2.1, -0.3)):
+            tv, tf = self._cup_mesh(tr_r, tz, n=28)
+            parts.append((tv, tf))
+        V = np.vstack([p[0] for p in parts])
+        offs = np.cumsum([0] + [len(p[0]) for p in parts[:-1]])
+        F = np.vstack([p[1] + o for p, o in zip(parts, offs)])
+        moat = self._circle(moat_r, 0.0, n=40, phase=0.02)
+        bridge, note = _bridge_recess_collar([moat], V, F, pose, mouth_r)
+        assert bridge is not None, f"skipped instead: {note}"
+        assert "bridged" in note
+        r = np.linalg.norm(np.asarray(bridge.vertices, float)[:, :2], axis=1)
+        assert float(r.min()) >= mouth_r - 1e-6
+        assert float(r.max()) <= moat_r + 1e-6
+
+    def test_concentric_banks_chain_into_one_bridge(self):
+        """CONCENTRIC MULTI-BANK MOATS (measured 2026-08-16 — 276794487's
+        own census carries two round banks at r 2.92/3.05, and the client's
+        screenshot showed the gap standing white between them): the old
+        more-than-one-candidate skip left the outer gap open; the banks now
+        CHAIN — mouth → nearest ring → next — one welded strip per pair."""
         from case_prep.pipeline.deliverables import _bridge_recess_collar
 
         pose = np.eye(4)
@@ -2658,10 +2797,13 @@ class TestBridgeRecessCollar:
         moat_b = self._circle(2.6, 0.2, n=36, phase=0.05)
         bridge, note = _bridge_recess_collar([moat_a, moat_b], Vc, socket_faces,
                                              pose, 2.0)
-        assert bridge is None
-        assert note == (
-            "2 candidate boundary loops sit near the recess mouth — the "
-            "collar bridge was skipped")
+        assert bridge is not None
+        assert "bridged" in note
+        r = np.linalg.norm(np.asarray(bridge.vertices, float)[:, :2], axis=1)
+        # the chained strips span mouth (2.0) all the way to the OUTER bank
+        # (2.6) — nothing left standing white between the two banks
+        assert float(r.min()) >= 2.0 - 1e-6
+        assert float(r.max()) >= 2.6 - 1e-6
 
     def test_an_irregular_outer_loop_fails_the_roundness_gate(self):
         """A candidate loop that is not itself "roughly concentric" — the
@@ -2810,8 +2952,13 @@ class TestDefectBFailsOpenRatherThanMangleARing:
     recess is otherwise unaffected."""
 
     def test_a_fin_shaped_cap_leaves_a_non_simple_mouth(self, engine_expects):
-        """Reuses ``TestCapImprintHoles``'s own fin fixture: the fin makes
-        the socket's own boundary genuinely non-simple (3 loops, measured)."""
+        """Reuses ``TestCapImprintHoles``'s own fin fixture. Under the
+        outermost-round mouth rule (2026-08-16) the fin's extra loops fail
+        the roundness/size gates and the round main mouth reads cleanly —
+        and this fixture carries no moat ring, so the honest outcome is
+        SILENCE, not the exactly-one rule's own confusion note. The
+        fail-open path itself is pinned by the rival-tie and no-round-mouth
+        pins in ``TestBridgeRecessCollar``."""
         from case_prep.pipeline.deliverables import cap_imprint_holes
 
         cap = trimesh.creation.cylinder(radius=2.0, height=4.0)
@@ -2825,9 +2972,7 @@ class TestDefectBFailsOpenRatherThanMangleARing:
             engine_expects.assert_fallback_notes(
                 notes, "the true-boolean recess could not be cut")
             return
-        assert notes == [
-            "site 1: the machined mouth could not be read as one clean "
-            "loop (3 found) — the collar bridge was skipped"]
+        assert notes == []
         assert len(out.faces) > 0, "the recess itself must still ship"
 
     def test_a_deep_narrow_bump_leaves_the_wall_split_across_two_heights(
@@ -2855,9 +3000,11 @@ class TestDefectBFailsOpenRatherThanMangleARing:
                 notes, "the provenance-tracked strip could not run")
             assert socket is not None
             return
-        assert notes == [
-            "site 1: the machined mouth could not be read as one clean "
-            "loop (2 found) — the collar bridge was skipped"]
+        # under the physical mouth rule (2026-08-16) the wall split across
+        # two heights reads its most OCCLUSAL ring as the mouth — the
+        # recess's actual opening — and this fixture offers no moat ring to
+        # bridge, so the honest outcome is silence, not a junction note
+        assert notes == []
         assert socket is not None and len(socket.faces) > 0
 
 
