@@ -777,14 +777,13 @@ describe("the workspace toolbar over the panes", () => {
     expect(view()).not.toContain('data-role="pane-link"');
     const wired = view({ linked: false, onToggleLinked: () => undefined });
     expect(wired).toMatch(/data-role="pane-link"[^>]*aria-pressed="false"/);
-    expect(wired).toContain("⛓ link panes");
+    expect(wired).toContain("⛓");
     const on = view({ linked: true, onToggleLinked: () => undefined });
     expect(on).toMatch(/data-role="pane-link"[^>]*aria-pressed="true"/);
-    // Retargeted 2026-08-05 (client, live-testing: "condense this buttons in
-    // adjustments tab") — paneLinkLabel(true) shortened from "⛓ rotating
-    // together" to "⛓ linked"; the full sentence survives on the button's own
-    // `title`, asserted below.
-    expect(on).toContain("⛓ linked");
+    // Icon-only (HTML mock's `⇹` chip) — paneLinkLabel is the glyph; the full
+    // sentence survives on the button's own `title`, asserted below.
+    expect(on).toContain("⛓");
+    expect(on).not.toContain("link panes");
     expect(on).toMatch(
       /data-role="pane-link"[^>]*title="Rotate all three panels together \(same angles and zoom, each around its own content\)"/,
     );

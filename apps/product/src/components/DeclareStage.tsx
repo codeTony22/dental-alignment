@@ -55,6 +55,7 @@ import {
   systemCards,
   recordedAtWords,
   variantShelves,
+  variantChipCode,
   type VariantCard,
   type PreviewFigures,
   type ViewPresetId,
@@ -194,7 +195,7 @@ function SiteQueue({ detail, activeTooth, runRows, onSelectSite }: SiteQueueProp
               }${site.status === "ready" ? " decode-stepper__item--reviewed" : ""}`}
               onClick={() => onSelectSite(site.tooth)}
             >
-              <span className="decode-stepper__position">Tooth {site.tooth}</span>
+              <span className="decode-stepper__position">{site.tooth}</span>
               <span className="decode-stepper__chips">
                 <span
                   data-role="status-chip"
@@ -243,26 +244,37 @@ interface VariantChipProps {
   readonly declared: boolean;
   /** True on the superseded shelf — the chip wears the archived tone. */
   readonly archived?: boolean;
+  /** Dense Alignment shelf: the four-digit code only (comp chips). The archive
+   *  dialog keeps the catalog label beside the served thumbnail. */
+  readonly compact?: boolean;
   readonly onDeclare: (variantId: string) => void;
 }
 
 /** One catalog part, as a chip: code, dims, and — where detection proposed it — a
  *  BADGE on the face of the page. */
-function VariantChip({ card, declared, archived, onDeclare }: VariantChipProps) {
+function VariantChip({
+  card,
+  declared,
+  archived,
+  compact = true,
+  onDeclare,
+}: VariantChipProps) {
   return (
     <button
       type="button"
       data-role="variant-card"
       data-variant={card.id}
       aria-pressed={declared}
+      title={`${card.label} · ${card.dims} — click to declare`}
       className={`decode-variant${declared ? " decode-variant--selected" : ""}${
         archived ? " decode-variant--archived" : ""
       }`}
       onClick={() => onDeclare(card.id)}
     >
       {/* the part's own face (client 2026-08-09): the SERVED top-view render —
-          small beside the dense shelf's words, large in the archive dialog (CSS
-          decides by context). Absent when the catalog serves no thumbnail. */}
+          hidden on the dense Alignment shelf (the comp's chips are code-only);
+          large in the archive dialog (CSS decides by context). Absent when the
+          catalog serves no thumbnail. */}
       {card.topUrl !== null && (
         <img
           data-role="variant-top"
@@ -272,7 +284,9 @@ function VariantChip({ card, declared, archived, onDeclare }: VariantChipProps) 
           loading="lazy"
         />
       )}
-      <span className="decode-variant__name">{card.label}</span>{" "}
+      <span className="decode-variant__name">
+        {compact ? variantChipCode(card.id) : card.label}
+      </span>
       <span className="decode-variant__dims">{card.dims}</span>
       {card.suggested && (
         <span
@@ -324,9 +338,7 @@ function VariantChips({
       data-role="variant-cards"
       className="declare-controls__field declare-controls__field--variant"
     >
-      <span className="declare-controls__label">
-        {active !== null ? `Variant for tooth ${active.tooth}` : "Variant"}
-      </span>
+      <span className="declare-controls__label">Variant</span>
       {active === null ? (
         <p className="panel__hint">Pick a site to declare its cap.</p>
       ) : (
@@ -540,6 +552,7 @@ export function WorkspaceToolbar({
           type="button"
           data-role="pane-link"
           aria-pressed={linked}
+          aria-label="Link the three views"
           className={`button button--ghost button--small${linked ? " button--active" : ""}`}
           onClick={onToggleLinked}
           /* No disabled-while-maximized state up here: the toolbar cannot see the
@@ -1178,6 +1191,7 @@ export function DeclareStageView({
                     card={card}
                     declared={active?.declared_variant === card.id}
                     archived
+                    compact={false}
                     onDeclare={(variantId) => {
                       onDeclare(variantId);
                       onCloseArchive();

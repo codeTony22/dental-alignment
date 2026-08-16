@@ -948,6 +948,7 @@ export function SitePanesView({
               type="button"
               className={`button button--ghost button--small${linked ? " button--active" : ""}`}
               aria-pressed={linked}
+              aria-label="Link the three views"
               disabled={stageId !== null}
               onClick={onToggleLinked}
               title={

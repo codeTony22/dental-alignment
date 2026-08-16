@@ -114,14 +114,11 @@ export function CaseShellView({
         <Link to="/" className="case-header__worklist" data-role="all-cases">
           ← All cases
         </Link>
-        <h2 className="case-header__title">
-          Case {detail.case.id} — {detail.case.doctor}
+        <h2 className="case-header__title" title={`${detail.case.id} · ${detail.case.doctor}`}>
+          {detail.case.id} · {detail.case.jaw}
         </h2>
         <StageRail states={states} current={stage} caseId={detail.case.id} />
         <div className="case-header__acts">
-        <span data-role="case-jaw" className="chip chip--gate">
-          {detail.case.jaw}
-        </span>
         {/* RESET THE WHOLE CASE (client 2026-07-30: "there is a need for resetting
             the cases persistance"). It sits in the case HEADER, not on a stage,
             because it is not part of any stage's work — it discards all of it. The
@@ -131,7 +128,8 @@ export function CaseShellView({
             popover the workspace toolbars carry, permanently tooth-less here — the
             header names no site, so this instance labels itself "Case log" and its
             acceptance half honestly stands down. Mounted in the acts cluster because
-            it is a READ, like the jaw chip beside it, not a stage act. */}
+            it is a READ, like restart beside it, not a stage act. The jaw is already
+            in the case title (`id · jaw`). */}
         <WorkspaceInsight caseId={detail.case.id} tooth={null} refreshKey={detail} />
         {onResetCase !== null && (
           <button
@@ -141,7 +139,7 @@ export function CaseShellView({
             disabled={resetting}
             onClick={onResetCase}
           >
-            {resetting ? "Resetting…" : "Reset case (demo)"}
+            {resetting ? "restarting…" : "restart"}
           </button>
         )}
         </div>

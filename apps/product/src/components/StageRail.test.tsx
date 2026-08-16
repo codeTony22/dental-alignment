@@ -119,7 +119,7 @@ describe("the stage rail", () => {
     };
     // An empty case has nothing to count, so Intake keeps its standing sentence —
     // "0 of 0 sites" would be noise dressed as information.
-    expect(railHtml(empty)).toContain("Scan in, sites detected");
+    expect(railHtml(empty)).toContain("scan in, caps marked");
   });
 
   it("Intake's sub-line names the centre shortfall behind the Declare gate", () => {

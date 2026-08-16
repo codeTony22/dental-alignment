@@ -100,6 +100,18 @@ export function dimsLabel(
   return `Ø ${rimDiameterMm.toFixed(1)} × ${heightMm.toFixed(1)} mm`;
 }
 
+/**
+ * THE COMP'S CHIP FACE (flow.dc.html variant cards: the four-digit code, not the
+ * catalog's full id). `zimmer-4.5-6030` and `superseded-2026-07-13---6030` both
+ * read `6030` on the dense Alignment shelf; a bare `5020` is already the code.
+ * The full id and the Ø × height line stay on the chip's `title`.
+ */
+export function variantChipCode(id: string): string {
+  const tokens = id.split(/-+/).filter((token) => token.length > 0);
+  const last = tokens[tokens.length - 1];
+  return last !== undefined && last.length > 0 ? last : id;
+}
+
 export interface VariantShelves {
   readonly current: readonly VariantCard[];
   /** Behind the labelled fold — visible, never hidden (the catalog's own posture). */

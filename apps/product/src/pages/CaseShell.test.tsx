@@ -21,7 +21,8 @@ describe("the case shell view", () => {
         <CaseShellView detail={detail} stage="intake" />
       </StaticRouter>,
     );
-    expect(html).toContain("Case case-a — Dr. Rivera");
+    expect(html).toContain("case-a · lower");
+    expect(html).toContain("Dr. Rivera");
     expect(html).toContain("lower");
   });
 
@@ -271,7 +272,7 @@ describe("resetting the whole case (client 2026-07-30)", () => {
       </StaticRouter>,
     );
     expect(html).toContain('data-role="case-reset"');
-    expect(html).toContain("Reset case (demo)");
+    expect(html).toContain("restart");
   });
 
   it("renders no reset control when no handler is supplied", () => {

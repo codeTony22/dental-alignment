@@ -209,7 +209,7 @@ export function ScanDropZoneView({
         <span className="scan-upload__text">
           <strong className="scan-upload__title">Drop a scan file</strong>
           <span className="scan-upload__sub">
-            one STL · one folder per case — the folder name becomes the case
+            STL · upper or lower jaw · one folder per case
           </span>
         </span>
         {phase.kind === "done" && (

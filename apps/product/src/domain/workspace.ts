@@ -19,13 +19,13 @@ export const PANES_OPEN_LINKED = true;
 
 /** The toggle's face, shared by both stages for the same reason.
  *
- * Condensed 2026-08-05 (client, live-testing: "condense this buttons in
- * adjustments tab it takes a lot of space which is unnecessary"). The LINKED
- * word was the widest thing on the toolbar's control row; the act it names is
- * unchanged, and the button's own `title` still spells the full sentence, so
- * shortening the face loses no meaning that was reachable before. */
+ * Icon-only, matching the comp's `⇹` chip (title + aria-pressed carry the
+ * state). Condensed 2026-08-05 (client, live-testing: "condense this buttons in
+ * adjustments tab it takes a lot of space which is unnecessary") and then
+ * again to the glyph alone so the toolbar stays one row. */
 export function paneLinkLabel(linked: boolean): string {
-  return linked ? "⛓ linked" : "⛓ link panes";
+  void linked;
+  return "⛓";
 }
 
 

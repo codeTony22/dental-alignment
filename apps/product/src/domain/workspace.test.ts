@@ -12,15 +12,12 @@ describe("the pane link", () => {
     expect(PANES_OPEN_LINKED).toBe(true);
   });
 
-  it("the toggle says the state it is in and the act it offers", () => {
-    // Condensed 2026-08-05 (client, live-testing: "condense this buttons in
-    // adjustments tab it takes a lot of space") — "rotating together" was the
-    // longest word on the toolbar's control row. The button's own `title` still
-    // carries the full sentence ("Rotate all three panels together (same angles
-    // and zoom, each around its own content)"), so the word dropped from the
-    // label is not lost, only moved off the row.
-    expect(paneLinkLabel(true)).toBe("⛓ linked");
-    expect(paneLinkLabel(false)).toBe("⛓ link panes");
+  it("the toggle is the glyph; title and aria-pressed carry the state", () => {
+    // Icon-only, matching the HTML mock's `⇹` chip. The button's own `title`
+    // still carries the full sentence, so the word dropped from the face is
+    // not lost, only moved off the row.
+    expect(paneLinkLabel(true)).toBe("⛓");
+    expect(paneLinkLabel(false)).toBe("⛓");
   });
 });
 

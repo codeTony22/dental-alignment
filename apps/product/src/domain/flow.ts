@@ -45,23 +45,23 @@ export interface StageInfo {
 export const STAGE_INFO: Readonly<Record<StageId, StageInfo>> = {
   intake: {
     title: "Intake",
-    oneLiner: "Scan in, sites detected, case-level choices made.",
+    oneLiner: "scan in, caps marked",
   },
   declare: {
     title: "Alignment",
-    oneLiner: "System and variants declared, every site reviewed over the panes.",
+    oneLiner: "variant & diameter, run authorized",
   },
   adjust: {
     title: "Adjustment",
-    oneLiner: "Optional — refit flagged sites; skipping never blocks delivery.",
+    oneLiner: "tooling, reports, confirmation",
   },
   library: {
     title: "Construction library",
-    oneLiner: "Pick the part Delivery cuts, and preview it against the scan.",
+    oneLiner: "pick the part & preview",
   },
   deliver: {
     title: "Delivery",
-    oneLiner: "Assurance reviewed, confirmation sealed, artifacts released.",
+    oneLiner: "pay, then artifacts",
   },
 };
 
@@ -338,8 +338,8 @@ function nSites(n: number): string {
  * THE SUB-LINE UNDER A STAGE'S TITLE — the same slot the static one-liner filled,
  * now speaking the case's LIVE counts (design rail, `sub` at flow.dc.html:865).
  *
- * Why this exists: a reachable Adjust read "Optional — refit flagged sites; skipping
- * never blocks delivery" whether nothing or nine sites were flagged, so the rail's
+ * Why this exists: a reachable Adjust read the standing one-liner
+ * ("tooling, reports, confirmation") whether nothing or nine sites were flagged, so the rail's
  * one line of prose per stage was the only part of the shell that never moved. The
  * counts were already in `FlowFacts` — this only says them out loud.
  *

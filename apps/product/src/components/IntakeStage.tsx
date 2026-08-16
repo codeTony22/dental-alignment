@@ -1350,7 +1350,7 @@ export function IntakeStageView({
         {detectPhase.kind === "detecting" && (
           <div data-role="detect-busy" className="busy-state" role="status">
             <span className="busy-state__spinner" aria-hidden="true" />
-            <span>Detecting caps…</span>
+            <span>Detecting implant sites…</span>
           </div>
         )}
         {detectPhase.kind === "failed" && (
@@ -1396,7 +1396,9 @@ export function IntakeStageView({
               className="button button--primary"
               to={`/case/${detail.case.id}/declare`}
             >
-              Continue to Alignment
+              {centred === facts.siteTotal
+                ? `Continue to Alignment · all ${facts.siteTotal} caps`
+                : `Continue to Alignment · ${centred} of ${facts.siteTotal} caps`}
             </Link>
           ) : (
             <span

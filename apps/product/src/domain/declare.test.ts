@@ -26,6 +26,7 @@ import {
   declareCautionWords,
   siteStateSentence,
   dimsLabel,
+  variantChipCode,
   indicesFrom,
   paneNotices,
   partCameraFrame,
@@ -161,6 +162,14 @@ describe("dimsLabel", () => {
     expect(dimsLabel(4.5, 3.1)).toBe("Ø 4.5 × 3.1 mm");
     expect(dimsLabel(null, 3.1)).toBe("dimensions unavailable");
     expect(dimsLabel(4.5, null)).toBe("dimensions unavailable");
+  });
+});
+
+describe("variantChipCode", () => {
+  it("the last hyphen token is the face of the dense Alignment chip", () => {
+    expect(variantChipCode("5020")).toBe("5020");
+    expect(variantChipCode("zimmer-4.5-6030")).toBe("6030");
+    expect(variantChipCode("superseded-2026-07-13---6030")).toBe("6030");
   });
 });
 

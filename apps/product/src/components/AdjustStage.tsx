@@ -544,7 +544,7 @@ export function AdjustStageView({
       <div className="workbench__work workbench__work--footered">
         <div className="workbench__work-scroll">
         <aside data-role="adjust-queue" aria-label="Site queue" className="panel">
-          <h3 className="panel__title">Adjustment queue — flagged first</h3>
+          <h3 className="panel__title">Adjustment queue · flagged first</h3>
           <p data-role="queue-summary" className="panel__hint">
             {queueSummary(entries)}
           </p>
@@ -598,7 +598,7 @@ export function AdjustStageView({
                   }`}
                   onClick={() => onSelectSite(entry.tooth)}
                 >
-                  <span className="decode-stepper__position">Tooth {entry.tooth}</span>
+                  <span className="decode-stepper__position">{entry.tooth}</span>
                   <span className="decode-stepper__chips">
                     <span
                       data-role="status-chip"

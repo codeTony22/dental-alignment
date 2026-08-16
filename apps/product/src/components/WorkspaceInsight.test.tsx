@@ -41,7 +41,7 @@ describe("the toggle names what the popover can actually offer", () => {
   it("names both halves when a site is active", () => {
     // abbreviated to fit the comp's single-row strip; it still labels CONTENT and
     // never promises a verdict, which is the rule the wording answers to
-    expect(view({ tooth: 19 })).toContain("Numbers &amp; log");
+    expect(view({ tooth: 19 })).toContain("budget &amp; log");
   });
 
   it("says 'Case log' alone when no site is active — the header's standing state", () => {
@@ -55,7 +55,7 @@ describe("closed — the toggle only, nothing else", () => {
   it("renders the labelled toggle, collapsed", () => {
     const html = view({ open: false });
     expect(html).toContain('data-role="insight-toggle"');
-    expect(html).toContain("Numbers &amp; log");
+    expect(html).toContain("budget &amp; log");
     expect(html).toMatch(/data-role="insight-toggle"[^>]*aria-expanded="false"/);
   });
 

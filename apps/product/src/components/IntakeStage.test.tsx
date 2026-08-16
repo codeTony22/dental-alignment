@@ -58,7 +58,7 @@ describe("the capture banner — verdicts BEFORE work (the chair-side moment)", 
 
 describe("the detect lifecycle, honestly named", () => {
   it("detecting shows the busy state", () => {
-    expect(view({ detectPhase: { kind: "detecting" } })).toContain("Detecting caps…");
+    expect(view({ detectPhase: { kind: "detecting" } })).toContain("Detecting implant sites…");
   });
 
   it("a refusal shows the backend's words and a retry", () => {
@@ -369,6 +369,7 @@ describe("continue to Declare — per flow.ts, sites detected", () => {
     expect(html).toMatch(
       /data-role="continue-declare"[^>]*href="\/case\/case-a\/declare"/,
     );
+    expect(html).toContain("Continue to Alignment · all 2 caps");
   });
 
   it("disabled with the flow's own reason when nothing is detected", () => {
