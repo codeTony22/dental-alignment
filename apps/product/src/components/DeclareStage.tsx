@@ -267,7 +267,6 @@ function VariantChip({
       className={`decode-variant${declared ? " decode-variant--selected" : ""}${
         archived ? " decode-variant--archived" : ""
       }`}
-      title={card.dims}
       onClick={() => onDeclare(card.id)}
     >
       {/* the part's own face (client 2026-08-09): the SERVED top-view render —
