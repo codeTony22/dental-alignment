@@ -129,6 +129,23 @@ describe("the site queue (left) — server statuses, never local ones", () => {
     });
     expect(html).toContain("0.184 mm");
   });
+
+  it("each row leads with the tooth as a compact badge, not a 'Tooth N' heading", () => {
+    const html = view();
+    expect(html).toMatch(/data-role="queue-tooth"[^>]*>19</);
+    expect(html).toMatch(/data-role="queue-tooth"[^>]*>30</);
+    expect(html).toMatch(/data-role="declare-queue"[^>]*class="[^"]*workspace-queue/);
+  });
+});
+
+describe("the workspace center matches the prototype silhouette", () => {
+  it("the panes sit above the declaration dock in one center column", () => {
+    const html = view({ panesSlot: <div data-role="stub-panes" /> });
+    expect(html).toContain('data-role="workspace-center"');
+    expect(html.indexOf('data-role="stub-panes"')).toBeLessThan(
+      html.indexOf('data-role="declare-controls"'),
+    );
+  });
 });
 
 describe("the system select — the effective system says WHICH it is", () => {
@@ -777,12 +794,12 @@ describe("the workspace toolbar over the panes", () => {
     expect(view()).not.toContain('data-role="pane-link"');
     const wired = view({ linked: false, onToggleLinked: () => undefined });
     expect(wired).toMatch(/data-role="pane-link"[^>]*aria-pressed="false"/);
-    expect(wired).toContain("⛓");
+    expect(wired).toContain("⇹");
     const on = view({ linked: true, onToggleLinked: () => undefined });
     expect(on).toMatch(/data-role="pane-link"[^>]*aria-pressed="true"/);
-    // Icon-only (HTML mock's `⇹` chip) — paneLinkLabel is the glyph; the full
+    // Icon-only (HTML prototype's `⇹` chip) — paneLinkLabel is the glyph; the full
     // sentence survives on the button's own `title`, asserted below.
-    expect(on).toContain("⛓");
+    expect(on).toContain("⇹");
     expect(on).not.toContain("link panes");
     expect(on).toMatch(
       /data-role="pane-link"[^>]*title="Rotate all three panels together \(same angles and zoom, each around its own content\)"/,

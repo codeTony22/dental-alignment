@@ -13,11 +13,11 @@ describe("the pane link", () => {
   });
 
   it("the toggle is the glyph; title and aria-pressed carry the state", () => {
-    // Icon-only, matching the HTML mock's `⇹` chip. The button's own `title`
+    // Icon-only, matching the HTML prototype's `⇹` chip. The button's own `title`
     // still carries the full sentence, so the word dropped from the face is
     // not lost, only moved off the row.
-    expect(paneLinkLabel(true)).toBe("⛓");
-    expect(paneLinkLabel(false)).toBe("⛓");
+    expect(paneLinkLabel(true)).toBe("⇹");
+    expect(paneLinkLabel(false)).toBe("⇹");
   });
 });
 

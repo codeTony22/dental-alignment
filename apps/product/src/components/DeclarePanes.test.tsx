@@ -181,11 +181,11 @@ describe("the pane chrome the demo's same surface carries (parity fix, ledger ro
   it("the toolbar offers the link-orbits toggle, honest about its state", () => {
     const off = view({ linked: false, onToggleLinked: () => undefined });
     expect(off).toContain("verify-panels__toolbar");
-    expect(off).toMatch(/aria-pressed="false"[^>]*>[^<]*⛓/);
+    expect(off).toMatch(/aria-pressed="false"[^>]*>[^<]*⇹/);
     const on = view({ linked: true, onToggleLinked: () => undefined });
-    // Icon-only (HTML mock's `⇹` chip) — paneLinkLabel is the glyph on both
+    // Icon-only (HTML prototype's `⇹` chip) — paneLinkLabel is the glyph on both
     // states; this strip only renders while a pane is maximized.
-    expect(on).toMatch(/aria-pressed="true"[^>]*>[^<]*⛓/);
+    expect(on).toMatch(/aria-pressed="true"[^>]*>[^<]*⇹/);
     expect(on).toContain("button--active");
   });
 
@@ -209,7 +209,7 @@ describe("the pane chrome the demo's same surface carries (parity fix, ledger ro
     expect(html).not.toContain('data-role="pane-scan"');
     expect(html).toContain("show all three");
     // linking needs more than one panel on screen — the toggle goes down, not away
-    expect(html).toMatch(/disabled[^>]*>[^<]*⛓/);
+    expect(html).toMatch(/disabled[^>]*>[^<]*⇹/);
   });
 
   it("the union pane offers both scales; signed is the default and says so", () => {

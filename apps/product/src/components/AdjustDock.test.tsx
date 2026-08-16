@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AdjustDock, type AdjustDockProps } from "./AdjustDock";
 import {
+  dockReport,
   newPairDraft,
   withPick,
   type AdjustQueueEntry,
@@ -91,16 +92,8 @@ function view(overrides: Partial<AdjustDockProps> = {}) {
   );
 }
 
-/* RETARGETED 2026-08-15: the tool chip rail moved from the dock header into the
-   stage's own adjust-tool-bar strip above the panes (UX: "barely visible because
-   of lack of real-estate" — chips now live above the panes, always visible, and
-   the dock body gains the height the chip row previously occupied in the header).
-   The chip order, tooltips, and selected-state tests now live in
-   AdjustStage.test.tsx where the chips actually render.
-
-   What remains here: the tooltip AMENDMENTS (the withdrawn claims that must NEVER
-   appear, regardless of where the chips are) — a prohibitory invariant, not a
-   location test, so it stays at the dock's own module boundary. */
+/* RETARGETED 2026-08-16: the tool chips are back in the dock header, matching
+   the HTML prototype (glyphs under the panes). Tooltip amendments stay here. */
 describe("the chip rail tooltip amendments — the withdrawn claims must never appear", () => {
   it("never mentions the withdrawn 'rim reads' claim (§10-AN amendment)", () => {
     const html = view();
@@ -631,5 +624,195 @@ describe("the fixed footer — our own act set, unchanged words", () => {
     const html = view({ active: null });
     expect(html).not.toContain('data-role="drawer-acts"');
     expect(html).toContain('data-role="tool-blocked"');
+  });
+
+  it("folds site relief into the footer so the widget stays in front", () => {
+    const html = view({
+      relief: {
+        siteValue: null,
+        caseValue: 0.2,
+        ceilingLine: null,
+        runDone: true,
+        saving: false,
+        error: null,
+        onApply: () => undefined,
+      },
+    });
+    const footer = html.slice(html.indexOf('data-role="drawer-acts"'));
+    expect(footer).toContain('data-role="site-relief"');
+    expect(html).toContain('data-role="site-relief-fold"');
+  });
+});
+
+describe("the dock header report — served facts, second location", () => {
+  const CLEAN: AdjustQueueEntry = { ...FLAGGED, tooth: 14, flagged: false, status: "ready" };
+
+  it("always offers the report popover in the header", () => {
+    const html = view();
+    expect(html).toContain('data-role="dock-report"');
+    expect(html).toContain('data-role="dock-report-summary"');
+    expect(html).toContain(">report<");
+  });
+
+  it("renders the served cells and the queue summary, never an invented MAX DEV", () => {
+    const entries = [FLAGGED, CLEAN];
+    const html = view({
+      report: dockReport(entries, [
+        { tooth: 13, deviation_rms_mm: 0.294 },
+        { tooth: 14, deviation_rms_mm: 0.041 },
+      ]),
+    });
+    expect(html).toContain('data-role="dock-report-chip"');
+    expect(html).toContain("1 / 2");
+    expect(html).toContain('data-id="worst-dev-rms"');
+    expect(html).toContain("WORST DEV RMS");
+    expect(html).toContain("0.294 mm");
+    expect(html).toContain("PASSED GATES");
+    expect(html).not.toContain("MAX DEV");
+    expect(html).not.toContain("this will pass");
+  });
+
+  it("keeps the site's receipts inside the report, not in the widget band", () => {
+    const html = view({
+      active: {
+        ...FLAGGED,
+        receipts: [
+          {
+            tooth: 13,
+            kind: "mark",
+            outcome: "applied",
+            detail: "trench matched — clocking re-read",
+            appliedAt: "t1",
+          },
+        ],
+      },
+    });
+    expect(html).toContain('data-role="evidence-receipts"');
+    const body = html.slice(
+      html.indexOf('data-role="tool-body"'),
+      html.indexOf('data-role="drawer-acts"'),
+    );
+    expect(body).not.toContain('data-role="evidence-receipts"');
+    expect(html).toContain("trench matched — clocking re-read");
+  });
+});
+
+describe("best-fit snap rim — the dial jumps to the last suggestion", () => {
+  const pass = {
+    message: "already the best fit",
+    matchingDiameterMm: 0.3,
+    suggestedDiameterMm: 0.6,
+    canWiden: true,
+  };
+
+  it("renders snap rim disabled with no suggestion", () => {
+    const html = view({ tool: "best-fit", pass: null });
+    expect(html).toMatch(/data-role="snap-rim"[^>]*disabled=""/);
+    expect(html).toContain("snap rim");
+    expect(html).not.toContain("rim reads");
+  });
+
+  it("enables snap rim once a suggestion exists off the dial", () => {
+    const html = view({ tool: "best-fit", diameterMm: 0.3, pass });
+    expect(html).not.toMatch(/data-role="snap-rim"[^>]*disabled=""/);
+    expect(html).toContain("snap rim");
+  });
+
+  it("disables and says so when the dial already reads the suggestion", () => {
+    const html = view({ tool: "best-fit", diameterMm: 0.6, pass });
+    expect(html).toMatch(/data-role="snap-rim"[^>]*disabled=""/);
+    expect(html).toContain("already at the suggestion");
+  });
+});
+
+describe("fit by points — slots first, span modes secondary, list folded", () => {
+  it("lets an empty next slot start a point pair", () => {
+    const html = view({ tool: "fit-by-points", drafts: [] });
+    expect(html).not.toMatch(
+      /data-role="pair-slot-strip-item" data-index="1"[^>]*disabled="/,
+    );
+    expect(html).toContain("click to start a point pair");
+  });
+
+  it("keeps the next slot inert while a pair is already being placed", () => {
+    const open = newPairDraft("open", false);
+    const html = view({ tool: "fit-by-points", drafts: [open] });
+    expect(html).toMatch(
+      /data-role="pair-slot-strip-item" data-index="1"[^>]*disabled="/,
+    );
+    expect(html).toContain("being placed");
+  });
+
+  it("keeps the three start modes, with spans behind a disclosure", () => {
+    const html = view({ tool: "fit-by-points" });
+    expect(html).toContain('data-role="start-point-pair"');
+    expect(html).toContain('data-role="start-span-pair"');
+    expect(html).toContain('data-role="start-library-span-pair"');
+    expect(html).toContain('data-role="span-modes"');
+    expect(html).toContain("Add pair");
+  });
+
+  it("folds the pair list so the strip and add-pair stay the face", () => {
+    const html = view({ tool: "fit-by-points" });
+    expect(html).toContain('data-role="pair-list-fold"');
+    expect(html).toContain('data-role="pair-status"');
+    expect(html).toContain('data-role="apply-pairs"');
+  });
+});
+
+describe("auto-mark — match this point is the face", () => {
+  const LANDMARKS: LandmarkView[] = [
+    { id: "a", kind: "notch", point: [1, 0, 0], lever_arm_mm: 1.2, azimuth_deg: 0 },
+    { id: "b", kind: "notch", point: [0, 1, 0], lever_arm_mm: 0.8, azimuth_deg: 180 },
+  ];
+
+  it("names the live landmark as match-this-point and keeps start-over", () => {
+    const html = view({
+      tool: "auto-mark",
+      autoMarkPhase: "ready",
+      autoMarkLandmarks: LANDMARKS,
+      drafts: [
+        {
+          id: "auto-a",
+          span: false,
+          partSpan: false,
+          partPoint: [1, 0, 0],
+          partPointEnd: null,
+          scanPoint: null,
+          scanPointEnd: null,
+        },
+        {
+          id: "auto-b",
+          span: false,
+          partSpan: false,
+          partPoint: [0, 1, 0],
+          partPointEnd: null,
+          scanPoint: null,
+          scanPointEnd: null,
+        },
+      ],
+    });
+    expect(html).toContain('data-role="match-this-point"');
+    expect(html).toContain("Match this point");
+    expect(html).toContain("click it on the scan");
+    expect(html).toContain("Start the matching over");
+    expect(html).toContain('data-role="pair-list-fold"');
+  });
+});
+
+describe("shorter dock faces — full sentences ride title", () => {
+  it("rotation reset is short on the face, certified-pose sentence in the title", () => {
+    const html = view({ tool: "rotation" });
+    expect(html).toMatch(/data-role="rotation-reset"[^>]*title="Reset to the certified pose"/);
+    expect(html).toMatch(/data-role="rotation-reset"[^>]*>\s*Reset\s*</);
+  });
+
+  it("re-read and drop keep their meaning in title", () => {
+    const html = view();
+    expect(html).toMatch(/data-role="re-preview"[^>]*>\s*Re-read\s*</);
+    expect(html).toContain("Re-read this site");
+    expect(html).toContain("numbers");
+    expect(html).toMatch(/data-role="drop-site"[^>]*>\s*Drop this cap\s*</);
+    expect(html).toContain("hold it back from the release and the bill");
   });
 });

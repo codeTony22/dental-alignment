@@ -8054,3 +8054,408 @@ button.package-files__link:hover {
   gap: 8px;
   align-items: center;
 }
+
+/* ===== ALIGNMENT / ADJUSTMENT: HTML prototype silhouette (2026-08-16) ============
+   The standalone end-to-end flow HTML is a slim 168px queue, panes first, and a
+   dock under them. Every data-role and act stays; this is clothing. */
+
+.workbench:has(.workbench__stage--split) .workbench__work {
+  padding: 0;
+}
+
+.workbench:has(.workbench__stage--split) .workbench__work-scroll {
+  gap: 0;
+  padding-right: 0;
+}
+
+.workbench:has(.workbench__stage--split) .workbench__work-scroll > .workspace-queue {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.workbench:has(.workbench__stage--split) .workbench__work-footer {
+  margin-top: 0;
+  padding: 9px;
+  background: #ffffff;
+  border-top: 1px solid #e6eae7;
+}
+
+.workbench:has(.workbench__stage--split) .workbench__work-footer .button {
+  width: 100%;
+  justify-content: center;
+  font-size: 12px;
+  padding: 9px 12px;
+  border-radius: 9px;
+}
+
+.workspace-queue {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #ffffff;
+}
+
+.workspace-queue__head {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e6eae7;
+}
+
+.workspace-queue__title {
+  margin: 0;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  color: var(--color-text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.workspace-queue__note {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}
+
+.workspace-queue__empty {
+  padding: 10px 12px;
+}
+
+.workspace-queue__list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.workspace-queue__row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  font: inherit;
+  padding: 8px 9px;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  border: 1px solid #e6eae7;
+  background: #ffffff;
+  color: var(--color-text);
+}
+
+.workspace-queue__row--active {
+  border-color: var(--chip-ready-line);
+  background: #f2fbf5;
+}
+
+.workspace-queue__row-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 7px;
+  width: 100%;
+}
+
+.workspace-queue__num {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11.5px;
+  font-weight: 800;
+  background: #eef1ef;
+  color: var(--color-text-muted);
+}
+
+.workspace-queue__row--active .workspace-queue__num {
+  background: var(--color-accent-green-dark);
+  color: #ffffff;
+}
+
+.workspace-queue__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1 1 46px;
+  min-width: 0;
+}
+
+.workspace-queue__variant {
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.workspace-queue__state {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+
+.workspace-queue__row .chip {
+  flex: 0 0 auto;
+  font-size: 10px;
+  padding: 2px 7px;
+}
+
+.workspace-queue__extra {
+  font-size: 10px;
+  font-weight: 600;
+  text-align: left;
+  line-height: 1.3;
+  text-wrap: pretty;
+  color: var(--color-text-muted);
+}
+
+.workspace-queue__extra--flag {
+  color: var(--chip-flag-fg);
+}
+
+.workspace-queue__extra--exc {
+  color: var(--chip-exception-fg);
+}
+
+.workspace-queue__why {
+  margin: 2px 0 0 8px;
+  padding: 2px 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--color-accent-green-dark);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.workspace-queue__why:hover {
+  text-decoration: underline;
+}
+
+.workspace-queue__row--dropped {
+  opacity: 0.7;
+}
+
+.workspace-center {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-center > .verify-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.workspace-center > .workspace-drawer {
+  flex: 0 1 auto;
+}
+
+/* Declare: system/variant dock, then the review tick as the sticky foot — the
+   prototype's order. display:contents lets the tick leave the pane flex child. */
+.workspace-center:has(.workspace-drawer--declare) {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "chrome"
+    "panes"
+    "dock"
+    "attest";
+}
+
+.workspace-center:has(.workspace-drawer--declare) .verify-panels {
+  display: contents;
+}
+
+.workspace-center:has(.workspace-drawer--declare) .verify-panels__toolbar {
+  grid-area: chrome;
+}
+
+.workspace-center:has(.workspace-drawer--declare) .verify-panels__grid {
+  grid-area: panes;
+  min-height: 220px;
+}
+
+.workspace-center:has(.workspace-drawer--declare) .workspace-drawer--declare {
+  grid-area: dock;
+}
+
+.workspace-center:has(.workspace-drawer--declare) .decode-ack {
+  grid-area: attest;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 9px 14px 11px;
+  border-top: 1px solid #e6eae7;
+  gap: 9px;
+}
+
+.declare-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+}
+
+.declare-controls__field {
+  min-width: 0;
+}
+
+.declare-controls .decode-variant {
+  position: relative;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 8px 11px;
+  border-radius: 10px;
+}
+
+.declare-controls .decode-variant__thumb {
+  width: 18px;
+  height: 18px;
+  vertical-align: -4px;
+  margin-right: 4px;
+}
+
+.declare-controls .decode-variant__dims {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.workspace-toolbar [data-role="insight-toggle"] {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--color-accent-green-dark);
+  padding: 4px 9px;
+  border-radius: 9px;
+  background: #ffffff;
+  border: 1px solid var(--chip-ready-line);
+}
+
+.workspace-toolbar [data-role="pane-link"] {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 9px;
+}
+
+.adjust-dock__header {
+  flex-wrap: wrap;
+}
+
+.adjust-queue__rerun {
+  margin: 0;
+  padding: 8px 12px;
+}
+
+/* Adjustment tooling clothing 2026-08-16: report popover, widget-first folds. */
+.adjust-dock__report {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.adjust-dock__report > summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--color-accent-green-dark);
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid var(--chip-ready-line);
+}
+
+.adjust-dock__report > summary::-webkit-details-marker {
+  display: none;
+}
+
+.adjust-dock__report-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 6;
+  width: min(360px, 72vw);
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(14, 22, 19, 0.12);
+}
+
+.adjust-dock__report-chip {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.adjust-dock__report-cells {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0 0 8px;
+}
+
+.adjust-dock__report-cell dt {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+
+.adjust-dock__report-cell dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.adjust-dock__report-note {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}
+
+.adjust-dock__fold {
+  flex: 1 1 100%;
+  font-size: 12px;
+}
+
+.adjust-dock__fold > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.adjust-dock__match {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  text-wrap: pretty;
+}
+
+.adjust-dock__footer {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.adjust-dock__footer .adjust-dock__fold {
+  flex: 1 1 100%;
+}
+
+.adjust-dock__footer .site-relief {
+  margin-top: 0;
+  padding-top: 8px;
+  border-top: none;
+}
+

@@ -378,6 +378,57 @@ export function queueSummary(entries: readonly AdjustQueueEntry[]): string {
   } flagged — those come first.${tail}`;
 }
 
+/**
+ * THE DOCK HEADER REPORT — a second LOCATION for facts the queue and the run
+ * rows already publish, never a second source. The prototype's own report
+ * invented a MAX DEV from a client formula; this reads the worst served
+ * `deviation_rms_mm` and the queue's own counts (flagged of live, passed
+ * gates, draft exceptions, dropped). `note` is `queueSummary` verbatim.
+ */
+export interface DockReportCell {
+  readonly id: string;
+  readonly label: string;
+  readonly value: string;
+}
+
+export interface DockReport {
+  readonly chip: string;
+  readonly cells: readonly DockReportCell[];
+  readonly note: string;
+}
+
+export function dockReport(
+  entries: readonly AdjustQueueEntry[],
+  rows: ReadonlyArray<Record<string, unknown>> = [],
+): DockReport {
+  const dropped = entries.filter((e) => e.dropped).length;
+  const live = entries.filter((e) => !e.dropped);
+  const flagged = live.filter((e) => e.flagged).length;
+  const exceptions = live.filter((e) => e.exceptionAcknowledged).length;
+  const passed = live.length - flagged;
+  let worst: number | null = null;
+  for (const row of rows) {
+    const value = row["deviation_rms_mm"];
+    if (typeof value === "number" && (worst === null || value > worst)) {
+      worst = value;
+    }
+  }
+  return {
+    chip: live.length === 0 ? "—" : `${flagged} / ${live.length}`,
+    cells: [
+      {
+        id: "worst-dev-rms",
+        label: "WORST DEV RMS",
+        value: worst === null ? "—" : `${worst.toFixed(3)} mm`,
+      },
+      { id: "passed", label: "PASSED GATES", value: String(passed) },
+      { id: "exceptions", label: "EXCEPTIONS", value: String(exceptions) },
+      { id: "left-out", label: "LEFT OUT", value: String(dropped) },
+    ],
+    note: queueSummary(entries),
+  };
+}
+
 // --- dropping a cap (design flow.dc.html dropSite 1345-1354, queue row 1183-1191) -------
 //
 // THE DESIGN'S OWN WORDS ARE HALF WRONG HERE and it is worth saying why, because they
@@ -396,9 +447,7 @@ export function queueSummary(entries: readonly AdjustQueueEntry[]): string {
 /** The act's label, both directions — the reversal is a first-class control, not a
  * hidden undo (design 1345: "bring this cap back into the case"). */
 export function dropLabel(dropped: boolean): string {
-  return dropped
-    ? "Bring this cap back into the case"
-    : "Drop this cap — hold it back from the release and the bill";
+  return dropped ? "Bring this cap back" : "Drop this cap";
 }
 
 /** The standing explanation beside the control: what the act does, and who signs it. */
@@ -975,6 +1024,28 @@ export function autoMarkSummary(landmarks: readonly LandmarkView[]): string {
     `${landmarks.length} landmark${landmarks.length === 1 ? "" : "s"} proposed, best ` +
     `lever arm first — match each one on the scan, in the same order they are numbered.`
   );
+}
+
+/** Auto-mark's own face: the live landmark the next scan click fills, or the
+ *  honest word when every proposed point is already matched / none were proposed.
+ *  The click on the scan is the act; this names which point that click is for. */
+export function matchThisPointWords(
+  drafts: readonly PairDraft[],
+  landmarks: readonly LandmarkView[],
+): string {
+  if (landmarks.length === 0) {
+    return "This part carries no rotation-defining landmarks to propose.";
+  }
+  const liveIndex = drafts.findIndex((d) => !isComplete(d));
+  if (liveIndex === -1) {
+    const matched = drafts.filter(isComplete).length;
+    return matched >= landmarks.length
+      ? "All proposed points matched"
+      : "Match this point on the scan";
+  }
+  const landmark = landmarks[liveIndex];
+  if (landmark === undefined) return "Match this point on the scan";
+  return `Match this point — ${landmarkLabel(landmark)} — click it on the scan`;
 }
 
 /** One pair's own line in the list: what it is, and what it still needs. */
@@ -1744,7 +1815,13 @@ export function pairCautions(
  * (client.ts:1262-1265; the BFF route's docstring says the same). This names the
  * ACT; the view renders whatever comes back. */
 export function rePreviewButtonLabel(): string {
-  return "Re-read this site's numbers";
+  return "Re-read";
+}
+
+/** The control's own title — the longer promise the short face compresses. Same
+ *  doctrine as the label: a re-READ, never a verdict. */
+export function rePreviewButtonTitle(): string {
+  return "Re-read this site's numbers — a read of what is already on disk, applying nothing.";
 }
 
 /**
@@ -2058,6 +2135,33 @@ export function bestFitFlagWords(suggestedDiameterMm: number): string {
   return `server suggests Ø${suggestedDiameterMm.toFixed(2)}`;
 }
 
+const SNAP_RIM_EPS_MM = 0.001;
+
+/** Whether the best-fit dial can jump to the last response's own suggestion.
+ *  No suggestion, or a dial that already reads it, is not a snap. */
+export function snapRimEnabled(
+  pass: AlreadyOptimal | null,
+  diameterMm: number,
+): boolean {
+  return (
+    pass !== null &&
+    Math.abs(diameterMm - pass.suggestedDiameterMm) >= SNAP_RIM_EPS_MM
+  );
+}
+
+/** The snap control's face. "snap rim" is the prototype's own label for this
+ *  jump; the title (in the dock) spells that it is the last suggestion, never
+ *  a standing rim measurement. */
+export function snapRimLabel(
+  pass: AlreadyOptimal | null,
+  diameterMm: number,
+): string {
+  return pass !== null &&
+    Math.abs(diameterMm - pass.suggestedDiameterMm) < SNAP_RIM_EPS_MM
+    ? "already at the suggestion"
+    : "snap rim";
+}
+
 /** The fit-by-points / auto-mark header readout — a count against the ceiling, in the
  *  header's own one-line shape (the tool body still carries `pairStatusLine`'s fuller
  *  sentence; this is the same fact, compressed for the title row). */
@@ -2197,14 +2301,15 @@ export interface PairSlotStripEntry {
  * OR a span, each still exactly ONE numbered pair — never one slot per MARK (the
  * marks within a pair are `pairSlots`/`pairSlot`, a different enumeration this reuses
  * unchanged for the list beneath). `complete` counts finished drafts; the slot right
- * after them is "next" whether that means starting a fresh pair or finishing one
- * already open — the strip does not attempt to start a pair itself (see AdjustDock's
- * own note on why "place the next pair for me" has no equivalent act here).
+ * after them is "next". An empty next slot starts a POINT pair (the default act;
+ * span modes stay as their own buttons). An OPEN draft already occupies "next", so
+ * that slot is placing, not a second start.
  */
 export function pairSlotStrip(
   drafts: readonly PairDraft[],
 ): readonly PairSlotStripEntry[] {
   const complete = drafts.filter(isComplete).length;
+  const placing = drafts.some((d) => !isComplete(d));
   const entries: PairSlotStripEntry[] = [];
   for (let index = 1; index <= MAX_PAIRS; index += 1) {
     const spare = index > 4;
@@ -2215,7 +2320,9 @@ export function pairSlotStrip(
         ? `pair ${index} placed${spare ? " (spare)" : ""} — click to drop it and ` +
           "every pair after it"
         : state === "next"
-          ? `pair ${index} is next — start it with one of the buttons below`
+          ? placing
+            ? `pair ${index} is being placed — finish its marks`
+            : `pair ${index} is next — click to start a point pair`
           : "pairs are placed in order";
     entries.push({ index, state, spare, title });
   }

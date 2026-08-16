@@ -158,7 +158,7 @@ describe("the tool panel wears the comp's own shape (read directly 2026-08-02)",
     const inActs = acts.slice(0, acts.indexOf('data-role="drop"'));
     expect(inActs).toContain('data-role="re-preview"');
     expect(inActs).toContain('data-role="drop-site"');
-    // tool-tabs (now the stage's command bar above panes) still precede the dock acts
+    // tool-tabs live in the dock header, still before the acts foot
     expect(html.indexOf('data-role="tool-tabs"')).toBeLessThan(
       html.indexOf('data-role="drawer-acts"'),
     );
@@ -185,28 +185,26 @@ describe("the drawer head is one row, not a stack (client 2026-08-02)", () => {
   });
 });
 
-describe("the tool chip rail — lifted above the panes (UX 2026-08-15)", () => {
-  /* The 5 glyph tool chips moved from the dock header into a dedicated
-     adjust-tool-bar strip between the workspace toolbar and the three panes
-     (UX 2026-08-15: "barely visible because of lack of real-estate" — the chip
-     rail now lives at the top where it is always visible, and the dock body
-     gains the height the header's chip row previously occupied). */
+describe("the tool chips live in the dock header (prototype silhouette)", () => {
+  /* The HTML prototype puts glyph chips in the instrument dock under the panes,
+     not in a second chrome row above them. Names stay on aria-label + title so
+     the tools are still named; the face is the glyph the prototype shows. */
 
-  it("renders the tool chip rail in the stage, before the three panes", () => {
+  it("renders the tool chips in the dock, after the three panes", () => {
     const html = view({ panes: <div data-role="stub-panes" /> });
     const toolTabsPos = html.indexOf('data-role="tool-tabs"');
     const panesPos = html.indexOf('data-role="stub-panes"');
     expect(toolTabsPos).toBeGreaterThan(-1);
-    expect(toolTabsPos).toBeLessThan(panesPos);
+    expect(panesPos).toBeGreaterThan(-1);
+    expect(panesPos).toBeLessThan(toolTabsPos);
   });
 
-  it("renders the tool chip rail OUTSIDE the adjust-toolbox panel — not inside the dock", () => {
+  it("renders the tool chips INSIDE the adjust-toolbox panel", () => {
     const html = view();
     const toolboxPos = html.indexOf('data-role="adjust-toolbox"');
     const toolTabsPos = html.indexOf('data-role="tool-tabs"');
-    // tabs appear before the toolbox, never inside it
-    expect(toolTabsPos).toBeGreaterThan(-1);
-    expect(toolTabsPos).toBeLessThan(toolboxPos);
+    expect(toolboxPos).toBeGreaterThan(-1);
+    expect(toolTabsPos).toBeGreaterThan(toolboxPos);
   });
 
   it("marks the active tool as selected", () => {
@@ -214,10 +212,13 @@ describe("the tool chip rail — lifted above the panes (UX 2026-08-15)", () => 
     expect(html).toContain('data-tool="best-fit" aria-selected="true"');
   });
 
-  it("renders all five tool chips", () => {
+  it("renders all five tool chips, named for assistive tech", () => {
     const html = view();
     for (const id of ["rotation", "mark-trench", "best-fit", "fit-by-points", "auto-mark"]) {
       expect(html).toContain(`data-tool="${id}"`);
+    }
+    for (const label of ["Rotation", "Mark trench", "Best fit", "Fit by points", "Auto-mark"]) {
+      expect(html).toContain(`aria-label="${label}"`);
     }
   });
 
@@ -227,15 +228,6 @@ describe("the tool chip rail — lifted above the panes (UX 2026-08-15)", () => 
       (id) => html.indexOf(`data-tool="${id}"`),
     );
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
-  });
-
-  it("names each tool in the rail — a full-width bar is not glyph-only", () => {
-    const html = view();
-    const railStart = html.indexOf('data-role="tool-tabs"');
-    const rail = html.slice(railStart, html.indexOf("</div>", railStart) + 6);
-    for (const label of ["Rotation", "Mark trench", "Best fit", "Fit by points", "Auto-mark"]) {
-      expect(rail).toContain(`adjust-tool-bar__label">${label}<`);
-    }
   });
 });
 
@@ -410,7 +402,7 @@ describe("fit by points", () => {
     // breakdown on their face. The breakdown is not deleted — it moved to `title`,
     // reachable on hover/focus — and the visible label is just the tool's name.
     const html = view({ tool: "fit-by-points" });
-    expect(html).toContain(">Point pair<");
+    expect(html).toContain(">Add pair<");
     expect(html).toContain(">Span the scan<");
     expect(html).toContain(">Span both<");
     expect(html).toMatch(
@@ -780,7 +772,7 @@ describe("the way onward from Adjust's own rail", () => {
     );
     expect(html).toContain('data-role="adjust-back"');
     expect(html).toContain('data-role="adjust-forward"');
-    expect(html).toContain("Back to Alignment");
+    expect(html).toContain("back to Alignment");
   });
 
   it("says what leaving the rest of the queue costs — Declare's own words", () => {

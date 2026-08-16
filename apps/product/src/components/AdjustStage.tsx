@@ -74,6 +74,7 @@ import {
   autoMarkDrafts,
   siteReliefCeilingLine,
   droppedRowWords,
+  dockReport,
   isComplete,
   newPairDraft,
   outcomeMovedTheRow,
@@ -82,9 +83,6 @@ import {
   queueSummary,
   reasonCountWords,
   unverifiedClockNotice,
-  rotationOffTrenchDeg,
-  dockToolGood,
-  ADJUST_DOCK_TOOLS,
   type ClockReferenceLike,
   withPick,
   type AdjustQueueEntry,
@@ -379,73 +377,12 @@ export interface AdjustStageViewProps {
   readonly cautionsOpen?: boolean;
   readonly onOpenCautions?: () => void;
   readonly onCloseCautions?: () => void;
-}
-
-
-/**
- * THE TOOL CHIP RAIL (UX 2026-08-15) — lifted from AdjustDock's header into its
- * own strip above the three panes so the operator can see and switch tools without
- * looking to the bottom of the screen. Stateless: the active/good state is computed
- * here from the same props AdjustDock already read.
- *
- * The `good` highlight uses the same formula as AdjustDock's own `good(id)` call,
- * computed from `lastOutcome`, `pass`, `drafts`, and `autoMarkLandmarks` — all
- * props of AdjustStageView, so no new data flows in or out.
- */
-function AdjustToolRail({
-  tool,
-  onSelectTool,
-  lastOutcome,
-  pass,
-  drafts,
-  autoMarkLandmarks,
-}: {
-  readonly tool: AdjustToolId;
-  readonly onSelectTool: (tool: AdjustToolId) => void;
-  readonly lastOutcome: AdjustOutcomeView | null;
-  readonly pass: AlreadyOptimal | null;
-  readonly drafts: readonly PairDraft[];
-  readonly autoMarkLandmarks: readonly LandmarkView[];
-}) {
-  const notchShiftDeg =
-    typeof lastOutcome?.clocking?.["notch_shift_deg"] === "number"
-      ? (lastOutcome.clocking["notch_shift_deg"] as number)
-      : null;
-  const offDeg = rotationOffTrenchDeg(0, notchShiftDeg);
-  const good = (id: AdjustToolId) =>
-    dockToolGood(id, {
-      offDeg,
-      bestFitPass: pass !== null,
-      drafts,
-      landmarksCount: autoMarkLandmarks.length,
-    });
-  return (
-    <div
-      data-role="tool-tabs"
-      role="tablist"
-      aria-label="Choose a correction tool"
-      className="adjust-tool-bar"
-    >
-      {ADJUST_DOCK_TOOLS.map((info) => (
-        <button
-          key={info.id}
-          type="button"
-          role="tab"
-          data-role="tool-tab"
-          data-tool={info.id}
-          aria-selected={tool === info.id}
-          title={info.tooltip}
-          className={`adjust-dock__chip adjust-tool-bar__chip${
-            tool === info.id ? " adjust-dock__chip--active" : ""
-          }${good(info.id) ? " adjust-dock__chip--good" : ""}`}
-          onClick={() => onSelectTool(info.id)}
-        >
-          <span aria-hidden="true">{info.glyph}</span>
-          <span className="adjust-tool-bar__label">{info.label}</span>
-        </button>
-      ))}
-    </div>
-  );
+  /**
+   * THE RUN'S OWN VERDICT ROWS, for the dock header report (`dockReport`). The
+   * same rows the toolbar stats and the queue already read — a second location,
+   * not a second source. Optional with an empty default: static callers predate it.
+   */
+  readonly runRows?: ReadonlyArray<Record<string, unknown>>;
 }
 
 /** The stage's whole surface, pure props → markup — statically testable. */
@@ -524,6 +461,7 @@ export function AdjustStageView({
   onCloseCautions = () => undefined,
   rerunning = false,
   rerunError = null,
+  runRows = [],
 }: AdjustStageViewProps) {
   const active = entries.find((e) => e.tooth === activeTooth) ?? null;
   const busy = phase === "working";
@@ -543,11 +481,13 @@ export function AdjustStageView({
           Declare uses, so the way onward stays on screen at every scroll position. */}
       <div className="workbench__work workbench__work--footered">
         <div className="workbench__work-scroll">
-        <aside data-role="adjust-queue" aria-label="Site queue" className="panel">
-          <h3 className="panel__title">Adjustment queue · flagged first</h3>
-          <p data-role="queue-summary" className="panel__hint">
-            {queueSummary(entries)}
-          </p>
+        <aside data-role="adjust-queue" aria-label="Site queue" className="workspace-queue">
+          <div className="workspace-queue__head">
+            <h3 className="workspace-queue__title">Adjustment queue — flagged first</h3>
+            <p data-role="queue-summary" className="workspace-queue__note">
+              {queueSummary(entries)}
+            </p>
+          </div>
           {/* THE CHAINED RE-RUN (client ruling 2026-08-15: "apply the fit to
               re-run, or have another button ... having two is confusing" —
               one act, not two). The standalone "Re-run the alignment" button
@@ -582,7 +522,7 @@ export function AdjustStageView({
               </p>
             </div>
           )}
-          <ul className="decode-stepper__overview">
+          <ul className="workspace-queue__list">
             {entries.map((entry) => (
               <li key={entry.tooth}>
                 <button
@@ -591,79 +531,64 @@ export function AdjustStageView({
                   data-tooth={entry.tooth}
                   data-flagged={entry.flagged}
                   aria-pressed={entry.tooth === activeTooth}
-                  className={`decode-stepper__item${
-                    entry.tooth === activeTooth ? " decode-stepper__item--active" : ""
-                  }${entry.optional ? " decode-stepper__item--optional" : ""}${
-                    entry.dropped ? " decode-stepper__item--dropped" : ""
+                  className={`workspace-queue__row${
+                    entry.tooth === activeTooth ? " workspace-queue__row--active" : ""
+                  }${entry.optional ? " workspace-queue__row--optional" : ""}${
+                    entry.dropped ? " workspace-queue__row--dropped" : ""
                   }`}
                   onClick={() => onSelectSite(entry.tooth)}
                 >
-                  <span className="decode-stepper__position">{entry.tooth}</span>
-                  <span className="decode-stepper__chips">
+                  <span className="workspace-queue__row-top">
+                    <span data-role="queue-tooth" className="workspace-queue__num">
+                      {entry.tooth}
+                    </span>
+                    <span className="workspace-queue__meta">
+                      <span className="workspace-queue__variant">
+                        {entry.declaredVariant ?? "no variant declared"}
+                      </span>
+                    </span>
                     <span
                       data-role="status-chip"
                       data-status={entry.status}
                       className="chip chip--status"
                     >
                       {entry.status}
-                    </span>{" "}
-                    <span className="decode-stepper__declared">
-                      {entry.declaredVariant ?? "no variant declared"}
                     </span>
                   </span>
                   {entry.exceptionAcknowledged && !entry.dropped && (
-                    <span data-role="queue-exception" className="adjust-queue__exception">
+                    <span data-role="queue-exception" className="workspace-queue__extra workspace-queue__extra--exc">
                       {exceptionDraftWords()}
                     </span>
                   )}
                   {entry.receipts.length > 0 && !entry.dropped ? (
-                    /* §10-AD's ANSWER: the standing run's own receipts, counted.
-                       The promise line stands down here — both at once would read
-                       as a promise about a run that already answered. */
-                    <span data-role="queue-receipts" className="adjust-queue__evidence">
+                    <span data-role="queue-receipts" className="workspace-queue__extra">
                       {evidenceReceiptLine(entry.receipts, receiptsCarried)}
                     </span>
                   ) : entry.evidenceCount > 0 && !entry.dropped ? (
-                    /* §10-AD: the operator's marks survive — said where the rework
-                       lives, so re-running never reads as losing the work again */
-                    <span data-role="queue-evidence" className="adjust-queue__evidence">
+                    <span data-role="queue-evidence" className="workspace-queue__extra">
                       {evidenceRideWords(entry.evidenceCount)}
                     </span>
                   ) : null}
                   {entry.dropped ? (
-                    /* A DROPPED CAP STOPS ASKING (design queue row 1183-1191). The
-                       flag line is the queue's ASK — "rework me" — and a cap the
-                       operator has taken out of the case must not keep asking. The
-                       WHY control stays a sibling below, because the verdict is
-                       still true and bringing the cap back must cost no re-read. */
-                    <span data-role="queue-dropped" className="adjust-queue__dropped">
+                    <span data-role="queue-dropped" className="workspace-queue__extra">
                       {droppedRowWords()}
                     </span>
                   ) : entry.flagged ? (
-                    /* The gate's words used to sit here in full — five lines of amber per
-                       flagged site, which pushed the queue past its card and left the
-                       operator scrolling a list whose whole job is to be scannable
-                       (client 2026-07-29: "the Sites it cut ... should be clickable and
-                       in a modal to save real estate"). The ROW keeps the fact; the
-                       WORDS move to the dialog below. */
-                    <span data-role="queue-flag" className="adjust-queue__flag">
+                    <span data-role="queue-flag" className="workspace-queue__extra workspace-queue__extra--flag">
                       flagged — {reasonCountWords(entry.reasons.length)}
                     </span>
                   ) : (
-                    <span data-role="queue-optional" className="adjust-queue__optional">
+                    <span data-role="queue-optional" className="workspace-queue__extra">
                       passed its gates — reworking is optional
                     </span>
                   )}
                 </button>
                 {entry.flagged && (
-                  /* A SIBLING of the row, not a child: the row is itself a button, and a
-                     button inside a button is invalid markup that browsers resolve by
-                     dropping one of them. Selecting the site stays the row's job. */
                   <button
                     type="button"
                     data-role="queue-why"
                     data-tooth={entry.tooth}
-                    className="adjust-queue__why"
+                    className="workspace-queue__why"
                     onClick={() => onOpenReasons(entry.tooth)}
                   >
                     Why it was flagged
@@ -673,7 +598,7 @@ export function AdjustStageView({
             ))}
           </ul>
           {entries.length === 0 && (
-            <p data-role="adjust-empty" className="panel__hint">
+            <p data-role="adjust-empty" className="workspace-queue__note workspace-queue__empty">
               No aligned sites on this run — there is nothing to rework here.
             </p>
           )}
@@ -717,7 +642,7 @@ export function AdjustStageView({
                   className="button button--primary button--small"
                   onClick={onForward}
                 >
-                  Done adjusting — go to Deliver
+                  continue to Delivery
                 </button>
               ) : (
                 <span
@@ -735,7 +660,7 @@ export function AdjustStageView({
                 className="button button--secondary button--small"
                 onClick={onBack}
               >
-                Back to Alignment
+                  back to Alignment
               </button>
             </div>
           </div>
@@ -771,19 +696,7 @@ export function AdjustStageView({
           onToggleLinked={onToggleLinked}
           endSlot={insightSlot}
         />
-        {/* THE TOOL CHIP RAIL (UX 2026-08-15): lifted from the dock header so the
-            operator sees and switches tools at the top, not buried at the bottom.
-            The dock body gains the height the chip row previously took; the panes
-            spend one chip-height row (~34px) to put navigation above the 3D views
-            rather than inside the cramped tool strip below them. */}
-        <AdjustToolRail
-          tool={tool}
-          onSelectTool={onSelectTool}
-          lastOutcome={lastOutcome}
-          pass={pass}
-          drafts={drafts}
-          autoMarkLandmarks={autoMarkLandmarks}
-        />
+        <div data-role="workspace-center" className="workspace-center">
         {panes}
         <div className="workspace-drawer workspace-drawer--dock">
           <section data-role="adjust-toolbox" aria-label="Correction tools"
@@ -856,8 +769,10 @@ export function AdjustStageView({
               onOpenCautions={onOpenCautions}
               onCloseCautions={onCloseCautions}
               clockNotice={clockNotice}
+              report={dockReport(entries, runRows)}
             />
           </section>
+        </div>
         </div>
       </div>
 
@@ -1638,6 +1553,7 @@ export function AdjustStage({ detail, onDetail }: AdjustStageProps) {
       cautionsOpen={cautionsOpen}
       onOpenCautions={() => setCautionsOpen(true)}
       onCloseCautions={() => setCautionsOpen(false)}
+      runRows={rows}
       rerunning={rerunning}
       rerunError={rerunError}
       panes={panes}
