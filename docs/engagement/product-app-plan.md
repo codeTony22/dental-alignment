@@ -3338,6 +3338,32 @@ rather than a guess. The two real-template pins read the bridge channel
 isolation 102 incl. real slow pins, fast lane 1146 FULL (the parallel
 session's curve work landed and green beside this).
 
+**AT the blind-detection instrument — the client's RANSAC idea, measured and
+landed as a seed proposer (2026-08-16).** Client-relayed direction ("lets
+incorporate this to tackle that use case" — the blind lane: no declared
+sites / the missed-cap search) over their partner's RANSAC/Open3D script
+thread. Executed measurement-first: five instrument rounds on the real
+fleet, each iterated from a measured autopsy, full story + numbers in
+docs/engagement/blind-detection-scoreboard.md. Headlines: patch-seeded
+normal-covariance axes (round 1's two-point axes carried 47° errors); the
+recess-void cap-vs-tooth discriminator WITH a revolute-dome allowance (the
+plain rise gate executed the domed neodent caps); catalog-radius
+centre-only circle fits (a partial visible arc balloons a free fit —
+measured 4.3mm centre error on cap6020's own 1,895-point ring). Fleet:
+4/10 truth sites at the ±3mm seed basin per configuration, 6/10 across
+configurations, ~7 spurious/case, ~10s/scan. VERDICT: not a detector (the
+production rim-slab detector's own record outranks it) — a SEED PROPOSER,
+queued for wiring into detect()'s proposal loop ONLY behind the
+complementarity measurement (the production detector's per-tooth fleet
+misses — blocked tonight by an unexplained in-harness slowness of
+propose_sites, itself flagged for measurement). Landed:
+`adapters/blind_candidates.py` (no production consumer yet, deterministic
+for detect()'s own pin, catalog radii injectable) +
+tests/test_blind_candidates.py (6 pins incl. the dome allowance and the
+lopsided-cusp rejection). `find_cap_sites`/`propose_sites` untouched —
+frozen-demo-shared. §10-AT front-1's template-matched doctrine untouched:
+this lane exists only where no template can be matched.
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.
