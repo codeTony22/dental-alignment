@@ -3354,3 +3354,61 @@ it certifies the registration MECHANICS; the slow lane's real-mesh suites
 own the production ceiling. Noted in passing: `open3d_engine.py` ROI math
 emits overflow/invalid matmul RuntimeWarnings even on passing runs — a
 numerical-hygiene item for workstream B.
+
+**AT artifact 6, fourth ruling — the gingival floor, ported to p4 worktree
+(2026-08-15, branch `pane2-walls-and-floored-holes`).** Source of truth:
+`dental-alignment` at commit `e324506` ("Artifact 6, fourth ruling: the hole
+gets its gingival floor") plus the ghost-in-the-hole refinement in that same
+commit. The fourth-ruling content and the ghost-in-the-hole paragraphs from
+the source plan are summarised below; this entry records the port.
+
+THE FOURTH RULING on this artifact's shape (after §10-AS.19's retirement,
+AT 4-r's restoration as the closed model, and "AT excision"'s third ruling
+to the through-hole shape): the through-hole retires in turn. Client
+verbatim — "why is that cylinder so big" (on `_extend_punch_through_solid`,
+deleted outright: an unfloored punch's own natural bottom sat only a few
+millimetres below the gum, so the function bridged it with a plain cylinder
+down to the solidified shell's base plate — routinely several millimetres of
+fabricated pipe with no clinical meaning) and "[it] should have the hole with
+the gingival floor" (a clean shallow recess whose floor sits at gum level,
+not a pipe into the model's interior).
+
+`open_arch_with_through_holes` renames to `open_arch_with_floored_holes`
+(deliverables.py) — the shipped filename (`{case}-arch-open-holes.stl`) and
+the product's tab key/label are UNCHANGED; every call site (application/
+emit.py, pipeline/auto_flow.py's artifact-6 line only) and the bff catalogue
+sentence (resources/deliver.py) update in place. THE FLOOR IS THE SAME
+GUM-FOLLOWING MEASUREMENT `_csg_carve` has always cut a socket to — the
+ring-read low quartile just outside the cap's own footprint, clamped against
+the solidified shell's own true material limit by a downward ray-probe —
+factored out of `_csg_carve` into a shared `_gingival_floor_a` (deliverables.py)
+so the dish, the platform countersink and this artifact's own recess all share
+ONE measurement rather than three copies of it; `_csg_carve` calls it
+unchanged in behaviour (its own existing pins hold verbatim). The fourth
+ruling's own request is `depth_mm=0.0`: the gingival level itself, the site's
+relief and nothing more. `_extend_punch_through_solid` is deleted outright (it
+had no other caller).
+
+`TestOpenArchWithThroughHoles` renames to `TestOpenArchWithFlooredHoles`. The
+through-pierce pin is retired and replaced by its inverse (floor hit, golden
+world-z value against a flat gum fixture) plus a new pipe-death structural
+pin (tool-provenance vertex no more than ~0.3mm below the requested floor).
+The ghost-anatomy pin (the scanned cap's slot/code-window ghost measured at
+first emit and pinned structurally: envelope punch leaves clean revolute
+recess; exact punch would print cap anatomy as standing columns and trenches)
+is added; the bff catalogue sentence drops "exact recess" for "seat cut clean"
+(deliver.py + test_deliver.py pin). The fallback-ladder pin is updated
+(envelope IS the cut, not a fallback — a faceless template's point cloud
+still gives a valid profile and cuts exactly; only a truly empty template
+notes a cylinder).
+
+KNOWN GAP CLOSED HERE: this p4 worktree branched from `origin/main` (163f8c7)
+and already had the moat-bridge + orphan-flap work from commit `9ea40f5`
+("The moat bridges and the orphan flaps die — with one honest limitation").
+The source checkout's `open_arch_with_floored_holes` carries DEFECT 1
+excision only (orphan flaps were absent there). This port adds the
+`orphan_flap_mask` step to `open_arch_with_floored_holes` immediately after
+DEFECT 1 excision, matching the same pattern `open_arch_with_through_holes`
+already carried in this branch. The orphan-flap consumer test in
+`TestDefectAOrphanCleanupEveryConsumer` is updated from the old function name
+to the new one.

@@ -2598,11 +2598,9 @@ def _align_and_package(case_id: str, scan: trimesh.Trimesh, library: CapLibrary,
                 composite_facts[f"{case_id}-socket-platform.stl"] = facts_of(socket_platform)
                 _layer_names.append(f"{case_id}-socket-platform.stl")
 
-            # ARTIFACT 6, THE FOURTH RULING (client-ruled, live call over a
-            # reference image, 2026-08-15 night): the through-hole shape retires
-            # in turn — "why is that cylinder so big" — replaced by the open arch
-            # wearing each cap's exact recess cut to the GINGIVAL FLOOR, no shaft
-            # descending into the solidified interior.
+            # ARTIFACT 6, THE FOURTH RULING (client-ruled, 2026-08-15): the open
+            # arch with each cap's seat cut clean to the gingival floor — no
+            # shaft, no through-pipe, the hole as the lab expects it.
             _model_closed, _model_notes = open_arch_with_floored_holes(
                 scan, imprint_sites)
             if _model_closed is not None:

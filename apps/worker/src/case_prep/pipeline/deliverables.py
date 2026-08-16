@@ -836,6 +836,81 @@ def _bridge_recess_collar(out_boundary_loops: "Sequence[np.ndarray]",
     return bridge, note
 
 
+def _gingival_floor_a(V: np.ndarray, solid: trimesh.Trimesh, index: int,
+                      origin: np.ndarray, axis: np.ndarray, xl: np.ndarray,
+                      yl: np.ndarray, zs_p: np.ndarray, prof_p: np.ndarray,
+                      depth_mm: Optional[float]) -> Tuple[float, float]:
+    """THE GUM-FOLLOWING FLOOR (§10-AS.10's own ring-read heuristic, factored
+    here so every recess this module cuts — the dish, the platform
+    countersink, and the fourth artifact-6 ruling's gingival floor — shares
+    ONE measurement rather than three copies of it): the local gingival
+    height about one site's pose axis, read off the SOLIDIFIED shell's own
+    vertices (``V``, never the punch template's), and the floor's axial
+    coordinate ``depth_mm`` below it.
+
+    THE RING: the shell's own vertices just outside the cap's own footprint
+    (``r_ref = max(prof_p)``, the widest the relief envelope ever reaches) —
+    ``r_ref+0.1`` to ``r_ref+1.2`` radially, within 6mm of the site's own
+    mid-height axially. The LOW quartile of that band's axial height is the
+    read (``h_low``), not the median: a band that grazes a neighbouring
+    crown reads mostly tooth, and the lowest surface in it is the gingiva
+    (measured, cap6030: a median once read +3.2mm of "gum"). Fewer than 8
+    vertices in the band is an honest refusal (``ValueError``, naming the
+    site), never a floor guessed from nothing.
+
+    THE CLAMP, when ``depth_mm`` is given: ``h_low - depth_mm`` is floored
+    never below the envelope's own base (``zs_p[0]`` — a floor cannot sink
+    past the cap's own exact bottom plus its relief), then probed against
+    the SOLID itself — a downward ray at the footprint's centre plus four
+    off-axis points at ``0.6 * r_ref`` finds the model's true material limit
+    directly beneath this site (the same idiom the box fixture's own
+    -0.5mm underside is measured through); a floor that would land past
+    that limit is pulled up to 0.3mm above it, so a thin model never opens
+    a hole where a floor was asked for. ``depth_mm is None`` means "no
+    floor at all" — ``floor_a`` is the envelope's own base, unclamped.
+
+    Returns ``(floor_a, h_low)`` — ``h_low`` is also the tint-region
+    reference ``_csg_carve`` threads onward through ``regions``."""
+    rel = V - origin
+    a = rel @ axis
+    r = np.hypot(rel @ xl, rel @ yl)
+    r_ref = float(np.max(prof_p))
+    band = (r > r_ref + 0.1) & (r < r_ref + 1.2) & (np.abs(a) < 6.0)
+    if int(band.sum()) < 8:
+        raise ValueError(f"no gum ring around site {index}")
+    # the LOW quartile: a median once read a neighbouring crown as
+    # +3.2mm of gum; the lowest surface in the ring is the gingiva
+    h_low = float(np.percentile(a[band], 25))
+    if depth_mm is None:
+        return float(zs_p[0]), h_low
+    floor_a = max(h_low - float(depth_mm), float(zs_p[0]))
+    # the floor stays INSIDE the solid: on a thin model a punch that
+    # reaches past the underside cuts a through-hole, not a seat.
+    # A raw OPEN scan carries no "underside" of its own (it is one
+    # surface, not a slab) — reading the footprint's raw vertices
+    # for a "thin material" signal found only the SAME top surface
+    # again and pushed the floor above the gum entirely on a real
+    # single-sheet scan. The SOLIDIFIED shell (skirt + base) is the
+    # honest source: a ray straight down the pose axis, probed at
+    # the footprint's centre and a few off-axis points, finds the
+    # model's true material limit directly beneath this site —
+    # exactly the box fixture's own -0.5mm underside where one
+    # genuinely exists, and the base plate far below on an open
+    # single-sheet scan where none does.
+    probes = [origin + axis * 100.0]
+    if r_ref > 0:
+        for ang in (0.0, np.pi / 2, np.pi, 3 * np.pi / 2):
+            probes.append(origin + axis * 100.0
+                          + (xl * np.cos(ang) + yl * np.sin(ang))
+                          * (r_ref * 0.6))
+    hits, *_ = solid.ray.intersects_location(
+        ray_origins=probes, ray_directions=[-axis] * len(probes))
+    if len(hits):
+        base_a = float(((np.asarray(hits, float) - origin) @ axis).min())
+        floor_a = max(floor_a, base_a + 0.3)
+    return floor_a, h_low
+
+
 def _csg_carve(arch: trimesh.Trimesh,
                sites: "Sequence[Tuple[trimesh.Trimesh, np.ndarray, float, float]]",
                visible_depth_mm: Optional[float],
@@ -1325,9 +1400,8 @@ def open_arch_with_floored_holes(scan: trimesh.Trimesh,
     unfloored punch's natural bottom down to the solidified shell's base
     plate, so the bore opened all the way through — is gone entirely; the
     client's own words on it named the extended shaft itself as the defect.
-    A floored punch never needs one: ``exact_cap_punch`` is called WITH
-    ``floor_a`` this time, exactly as every other floored recess in this
-    module already is.
+    A floored envelope punch never needs one: ``punch_solid`` is called
+    WITH ``floor_a`` (the envelope-is-the-cut refinement below).
 
     THE ENVELOPE IS THE CUT (the same ruling, refined the same night on its
     own first emit — cap7030 tooth 29, run 20260815-224356-8056c2): the
