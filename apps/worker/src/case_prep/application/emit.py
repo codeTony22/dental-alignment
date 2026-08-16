@@ -390,11 +390,9 @@ def emit_from_poses(case: CaseRecord, selection: RunSelection,
         socket_platform.export(pth)
         composite_facts[pth.name] = facts_of(socket_platform)
         layer_names.append(pth.name)
-    # ARTIFACT 6, THE FOURTH RULING (client-ruled, live call over a reference
-    # image, 2026-08-15 night): the through-hole shape retires in turn —
-    # "why is that cylinder so big" — replaced by the open arch wearing each
-    # cap's exact recess cut to the GINGIVAL FLOOR, no shaft descending into
-    # the solidified interior.
+    # ARTIFACT 6, THE FOURTH RULING (client-ruled, 2026-08-15): the open arch
+    # with each cap's seat cut clean to the gingival floor — no shaft, no
+    # through-pipe, the hole as the lab expects it.
     model_closed, model_notes = open_arch_with_floored_holes(scan, imprint_sites)
     if model_closed is not None:
         pth = out_dir / f"{case.id}-arch-open-holes.stl"

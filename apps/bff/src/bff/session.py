@@ -287,6 +287,11 @@ class DetectedProposal(BaseModel):
     rim_below_cusps_mm: float
     tooth_guess: Optional[int] = None
     capture: dict
+    # P4.1 — additive curve honesty. Pre-field documents omit these; False is a
+    # real "density prior off", None on DP fields is island-not-run.
+    density_prior_used: Optional[bool] = None
+    dp_gap_fraction: Optional[float] = None
+    bearing_margin: Optional[List[float]] = None
 
 
 class DetectionRecord(BaseModel):
@@ -319,6 +324,13 @@ class DetectionRecord(BaseModel):
     # existed loads with both honestly empty.
     site_rim_below_cusps_mm: Dict[str, Optional[float]] = Field(default_factory=dict)
     site_void_ratio: Dict[str, Optional[float]] = Field(default_factory=dict)
+    # P4.1 — density prior + DP ring honesty, keyed by tooth like the pair above.
+    # ADDITIVE empty defaults: a document written before these maps existed loads
+    # with them honestly empty. False / 0.0 are real measurements; absence is
+    # missing-key or null, never a zero invented here.
+    site_density_prior_used: Dict[str, Optional[bool]] = Field(default_factory=dict)
+    site_dp_gap_fraction: Dict[str, Optional[float]] = Field(default_factory=dict)
+    site_bearing_margin: Dict[str, Optional[List[float]]] = Field(default_factory=dict)
 
 
 class RunSession(BaseModel):

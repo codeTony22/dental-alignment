@@ -1543,12 +1543,12 @@ describe("previewTabs — the demo's three tabs, matched onto the run's own pack
     expect(without.map((t) => t.key)).toEqual(["arch-alone"]);
   });
 
-  it("the open-holes arch rides tab six exactly when the run built it (artifact 6's third ruling, client-ruled 2026-08-15)", () => {
-    // Client verbatim: "the hole is perfect just need to be without the
-    // backfilling we create which is like a dental model which we don't
-    // need — just the open scan, and the hole viewed like it is." Retires
-    // the closed-model tab AGAIN (§10-AS.19's retirement, reversed once by
-    // AT 4-r, reversed again here); absent on packages that never built it.
+  it("the open-holes arch rides tab six exactly when the run built it (artifact 6's fourth ruling, client-ruled 2026-08-15)", () => {
+    // Client verbatim: "why is that cylinder so big" — on the through-shaft
+    // the third ruling extended past the model's own base; "[it] should have
+    // the hole with the gingival floor". Same slot, same filename, same tab
+    // key/label — only the recess shape changed; absent on packages that
+    // never built it.
     const withHoles = previewTabs(
       ["case-a-arch-capless.stl", "case-a-arch-open-holes.stl"], [19]);
     expect(withHoles.map((t) => t.key)).toEqual(["arch-alone", "arch-open-holes"]);
@@ -2147,6 +2147,27 @@ describe("analysisClipboardText — the paste-ready case digest (client 2026-08-
     });
     expect(text).toContain("tooth 3: measured cap height 4.021 mm · measured-variant proposal none");
     expect(text).not.toContain("discriminator:");
+  });
+
+  it("carries density-prior-off and a real DP gap; missing maps add no invented zero (P4.1)", () => {
+    const text = analysisClipboardText("c", "d", null, assurance as never, {
+      detection: {
+        site_measured_height_mm: { "3": 4.021 },
+        site_proposed_variant: { "3": null },
+        site_density_prior_used: { "3": false },
+        site_dp_gap_fraction: { "3": 0.18 },
+      } as never,
+    });
+    expect(text).toContain("density prior off");
+    expect(text).toContain("DP gap 18%");
+    const absent = analysisClipboardText("c", "d", null, assurance as never, {
+      detection: {
+        site_measured_height_mm: { "3": 4.021 },
+        site_proposed_variant: { "3": null },
+      } as never,
+    });
+    expect(absent).not.toContain("density prior");
+    expect(absent).not.toContain("DP gap");
   });
 });
 

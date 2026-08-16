@@ -3267,16 +3267,10 @@ test) gained its own floor-hit assertion against the actual shipped package
 bytes — skips here (data/real absent in this worktree), runs at
 integration.
 
-KNOWN GAP, flagged rather than papered over: this worktree branched from
-`origin/main` (163f8c7), not from `cap-curve-p4` as briefed — the "AT the
-moat bridge + orphan flaps" defect-A/B work (isolation.orphan_flap_mask,
-deliverables._bridge_recess_collar) lives only on `cap-curve-p4` and is
-ABSENT from this codebase; `open_arch_with_floored_holes` here carries
-DEFECT 1's excision only (scanned_cap_face_mask, already present pre-slice),
-same as the through-hole function it replaces carried. Whichever branch
-lands the moat-bridge/orphan-flap work will need this artifact's own call
-site added to their consumer lists, the same way this entry's own remark on
-`_gingival_floor_a` should be read by anyone reconciling the two branches.
+KNOWN GAP CLOSED on this rebase: the moat-bridge + orphan-flap work
+(`isolation.orphan_flap_mask`, `deliverables._bridge_recess_collar`) lands
+in the same tree as `open_arch_with_floored_holes`. Artifact 6 now runs
+DEFECT 1 excision AND the orphan-flap step after it.
 
 **AT artifact 6, the ghost in the hole — the envelope is the cut (2026-08-15
 night, the fourth ruling refined on its own first emit).** The floored
@@ -3324,6 +3318,26 @@ envelope reads from its point cloud and cuts with NO note (the envelope IS
 the tool now, not a fallback); only an unreadable profile notes its
 cylinder-at-rim shape. Floored-holes class 8/8.
 
+**AT the moat bridge + orphan flaps (2026-08-15 night, client: "a lot
+of space and residue on the scan").** Defect A: orphan_flap_mask —
+scan-provenance components lying entirely within the site cylinder and
+disconnected from the arch are cap remnant BY CONNECTIVITY (real gum
+always connects; no threshold to tune) — dropped in all four consumers;
+red-proven 8/8→0/8 and 112/128→0/128. Defect B: _bridge_recess_collar —
+the machined mouth zipped to the scan's own opening loop (roundness gate
+0.3mm radial std tells a moat ring from an unrelated cut edge; real
+points only, one weld) closing the moat 2 loops→1, with the client's
+verbatim disclosure note per bridged site; fail-open never mangles a
+ring. KNOWN LIMITATION, integration-measured: a real coded cap's imprint
+carries 26–37 boundary loops, so the exactly-one mouth rule SKIPS (with
+its note) on real caps today — two quick classifiers were tried at
+integration and each mis-modelled a different population, so the
+real-cap mouth classifier goes probe-first as the immediate follow-up
+rather than a guess. The two real-template pins read the bridge channel
+(fired OR skipped) as disclosure, never fallback. Gates: deliverables+
+isolation 102 incl. real slow pins, fast lane 1146 FULL (the parallel
+session's curve work landed and green beside this).
+
 **AT 4-r battery verdict + one de-flake (2026-08-11).** The shipping battery
 after the restore: 1128 green, 1 red —
 `test_stage2_registers_from_seeds_and_packages`, which passes alone in 9.5s.
@@ -3340,3 +3354,61 @@ it certifies the registration MECHANICS; the slow lane's real-mesh suites
 own the production ceiling. Noted in passing: `open3d_engine.py` ROI math
 emits overflow/invalid matmul RuntimeWarnings even on passing runs — a
 numerical-hygiene item for workstream B.
+
+**AT artifact 6, fourth ruling — the gingival floor, ported to p4 worktree
+(2026-08-15, branch `pane2-walls-and-floored-holes`).** Source of truth:
+`dental-alignment` at commit `e324506` ("Artifact 6, fourth ruling: the hole
+gets its gingival floor") plus the ghost-in-the-hole refinement in that same
+commit. The fourth-ruling content and the ghost-in-the-hole paragraphs from
+the source plan are summarised below; this entry records the port.
+
+THE FOURTH RULING on this artifact's shape (after §10-AS.19's retirement,
+AT 4-r's restoration as the closed model, and "AT excision"'s third ruling
+to the through-hole shape): the through-hole retires in turn. Client
+verbatim — "why is that cylinder so big" (on `_extend_punch_through_solid`,
+deleted outright: an unfloored punch's own natural bottom sat only a few
+millimetres below the gum, so the function bridged it with a plain cylinder
+down to the solidified shell's base plate — routinely several millimetres of
+fabricated pipe with no clinical meaning) and "[it] should have the hole with
+the gingival floor" (a clean shallow recess whose floor sits at gum level,
+not a pipe into the model's interior).
+
+`open_arch_with_through_holes` renames to `open_arch_with_floored_holes`
+(deliverables.py) — the shipped filename (`{case}-arch-open-holes.stl`) and
+the product's tab key/label are UNCHANGED; every call site (application/
+emit.py, pipeline/auto_flow.py's artifact-6 line only) and the bff catalogue
+sentence (resources/deliver.py) update in place. THE FLOOR IS THE SAME
+GUM-FOLLOWING MEASUREMENT `_csg_carve` has always cut a socket to — the
+ring-read low quartile just outside the cap's own footprint, clamped against
+the solidified shell's own true material limit by a downward ray-probe —
+factored out of `_csg_carve` into a shared `_gingival_floor_a` (deliverables.py)
+so the dish, the platform countersink and this artifact's own recess all share
+ONE measurement rather than three copies of it; `_csg_carve` calls it
+unchanged in behaviour (its own existing pins hold verbatim). The fourth
+ruling's own request is `depth_mm=0.0`: the gingival level itself, the site's
+relief and nothing more. `_extend_punch_through_solid` is deleted outright (it
+had no other caller).
+
+`TestOpenArchWithThroughHoles` renames to `TestOpenArchWithFlooredHoles`. The
+through-pierce pin is retired and replaced by its inverse (floor hit, golden
+world-z value against a flat gum fixture) plus a new pipe-death structural
+pin (tool-provenance vertex no more than ~0.3mm below the requested floor).
+The ghost-anatomy pin (the scanned cap's slot/code-window ghost measured at
+first emit and pinned structurally: envelope punch leaves clean revolute
+recess; exact punch would print cap anatomy as standing columns and trenches)
+is added; the bff catalogue sentence drops "exact recess" for "seat cut clean"
+(deliver.py + test_deliver.py pin). The fallback-ladder pin is updated
+(envelope IS the cut, not a fallback — a faceless template's point cloud
+still gives a valid profile and cuts exactly; only a truly empty template
+notes a cylinder).
+
+KNOWN GAP CLOSED HERE: this p4 worktree branched from `origin/main` (163f8c7)
+and already had the moat-bridge + orphan-flap work from commit `9ea40f5`
+("The moat bridges and the orphan flaps die — with one honest limitation").
+The source checkout's `open_arch_with_floored_holes` carries DEFECT 1
+excision only (orphan flaps were absent there). This port adds the
+`orphan_flap_mask` step to `open_arch_with_floored_holes` immediately after
+DEFECT 1 excision, matching the same pattern `open_arch_with_through_holes`
+already carried in this branch. The orphan-flap consumer test in
+`TestDefectAOrphanCleanupEveryConsumer` is updated from the old function name
+to the new one.

@@ -105,13 +105,22 @@ centroids in the band when informative (additive only — no candidate removed).
 
 ## P4 — product honesty
 
-**P4.1 Serve discriminator evidence** (backend, frontend)
+**P4.1 Serve discriminator evidence** (backend, frontend) — **done** 2026-08-15
 
 `rim_below_cusps_mm`, `void_ratio` (already on some records), plus
 `density_prior_used`, DP gap fraction, per-bearing margin. Intake digest and
 detection record. Honest absence renders nothing, never zeros.
 
-**P4.2 Hard capture-gate refusal at Intake** (backend, frontend)
+Delivered: `CandidateEvidence` borrows density/DP from the matching proposal
+(`None` when unmatched — never `False`/`0.0`). `DetectionRecord` /
+`DetectionView` add `site_density_prior_used`, `site_dp_gap_fraction`,
+`site_bearing_margin` (empty on pre-field documents). Intake
+`curveHonestySentence` renders "density prior off" only when the served bool
+is `false`; a null DP gap is no clause; a real `0` gap is "inferred across 0%".
+Statuses-walk test stays green. Island still does not run at detect — DP
+fields are `None` until a later island reading exists.
+
+**P4.2 Hard capture-gate refusal at Intake** (backend, frontend) — **done** 2026-08-15
 
 t7-class scans (rim occupancy ~0.54, collar at or below tissue, Appendix A
 closure 9/24) refuse with chairside recapture copy while the patient can still
@@ -119,6 +128,12 @@ be scanned. The instruments already exist in `capture_gate.py`.
 
 Acceptance: a synthetic starved rim is refused by name; a healthy cap6030-class
 site is not.
+
+Delivered: `_authorized_selection` 422s when
+`session.detection.site_capture[tooth].verdict == "rescan"`, quoting the
+gate's own recapture sentence (same copy Intake's banner already shows).
+Missing detection is not a refusal. pass/marginal do not block. Declare
+already surfaces the 422 as `runRefusal`.
 
 ---
 

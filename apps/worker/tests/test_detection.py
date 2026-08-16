@@ -20,7 +20,8 @@ import pytest
 from scipy.spatial import cKDTree
 
 from case_prep.application.cases import CaseRecord, discover_cases
-from case_prep.application.detection import (CaptureContext, DetectedSite,
+from case_prep.application.detection import (CaptureContext, CandidateEvidence,
+                                             DetectedSite,
                                              DetectionResult, FALLBACK_RIM_RADIUS_MM,
                                              ScanUnreadable, SuggestedSiteCapture,
                                              candidate_evidence_for,
@@ -174,24 +175,45 @@ class TestCandidateEvidenceFor:
     )
 
     def test_a_curated_site_near_a_proposal_borrows_its_evidence(self):
-        below, ratio = candidate_evidence_for([0.5, 0.0, 0.0], self.PROPOSALS)
-        assert below == pytest.approx(6.0)
-        assert ratio == pytest.approx(0.10)
+        ev = candidate_evidence_for([0.5, 0.0, 0.0], self.PROPOSALS)
+        assert ev.rim_below_cusps_mm == pytest.approx(6.0)
+        assert ev.void_ratio == pytest.approx(0.10)
 
     def test_the_nearest_proposal_wins(self):
-        below, ratio = candidate_evidence_for([1.0, 0.0, 0.0], self.PROPOSALS)
+        ev = candidate_evidence_for([1.0, 0.0, 0.0], self.PROPOSALS)
         # 1.0mm from the first proposal, 2.0mm from the second -- the first wins
-        assert below == pytest.approx(6.0)
-        assert ratio == pytest.approx(0.10)
+        assert ev.rim_below_cusps_mm == pytest.approx(6.0)
+        assert ev.void_ratio == pytest.approx(0.10)
 
     def test_beyond_the_radius_there_is_no_evidence(self):
-        assert candidate_evidence_for([50.0, 50.0, 0.0], self.PROPOSALS) == (None, None)
+        assert candidate_evidence_for([50.0, 50.0, 0.0], self.PROPOSALS) == CandidateEvidence()
 
     def test_no_proposals_no_evidence(self):
-        assert candidate_evidence_for([0.0, 0.0, 0.0], ()) == (None, None)
+        assert candidate_evidence_for([0.0, 0.0, 0.0], ()) == CandidateEvidence()
 
     def test_a_site_without_a_center_borrows_nothing(self):
-        assert candidate_evidence_for(None, self.PROPOSALS) == (None, None)
+        assert candidate_evidence_for(None, self.PROPOSALS) == CandidateEvidence()
+
+    def test_a_matching_proposal_lends_density_prior_and_dp_fields(self):
+        # P4.1: density_prior_used / DP gap / per-bearing margin ride the same
+        # borrow as rim/void — a curated site the detector found gets the
+        # proposal's own honesty numbers, never invented zeros.
+        proposals = (
+            DetectedSite(center=(0.0, 0.0, 0.0), void_ratio=0.10,
+                         rim_below_cusps_mm=6.0, tooth_guess=None, capture={},
+                         density_prior_used=True, dp_gap_fraction=0.25,
+                         bearing_margin=(0.4, 0.1, 0.8)),
+        )
+        ev = candidate_evidence_for([0.2, 0.0, 0.0], proposals)
+        assert ev.density_prior_used is True
+        assert ev.dp_gap_fraction == pytest.approx(0.25)
+        assert ev.bearing_margin == (0.4, 0.1, 0.8)
+
+    def test_no_match_is_honest_none_never_false_or_zero(self):
+        ev = candidate_evidence_for([50.0, 50.0, 0.0], self.PROPOSALS)
+        assert ev.density_prior_used is None
+        assert ev.dp_gap_fraction is None
+        assert ev.bearing_margin is None
 
 
 class TestSuggestedSiteCaptureEvidenceFields:
@@ -204,12 +226,31 @@ class TestSuggestedSiteCaptureEvidenceFields:
         site = SuggestedSiteCapture(tooth=4, center=(0.0, 0.0, 0.0), capture={})
         assert site.rim_below_cusps_mm is None
         assert site.void_ratio is None
+        # P4.1 — additive curve-honesty fields: an old constructor still
+        # builds, and absence is None (never False / 0.0 standing in).
+        assert site.density_prior_used is None
+        assert site.dp_gap_fraction is None
+        assert site.bearing_margin is None
 
     def test_the_evidence_fields_round_trip_when_given(self):
         site = SuggestedSiteCapture(tooth=4, center=(0.0, 0.0, 0.0), capture={},
-                                    rim_below_cusps_mm=6.1, void_ratio=0.12)
+                                    rim_below_cusps_mm=6.1, void_ratio=0.12,
+                                    density_prior_used=False, dp_gap_fraction=0.18,
+                                    bearing_margin=(0.2, 0.05))
         assert site.rim_below_cusps_mm == pytest.approx(6.1)
         assert site.void_ratio == pytest.approx(0.12)
+        assert site.density_prior_used is False
+        assert site.dp_gap_fraction == pytest.approx(0.18)
+        assert site.bearing_margin == (0.2, 0.05)
+
+    def test_detected_site_curve_fields_default_without_inventing_a_prior(self):
+        # A proposal always has a density_prior_used bool (False when the
+        # informativeness gate was off). DP fields stay None until island ran.
+        site = DetectedSite(center=(0.0, 0.0, 0.0), void_ratio=0.1,
+                            rim_below_cusps_mm=0.5, tooth_guess=None, capture={})
+        assert site.density_prior_used is False
+        assert site.dp_gap_fraction is None
+        assert site.bearing_margin is None
 
 
 class TestMeasuredCapHeight:
@@ -298,6 +339,10 @@ class TestDetectOnTheRealTree:
             # own discriminator evidence -- honestly None when it never proposed one
             assert s.rim_below_cusps_mm is None or isinstance(s.rim_below_cusps_mm, float)
             assert s.void_ratio is None or isinstance(s.void_ratio, float)
+            # P4.1: False is a real "prior off"; None is honest absence
+            assert s.density_prior_used is None or isinstance(s.density_prior_used, bool)
+            assert s.dp_gap_fraction is None or isinstance(s.dp_gap_fraction, float)
+            assert s.bearing_margin is None or isinstance(s.bearing_margin, tuple)
         assert len(result.crown_axis) == 3
         assert result.jaw_reading in (None, "upper", "lower")
 
@@ -314,6 +359,12 @@ class TestDetectOnTheRealTree:
                 == [s.rim_below_cusps_mm for s in b.suggested])
         assert ([s.void_ratio for s in a.suggested]
                 == [s.void_ratio for s in b.suggested])
+        assert ([s.density_prior_used for s in a.suggested]
+                == [s.density_prior_used for s in b.suggested])
+        assert ([s.dp_gap_fraction for s in a.suggested]
+                == [s.dp_gap_fraction for s in b.suggested])
+        assert ([s.bearing_margin for s in a.suggested]
+                == [s.bearing_margin for s in b.suggested])
 
 
 @real_only

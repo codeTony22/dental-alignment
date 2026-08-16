@@ -82,6 +82,8 @@ import {
   CAP_RUNG_CAPTION_WORDS,
   isolationStatLine,
   scanPaneCapCylinder,
+  scanPaneCoreRadiusMm,
+  scanPaneIsolationRadiusMm,
   scanPaneRadiusMm,
   positionsFrom,
   presetFraming,
@@ -1376,8 +1378,13 @@ export function useSitePaneScene(
   const scanCrop = useMemo(() => {
     if (scanPositions === null || siteCenter === null) return null;
     if (capCylinder !== null && cropAxis !== null) {
+      // Matched: catalog rim + the aligner's 0.6 mm band, so the
+      // cylindrical walls survive the pre-cut. Width-only: AS.18's
+      // measured-rim tightening (no template yet to drop gum).
+      const isolationR = scanPaneIsolationRadiusMm(
+        capCylinder, templateGrid !== null);
       const cyl = cropTrianglesInCylinder(scanPositions, siteCenter, cropAxis,
-                                          capCylinder.radiusMm,
+                                          isolationR,
                                           capCylinder.aboveMm,
                                           capCylinder.belowMm);
       if (templateGrid !== null) {
@@ -1385,13 +1392,22 @@ export function useSitePaneScene(
         // cut the gum out of the view, NOT the healing cap"): the scanned
         // screw-recess void has no template counterpart within any honest
         // band, so template distance only trims the PERIPHERY; everything
-        // within the rim minus a wall's width is the cap by construction
+        // within the catalog rim minus a wall's width is the cap by
+        // construction. Core-keep reads the CATALOG rim, never a tightened
+        // visible rim — that tightening is what deleted the walls.
         const matched = cropCapIsolation(
           cyl, templateGrid, CAP_MATCH_BAND_MM, siteCenter, cropAxis,
-          Math.max(capCylinder.radiusMm - 1.0, 1.2));
-        // a pose so wrong the band catches nothing falls back to the width
-        // cut rather than blanking the pane — absence would read as "no scan"
+          scanPaneCoreRadiusMm(capCylinder.catalogRadiusMm));
+        // a pose so wrong the band catches nothing falls back to the
+        // WIDTH cut (AS.18), not the opened isolation cylinder — that
+        // cylinder is wider so the walls can enter the match; without a
+        // match it would drag gum. Absence would read as "no scan".
         if (matched.length > 0) return matched;
+        if (isolationR !== capCylinder.radiusMm) {
+          return cropTrianglesInCylinder(
+            scanPositions, siteCenter, cropAxis,
+            capCylinder.radiusMm, capCylinder.aboveMm, capCylinder.belowMm);
+        }
       }
       return cyl;
     }

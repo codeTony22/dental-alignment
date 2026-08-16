@@ -19,7 +19,7 @@ import trimesh
 from case_prep.pipeline.csg import (exact_cap_punch, fabricated_face_mask,
                                     punch_solid, solidified_shell_cached,
                                     strip_fabricated, strip_tracked)
-from case_prep.pipeline.isolation import scanned_cap_face_mask
+from case_prep.pipeline.isolation import orphan_flap_mask, scanned_cap_face_mask
 from case_prep.pipeline.kernel import default_kernel
 
 _REGION_MARGIN_MM = 0.6  # cull slightly beyond the cap so no scanned cap sliver survives
@@ -201,6 +201,20 @@ def arch_with_parts_fused(arch: trimesh.Trimesh,
             else:
                 excise &= ~inside_mask
             keep = keep & ~excise
+
+            # DEFECT A — THE ORPHAN FLAPS (client-ruled, live verification
+            # 2026-08-15): see ``isolation.orphan_flap_mask``'s own docstring.
+            # Candidate faces are exactly the scan-provenance set the excision
+            # above just used (``scan_provenance``/``~inside_mask``, whichever
+            # path built it) restricted to what the strip actually kept —
+            # never a part's own surface, which this test must not touch.
+            scan_candidate = (scan_provenance if tracked_keep is not None
+                              else ~inside_mask)
+            site_poses = [(np.asarray(e_pose, float), float(e_rim_r))
+                         for _, e_pose, e_rim_r in excise_sites]
+            orphan = orphan_flap_mask(fused, site_poses,
+                                      candidate=keep & scan_candidate)
+            keep = keep & ~orphan
 
         F = np.asarray(fused.faces)
         V = np.asarray(fused.vertices, float)
@@ -554,6 +568,347 @@ def _gingival_floor_a(V: np.ndarray, solid: trimesh.Trimesh, index: int,
         base_a = float(((np.asarray(hits, float) - origin) @ axis).min())
         floor_a = max(floor_a, base_a + 0.3)
     return floor_a, h_low
+_BRIDGE_SEARCH_MM = 8.0     # generous outer bound past the mouth's own max radius
+_BRIDGE_Z_BAND_MM = 3.0     # a real moat sits close to the mouth's own height —
+#                             tighter than the file's other (radial) gum-ring bands
+#                             on purpose: an axial hole clean through a THIN model
+#                             (a boundary loop on the model's own FAR side, e.g. a
+#                             box fixture's underside) must never read as the near
+#                             side's own moat
+_BRIDGE_ROUNDNESS_MM = 0.3  # "roughly concentric" made a number: a loop's own
+#                             radial std about the axis past this is not a ring at
+#                             all — it is some other cut edge that merely passed
+#                             the radius/height gates (measured: a thin fixture's
+#                             own far-side exit hole reads 0.38mm here; the true
+#                             moat loop, cut by a lathe about one axis, reads ~0)
+
+
+def _boundary_loops_of(mesh: trimesh.Trimesh) -> "List[np.ndarray]":
+    """Every boundary loop of ``mesh``, as ordered ``(n, 3)`` point arrays
+    (``trimesh``'s own ``outline()``/``discrete`` — the same idiom
+    ``domain.channel.channel_from_boundary_loops`` reads catalog channel
+    loops through), first point never repeated. ``[]`` when ``mesh`` is
+    empty, watertight (no boundary at all), or its own boundary cannot be
+    walked at all (a junction ``outline()`` itself refuses) — the caller's
+    signal to fail open, never this function's to raise on."""
+    if len(mesh.faces) == 0:
+        return []
+    try:
+        outline = mesh.outline()
+    except Exception:  # noqa: BLE001 — an unreadable boundary is "no loops",
+        # for the caller's own fail-open ladder, never a raise from here
+        return []
+    loops = []
+    for loop in outline.discrete:
+        pts = np.asarray(loop, float)
+        if len(pts) >= 2 and np.allclose(pts[0], pts[-1]):
+            pts = pts[:-1]  # a closed polyline repeats its first vertex
+        if len(pts) >= 3:
+            loops.append(pts)
+    return loops
+
+
+def _zip_loop_bridge(inner_pts: np.ndarray, inner_theta: np.ndarray,
+                     outer_pts: np.ndarray, outer_theta: np.ndarray
+                     ) -> "Tuple[np.ndarray, np.ndarray, np.ndarray]":
+    """Triangulates a strip bridging two closed, "roughly concentric"
+    polylines of POSSIBLY DIFFERENT vertex counts, using every one of
+    their own REAL points — never an interpolated one — so the result can
+    be WELDED onto its source loops by an exact-coordinate vertex merge
+    afterward (``trimesh.Trimesh.merge_vertices``, run by the caller once
+    the bridge lands: real dental recesses and their scan edges are two
+    independently-tessellated loops, so a fixed common vertex count the
+    envelope-era collar's own synthesized rings could assume (git history,
+    ``35c888a``) does not hold here).
+
+    Both loops are sorted by bearing (``inner_theta``/``outer_theta``)
+    first, then walked TOGETHER on a common UNWRAPPED angle: at each step
+    the ring whose NEXT point sits at the smaller cumulative bearing
+    advances, and one triangle closes using the ring that just advanced
+    plus the other ring's current point. Comparing CUMULATIVE bearing
+    (each ring's own angles extended by one wrap-around entry at
+    ``theta[0] + 2*pi``) rather than the next LOCAL step's size is the
+    load-bearing choice: a local-step comparison let the denser ring run
+    all the way around while the sparser one had barely started (measured
+    directly at this slice's own pin time — a 32-vs-40-point fixture left
+    one ring's index wrapped back to its own start after only 2 of the
+    other ring's 32 steps, producing a self-crossing, inconsistently-
+    wound strip). Exactly ``len(inner_pts) + len(outer_pts)`` triangles; a
+    closed strip with exactly two boundary loops (the two inputs) and no
+    gaps; degenerates to the historical fixed-index strip when both loops
+    share a vertex count and are already angle-ordered.
+
+    Returns ``(sorted_inner_pts, sorted_outer_pts, faces)`` — ``faces``
+    indexes into ``np.vstack([sorted_inner_pts, sorted_outer_pts])``."""
+    io = np.argsort(inner_theta)
+    oo = np.argsort(outer_theta)
+    it = inner_theta[io]
+    ot = outer_theta[oo]
+    ip = inner_pts[io]
+    op = outer_pts[oo]
+    m, n = len(it), len(ot)
+    off = m
+    it_ext = np.concatenate([it, [it[0] + 2.0 * np.pi]])
+    ot_ext = np.concatenate([ot, [ot[0] + 2.0 * np.pi]])
+    faces = []
+    ai = bi = 0
+    ca = cb = 0
+    while ca < m or cb < n:
+        a_next, b_next = ai + 1, bi + 1
+        if ca >= m:
+            step_outer = True
+        elif cb >= n:
+            step_outer = False
+        else:
+            step_outer = ot_ext[b_next] < it_ext[a_next]
+        if step_outer:
+            faces.append([ai % m, off + (bi % n), off + (b_next % n)])
+            bi, cb = b_next, cb + 1
+        else:
+            faces.append([ai % m, off + (bi % n), a_next % m])
+            ai, ca = a_next, ca + 1
+    return ip, op, np.asarray(faces, int)
+
+
+def _loop_overlap_fraction(a: np.ndarray, b: np.ndarray,
+                           tol_mm: float = 1e-4) -> float:
+    """The fraction of ``a``'s own points that land within ``tol_mm`` of
+    SOME point of ``b`` — used to tell ``out``'s own duplicate of the
+    machined mouth (the shared cut edge every DEFECT-1 consumer's out/
+    socket split leaves standing on BOTH sides, bit-identical, because both
+    pieces are built from the very same source vertex array and neither
+    ever moves a surviving coordinate) apart from a genuine second ring.
+    ``1.0`` when every point of ``a`` matches; ``0.0`` when none do."""
+    from scipy.spatial import cKDTree
+
+    if len(a) == 0:
+        return 0.0
+    dist, _ = cKDTree(b).query(a)
+    return float(np.mean(np.asarray(dist) < tol_mm))
+
+
+def _bridge_recess_collar(out_boundary_loops: "Sequence[np.ndarray]",
+                          Vc: np.ndarray, socket_faces: np.ndarray,
+                          pose: np.ndarray, rim_r: float
+                          ) -> "Tuple[Optional[trimesh.Trimesh], Optional[str]]":
+    """DEFECT B — THE GAP RING (client-ruled, live verification 2026-08-15,
+    on the STANDING PRECEDENT of the envelope-era moat bridge: the collar
+    annulus ``cap_imprint_parts`` carried from §10-AO's original build
+    through §10-AS.7 "the collar drapes onto the gum" — git history
+    ``35c888a``, retired only when §10-AS.10's press carve replaced the
+    whole liner architecture with one seamless pressed shell, and the true
+    CSG carve after it cuts a real machined wall with nothing bridging its
+    mouth back to the scan). A healing cap's flange overhangs the gum
+    beneath it, and a scanner can never see what its own shadow hides —
+    the excision (dropping the scanned cap's own crust up to the machined
+    mouth) exposes that blind ring for what it always was: tissue that was
+    never captured, not tissue the cut failed to reach. TONIGHT'S RULING:
+    bridge it, fabricated-and-noted, never left standing open as a moat on
+    a print — the same precedent, applied to the carve that replaced the
+    liner which used to bridge it.
+
+    ``out_boundary_loops`` is the ARCH layer's own boundary loops, computed
+    ONCE by the caller over the whole carved arch before any site's bridge
+    has landed (every site reads the identical pre-bridge boundary — nether
+    an earlier site's own new bridge faces nor a later site's absence can
+    move what an earlier one sees). ``socket_faces`` is THIS site's own
+    tool-provenance faces alone (never another site's, never the untouched
+    scan) — a boolean-cut recess is a simple cup, open only where the punch
+    met the surface it removed, so its own boundary is the MACHINED MOUTH
+    exactly, with no radial search needed to find it.
+
+    Extraction is two loops, each required to stand alone. The MOUTH is the
+    socket submesh's own single boundary loop — more or fewer is a
+    junction, and this site's bridge is skipped, with a note naming the
+    count. The SCAN'S OPENING BOUNDARY is, among ``out_boundary_loops``,
+    the one loop whose every point sits radially beyond the mouth's own
+    farthest point (excluding the mouth's own duplicate — ``out`` always
+    carries one too, at the shared cut edge, and it fails this test because
+    most of ITS points sit at or under the mouth's own max radius), within
+    ``_BRIDGE_Z_BAND_MM`` of the mouth's own height, AND itself "roughly
+    concentric" about the SAME axis (``_BRIDGE_ROUNDNESS_MM`` — radial std
+    past this is not a ring, it is some unrelated cut edge that merely
+    passed the other two gates; see the constant's own comment for the
+    measured case this rules out: a thin fixture's FAR side, punched clean
+    through, sits close enough in height and radius to read as a second
+    candidate without this test). Zero qualifying loops means the excision
+    left nothing proud of the mouth at all — no gap, nothing to bridge, no
+    note (an honest "already flush", never a failure). More than one is
+    ambiguous, and skipped with a note naming the count — "never a mangled
+    ring" is the client's own words for the alternative.
+
+    THE TRIANGULATION reuses the envelope-era collar's own idiom (see
+    ``_zip_loop_bridge``'s docstring) — an inner-to-outer strip — over the
+    two loops' own REAL points, never an interpolated one: both the mouth
+    (read off ``socket_faces``) and the scan's own opening boundary (read
+    off ``out_boundary_loops``) contribute their actual vertex values, so
+    the caller's ``merge_vertices()`` after concatenation welds the bridge
+    onto BOTH — the moat closes for real, and the mouth vertices the
+    bridge and ``out``'s own kept scan share become one shared loop rather
+    than two coincident ones standing apart.
+
+    Returns ``(bridge_mesh, note)``. A built bridge always carries its own
+    note (the client's required sentence, verbatim); ``(None, None)`` means
+    genuinely nothing to bridge; ``(None, "why")`` is the fail-open path."""
+    if len(socket_faces) == 0:
+        return None, ("the recess has no machined surface at this site — "
+                      "the collar bridge was skipped")
+    socket_mesh = trimesh.Trimesh(Vc, socket_faces, process=False)
+    mouth_loops = _boundary_loops_of(socket_mesh)
+    if len(mouth_loops) == 0:
+        return None, ("the machined mouth has no boundary at this site — "
+                      "the collar bridge was skipped")
+
+    pose = np.asarray(pose, float)
+    origin = pose[:3, 3]
+    R = pose[:3, :3]
+    axis = R @ np.array([0.0, 0.0, 1.0])
+    xl = R @ np.array([1.0, 0.0, 0.0])
+    yl = R @ np.array([0.0, 1.0, 0.0])
+
+    # THE EXACTLY-ONE RULE, as delivered: the mouth must be the machined
+    # surface's single boundary loop, else the honest skip with the count —
+    # "never a mangled ring". KNOWN LIMITATION, integration-measured
+    # 2026-08-15: a REAL coded cap's imprint carries ~26–37 boundary loops
+    # (trench edges, floor cuts, deviation windows), so on real caps the
+    # bridge currently SKIPS with its note rather than firing — two quick
+    # window/height classifiers were tried at integration and each
+    # mis-modelled a different fixture population, so per the probe-first
+    # discipline the real-cap mouth classifier is a measured follow-up, not
+    # a guess landed tonight.
+    if len(mouth_loops) != 1:
+        return None, (
+            f"the machined mouth could not be read as one clean loop "
+            f"({len(mouth_loops)} found) — the collar bridge was skipped")
+    mouth = mouth_loops[0]
+
+    def _radial_axial(pts: np.ndarray) -> "Tuple[np.ndarray, np.ndarray]":
+        rel = pts - origin
+        return np.hypot(rel @ xl, rel @ yl), rel @ axis
+
+    mouth_r, mouth_a = _radial_axial(mouth)
+    mouth_r_max = float(mouth_r.max())
+    mouth_a_mid = float(mouth_a.mean())
+
+    outer_candidates = []
+    for loop in out_boundary_loops:
+        if _loop_overlap_fraction(loop, mouth) > 0.9:
+            # THE MOUTH'S OWN DUPLICATE (see this function's own docstring):
+            # ``out`` always carries a copy of this exact edge too, and for a
+            # PERFECTLY round recess every one of its points sits AT the
+            # mouth's own max radius, not below it — a radius-only test
+            # cannot tell the two loops apart, so point identity (both were
+            # built from the same source vertex array, unmoved) does.
+            continue
+        r, a = _radial_axial(loop)
+        if (np.all(r > mouth_r_max - 1e-6)
+                and np.all(r < mouth_r_max + _BRIDGE_SEARCH_MM)
+                and np.all(np.abs(a - mouth_a_mid) < _BRIDGE_Z_BAND_MM)
+                and float(r.std()) <= _BRIDGE_ROUNDNESS_MM):
+            outer_candidates.append(loop)
+    if not outer_candidates:
+        return None, None
+    if len(outer_candidates) > 1:
+        return None, (
+            f"{len(outer_candidates)} candidate boundary loops sit near the "
+            "recess mouth — the collar bridge was skipped")
+    outer = outer_candidates[0]
+
+    # THE TRIANGULATION reuses the envelope-era collar's own idiom (see
+    # ``_zip_loop_bridge``'s docstring) — an inner-to-outer strip — but
+    # joins the two loops' OWN REAL points (never an interpolated one),
+    # which is what lets the caller WELD the bridge onto ``out``'s own
+    # pre-existing "scan's opening boundary" loop by an exact-coordinate
+    # vertex merge: the OUTER ring here is built from the SAME vertex
+    # values as that pre-existing loop, so after the caller's
+    # ``merge_vertices()`` the moat closes for real, not merely visually.
+    mouth_theta = np.arctan2((mouth - origin) @ yl, (mouth - origin) @ xl)
+    outer_theta = np.arctan2((outer - origin) @ yl, (outer - origin) @ xl)
+    inner_sorted, outer_sorted, faces = _zip_loop_bridge(
+        mouth, mouth_theta, outer, outer_theta)
+    verts = np.vstack([inner_sorted, outer_sorted])
+    bridge = trimesh.Trimesh(verts, faces, process=False)
+    if float(np.asarray(bridge.face_normals, float).mean(axis=0) @ axis) < 0:
+        bridge = trimesh.Trimesh(verts, faces[:, ::-1], process=False)
+    note = ("the collar between the recess mouth and the scan's edge is "
+           "bridged — the tissue there sat under the cap and was never "
+           "scanned")
+    return bridge, note
+
+
+def _gingival_floor_a(V: np.ndarray, solid: trimesh.Trimesh, index: int,
+                      origin: np.ndarray, axis: np.ndarray, xl: np.ndarray,
+                      yl: np.ndarray, zs_p: np.ndarray, prof_p: np.ndarray,
+                      depth_mm: Optional[float]) -> Tuple[float, float]:
+    """THE GUM-FOLLOWING FLOOR (§10-AS.10's own ring-read heuristic, factored
+    here so every recess this module cuts — the dish, the platform
+    countersink, and the fourth artifact-6 ruling's gingival floor — shares
+    ONE measurement rather than three copies of it): the local gingival
+    height about one site's pose axis, read off the SOLIDIFIED shell's own
+    vertices (``V``, never the punch template's), and the floor's axial
+    coordinate ``depth_mm`` below it.
+
+    THE RING: the shell's own vertices just outside the cap's own footprint
+    (``r_ref = max(prof_p)``, the widest the relief envelope ever reaches) —
+    ``r_ref+0.1`` to ``r_ref+1.2`` radially, within 6mm of the site's own
+    mid-height axially. The LOW quartile of that band's axial height is the
+    read (``h_low``), not the median: a band that grazes a neighbouring
+    crown reads mostly tooth, and the lowest surface in it is the gingiva
+    (measured, cap6030: a median once read +3.2mm of "gum"). Fewer than 8
+    vertices in the band is an honest refusal (``ValueError``, naming the
+    site), never a floor guessed from nothing.
+
+    THE CLAMP, when ``depth_mm`` is given: ``h_low - depth_mm`` is floored
+    never below the envelope's own base (``zs_p[0]`` — a floor cannot sink
+    past the cap's own exact bottom plus its relief), then probed against
+    the SOLID itself — a downward ray at the footprint's centre plus four
+    off-axis points at ``0.6 * r_ref`` finds the model's true material limit
+    directly beneath this site (the same idiom the box fixture's own
+    -0.5mm underside is measured through); a floor that would land past
+    that limit is pulled up to 0.3mm above it, so a thin model never opens
+    a hole where a floor was asked for. ``depth_mm is None`` means "no
+    floor at all" — ``floor_a`` is the envelope's own base, unclamped.
+
+    Returns ``(floor_a, h_low)`` — ``h_low`` is also the tint-region
+    reference ``_csg_carve`` threads onward through ``regions``."""
+    rel = V - origin
+    a = rel @ axis
+    r = np.hypot(rel @ xl, rel @ yl)
+    r_ref = float(np.max(prof_p))
+    band = (r > r_ref + 0.1) & (r < r_ref + 1.2) & (np.abs(a) < 6.0)
+    if int(band.sum()) < 8:
+        raise ValueError(f"no gum ring around site {index}")
+    # the LOW quartile: a median once read a neighbouring crown as
+    # +3.2mm of gum; the lowest surface in the ring is the gingiva
+    h_low = float(np.percentile(a[band], 25))
+    if depth_mm is None:
+        return float(zs_p[0]), h_low
+    floor_a = max(h_low - float(depth_mm), float(zs_p[0]))
+    # the floor stays INSIDE the solid: on a thin model a punch that
+    # reaches past the underside cuts a through-hole, not a seat.
+    # A raw OPEN scan carries no "underside" of its own (it is one
+    # surface, not a slab) — reading the footprint's raw vertices
+    # for a "thin material" signal found only the SAME top surface
+    # again and pushed the floor above the gum entirely on a real
+    # single-sheet scan. The SOLIDIFIED shell (skirt + base) is the
+    # honest source: a ray straight down the pose axis, probed at
+    # the footprint's centre and a few off-axis points, finds the
+    # model's true material limit directly beneath this site —
+    # exactly the box fixture's own -0.5mm underside where one
+    # genuinely exists, and the base plate far below on an open
+    # single-sheet scan where none does.
+    probes = [origin + axis * 100.0]
+    if r_ref > 0:
+        for ang in (0.0, np.pi / 2, np.pi, 3 * np.pi / 2):
+            probes.append(origin + axis * 100.0
+                          + (xl * np.cos(ang) + yl * np.sin(ang))
+                          * (r_ref * 0.6))
+    hits, *_ = solid.ray.intersects_location(
+        ray_origins=probes, ray_directions=[-axis] * len(probes))
+    if len(hits):
+        base_a = float(((np.asarray(hits, float) - origin) @ axis).min())
+        floor_a = max(floor_a, base_a + 0.3)
+    return floor_a, h_low
 
 
 def _csg_carve(arch: trimesh.Trimesh,
@@ -670,6 +1025,14 @@ def _csg_carve(arch: trimesh.Trimesh,
         assert not (inside & ~keep).any(), (
             "a tool-provenance face was dropped by the tracked strip — "
             "the socket must be a subset of keep by construction")
+        # PER-SITE PROVENANCE (DEFECT B, the collar bridge below): each
+        # punch was appended to ``punches`` in ``sites`` order, so
+        # ``difference_tracked`` assigned it source ``base_groups + i`` —
+        # exact, by the same argument-order fact ``tool_provenance`` itself
+        # already rests on, never a re-derived guess.
+        site_inside_masks = [
+            np.asarray(tracked.source) == (tracked.base_groups + i)
+            for i in range(len(sites))]
     else:
         # THE UNTRACKED FALLBACK, VERBATIM (rider-b deliberately leaves this
         # branch untouched): when ``difference_tracked`` itself refused, no
@@ -680,15 +1043,23 @@ def _csg_carve(arch: trimesh.Trimesh,
         # v2@0.06, moves ``keep`` by up to 1,705 faces and needs its own
         # pin); this asymmetry is deliberate, not an oversight.
         C = np.asarray(cut.triangles_center, float)
-        inside = np.zeros(len(C), bool)
+        # PER-SITE (DEFECT B, the collar bridge below): the band test run
+        # separately per site before it is OR'd into the combined ``inside``
+        # every other branch of this function has always used — the
+        # combined array is unchanged, byte for byte, from before this
+        # slice.
+        site_inside_masks = []
         for origin, axis, xl, yl, zs_p, prof_p, floor_a, h_low in regions:
             rel = C - origin
             a = rel @ axis
             r = np.hypot(rel @ xl, rel @ yl)
             rmax = np.interp(np.clip(a, float(zs_p[0]), float(zs_p[-1])),
                              zs_p, prof_p)
-            inside |= ((r < rmax + 0.05) & (a > floor_a - 0.05)
-                      & (a < h_low + 3.0))
+            site_inside_masks.append(
+                (r < rmax + 0.05) & (a > floor_a - 0.05) & (a < h_low + 3.0))
+        inside = np.zeros(len(C), bool)
+        for site_mask in site_inside_masks:
+            inside |= site_mask
         # THE OPEN ARCH COMES BACK (§10-AS.16, client 2026-08-10: "why did we
         # build a dental model — we need to work with the open arch"): the
         # solidify base and skirt exist ONLY so the boolean has a solid to
@@ -733,6 +1104,19 @@ def _csg_carve(arch: trimesh.Trimesh,
         excise &= ~inside
     keep = keep & ~excise
 
+    # DEFECT A — THE ORPHAN FLAPS (client-ruled, live verification
+    # 2026-08-15): see ``isolation.orphan_flap_mask``'s own docstring. Runs
+    # AFTER the excision above, on both branches (the candidate mask is
+    # exactly the scan-provenance set that excision itself just used) — no
+    # note, by the excision's own contract: dropping measured cap remnant
+    # is measurement, not a degradation.
+    scan_candidate = ((np.asarray(tracked.source) == 0)
+                      if tool_provenance is not None else ~inside)
+    site_poses = [(np.asarray(pose, float), float(rim_r))
+                 for _, pose, _offset, rim_r in sites]
+    orphan = orphan_flap_mask(cut, site_poses, candidate=keep & scan_candidate)
+    keep = keep & ~orphan
+
     F = np.asarray(cut.faces)
     Vc = np.asarray(cut.vertices, float)
     out = trimesh.Trimesh(Vc.copy(), F[keep & ~inside].copy(), process=False)
@@ -741,6 +1125,32 @@ def _csg_carve(arch: trimesh.Trimesh,
     if bool(inside.any()):
         socket = trimesh.Trimesh(Vc.copy(), F[inside].copy(), process=False)
         socket.remove_unreferenced_vertices()
+
+    # DEFECT B — THE GAP RING: see ``_bridge_recess_collar``'s own docstring
+    # for the full argument. The arch layer's own boundary loops are read
+    # ONCE, before any site's bridge lands, so every site's own search sees
+    # the same pre-bridge boundary regardless of build order.
+    out_boundary_loops = _boundary_loops_of(out)
+    bridges: list = []
+    for index, ((_, site_pose, _offset, site_rim_r), site_inside) in enumerate(
+            zip(sites, site_inside_masks), 1):
+        if not bool(site_inside.any()):
+            continue
+        bridge, note = _bridge_recess_collar(
+            out_boundary_loops, Vc, F[site_inside], site_pose, site_rim_r)
+        if note is not None:
+            notes.append(f"site {index}: {note}")
+        if bridge is not None:
+            bridges.append(bridge)
+    if bridges:
+        out = trimesh.util.concatenate([out] + bridges)
+        # THE WELD: every bridge's own inner/outer rings carry the EXACT
+        # coordinate values of the loops they bridge (``_zip_loop_bridge``'s
+        # own docstring) — merging now, once, over the whole result, closes
+        # those seams for real rather than leaving two coincident copies
+        # standing apart.
+        out.merge_vertices()
+
     return out, socket, notes
 
 
@@ -939,6 +1349,17 @@ def _press_carve(arch: trimesh.Trimesh,
             continue
     excise &= ~face_moved
 
+    # DEFECT A — THE ORPHAN FLAPS (client-ruled, live verification
+    # 2026-08-15): see ``isolation.orphan_flap_mask``'s own docstring. Same
+    # PRISTINE-``arch`` reasoning as the excision just above (candidacy is
+    # everything not already pressed or excised); no note, by the
+    # excision's own contract.
+    site_poses = [(np.asarray(pose, float), float(rim_radius_mm))
+                 for _, pose, _offset, rim_radius_mm in sites]
+    orphan = orphan_flap_mask(arch, site_poses,
+                              candidate=~(face_moved | excise))
+    excise = excise | orphan
+
     out = trimesh.Trimesh(V.copy(), faces[~(face_moved | excise)].copy(),
                           process=False)
     out.remove_unreferenced_vertices()
@@ -979,9 +1400,8 @@ def open_arch_with_floored_holes(scan: trimesh.Trimesh,
     unfloored punch's natural bottom down to the solidified shell's base
     plate, so the bore opened all the way through — is gone entirely; the
     client's own words on it named the extended shaft itself as the defect.
-    A floored punch never needs one: ``exact_cap_punch`` is called WITH
-    ``floor_a`` this time, exactly as every other floored recess in this
-    module already is.
+    A floored envelope punch never needs one: ``punch_solid`` is called
+    WITH ``floor_a`` (the envelope-is-the-cut refinement below).
 
     THE ENVELOPE IS THE CUT (the same ruling, refined the same night on its
     own first emit — cap7030 tooth 29, run 20260815-224356-8056c2): the
@@ -1095,6 +1515,15 @@ def open_arch_with_floored_holes(scan: trimesh.Trimesh,
         if scan_provenance is not None:
             excise &= scan_provenance
         keep = keep & ~excise
+
+        # DEFECT A — THE ORPHAN FLAPS (client-ruled, live verification
+        # 2026-08-15): see ``isolation.orphan_flap_mask``'s own docstring —
+        # applied here too. No note, by the excision's own contract.
+        site_poses = [(np.asarray(pose, float), float(rim_radius_mm))
+                     for _, pose, _offset, rim_radius_mm in sites]
+        scan_candidate = keep if scan_provenance is None else (keep & scan_provenance)
+        orphan = orphan_flap_mask(cut, site_poses, candidate=scan_candidate)
+        keep = keep & ~orphan
 
         F = np.asarray(cut.faces)
         Vc = np.asarray(cut.vertices, float)

@@ -480,12 +480,23 @@ export function scanPaneRadiusMm(
  */
 export const CAP_MATCH_BAND_MM = 0.6;
 
+/** Pane 2's cap-only cylinder. `radiusMm` is the width-cut (§10-AS.18 may
+ *  tighten it to the measured visible rim). `catalogRadiusMm` is always the
+ *  catalog rim/2 — the matched rung reads it so a starved visible rim cannot
+ *  crop the cylindrical walls the aligner still seats on. */
+export type ScanPaneCapCylinder = {
+  readonly radiusMm: number;
+  readonly catalogRadiusMm: number;
+  readonly aboveMm: number;
+  readonly belowMm: number;
+};
+
 export function scanPaneCapCylinder(
   detail: CaseSessionDetail,
   declaredVariant: string | null = null,
   suggestedVariant: string | null = null,
   measuredDiameterMm: number | null = null,
-): { radiusMm: number; aboveMm: number; belowMm: number } | null {
+): ScanPaneCapCylinder | null {
   const target = declaredVariant ?? suggestedVariant;
   if (target === null) return null;
   for (const group of declarableGroups(detail)) {
@@ -499,10 +510,12 @@ export function scanPaneCapCylinder(
       if (typeof height !== "number" || !Number.isFinite(height)) return null;
       // THE SOFT-TISSUE SEPARATOR (§10-AS.18; whiskers dropped 2026-08-11,
       // client: "get the max diameter (width end-to-end) and cut that so we
-      // are only working on the scanned healing cap"): the crop is EXACTLY
-      // the cap's own width — min(catalog rim, the detector's measured
-      // visible rim), no cushion. A measured read wider than the catalog is
-      // overgrowth context, not a bigger cap; it only ever tightens.
+      // are only working on the scanned healing cap"): the WIDTH-CUT is
+      // EXACTLY the cap's own width — min(catalog rim, the detector's
+      // measured visible rim), no cushion. A measured read wider than the
+      // catalog is overgrowth context, not a bigger cap; it only ever
+      // tightens. The catalog radius is kept beside it: once a pose stands,
+      // `scanPaneIsolationRadiusMm` opens back to the walls.
       const catalogR = dia / 2;
       const measuredR =
         measuredDiameterMm !== null && Number.isFinite(measuredDiameterMm)
@@ -511,12 +524,36 @@ export function scanPaneCapCylinder(
       const r = measuredR !== null ? Math.min(catalogR, measuredR) : catalogR;
       return {
         radiusMm: Math.round(r * 10) / 10,
+        catalogRadiusMm: Math.round(catalogR * 10) / 10,
         aboveMm: 1.5,
         belowMm: Math.round((height + 1.5) * 10) / 10,
       };
     }
   }
   return null;
+}
+
+/**
+ * THE CYLINDER THE MATCHED RUNG ACTUALLY CROPS WITH. Width-only keeps
+ * §10-AS.18's tightened radius (no template yet to drop gum). Once the
+ * posed library cap is in hand, the pre-cut opens to catalog rim + the
+ * aligner's own 0.6 mm band — the walls sit at catalog radius, and a
+ * measured visible rim smaller than that (a submerged top) must not
+ * delete them before `cropCapIsolation` can keep them.
+ */
+export function scanPaneIsolationRadiusMm(
+  cyl: Pick<ScanPaneCapCylinder, "radiusMm" | "catalogRadiusMm">,
+  templateMatched: boolean,
+): number {
+  if (!templateMatched) return cyl.radiusMm;
+  return Math.round((cyl.catalogRadiusMm + CAP_MATCH_BAND_MM) * 10) / 10;
+}
+
+/** Core-keep inset from the CATALOG rim, never from a tightened visible
+ *  rim — `max(catalog − 1.0, 1.2)`, the same geometry
+ *  `cropCapIsolation` / the worker isolation already use. */
+export function scanPaneCoreRadiusMm(catalogRadiusMm: number): number {
+  return Math.max(catalogRadiusMm - 1.0, 1.2);
 }
 
 /**

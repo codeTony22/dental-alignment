@@ -34,6 +34,8 @@ import {
   positionsFrom,
   previewKeyFor,
   scanPaneCapCylinder,
+  scanPaneCoreRadiusMm,
+  scanPaneIsolationRadiusMm,
   scanPaneRadiusMm,
   seatedReadWanted,
   siteFrameFor,
@@ -1567,7 +1569,9 @@ describe("scanPaneRadiusMm — the cap-tight display band", () => {
     // "get the max diameter (width end-to-end) and cut that"), span from just
     // above the top-centre down past the cap's own base
     const cyl = scanPaneCapCylinder(twoVariants, "5020", null);
-    expect(cyl).toEqual({ radiusMm: 3.1, aboveMm: 1.5, belowMm: 4.9 });
+    expect(cyl).toEqual({
+      radiusMm: 3.1, catalogRadiusMm: 3.1, aboveMm: 1.5, belowMm: 4.9,
+    });
     // suggestion fills in when nothing is declared; declared wins otherwise
     expect(scanPaneCapCylinder(twoVariants, null, "5020")).toEqual(cyl);
   });
@@ -1582,11 +1586,32 @@ describe("scanPaneRadiusMm — the cap-tight display band", () => {
     // submerged cap's flanks, and the detector's own visible-rim read is the
     // only honest separator. Catalog Ø6.2 → 3.1; measured Ø4.0 → 2.0.
     expect(scanPaneCapCylinder(twoVariants, "5020", null, 4.0))
-      .toEqual({ radiusMm: 2.0, aboveMm: 1.5, belowMm: 4.9 });
+      .toEqual({
+        radiusMm: 2.0, catalogRadiusMm: 3.1, aboveMm: 1.5, belowMm: 4.9,
+      });
     // a measured read WIDER than the catalog is overgrowth context, not a
     // bigger cap — the catalog rim stands
     expect(scanPaneCapCylinder(twoVariants, "5020", null, 9.0))
-      .toEqual({ radiusMm: 3.1, aboveMm: 1.5, belowMm: 4.9 });
+      .toEqual({
+        radiusMm: 3.1, catalogRadiusMm: 3.1, aboveMm: 1.5, belowMm: 4.9,
+      });
+  });
+
+  it("the matched rung never lets a tighter visible rim cut the walls the aligner uses", () => {
+    // Pane 2's screenshot (tooth 29, "the healing cap only", 85° off axis):
+    // AS.18's measured-rim tightening cropped the cylinder INSIDE the
+    // cylindrical flanks. Alignment still seats on those walls; the pane
+    // could not show them. The width-only rung keeps the tightening (no
+    // template yet to drop gum). The matched rung opens to catalog + the
+    // aligner's own 0.6 mm band so the walls can enter the crop; template
+    // match still drops tissue past the CAD surface.
+    const tightened = scanPaneCapCylinder(twoVariants, "5020", null, 4.0)!;
+    expect(scanPaneIsolationRadiusMm(tightened, false)).toBe(2.0);
+    expect(scanPaneIsolationRadiusMm(tightened, true)).toBe(3.7);
+    const catalog = scanPaneCapCylinder(twoVariants, "5020", null)!;
+    expect(scanPaneIsolationRadiusMm(catalog, true)).toBe(3.7);
+    expect(scanPaneCoreRadiusMm(tightened.catalogRadiusMm)).toBe(2.1);
+    expect(scanPaneCoreRadiusMm(2.0)).toBe(1.2);
   });
 
   it("matches an ARCHIVED declaration by its full id (client 2026-08-10, tooth 3's 4.7mm gum window)", () => {
@@ -1609,7 +1634,9 @@ describe("scanPaneRadiusMm — the cap-tight display band", () => {
     expect(scanPaneRadiusMm(archived, "superseded-2026-07-13--6030"))
       .toBeCloseTo(3.7, 5);
     expect(scanPaneCapCylinder(archived, "superseded-2026-07-13--6030", null))
-      .toEqual({ radiusMm: 3.1, aboveMm: 1.5, belowMm: 6.9 });
+      .toEqual({
+        radiusMm: 3.1, catalogRadiusMm: 3.1, aboveMm: 1.5, belowMm: 6.9,
+      });
   });
 
   it("falls back to the standing band when the catalog serves no dimensions", () => {

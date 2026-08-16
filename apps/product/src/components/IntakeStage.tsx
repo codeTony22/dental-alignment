@@ -48,6 +48,7 @@ import {
   shouldAutoDetect,
   detectorDisagreement,
   discriminatorEvidenceSentence,
+  curveHonestySentence,
   siteCentre,
   sitePickerOffered,
   siteEvidence,
@@ -471,9 +472,13 @@ function SiteList({
       <ul className="decode-stepper__overview">
         {detail.sites.map((site) => {
           const discriminator = discriminatorEvidenceSentence(detail, site);
+          const curveHonesty = curveHonestySentence(detail, site);
           const rimPointCount = site.rim_points?.length ?? 0;
           const borderDisagreement = site.border_click_disagreement_mm ?? null;
-          const stacked = discriminator !== null || borderDisagreement !== null;
+          const stacked =
+            discriminator !== null ||
+            curveHonesty !== null ||
+            borderDisagreement !== null;
           return (
             <li key={site.tooth} className="intake-site">
               <button
@@ -532,6 +537,11 @@ function SiteList({
                 {discriminator !== null && (
                   <span data-role="site-discriminator" className="decode-stepper__state">
                     {discriminator}
+                  </span>
+                )}
+                {curveHonesty !== null && (
+                  <span data-role="site-curve-honesty" className="decode-stepper__state">
+                    {curveHonesty}
                   </span>
                 )}
                 {/* THE BORDER CLICKS' OWN DISAGREEMENT (§10-AL, task #33 item 4) — the

@@ -26,6 +26,7 @@ from case_prep.adapters.synthetic import make_gingiva_arch, make_scan_body_mesh
 from case_prep.domain.cap_catalog import CapSpec
 from case_prep.pipeline.auto_flow import ConfirmedSite, run_auto_case
 from case_prep.pipeline.isolation import (CAP_MATCH_BAND_MM, isolate_scanned_cap,
+                                          orphan_flap_mask,
                                           scanned_cap_face_mask)
 
 REAL = Path(__file__).resolve().parents[1] / "data" / "real"
@@ -231,6 +232,127 @@ class TestScannedCapFaceMask:
                                     process=False)
         mask_on_copy = scanned_cap_face_mask(copy_mesh, template, pose, RIM_R)
         assert np.array_equal(mask, mask_on_copy)
+
+
+def _pose_at(x: float, y: float, z: float) -> np.ndarray:
+    m = np.eye(4)
+    m[:3, 3] = [x, y, z]
+    return m
+
+
+class TestOrphanFlapMask:
+    """DEFECT A — THE ORPHAN FLAPS (client-ruled, live verification
+    2026-08-15). ``scanned_cap_face_mask``'s own 0.6mm template-match band
+    misses cap-margin surface that deviates MORE than the band, in the
+    annulus between the core-keep radius and the catalog rim — those
+    triangles dodge the excision and survive as loose slivers. The scene:
+    a dense flat "gum" sheet (the main body) plus a small BOX standing
+    ``trimesh.util.concatenate``-disjoint from it (never welded, so it is
+    its own connected component by construction) at radius 1.8mm about the
+    axis — inside ``rim_r=2.2``'s annulus (``core_r = max(2.2-1.0, 1.2) =
+    1.2``) and 0.8mm past a ``template_r=1.0`` cylinder's own wall, past
+    ``CAP_MATCH_BAND_MM`` (0.6mm)."""
+
+    RIM_R = 2.2
+    TEMPLATE_R = 1.0
+
+    def _scene(self, flap_centre=(1.8, 0.0, 2.0)):
+        sheet = trimesh.creation.box(extents=[10.0, 10.0, 1.0])
+        for _ in range(3):
+            sheet = sheet.subdivide()
+        flap = trimesh.creation.box(extents=[0.3, 0.3, 0.3])
+        flap.apply_translation(flap_centre)
+        mesh = trimesh.util.concatenate([sheet, flap])
+        pose = _pose_at(0.0, 0.0, 2.0)
+        return mesh, pose, len(sheet.faces)
+
+    def test_the_deviated_flap_dodges_the_shared_classifier(self):
+        """THE GAP THIS DEFECT CLOSES, proved first: at 0.8mm past the
+        template's own wall the flap sits outside ``CAP_MATCH_BAND_MM``
+        (0.6mm) and outside the core (radial 1.8 > core_r 1.2) — the
+        existing rung genuinely misses it, which is why connectivity, not a
+        wider band, is the fix."""
+        mesh, pose, n_sheet = self._scene()
+        template = trimesh.creation.cylinder(radius=self.TEMPLATE_R, height=4.0,
+                                             sections=64)
+        mask = scanned_cap_face_mask(mesh, template, pose, self.RIM_R)
+        assert not mask[n_sheet:].any(), \
+            "the flap must NOT be caught by the template-band classifier " \
+            "alone — that is the defect, not a red herring"
+
+    def test_the_orphan_component_is_flagged_whole(self):
+        mesh, pose, n_sheet = self._scene()
+        mask = orphan_flap_mask(mesh, [(pose, self.RIM_R)],
+                                candidate=np.ones(len(mesh.faces), bool))
+        assert mask[n_sheet:].all(), "every flap face must be flagged"
+        assert not mask[:n_sheet].any(), "the main sheet must never be flagged"
+
+    def test_the_main_body_is_never_a_candidate_even_inside_the_cylinder(self):
+        """THE GUARD, NAMED EXPLICITLY: shrink the sheet so its own bulk sits
+        entirely inside a generous cylinder — the biggest candidate
+        component must still survive, however it reads against the radial
+        test, because it IS the main body."""
+        sheet = trimesh.creation.box(extents=[1.0, 1.0, 1.0])
+        for _ in range(2):
+            sheet = sheet.subdivide()
+        flap = trimesh.creation.box(extents=[0.1, 0.1, 0.1])
+        flap.apply_translation((0.6, 0.0, 0.0))
+        mesh = trimesh.util.concatenate([sheet, flap])
+        pose = np.eye(4)
+        mask = orphan_flap_mask(mesh, [(pose, 5.0)],
+                                candidate=np.ones(len(mesh.faces), bool))
+        assert not mask[:len(sheet.faces)].any(), \
+            "the largest candidate component must never be an orphan"
+        assert mask[len(sheet.faces):].all(), \
+            "the smaller, disconnected component must still be flagged"
+
+    def test_a_component_reaching_outside_the_cylinder_is_kept(self):
+        """THE OTHER HALF OF THE GUARD (the client's own words: "a connected
+        gum tongue reaching into the cylinder: kept"): a disconnected sliver
+        with even ONE face outside the cylinder is real, ordinary tissue —
+        never dropped, however deep the rest of it sits inside."""
+        mesh, pose, n_sheet = self._scene()
+        tongue = trimesh.creation.box(extents=[0.3, 0.3, 6.0])
+        # spans radius ~1.8 (inside the annulus) out past radius 3.0 —
+        # ANY face outside rim_r=2.2 keeps the whole component
+        tongue.apply_translation((3.0, 0.0, 2.0))
+        scene = trimesh.util.concatenate([mesh, tongue])
+        mask = orphan_flap_mask(scene, [(pose, self.RIM_R)],
+                                candidate=np.ones(len(scene.faces), bool))
+        assert not mask[len(mesh.faces):].any(), \
+            "a component with a face outside the cylinder must be kept whole"
+        # the original flap is still caught
+        assert mask[n_sheet:len(mesh.faces)].all()
+
+    def test_candidate_mask_excludes_a_face_from_eligibility(self):
+        """A face the caller never marked candidate (a construction part's
+        own surface, another consumer's already-moved material) can never
+        be flagged, however it reads geometrically."""
+        mesh, pose, n_sheet = self._scene()
+        candidate = np.ones(len(mesh.faces), bool)
+        candidate[n_sheet:] = False  # the flap is explicitly ineligible
+        mask = orphan_flap_mask(mesh, [(pose, self.RIM_R)], candidate=candidate)
+        assert not mask.any(), \
+            "a face outside `candidate` must never be flagged as orphan"
+
+    def test_no_site_poses_returns_all_false(self):
+        mesh, _pose, _n = self._scene()
+        mask = orphan_flap_mask(mesh, [])
+        assert mask.shape == (len(mesh.faces),)
+        assert not mask.any()
+
+    def test_an_empty_mesh_returns_an_empty_mask_not_a_raise(self):
+        mask = orphan_flap_mask(trimesh.Trimesh(), [(np.eye(4), 2.0)])
+        assert mask.shape == (0,)
+
+    def test_default_candidate_is_every_face(self):
+        """``candidate=None`` (the default) considers every face of ``mesh``
+        eligible — the same outcome as passing an all-True mask explicitly."""
+        mesh, pose, n_sheet = self._scene()
+        mask_default = orphan_flap_mask(mesh, [(pose, self.RIM_R)])
+        mask_explicit = orphan_flap_mask(
+            mesh, [(pose, self.RIM_R)], candidate=np.ones(len(mesh.faces), bool))
+        assert np.array_equal(mask_default, mask_explicit)
 
 
 # --- emission: the auto_flow.py lane --------------------------------------------
