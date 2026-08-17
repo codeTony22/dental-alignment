@@ -63,7 +63,7 @@ class TestTheDispatch:
                             calls.append(("mark", tooth, list(point)))
                             or _outcome(operation="align-to-mark"))
         monkeypatch.setattr(adjust, "align_to_correspondence",
-                            lambda case, run_dir, tooth, pairs, fit_version:
+                            lambda case, run_dir, tooth, pairs, fit_version, seat_branch=None:
                             calls.append(("pairs", tooth, len(pairs)))
                             or _outcome())
         monkeypatch.setattr(adjust, "best_fit_site",
@@ -167,7 +167,7 @@ class TestTheFoldMatchesTheLiveTools:
             self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             adjust, "align_to_correspondence",
-            lambda case, run_dir, tooth, pairs, fit_version:
+            lambda case, run_dir, tooth, pairs, fit_version, seat_branch=None:
             _outcome(pairs=[{"observation": "midpoint"},
                             {"observation": "direction"}],
                      residual_rms_mm=0.05))
@@ -192,7 +192,7 @@ class TestTheFoldMatchesTheLiveTools:
         part and by how far."""
         monkeypatch.setattr(
             adjust, "align_to_correspondence",
-            lambda case, run_dir, tooth, pairs, fit_version:
+            lambda case, run_dir, tooth, pairs, fit_version, seat_branch=None:
             _outcome(pairs=[{"observation": "point"}, {"observation": "point"}],
                      residual_rms_mm=0.08, translation_mm=0.4123,
                      fit_version=adjust.PAIR_FIT_MATCHED_POINTS))
@@ -212,7 +212,7 @@ class TestTheFoldMatchesTheLiveTools:
         measured no movement" — the omission IS the honest statement."""
         monkeypatch.setattr(
             adjust, "align_to_correspondence",
-            lambda case, run_dir, tooth, pairs, fit_version:
+            lambda case, run_dir, tooth, pairs, fit_version, seat_branch=None:
             _outcome(pairs=[{"observation": "midpoint"}], residual_rms_mm=None,
                      fit_version=adjust.PAIR_FIT_AZIMUTH_ONLY))
         summary = _summary()
@@ -239,7 +239,7 @@ class TestEvidenceIsReAppliedUnderTheFoldItWasMeasuredUnder:
         seen = []
         monkeypatch.setattr(
             adjust, "align_to_correspondence",
-            lambda case, run_dir, tooth, pairs, fit_version:
+            lambda case, run_dir, tooth, pairs, fit_version, seat_branch=None:
             seen.append(fit_version) or _outcome())
         return seen
 
@@ -275,7 +275,7 @@ class TestEvidenceIsReAppliedUnderTheFoldItWasMeasuredUnder:
             self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             adjust, "align_to_correspondence",
-            lambda case, run_dir, tooth, pairs, fit_version:
+            lambda case, run_dir, tooth, pairs, fit_version, seat_branch=None:
             _outcome(pairs=[{"observation": "midpoint"}], residual_rms_mm=None))
         monkeypatch.setattr(adjust, "align_to_mark",
                             lambda case, run_dir, tooth, point:
@@ -317,3 +317,29 @@ class TestReApplyOnTheRealTree:
         report = json.loads(
             (out_dir / f"{case.id}-auto-report.json").read_text())
         assert report["evidence_reapplied"] == summary["evidence_reapplied"]
+
+
+class TestSeatBranchDispatch:
+    def test_the_recorded_seat_branch_is_forced_never_re_decided(
+            self, tmp_path, monkeypatch):
+        """GOAL-2 S3 (plan 2026-08-16): a v3 receipt's branch replays AS
+        RECORDED — the branch was decided on the geometry the operator
+        saw; fresh geometry gets its vote through the gates, never
+        through a silent re-decision. An entry with no branch (v2, or
+        pre-ruling) passes None and the fold decides as it always did."""
+        seen = []
+        monkeypatch.setattr(
+            adjust, "align_to_correspondence",
+            lambda case, run_dir, tooth, pairs, fit_version, seat_branch=None:
+            seen.append((fit_version, seat_branch)) or _outcome())
+        _reapply_evidence(_case(tmp_path), tmp_path, {13: [
+            {"kind": "pairs", "applied_at": "t1",
+             "pairs": [{"scan_point": [0.0, 0.0, 0.0]}],
+             "fit_version": adjust.PAIR_FIT_SEAT_AWARE,
+             "seat_branch": "rotate"},
+            {"kind": "pairs", "applied_at": "t2",
+             "pairs": [{"scan_point": [0.0, 0.0, 0.0]}],
+             "fit_version": adjust.PAIR_FIT_MATCHED_POINTS},
+        ]}, _summary())
+        assert seen == [(adjust.PAIR_FIT_SEAT_AWARE, "rotate"),
+                        (adjust.PAIR_FIT_MATCHED_POINTS, None)]

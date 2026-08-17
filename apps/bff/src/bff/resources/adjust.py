@@ -501,6 +501,13 @@ def _apply_tool(request: Request, case_id: str, tooth: int, run_tool,
         outcome = run_tool(case, run_dir)
     except (AdjustInvalid, AdjustRefused, UnknownSelection, ScanUnreadable) as exc:
         _refuse(exc)
+    # goal-2 S3: the seat branch is the WORKER's decision — stamp it from
+    # the outcome onto the evidence the future run will replay, so run.py
+    # can FORCE the recorded branch instead of silently re-deciding
+    if (evidence is not None
+            and getattr(outcome, "seat_branch", None) is not None):
+        evidence = evidence.model_copy(
+            update={"seat_branch": outcome.seat_branch})
     if not outcome.applied:
         # MEASURE ONLY: judged, reported, and NOT written — no rung moves, no
         # confirmation falls, nothing is persisted at all

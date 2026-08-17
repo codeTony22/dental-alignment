@@ -1009,6 +1009,12 @@ class AdjustOutcome:
     # — the fact that lets a receipt be read under the interpretation it was measured
     # under, years later. None on every tool that is not a fit-by-points.
     fit_version: Optional[int] = None
+    # WHICH SEAT BRANCH a seat-aware fit took ("rotate" | "slide", goal-2
+    # S2/S3) and the band it measured — the facts the BFF stamps onto the
+    # persisted evidence so a future run replays the branch as recorded.
+    # None on every act that is not a seat-aware fit-by-points.
+    seat_branch: Optional[str] = None
+    seat_band_mm: Optional[float] = None
     click_azimuth_deg: Optional[float] = None
     matched_feature_azimuth_deg: Optional[float] = None
     applied: bool = True
@@ -2037,7 +2043,8 @@ def matched_point_words(n_pairs: int, moved_mm: float, fit: MatchedPointFit,
 
 def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
                             pairs: Sequence[Correspondence],
-                            fit_version: int = PAIR_FIT_VERSION) -> AdjustOutcome:
+                            fit_version: int = PAIR_FIT_VERSION,
+                            seat_branch: Optional[str] = None) -> AdjustOutcome:
     """FIT BY POINTS: the operator names a feature on the LIBRARY PART and the same
     feature on the SCAN, and the cap MOVES so the named pairs meet.
 
@@ -2167,7 +2174,19 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
         # ``observations_for`` both folds share.
         seat_band: Optional[float] = None
         rotate_seated = False
-        if int(fit_version) >= PAIR_FIT_SEAT_AWARE and not fit.rotation_read:
+        seat_aware_act = int(fit_version) >= PAIR_FIT_SEAT_AWARE
+        if seat_branch is not None and seat_aware_act:
+            # THE REPLAY CONTRACT (goal-2 S3): the RECORDED branch is
+            # FORCED, never re-decided — the branch was chosen on the
+            # geometry the operator saw, and fresh geometry gets its vote
+            # through the gates below, not through a silent re-decision.
+            # The band is still measured, for the record's own honesty.
+            rotate_seated = (seat_branch == "rotate"
+                            and not fit.rotation_read)
+            if rotate_seated:
+                seat_band = seat_band_mm(ctx.template, ctx.local_points,
+                                         ctx.pose_local)
+        elif seat_aware_act and not fit.rotation_read:
             seat_band = seat_band_mm(ctx.template, ctx.local_points,
                                      ctx.pose_local)
             scan_lever = min(
@@ -2193,7 +2212,10 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
             cumulative = prior_cum + applied
             cand, excess = judge_rotation(ctx.template, ctx.local_points,
                                           ctx.pose_local, applied)
-            detail = (f"seated (rim band {seat_band:.2f}mm): "
+            banner = (f"seated (rim band {seat_band:.2f}mm)"
+                      if seat_band is not None
+                      else "replaying the recorded seated turn")
+            detail = (f"{banner}: "
                       f"{len(pairs)} pair(s) turned the cap "
                       f"{applied:+.1f}° about its seat (cumulative "
                       f"{cumulative:+.1f}°) — no slide; "
@@ -2204,8 +2226,9 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
                         "fit_version": PAIR_FIT_SEAT_AWARE,
                         "fit_shape": shape,
                         "seat_branch": "rotate",
-                        "seat_band_mm": round(seat_band, 3),
                         "rotation_read": False}
+            if seat_band is not None:
+                evidence["seat_band_mm"] = round(seat_band, 3)
             translation_mm = None
             applied_version = PAIR_FIT_SEAT_AWARE
             clocking, nudge_fields, files = _adopt_rotation(
@@ -2222,7 +2245,10 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
                                      if excess is not None else None),
                 pairs=residuals, residual_rms_mm=reported_rms,
                 cross_checked=checked, translation_mm=None,
-                fit_version=applied_version, pane_payload=payload)
+                fit_version=applied_version, seat_branch="rotate",
+                seat_band_mm=(round(seat_band, 3)
+                              if seat_band is not None else None),
+                pane_payload=payload)
         applied = fit.rotation_deg
         residuals, rms = matched_point_rows(labels, part_arr, fit)
         # READ BEFORE THE CANDIDATE EXISTS, exactly as the azimuth-only fold does: no
@@ -2287,6 +2313,8 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
         translation_mm: Optional[float] = round(moved_mm, 4)
         applied_version = (PAIR_FIT_SEAT_AWARE if seat_aware
                            else PAIR_FIT_MATCHED_POINTS)
+        outcome_seat_branch = "slide" if seat_aware else None
+        outcome_seat_band = seat_band if seat_aware else None
     else:
         # THE AZIMUTH-ONLY FOLD, unchanged in every digit — the fit a span set is, and
         # the fit every receipt written before the ruling was measured under.
@@ -2325,6 +2353,8 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
                     "fit_version": PAIR_FIT_AZIMUTH_ONLY, "fit_shape": shape}
         translation_mm = None
         applied_version = PAIR_FIT_AZIMUTH_ONLY
+        outcome_seat_branch = None
+        outcome_seat_band = None
 
     clocking, nudge_fields, files = _adopt_rotation(
         ctx, cand, applied, cumulative, "fit-by-points", detail, evidence)
@@ -2337,6 +2367,9 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
         stability_excess_mm=(round(excess, 3) if excess is not None else None),
         pairs=residuals, residual_rms_mm=reported_rms, cross_checked=checked,
         translation_mm=translation_mm, fit_version=applied_version,
+        seat_branch=outcome_seat_branch,
+        seat_band_mm=(round(outcome_seat_band, 3)
+                      if outcome_seat_band is not None else None),
         pane_payload=payload)
 
 

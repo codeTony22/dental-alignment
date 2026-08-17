@@ -2146,3 +2146,51 @@ class TestSeatedRotateAdoption:
         assert outcome.fit_version == 3
         assert outcome.translation_mm is None, \
             "the seated-rotate rung slid the cap — the ruling says turn it"
+
+
+@warmed_only
+class TestSeatBranchForcedOnReplay:
+    """GOAL-2 S3: the RECORDED branch is forced on replay. The same
+    leverable zero-delta pair that live-rotates must SLIDE when its
+    receipt says slide, and TURN when its receipt says rotate — history
+    decides the branch; the gates still judge the outcome."""
+
+    def _lever_pair(self, ctx):
+        rows = [r for r in clock_landmarks(ctx.template)
+                if r["lever_arm_mm"] >= 1.5]
+        if not rows:
+            pytest.skip("no leverable part feature on the warmed template")
+        row = rows[0]
+        world_pose = np.asarray(ctx.record["pose_matrix"], float)
+        canon = np.asarray(row["point"], float)
+        world = world_pose[:3, :3] @ canon + world_pose[:3, 3]
+        return Correspondence(feature_id=row["id"],
+                              scan_point=tuple(float(v) for v in world))
+
+    def test_a_recorded_slide_replays_as_a_slide(self, tmp_path):
+        case = next(c for c in discover_cases(REAL) if c.id == WARMED_CASE)
+        run_copy = tmp_path / "run"
+        shutil.copytree(WARMED_RUN, run_copy)
+        ctx = load_site(case, run_copy, WARMED_TOOTH)
+        try:
+            outcome = align_to_correspondence(
+                case, run_copy, WARMED_TOOTH, [self._lever_pair(ctx)],
+                seat_branch="slide")
+        except AdjustRefused:
+            return
+        assert outcome.translation_mm is not None, \
+            "a recorded slide re-decided itself into a turn"
+
+    def test_a_recorded_rotate_replays_as_a_rotate(self, tmp_path):
+        case = next(c for c in discover_cases(REAL) if c.id == WARMED_CASE)
+        run_copy = tmp_path / "run"
+        shutil.copytree(WARMED_RUN, run_copy)
+        ctx = load_site(case, run_copy, WARMED_TOOTH)
+        try:
+            outcome = align_to_correspondence(
+                case, run_copy, WARMED_TOOTH, [self._lever_pair(ctx)],
+                seat_branch="rotate")
+        except AdjustRefused:
+            return
+        assert outcome.translation_mm is None, \
+            "a recorded rotate re-decided itself into a slide"

@@ -163,11 +163,17 @@ def _reapply_evidence(case: CaseRecord, run_dir: Path,
                         part_point_end=p.get("part_point_end"))
                         for p in (entry.get("pairs") or [])]
                     recorded = entry.get("fit_version")
+                    branch = entry.get("seat_branch")
                     outcome = adjust.align_to_correspondence(
                         case, run_dir, tooth, pairs,
                         fit_version=(int(recorded)
                                      if isinstance(recorded, int)
-                                     else adjust.PAIR_FIT_AZIMUTH_ONLY))
+                                     else adjust.PAIR_FIT_AZIMUTH_ONLY),
+                        # goal-2 S3: the RECORDED branch is forced — a
+                        # receipted rotate replays as a rotate whatever
+                        # the fresh geometry says; the gates still judge
+                        seat_branch=(branch if isinstance(branch, str)
+                                     else None))
                 elif kind == "best_fit":
                     outcome = adjust.best_fit_site(
                         case, run_dir, tooth,

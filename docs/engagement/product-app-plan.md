@@ -3726,3 +3726,23 @@ fit_version 3. adjust 162 (7 new pins incl. the branch truth table),
 server_best_fit+evidence_reapply 38, bff 699. Queued next: S3 forces
 the RECORDED branch on re-apply (today a v3 replay re-decides on fresh
 geometry), S4 the teaching refusal, S5 named_mark on the wire.
+
+**AZ goal-2 slice 3 — the recorded seat branch is forced on replay (plan
+2026-08-16, approved).** `align_to_correspondence` gains `seat_branch`
+(None = live decision): a receipted "rotate" replays as a rotate and a
+receipted "slide" as a slide, whatever the fresh geometry says — the
+branch was decided on the geometry the operator SAW, and fresh geometry
+gets its vote through the certification gates, never through a silent
+re-decision (the re-click integrity rule's own logic). The band is still
+measured on a forced rotate for the record's honesty; unmeasurable reads
+"replaying the recorded seated turn" in the detail. `run.py`'s re-apply
+lane passes `entry["seat_branch"]` through; entries without one (v2,
+pre-rung) pass None and their fold decides as it always did.
+`AdjustOutcome` exposes `seat_branch`/`seat_band_mm`, and the BFF stamps
+the OUTCOME's branch onto the persisted `AlignmentEvidence` — never the
+request's (the branch is the worker's own decision; schema-additive,
+pre-rung entries load unchanged). Pins: the dispatch passes the recorded
+branch (and None for v2); the same leverable pair that live-rotates
+SLIDES under a forced "slide" and TURNS under a forced "rotate" on the
+warmed run; the BFF stamp + no-branch + old-entry round-trip. adjust +
+evidence_reapply + server_best_fit 203; bff 702.

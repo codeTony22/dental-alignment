@@ -277,3 +277,44 @@ class TestTheCountRidesTheDetail:
         by_tooth = {s["tooth"]: s for s in body["sites"]}
         assert by_tooth[4]["alignment_evidence_count"] == 2
         assert by_tooth[13]["alignment_evidence_count"] == 0
+
+
+class TestSeatBranchStamp:
+    """GOAL-2 S3 (plan 2026-08-16): WHICH SEAT BRANCH the worker took
+    ("rotate" | "slide") is the worker's own decision, and the BFF stamps
+    it from the outcome onto the persisted evidence — so a future run
+    FORCES the recorded branch (run.py) instead of silently re-deciding
+    on fresh geometry."""
+
+    def test_fit_by_points_stamps_the_branch_the_worker_took(
+            self, settings, product_root, monkeypatch):
+        from test_adjust_tools import outcome
+
+        client, _ = tooled(settings, product_root, monkeypatch,
+                           result=outcome(4, operation="fit-by-points",
+                                          seat_branch="rotate",
+                                          seat_band_mm=0.61))
+        assert client.post(
+            f"{BASE}/4/fit-by-points",
+            json={"pairs": [{"feature_id": "trench-01",
+                             "scan_point": [1.0, 2.0, 3.0]}]}).status_code == 200
+        (entry,) = evidence_of(product_root, 4)
+        assert entry.seat_branch == "rotate"
+
+    def test_an_act_without_a_branch_stamps_nothing(
+            self, settings, product_root, monkeypatch):
+        client, _ = tooled(settings, product_root, monkeypatch)
+        assert client.post(
+            f"{BASE}/4/fit-by-points",
+            json={"pairs": [{"feature_id": "trench-01",
+                             "scan_point": [1.0, 2.0, 3.0]}]}).status_code == 200
+        (entry,) = evidence_of(product_root, 4)
+        assert entry.seat_branch is None
+
+    def test_an_entry_persisted_before_the_rung_still_loads(self):
+        from bff.session import AlignmentEvidence
+
+        entry = AlignmentEvidence.model_validate(
+            {"kind": "pairs", "applied_at": "2026-08-10T00:00:00",
+             "pairs": [{"scan_point": [1.0, 2.0, 3.0]}], "fit_version": 2})
+        assert entry.seat_branch is None

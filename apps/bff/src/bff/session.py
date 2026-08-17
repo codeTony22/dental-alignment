@@ -121,6 +121,13 @@ class AlignmentEvidence(BaseModel):
     pairs: Optional[List[dict]] = None
     # kind="best_fit": the search diameter the operator ran with
     matching_diameter_mm: Optional[float] = None
+    # kind="pairs": WHICH SEAT BRANCH the worker took ("rotate" | "slide",
+    # goal-2 S2/S3) — stamped from the OUTCOME, never from the request: the
+    # branch is the worker's own decision on the geometry the operator saw,
+    # and the re-apply lane FORCES it (run.py) rather than re-deciding on
+    # fresh geometry. Absent on entries written before the rung, which
+    # replay under their fold's own semantics unchanged.
+    seat_branch: Optional[str] = None
     # kind="pairs": WHICH FOLD READ THESE PAIRS (client ruling 2026-08-15 — a point
     # pair now moves the part as well as turning it). The interpretation is stamped at
     # the moment of the act because §10-AD re-applies this entry to every future run:
