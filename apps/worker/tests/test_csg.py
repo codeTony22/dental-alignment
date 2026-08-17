@@ -1124,4 +1124,8 @@ class TestRealFleetJunctionSafety:
         assert solid.is_watertight
 
         _fused, notes = arch_with_parts_fused(arch, [])
-        assert notes == []
+        # goal-3 S2b (2026-08-17): the fuse's own union/strip pass sheds
+        # small debris and the cull SAYS so — the invariant working, not a
+        # fallback. Only that sentence is tolerable here; the fallback
+        # sentences this pin exists to refuse stay refused.
+        assert all("floating fragment" in n for n in notes), notes

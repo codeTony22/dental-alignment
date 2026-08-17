@@ -280,6 +280,7 @@ def arch_with_parts_fused(arch: trimesh.Trimesh,
             n_before = len(out.faces)
             out = trimesh.util.concatenate([out] + drape_strips)
             out.merge_vertices()
+            out = _shed_nonmanifold_strip_faces(out, n_before)
             if src_full is not None:
                 src_full = np.concatenate(
                     [src_full, np.full(len(out.faces) - n_before, -1,
@@ -930,6 +931,57 @@ def cull_floating_fragments(mesh: trimesh.Trimesh,
     return out, notes
 
 
+def _shed_nonmanifold_strip_faces(mesh: trimesh.Trimesh,
+                                  n_base_faces: int) -> trimesh.Trimesh:
+    """THE WELD'S MANIFOLD GUARD (the bowtie regression, 2026-08-17): the
+    vote's strip zips a MIXED population — round banks plus shard-fragment
+    boundary points — and wherever two theta-consecutive strip vertices
+    are not adjacent on their source loop, the weld can mint an edge that
+    ALREADY has two faces: a non-manifold (3+ face) edge the solidify
+    walker downstream cannot wrap (measured on 276794487's carve: 9
+    non-manifold input edges left the solidified shell with 4 bad edges
+    and the fused composite falling back). The strip's job is covering
+    the moat, never corrupting the manifold: per pass, ``fix_winding``
+    first propagates the base's own orientation into the strips (the
+    whole-strip mean-normal flip cannot guarantee per-edge agreement),
+    then any face AT OR PAST ``n_base_faces`` (the strips — concatenated
+    after the base) standing on a ≥3-face edge OR on a SAME-DIRECTION
+    duplicated edge (an orientation frustration the propagation could not
+    resolve — flipping the face fixes one edge and breaks another;
+    measured: 3 such pairs left the solidified shell watertight, volume
+    11249, yet ``is_volume`` False, and the union refused it as "not a
+    volume") is shed, iterating until clean. Open (1-face) edges are left
+    alone — the walker handles those by design, exactly as it handles the
+    arch's own rim."""
+    for _ in range(4):
+        trimesh.repair.fix_winding(mesh)
+        edges = mesh.edges_sorted
+        unique, inverse = trimesh.grouping.unique_rows(edges)
+        counts = np.bincount(inverse)
+        bad_edge = np.zeros(len(unique), bool)
+        bad_edge[counts >= 3] = True
+        face_bad = bad_edge[inverse].reshape(-1, 3).any(axis=1)
+        directed = mesh.edges
+        key = (directed[:, 0].astype(np.int64) * len(mesh.vertices)
+               + directed[:, 1])
+        order = np.argsort(key, kind="stable")
+        sk = key[order]
+        dup = np.zeros(len(key), bool)
+        same_prev = np.concatenate([[False], sk[1:] == sk[:-1]])
+        same_next = np.concatenate([sk[:-1] == sk[1:], [False]])
+        dup[order] = same_prev | same_next
+        face_bad |= dup.reshape(-1, 3).any(axis=1)
+        face_bad[:n_base_faces] = False
+        if not face_bad.any():
+            break
+        keep = ~face_bad
+        mesh = trimesh.Trimesh(
+            np.asarray(mesh.vertices, float).copy(),
+            np.asarray(mesh.faces)[keep].copy(), process=False)
+        n_base_faces = min(n_base_faces, len(mesh.faces))
+    return mesh
+
+
 def _longest_circular_run(mask: np.ndarray) -> "Tuple[int, int]":
     """``(length, start)`` of the longest circular run of True bins."""
     n = len(mask)
@@ -1155,23 +1207,48 @@ def _drape_scan_edge_to_cap_wall(out: trimesh.Trimesh,
     xl = R @ np.array([1.0, 0.0, 0.0])
     yl = R @ np.array([0.0, 1.0, 0.0])
 
+    V = np.asarray(out.vertices, float)
+    pv_idx = np.unique(np.asarray(out.faces)[part_faces].ravel())
+    if len(pv_idx) == 0:
+        return None, 0
     banks, fragmentary = _vote_banks(
         _boundary_loops_of(out), origin, axis, xl, yl,
         # the scan's edge starts AT the excision cylinder (whole faces die,
         # so surviving edge vertices sit up to a face's span inside the
         # rim) and the vote reaches the moat's own scale past it
         r_lo=float(rim_r) - 0.75, r_hi=float(rim_r) + _BANK_SEARCH_MM,
-        a_mid=0.0)
+        a_mid=0.0,
+        # the part's OWN boundary never votes (the bridge's mouth-dup rule,
+        # re-learned here 2026-08-17: the solidified scan's closure makes
+        # the union cut an intersection ring ON the part — a boundary loop
+        # of part-owned vertices the vote read as a "bank", and zipping
+        # onto part-adjacent vertex pairs minted the frustration edges the
+        # manifold guard then had to amputate)
+        exclude_pts=V[pv_idx])
+    if not banks:
+        return None, fragmentary
+    # PER-POINT part hygiene, drape-only (the carve's weld NEEDS every
+    # mixed-loop point; the drape does not): a mixed loop votes in full,
+    # so a few union-seam vertices — ON the part — can still reach a
+    # bank, and zipping onto part-adjacent pairs mints frustration edges
+    # (measured: 4 non-manifold + 8 misdirected on the annulus fixture).
+    # Where the scan touches the part it is already flush; those points
+    # simply drop.
+    from scipy.spatial import cKDTree as _KD
+    part_tree = _KD(V[pv_idx])
+    cleaned = []
+    for med, ring, window in banks:
+        d_part, _ = part_tree.query(ring)
+        keep_ring = ring[d_part >= _BANK_DUP_TOL_MM]
+        if len(keep_ring) >= 2:
+            cleaned.append((med, keep_ring, window))
+    banks = cleaned
     if not banks:
         return None, fragmentary
     banks.sort(key=lambda t: t[0])
     med0, bank_pts, window0 = banks[0]
     bank_total = sum(len(ring) for _m, ring, _w in banks)
 
-    V = np.asarray(out.vertices, float)
-    pv_idx = np.unique(np.asarray(out.faces)[part_faces].ravel())
-    if len(pv_idx) == 0:
-        return None, bank_total
     pv = V[pv_idx]
     rel = pv - origin
     pa = rel @ axis
@@ -1202,6 +1279,22 @@ def _drape_scan_edge_to_cap_wall(out: trimesh.Trimesh,
     if len(inner) < 2:
         return None, bank_total
     inner_pts = np.asarray(inner, float)
+    # THE PART SIDE OVERLAPS, NEVER WELDS (the bowtie regression's
+    # deepest lesson, 2026-08-17): the part is a CLOSED solid, so its
+    # surface edges already carry two faces — a strip edge welded onto
+    # one is born non-manifold, and the manifold guard then amputates the
+    # strip's whole inner side (measured on the annulus fixture: the
+    # crack ring it left alternated wall and sheet radii). A hair of
+    # radial inset keeps every inner vertex coordinate-distinct: the seam
+    # is visually sealed, topologically its own open edge — exactly what
+    # the solidify walker handles by design.
+    i_rel = inner_pts - origin
+    i_ax = i_rel @ axis
+    i_rad = i_rel - np.outer(i_ax, axis)
+    i_len = np.linalg.norm(i_rad, axis=1)
+    safe = i_len > 1e-9
+    inner_pts = inner_pts.copy()
+    inner_pts[safe] -= (i_rad[safe] / i_len[safe, None]) * 0.02
     i_theta = np.arctan2((inner_pts - origin) @ yl,
                          (inner_pts - origin) @ xl)
     i_phi = (i_theta - base) % (2.0 * np.pi)
@@ -1740,6 +1833,7 @@ def _csg_carve(arch: trimesh.Trimesh,
         if bridge is not None:
             bridges.append(bridge)
     if bridges:
+        n_base_faces = len(out.faces)
         out = trimesh.util.concatenate([out] + bridges)
         # THE WELD: every bridge's own inner/outer rings carry the EXACT
         # coordinate values of the loops they bridge (``_zip_loop_bridge``'s
@@ -1747,6 +1841,7 @@ def _csg_carve(arch: trimesh.Trimesh,
         # those seams for real rather than leaving two coincident copies
         # standing apart.
         out.merge_vertices()
+        out = _shed_nonmanifold_strip_faces(out, n_base_faces)
 
     out, cull_notes = cull_floating_fragments(out, site_poses)
     notes.extend(cull_notes)
@@ -2187,8 +2282,10 @@ def open_arch_with_floored_holes(scan: trimesh.Trimesh,
                 if bridge is not None:
                     bridges.append(bridge)
             if bridges:
+                n_base_faces = len(out.faces)
                 out = trimesh.util.concatenate([out] + bridges)
                 out.merge_vertices()
+                out = _shed_nonmanifold_strip_faces(out, n_base_faces)
 
         out, cull_notes = cull_floating_fragments(
             out, [(np.asarray(pose, float), float(rim_r))

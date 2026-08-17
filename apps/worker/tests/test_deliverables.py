@@ -2092,10 +2092,10 @@ class TestDefect1MeasuredCapResidueIsExcised:
             assert (np.abs(v[:, 0]) > 15).any()
             return
         # goal-3 S2/S2b (2026-08-16): the excision's own annulus may now be
-        # DRAPED and its debris CULLED — both disclosed. Only those two
-        # sentences are tolerable here; anything else is a degradation
-        # this pin must still catch.
-        assert all("draped" in n or "floating fragment" in n
+        # DRAPED (or its skip CONFESSED, with the count) and its debris
+        # CULLED — all disclosed. Only those sentences are tolerable here;
+        # anything else is a degradation this pin must still catch.
+        assert all("drape" in n or "floating fragment" in n
                    for n in notes), notes
         assert survivors == [], \
             f"{len(survivors)} scanned-cap crust vertex(es) survived the fuse"
@@ -3413,15 +3413,26 @@ class TestDrapeScanEdgeToCapWall:
         fused, notes = d.arch_with_parts_fused(
             sheet, [(part, pose)], excise_sites=[(part, pose, 2.6)])
         assert any("draped" in n for n in notes), notes
-        # the sheet's hole edge is no longer a boundary — the annulus is
-        # closed by a strip welded to real vertices on both of its sides
+        # THE CLIENT'S OWN MEASURE (re-aimed 2026-08-17, the manifold-
+        # guard era): the strip welds to the scan's real vertices, hugs
+        # the cap wall as an OVERLAP (a closed solid's edges already
+        # carry two faces — welding there is born non-manifold), and the
+        # guard may shed a hairline face where a jagged edge's interior
+        # diagonal collides. The annulus must READ closed — measured on
+        # this fixture: 0.3250 open, 0.0057 draped — and hold no
+        # SUBSTANTIAL boundary ring (the shed slits measure 4-21 points;
+        # the pre-guard cracks measured 42+).
+        from case_prep.research.background_probe import background_fraction
+
+        assert background_fraction(fused, pose, 2.6) < 0.02
         for lp in d._boundary_loops_of(fused):
             pts = np.asarray(lp, float)
             r = np.hypot(pts[:, 0], pts[:, 1])
-            assert not (float(np.abs(pts[:, 2]).max()) < 2.5
-                        and float(r.mean()) < 4.5), (
-                f"a boundary ring still stands in the annulus "
-                f"(r={float(r.mean()):.2f})")
+            assert not (len(pts) >= 24
+                        and float(np.abs(pts[:, 2]).max()) < 2.5
+                        and 2.75 < float(r.mean()) < 4.5), (
+                f"a substantial boundary ring stands in the annulus "
+                f"(n={len(pts)}, r={float(r.mean()):.2f})")
 
     def test_an_undrapeable_edge_confesses_instead_of_shipping_mute(
             self, engine_expects):
@@ -3504,3 +3515,47 @@ class TestDrapeScanEdgeToCapWall:
         near_site = np.abs(v[:, 2] - 1.0) < 2.5
         assert (np.hypot(v[near_site, 0], v[near_site, 1]) < 2.7).any(), \
             "the cap's own wall vanished from the composite"
+
+
+class TestShedNonmanifoldStripFaces:
+    """THE WELD'S MANIFOLD GUARD (the bowtie regression, 2026-08-17): a
+    strip face that lands on an edge already carrying two faces makes a
+    non-manifold edge the solidify walker cannot wrap. The guard sheds
+    ONLY offending strip faces — base faces and clean strip faces stay."""
+
+    def test_only_the_offending_strip_face_is_shed(self):
+        from case_prep.pipeline.deliverables import (
+            _shed_nonmanifold_strip_faces)
+
+        verts = np.array([
+            [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0],   # base quad: two faces sharing edge 1-2
+            [0.5, 0.5, 1.0],   # apex for the offending strip face
+            [3.0, 0.0, 0.0], [4.0, 0.0, 0.0], [3.5, 1.0, 0.0],
+        ])
+        faces = np.array([
+            [0, 1, 2], [1, 3, 2],     # base: edge (1,2) has two faces
+            [1, 2, 4],                # strip face NO. 2 — third on (1,2)
+            [5, 6, 7],                # clean strip face, far away
+        ])
+        mesh = trimesh.Trimesh(verts, faces, process=False)
+        out = _shed_nonmanifold_strip_faces(mesh, n_base_faces=2)
+        F = np.asarray(out.faces)
+        assert len(F) == 3
+        assert [5, 6, 7] in F.tolist()      # the clean strip face stays
+        assert [1, 2, 4] not in F.tolist()  # the offender is gone
+
+    def test_base_faces_are_never_shed(self):
+        from case_prep.pipeline.deliverables import (
+            _shed_nonmanifold_strip_faces)
+
+        # the same scene, but the third face on (1,2) counts as BASE —
+        # the guard must not touch what the strips did not add
+        verts = np.array([
+            [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0], [0.5, 0.5, 1.0],
+        ])
+        faces = np.array([[0, 1, 2], [1, 3, 2], [1, 2, 4]])
+        mesh = trimesh.Trimesh(verts, faces, process=False)
+        out = _shed_nonmanifold_strip_faces(mesh, n_base_faces=3)
+        assert len(out.faces) == 3

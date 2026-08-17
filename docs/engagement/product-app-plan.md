@@ -3657,3 +3657,40 @@ all-CSG sweep (~6 min) must not triple the certification gate. The
 encore reference image remains conversation-only — docs/engagement/
 references/ still wants a saved copy from the client. semantics 3,
 deliverables 100, probe 5, csg fast 40; accept-fleet 9/9.
+
+**AX the manifold guard — the battery's bowtie red, run to ground
+(2026-08-17).** The full battery over the goal-3 arc returned 3 reds.
+Two are NOT this lane's: `test_inverted_density_disables_prior` and
+`test_coded_face_clocking_is_recovered[cap7030]` fail IDENTICALLY at
+7267e43 (pre-slice, proven in a worktree) — they arrived with 83c4296,
+the parallel session's 2026-08-15 detection batch (cap-detection
+adapters, ring_dp, circle_fit, +142 test lines), merged without a full
+slow battery; that lane owns them (the density prior anti-correlates on
+inverted-density meshes instead of disabling; cap7030's shipped clocking
+0.79 reads worse than its rotated 0.71). The third was OURS and deep:
+the vote's strip, zipping a MIXED population, minted non-manifold and
+orientation-frustrated edges the solidify walker could not wrap
+(measured on 276794487: 9 bad input edges → 4 bad output edges →
+`is_volume` False → tab 2's fuse fell back). THREE measured repairs:
+(1) `_shed_nonmanifold_strip_faces` at every weld — fix_winding
+propagates the base's orientation into the strips, then any strip face
+on a ≥3-face or same-direction-duplicated edge is shed (base faces
+never); (2) THE TOPOLOGY DOCTRINE — a strip cannot edge-join a CLOSED
+solid without going non-manifold, so the drape now OVERLAPS the cap
+(0.02mm radial inset, welds only to the scan side) and the part's own
+boundary loops are dup-excluded from its vote (the solidified closure
+makes the union cut an intersection ring ON the part, which the vote
+read as a "bank"); (3) consequence, pinned: a fused site is NECESSARILY
+the main body plus its own overlapping part body — the no-floaters
+invariant is SPATIAL, not face-adjacency (semantics pin ≤2 bodies with
+the extra one seated at the site; fleet judge body_limit 1+n_sites for
+fused). The annulus fixture reads 0.3250 open → 0.0057 draped; the
+bowtie passes; csg 41, deliverables 102, semantics 3, probe 5.
+accept-fleet re-measured overlap-era: 9/9 green, deltas
+capless ≤ +0.053, floored ≤ +0.052, fused ≤ +0.097, with TWO dated
+KNOWN entries — cap6020 fused +0.157 (stale 2026-08-10 pose; client
+action: re-run its alignment) and neodent-gm fused site 2 +0.120 (the
+guard-era drape reaches less than the corrupt weld did on this
+thin-moat site; queued: measure the per-point tolerance against that
+moat's own width). The §10-AV entry's "ONE connected component" claim
+for tab 1 is corrected by this entry's spatial reading.

@@ -162,13 +162,22 @@ class TestEveryArtifactShipsConnected:
         if not engine_expects.tracked:
             return
         template, _pose, _o, rim_r = site
-        # the part must genuinely CROSS the sheet (a tangent contact at the
-        # cylinder's own base plane unions to two disjoint bodies — the
-        # protect rule then keeps both, honestly, which is not this pin)
         sunk_pose = _pose_at(0.0, 0.0, -0.5)
         fused, _n3 = d.arch_with_parts_fused(
             scan, [(template.copy(), sunk_pose)],
             excise_sites=[(template, sunk_pose, rim_r)])
         comps = fused.split(only_watertight=False)
-        assert len(comps) == 1, \
-            f"{len(comps)} bodies in the fused composite on a welded fixture"
+        # THE INVARIANT IS SPATIAL, NOT TOPOLOGICAL (learned 2026-08-17,
+        # the manifold-guard era): the erase ruling ALWAYS excises the
+        # union-seam ring (its face centroids sit inside the rim), and a
+        # strip cannot edge-join a CLOSED part without going
+        # non-manifold — so a fused site is necessarily the main body
+        # plus its own OVERLAPPING part body. Two bodies, both seated;
+        # anything beyond is a floater the cull must have eaten.
+        assert len(comps) <= 2, \
+            f"{len(comps)} bodies in the fused composite"
+        if len(comps) == 2:
+            small = min(comps, key=lambda c: len(c.faces))
+            ctr = np.asarray(small.triangles_center, float).mean(axis=0)
+            assert np.hypot(ctr[0], ctr[1]) < rim_r + 1.0, \
+                "the extra body is not the site's own part — it floats"
