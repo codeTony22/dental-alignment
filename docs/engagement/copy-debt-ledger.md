@@ -546,3 +546,17 @@ WHAT DEPARTED (product-own markup, no demo counterpart):
    site coloured by the served counts (`--pass` for ready, `--flag` for flagged).
 3. The scan-arrival panel keeps its recorded SOLID border (dashed = the universal
    drop-here signal, still refused); only its type compacts to the comp's scale.
+
+Row 5 record, ADDENDUM (goal-2 S2-S4, 2026-08-17) — THE SEAT-AWARE FOLD AND THE
+TEACHING REFUSAL DIVERGE FROM THE FROZEN GATES' COPY:
+- `PAIR_FIT_SEAT_AWARE = 3` (§10-AY): a clock-unread pair on a SEATED cap turns it
+  about its seat (`seat_band_mm`, read by the SAME rim instrument the gate copy
+  carries) instead of sliding. The demo's fold has no seat branch and never will —
+  the divergence is product-only, versioned, and v2 receipts replay their slide
+  verbatim.
+- The rim-band gate's SENTENCE is byte-identical to the lifted copy, but the
+  product's exception now carries `gate="rim-band"` and a ONE-PAIR slide refusal
+  APPENDS the lesson "one pair can only slide the cap — a second pair gives the fit
+  a chord to turn it" (§10-BA). The demo's 409 stays the bare gate sentence.
+- The recorded seat branch is FORCED on §10-AD re-apply (`seat_branch`, §10-AZ) —
+  a replay concept the demo does not have.

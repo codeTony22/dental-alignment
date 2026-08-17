@@ -2194,3 +2194,55 @@ class TestSeatBranchForcedOnReplay:
             return
         assert outcome.translation_mm is None, \
             "a recorded rotate re-decided itself into a slide"
+
+
+class TestTheRefusalTeaches:
+    """GOAL-2 S4 (plan 2026-08-16; the live 409's confusion: "but i marked
+    in the correct points"): a rim-band refusal of a ONE-PAIR slide now
+    says WHY the slide was the mechanism and what buys a turn instead.
+    The gate's own sentence stays byte-identical — the teaching is
+    appended, never a rewording."""
+
+    def test_the_rim_band_refusal_names_its_gate(self):
+        from case_prep.application.adjust import AdjustRefused
+
+        exc = AdjustRefused("the rim band would leave the scan", gate="rim-band")
+        assert exc.gate == "rim-band"
+        assert str(exc) == "the rim band would leave the scan"
+
+    def test_a_plain_refusal_carries_no_gate(self):
+        from case_prep.application.adjust import AdjustRefused
+
+        assert AdjustRefused("too few scan points").gate is None
+
+    def test_a_one_pair_rim_band_refusal_teaches_the_chord(self):
+        from case_prep.application.adjust import (AdjustRefused,
+                                                  _teach_slide_refusal)
+
+        original = AdjustRefused(
+            "the rim band would leave the scan (1.05 → 3.89mm, refusal at "
+            "1.6mm-and-worsening)", gate="rim-band")
+        taught = _teach_slide_refusal(original, n_pairs=1,
+                                      rotation_read=False)
+        # the gate's sentence, byte-identical, then the lesson
+        assert str(taught).startswith(str(original))
+        assert ("one pair can only slide the cap — a second pair gives "
+                "the fit a chord to turn it") in str(taught)
+        assert taught.gate == "rim-band"
+
+    def test_a_chord_that_read_the_clock_is_not_lectured(self):
+        from case_prep.application.adjust import (AdjustRefused,
+                                                  _teach_slide_refusal)
+
+        original = AdjustRefused("the rim band would leave the scan",
+                                 gate="rim-band")
+        assert _teach_slide_refusal(original, n_pairs=2,
+                                    rotation_read=True) is original
+
+    def test_other_gates_keep_their_own_words(self):
+        from case_prep.application.adjust import (AdjustRefused,
+                                                  _teach_slide_refusal)
+
+        original = AdjustRefused("the top face would pull off the scan")
+        assert _teach_slide_refusal(original, n_pairs=1,
+                                    rotation_read=False) is original

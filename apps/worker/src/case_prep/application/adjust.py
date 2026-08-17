@@ -128,7 +128,16 @@ class AdjustInvalid(ValueError):
 
 class AdjustRefused(RuntimeError):
     """A GATE said no. The message is the gate's own sentence, servable verbatim (the
-    demo's 409). Nothing was written: a refusal changes nothing at all."""
+    demo's 409). Nothing was written: a refusal changes nothing at all.
+
+    ``gate`` (goal-2 S4) names WHICH gate spoke, machine-readably, so a caller
+    can teach without parsing the sentence — today only the rim-band rule
+    names itself, because the one-pair-slide lesson is the only teaching a
+    gate has earned. The sentence itself stays byte-identical either way."""
+
+    def __init__(self, message: str, gate: "Optional[str]" = None):
+        super().__init__(message)
+        self.gate = gate
 
 
 class AlreadyOptimal(AdjustRefused):
@@ -682,7 +691,24 @@ def _certification_gates(template: trimesh.Trimesh, L: np.ndarray, t_now: np.nda
                 and bv1 >= _NUDGE_BAND_REFUSAL_MM and bv1 > bv0 + 0.02):
             raise AdjustRefused(f"the rim band would leave the scan "
                                 f"({bv0:.2f} → {bv1:.2f}mm, refusal at "
-                                f"{_NUDGE_BAND_REFUSAL_MM}mm-and-worsening)")
+                                f"{_NUDGE_BAND_REFUSAL_MM}mm-and-worsening)",
+                                gate="rim-band")
+
+
+def _teach_slide_refusal(exc: AdjustRefused, n_pairs: int,
+                         rotation_read: bool) -> AdjustRefused:
+    """THE REFUSAL TEACHES (goal-2 S4; the live 409's confusion: "but i
+    marked in the correct points"): when the RIM-BAND gate refuses a slide
+    whose marks could not read the clock, the operator placed a correct
+    mark and got a correct refusal — of a mechanism they never chose. The
+    lesson is appended AFTER the gate's own byte-identical sentence: what
+    buys a turn instead is a second pair. Every other gate, and every
+    clock-reading set, keeps its own words — there is nothing to teach."""
+    if exc.gate != "rim-band" or rotation_read or n_pairs != 1:
+        return exc
+    return AdjustRefused(
+        f"{exc}; one pair can only slide the cap — a second pair gives "
+        f"the fit a chord to turn it", gate=exc.gate)
 
 
 def seat_band_mm(template: trimesh.Trimesh, L: np.ndarray,
@@ -2271,7 +2297,10 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
         # A TRANSLATION IS NEW MOVEMENT and is judged by the same calibrated bounds
         # that judge a rotation — face mean, top-face p90, the rim band. They are
         # relative (before vs after over the same points), so they read the whole move.
-        _certification_gates(ctx.template, ctx.local_points, ctx.pose_local, cand)
+        try:
+            _certification_gates(ctx.template, ctx.local_points, ctx.pose_local, cand)
+        except AdjustRefused as exc:
+            raise _teach_slide_refusal(exc, len(pairs), fit.rotation_read)
         moved_mm = float(np.linalg.norm(seat.translation))
         # the SAME rows, re-read at the pose that landed. The two sets agree to
         # floating point — rotating a rigid pair of clouds together changes no

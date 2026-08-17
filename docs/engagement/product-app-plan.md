@@ -3746,3 +3746,18 @@ branch (and None for v2); the same leverable pair that live-rotates
 SLIDES under a forced "slide" and TURNS under a forced "rotate" on the
 warmed run; the BFF stamp + no-branch + old-entry round-trip. adjust +
 evidence_reapply + server_best_fit 203; bff 702.
+
+**BA goal-2 slice 4 — the refusal teaches (plan 2026-08-16, approved; the
+live 409's confusion: "but i marked in the correct points").**
+`AdjustRefused` gains `gate` — machine-readable, today only the rim-band
+rule names itself, because the one-pair-slide lesson is the only teaching
+a gate has earned. When the rim-band gate refuses a slide whose single
+pair could not read the clock, `_teach_slide_refusal` appends — AFTER the
+gate's byte-identical sentence — "one pair can only slide the cap — a
+second pair gives the fit a chord to turn it". A clock-reading chord and
+every other gate keep their own words untouched; the taught refusal
+travels the existing 409 wire with no BFF or product change. With the
+§10-AY rung landed the seated case now rotates instead of ever reaching
+this refusal — the lesson remains for the unseated and forced-slide
+paths. Copy-debt row 5 addendum records the seat-aware fold + teaching
+divergences from the frozen gate copy. adjust narrow lane 208; bff 702.
