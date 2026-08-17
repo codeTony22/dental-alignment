@@ -3694,3 +3694,35 @@ guard-era drape reaches less than the corrupt weld did on this
 thin-moat site; queued: measure the per-point tolerance against that
 moat's own width). The §10-AV entry's "ONE connected component" claim
 for tab 1 is corrected by this entry's spatial reading.
+
+**AY goal-2 slices 1+2 — the seat as a number, and rotate-when-seated
+(plan 2026-08-16, approved; client ruling via AskUserQuestion: "Rotate
+when seated").** `seat_band_mm` reads the seat by the SAME instrument the
+certification gate's rim rule uses (`_posed_rim_centre` +
+`_rim_agreement_mm` — one source of truth). THE DE-RISK PROBE'S FINDING
+(fleet, 2026-08-17): landed poses read 0.34-1.28mm, and mm-scale slides
+STAY under the gate's 1.6 (a slid ring lands on neighbouring gum) — the
+band does not discriminate small displacements and does not need to: the
+threshold's job is refusing the rung on GROSSLY-lost poses (the live
+409's proposed slide read 3.89; an unmeasurable rim reads None — fail
+closed). THE RUNG: `PAIR_FIT_SEAT_AWARE = 3` (now the live version) —
+one pair (or a sub-chord baseline) on a SEATED cap turns it about its
+seat instead of sliding it, the slide having been the live 409's own
+mechanism. `seated_rotate_applies` is the PURE decision (seat-aware
+version ∧ clock unread ∧ band < 1.6 ∧ BOTH halves' levers ≥
+MIN_LEVER_ARM_MM); the rotation is the pair's azimuth delta from the
+SAME `observations_for` both folds share, judged by the full rotation
+ladder — ring-fixed kinematics, the stability bound, every certification
+gate (a big delta the bound refuses is an answer, not a defect). No
+slide: `translation_mm` None. Evidence gains `seat_branch` +
+`seat_band_mm`; a seat-aware act that took the SLIDE branch (near-axis,
+unseated, or a clock-reading chord) says so too. v2 receipts replay
+their slide verbatim — three delivered v2 pins re-aimed AS the v2 replay
+pins (explicit `fit_version=PAIR_FIT_MATCHED_POINTS`), the near-axis
+screw-access pin re-aimed to the live version (the rung rightly declines
+it, slide semantics verbatim). LIVE on the warmed run: "seated (rim band
+0.61mm): 1 pair(s) turned the cap +0.0° about its seat — no slide",
+fit_version 3. adjust 162 (7 new pins incl. the branch truth table),
+server_best_fit+evidence_reapply 38, bff 699. Queued next: S3 forces
+the RECORDED branch on re-apply (today a v3 replay re-decides on fresh
+geometry), S4 the teaching refusal, S5 named_mark on the wire.

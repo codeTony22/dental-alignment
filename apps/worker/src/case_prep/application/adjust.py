@@ -685,6 +685,35 @@ def _certification_gates(template: trimesh.Trimesh, L: np.ndarray, t_now: np.nda
                                 f"{_NUDGE_BAND_REFUSAL_MM}mm-and-worsening)")
 
 
+def seat_band_mm(template: trimesh.Trimesh, L: np.ndarray,
+                 pose_local: np.ndarray) -> Optional[float]:
+    """THE SEAT AS A NUMBER (goal-2 S1, plan 2026-08-16; client ruling
+    "rotate when seated"): how far the scan's visible rim ring sits from
+    the posed template (p90, mm) — read by the SAME instrument the
+    certification gate's rim rule uses (``_posed_rim_centre`` +
+    ``_rim_agreement_mm``, one source of truth, never a second copy of
+    the band construction).
+
+    THE DE-RISK PROBE'S FINDING (fleet, 2026-08-17): landed poses read
+    0.34-1.28mm; mm-scale displacements STAY under the gate's 1.6 (a
+    slid ring lands on neighbouring gum), so this number does not
+    discriminate small slides — and does not need to. "Seated" gates the
+    seated-rotate rung, whose rotate-in-place cannot drag the rim off
+    the scan, and whose outcome the certification gates re-judge anyway.
+    What the threshold refuses is a GROSSLY-lost pose, where rotating
+    about a wrong rim centre would be garbage: the live 409's proposed
+    slide read 3.89, and a rim the instrument cannot even measure reads
+    ``None`` — fail closed, never seated."""
+    ac = _posed_rim_centre(template, np.asarray(pose_local, float))
+    if ac is None:
+        return None
+    tv = np.asarray(template.vertices, float)
+    ar = float(np.percentile(np.linalg.norm(tv[:, :2], axis=1), 97))
+    band = _rim_agreement_mm(L, ac, ar, template,
+                             np.asarray(pose_local, float))
+    return float(band) if band is not None else None
+
+
 def judge_rotation(template: trimesh.Trimesh, L: np.ndarray, t_now: np.ndarray,
                    applied: float) -> Tuple[np.ndarray, float]:
     """One operator rotation proposal through the FULL judging path every rotation
@@ -1766,9 +1795,47 @@ def require_pair_agreement(rows: Sequence[dict], rms_mm: float) -> None:
 
 PAIR_FIT_AZIMUTH_ONLY = 1
 PAIR_FIT_MATCHED_POINTS = 2
+# THE SEATED-ROTATE RUNG (goal-2 S2, client ruling 2026-08-16 "rotate when
+# seated"): under this version a single pair (or a chord too short to read
+# the clock) on a SEATED cap turns it about its seat instead of sliding it.
+# The slide was the live 409's own mechanism — a 1-pair slide dragged the
+# rim band 1.05 → 3.89mm and the gate rightly refused; a rotate-in-place
+# cannot drag the rim off. v2 receipts replay their slide verbatim: the
+# rung reads the RECORDED version, never rewrites history.
+PAIR_FIT_SEAT_AWARE = 3
 # what the LIVE tools record and compute under today; older evidence carries no marker
 # at all and is re-applied under PAIR_FIT_AZIMUTH_ONLY by ``run._reapply_evidence``
-PAIR_FIT_VERSION = PAIR_FIT_MATCHED_POINTS
+PAIR_FIT_VERSION = PAIR_FIT_SEAT_AWARE
+
+
+def seated_rotate_applies(fit_version: int, rotation_read: bool,
+                          seat_band: Optional[float],
+                          scan_lever_mm: float,
+                          part_lever_mm: float) -> bool:
+    """The seated-rotate branch as a PURE decision over measured numbers
+    (goal-2 S2). True only when every condition holds:
+
+      - the act is stamped seat-aware (``fit_version >=
+        PAIR_FIT_SEAT_AWARE``) — older receipts replay their slide;
+      - the marks could NOT read the clock themselves
+        (``rotation_read`` False: one pair, or a sub-chord baseline) —
+        a chord that read the clock keeps its own fit;
+      - the cap is SEATED: ``seat_band`` measured and under the gate's
+        own ``_NUDGE_BAND_REFUSAL_MM``. The de-risk probe (fleet,
+        2026-08-17) grounds the threshold: landed poses read
+        0.34-1.28mm, the live 409's proposed slide read 3.89, and an
+        unmeasurable rim reads None — fail closed, never seated;
+      - BOTH halves of the pair clear ``MIN_LEVER_ARM_MM`` about the
+        rim centre — a near-axis mark names the axis, not a clock, on
+        either side.
+
+    False routes to the slide, which the same gates then judge."""
+    return (int(fit_version) >= PAIR_FIT_SEAT_AWARE
+            and not rotation_read
+            and seat_band is not None
+            and float(seat_band) < _NUDGE_BAND_REFUSAL_MM
+            and float(scan_lever_mm) >= MIN_LEVER_ARM_MM
+            and float(part_lever_mm) >= MIN_LEVER_ARM_MM)
 
 # --- THE CHORD FLOOR, MEASURED (2026-08-15) ----------------------------------------------
 #
@@ -2092,6 +2159,70 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
         scan_canon = np.array([clicks.to_canon(p.scan_point) for p in pairs], float)
         part_arr = np.array(part_points, float)
         fit = solve_matched_points(part_arr, scan_canon)
+        # THE SEATED-ROTATE RUNG (goal-2 S2, client ruling "rotate when
+        # seated"; see ``seated_rotate_applies``): decided on measured
+        # numbers BEFORE any candidate exists. The observations already
+        # carry the pair's azimuth delta about the rim centre — the
+        # azimuth fold's own arithmetic, computed by the same
+        # ``observations_for`` both folds share.
+        seat_band: Optional[float] = None
+        rotate_seated = False
+        if int(fit_version) >= PAIR_FIT_SEAT_AWARE and not fit.rotation_read:
+            seat_band = seat_band_mm(ctx.template, ctx.local_points,
+                                     ctx.pose_local)
+            scan_lever = min(
+                float(np.linalg.norm(clicks.to_canon_xy(p.scan_point)
+                                     - clicks.rim_centre_xy))
+                for p in pairs)
+            part_lever = min(float(o.lever_mm) for o in observations)
+            rotate_seated = seated_rotate_applies(
+                fit_version, fit.rotation_read, seat_band,
+                scan_lever, part_lever)
+        if rotate_seated:
+            # ONE PAIR TURNS THE SEATED CAP — no slide. The rotation is
+            # the pair's own azimuth delta, judged by the full rotation
+            # ladder (ring-fixed kinematics, the stability bound, every
+            # certification gate). The stability bound may refuse a big
+            # delta — that is an answer, not a defect.
+            applied = circular_mean_deg([o.delta_deg for o in observations],
+                                        [o.weight for o in observations])
+            residuals, rms = residual_rows(observations, applied)
+            require_pair_agreement(residuals, rms)
+            checked = cross_checked(len(observations))
+            reported_rms = round(rms, 3) if checked else None
+            cumulative = prior_cum + applied
+            cand, excess = judge_rotation(ctx.template, ctx.local_points,
+                                          ctx.pose_local, applied)
+            detail = (f"seated (rim band {seat_band:.2f}mm): "
+                      f"{len(pairs)} pair(s) turned the cap "
+                      f"{applied:+.1f}° about its seat (cumulative "
+                      f"{cumulative:+.1f}°) — no slide; "
+                      + agreement_words(len(residuals), rms))
+            evidence = {"pairs": audit_pairs, "residuals": residuals,
+                        "residual_rms_mm": reported_rms,
+                        "cross_checked": checked,
+                        "fit_version": PAIR_FIT_SEAT_AWARE,
+                        "fit_shape": shape,
+                        "seat_branch": "rotate",
+                        "seat_band_mm": round(seat_band, 3),
+                        "rotation_read": False}
+            translation_mm = None
+            applied_version = PAIR_FIT_SEAT_AWARE
+            clocking, nudge_fields, files = _adopt_rotation(
+                ctx, cand, applied, cumulative, "fit-by-points", detail,
+                evidence)
+            payload, deviation, stale = _post_adjustment_reading(ctx)
+            return AdjustOutcome(
+                tooth=tooth, operation="fit-by-points", detail=detail,
+                files=files, clocking=clocking, deviation=deviation,
+                stale_metrics=stale, nudge=nudge_fields,
+                applied_delta_deg=round(applied, 1),
+                cumulative_deg=round(cumulative, 1),
+                stability_excess_mm=(round(excess, 3)
+                                     if excess is not None else None),
+                pairs=residuals, residual_rms_mm=reported_rms,
+                cross_checked=checked, translation_mm=None,
+                fit_version=applied_version, pane_payload=payload)
         applied = fit.rotation_deg
         residuals, rms = matched_point_rows(labels, part_arr, fit)
         # READ BEFORE THE CANDIDATE EXISTS, exactly as the azimuth-only fold does: no
@@ -2134,18 +2265,28 @@ def align_to_correspondence(case: CaseRecord, run_dir: Path, tooth: int,
             len(pairs), moved_mm, fit, cumulative,
             agreement_words(len(residuals), rms,
                             determined="a single point pair fixes the position"))
+        # a seat-aware act that took the SLIDE branch says so — the replay
+        # contract (goal-2 S3) forces the recorded branch, never re-decides
+        seat_aware = int(fit_version) >= PAIR_FIT_SEAT_AWARE
         evidence = {"pairs": audit_pairs, "residuals": residuals,
                     "residual_rms_mm": reported_rms, "cross_checked": checked,
-                    "fit_version": PAIR_FIT_MATCHED_POINTS, "fit_shape": shape,
+                    "fit_version": (PAIR_FIT_SEAT_AWARE if seat_aware
+                                    else PAIR_FIT_MATCHED_POINTS),
+                    "fit_shape": shape,
                     "translation_mm": round(moved_mm, 4),
                     "translation_canon_mm": [round(float(v), 4)
                                              for v in fit.translation_canon],
                     "clock_baseline_mm": round(fit.clock_baseline_mm, 3),
                     "rotation_read": fit.rotation_read}
+        if seat_aware:
+            evidence["seat_branch"] = "slide"
+            if seat_band is not None:
+                evidence["seat_band_mm"] = round(seat_band, 3)
         if fit.note:
             evidence["clock_note"] = fit.note
         translation_mm: Optional[float] = round(moved_mm, 4)
-        applied_version = PAIR_FIT_MATCHED_POINTS
+        applied_version = (PAIR_FIT_SEAT_AWARE if seat_aware
+                           else PAIR_FIT_MATCHED_POINTS)
     else:
         # THE AZIMUTH-ONLY FOLD, unchanged in every digit — the fit a span set is, and
         # the fit every receipt written before the ruling was measured under.

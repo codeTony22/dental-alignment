@@ -37,7 +37,8 @@ from case_prep.application.adjust import (ADVISORY_DISAGREEMENT_MM,
                                           MAX_PAIR_DISAGREEMENT_MM,
                                           MIN_CLOCK_CHORD_MM, MIN_SPAN_MM,
                                           PAIR_FIT_AZIMUTH_ONLY,
-                                          PAIR_FIT_MATCHED_POINTS, PAIR_FIT_VERSION,
+                                          PAIR_FIT_MATCHED_POINTS,
+                                          PAIR_FIT_SEAT_AWARE, PAIR_FIT_VERSION,
                                           SPAN_RADIAL_TOLERANCE_DEG,
                                           STALE_AFTER_REWORK, AdjustInvalid,
                                           AdjustRefused, AlreadyOptimal, Correspondence,
@@ -1620,7 +1621,10 @@ class TestFitByPointsAndSpans:
         outcome = align_to_correspondence(_real_case(), warmed_run, WARMED_TOOTH,
                                           pairs)
         assert outcome.applied
-        assert outcome.fit_version == PAIR_FIT_MATCHED_POINTS
+        # goal-2 S2 (2026-08-17): a LIVE act stamps the seat-aware version;
+        # this near-axis pair has no lever, so the seated-rotate rung
+        # rightly declines and the slide semantics hold verbatim
+        assert outcome.fit_version == PAIR_FIT_SEAT_AWARE
         assert outcome.translation_mm == pytest.approx(expected, abs=0.05)
         assert abs(float(outcome.applied_delta_deg or 0.0)) < 0.5
 
@@ -1710,7 +1714,11 @@ class TestTheMatchedPointFoldOnTheAdoptionPath:
                                 part_point=canonical.tolist())]
         fingerprint = _fingerprint(warmed_run)
         try:
-            outcome = align_to_correspondence(case, warmed_run, WARMED_TOOTH, pairs)
+            # goal-2 S2 re-aim (2026-08-17): the v2 RECEIPT's own fold —
+            # a seated 1-pair now rotates LIVE, but a recorded slide must
+            # replay as this exact slide, forever
+            outcome = align_to_correspondence(case, warmed_run, WARMED_TOOTH, pairs,
+                                              fit_version=PAIR_FIT_MATCHED_POINTS)
         except AdjustRefused as exc:
             # a gate said no — then NOTHING moved, which is the other half of the
             # contract and the only honest alternative
@@ -1778,7 +1786,11 @@ class TestTheMatchedPointFoldOnTheAdoptionPath:
                                             + offset).tolist(),
                                 part_point=canonical.tolist())]
         try:
-            outcome = align_to_correspondence(case, warmed_run, WARMED_TOOTH, pairs)
+            # goal-2 S2 re-aim (2026-08-17): pinned AT v2 — this pin is
+            # about a TRANSLATING fold's instrument interaction, and the
+            # v2 replay lane is where a 1-pair act still translates
+            outcome = align_to_correspondence(case, warmed_run, WARMED_TOOTH, pairs,
+                                              fit_version=PAIR_FIT_MATCHED_POINTS)
         except AdjustRefused as exc:
             pytest.skip(f"a certification gate refused this slide: {exc}")
         # the deviation the row will carry was measured over the NEW pose
@@ -1800,7 +1812,10 @@ class TestTheMatchedPointFoldOnTheAdoptionPath:
             scan_point=(self._ghost(ctx, canonical) + np.array([0.09, 0.0, 0.0])).tolist(),
             part_point=canonical.tolist())]
         try:
-            align_to_correspondence(case, warmed_run, WARMED_TOOTH, pairs)
+            # goal-2 S2 re-aim (2026-08-17): pinned AT v2 — the fold a v2
+            # receipt replays under, whatever the live version becomes
+            align_to_correspondence(case, warmed_run, WARMED_TOOTH, pairs,
+                                    fit_version=PAIR_FIT_MATCHED_POINTS)
         except AdjustRefused as exc:
             pytest.skip(f"a certification gate refused this slide: {exc}")
         record = json.loads(
@@ -2004,3 +2019,130 @@ class TestAGhostPairIsANoOp:
         clicks = site_clicks(ctx)
         np.testing.assert_allclose(
             clicks.rim_centre_xy, template_rim_centre(ctx.template), atol=1e-9)
+
+
+class TestSeatBandReading:
+    """GOAL-2 S1 (plan 2026-08-16; client ruling "rotate when seated"):
+    ``seat_band_mm`` — the seat as a number, read by the SAME rim-band
+    instrument the certification gate uses (one source of truth). THE
+    DE-RISK PROBE'S FINDING (fleet, 2026-08-17): landed poses read
+    0.34-1.28mm; mm-scale slides STAY under 1.6 (a slid ring lands on
+    neighbouring gum — the band does not discriminate small
+    displacements, and does not need to: a rotate-in-place cannot drag
+    the rim off the scan, and the gates re-judge every outcome). The
+    threshold's real job is refusing the seated-rotate rung on
+    GROSSLY-lost poses — the live 409's proposed slide read 3.89, and a
+    rim the instrument cannot even measure reads None: fail closed,
+    never seated."""
+
+    def _rim_scan(self, r=2.5, z=2.0, n=400):
+        import numpy as _np
+        theta = _np.linspace(-_np.pi, _np.pi, n, endpoint=False)
+        ring = _np.column_stack([r * _np.cos(theta), r * _np.sin(theta),
+                                 _np.full(n, z)])
+        return _np.vstack([ring, ring + [0.0, 0.0, -0.3]])
+
+    def test_a_landed_pose_reads_a_small_band(self):
+        import trimesh
+        from case_prep.application.adjust import seat_band_mm
+
+        template = trimesh.creation.cylinder(radius=2.5, height=4.0,
+                                             sections=64)
+        band = seat_band_mm(template, self._rim_scan(), np.eye(4))
+        assert band is not None
+        assert band < 1.6   # the gate's own refusal constant
+
+    def test_a_grossly_lost_pose_reads_none_and_none_is_not_seated(self):
+        import trimesh
+        from case_prep.application.adjust import seat_band_mm
+
+        template = trimesh.creation.cylinder(radius=2.5, height=4.0,
+                                             sections=64)
+        pose = np.eye(4)
+        pose[:3, 3] = [6.0, 0.0, 0.0]   # the rim ring leaves the scan's reach
+        band = seat_band_mm(template, self._rim_scan(), pose)
+        assert band is None
+
+
+class TestSeatedRotateBranch:
+    """GOAL-2 S2 (client ruling 2026-08-16, AskUserQuestion: "Rotate when
+    seated"): ONE pair on a SEATED cap turns it about its seat instead of
+    sliding it — the slide was the live 409's own mechanism (a 1-pair
+    slide dragged the rim band 1.05 → 3.89mm and the gate rightly
+    refused; a rotate-in-place cannot drag the rim off). The branch is a
+    pure decision over measured numbers; every outcome still passes
+    ``judge_rotation``'s full gate ladder."""
+
+    def test_the_truth_table(self):
+        from case_prep.application.adjust import (PAIR_FIT_MATCHED_POINTS,
+                                                  PAIR_FIT_SEAT_AWARE,
+                                                  seated_rotate_applies)
+
+        good = dict(fit_version=PAIR_FIT_SEAT_AWARE, rotation_read=False,
+                    seat_band=0.65, scan_lever_mm=2.5, part_lever_mm=2.5)
+        assert seated_rotate_applies(**good)
+        # v2 receipts replay their slide verbatim — the rung never
+        # rewrites history
+        assert not seated_rotate_applies(
+            **{**good, "fit_version": PAIR_FIT_MATCHED_POINTS})
+        # a chord that read the clock keeps its own fit — the rung is for
+        # pairs that could NOT read it
+        assert not seated_rotate_applies(**{**good, "rotation_read": True})
+        # unmeasurable rim = never seated (fail closed)
+        assert not seated_rotate_applies(**{**good, "seat_band": None})
+        # the live 409's own band value is not a seat
+        assert not seated_rotate_applies(**{**good, "seat_band": 3.89})
+        # near-axis marks name the axis, not a clock — on either half
+        assert not seated_rotate_applies(**{**good, "scan_lever_mm": 0.4})
+        assert not seated_rotate_applies(**{**good, "part_lever_mm": 0.4})
+
+    def test_the_version_ladder_names_the_rung(self):
+        from case_prep.application.adjust import (PAIR_FIT_MATCHED_POINTS,
+                                                  PAIR_FIT_SEAT_AWARE,
+                                                  PAIR_FIT_VERSION)
+
+        assert PAIR_FIT_SEAT_AWARE == 3
+        assert PAIR_FIT_SEAT_AWARE > PAIR_FIT_MATCHED_POINTS
+        # live acts are seat-aware from this slice on
+        assert PAIR_FIT_VERSION == PAIR_FIT_SEAT_AWARE
+
+    def test_a_seat_aware_set_keeps_the_matched_points_shape(self):
+        from case_prep.application.adjust import PAIR_FIT_SEAT_AWARE, fit_shape
+
+        pair = Correspondence(feature_id="hole-1",
+                              scan_point=(1.0, 2.0, 3.0))
+        assert fit_shape([pair], PAIR_FIT_SEAT_AWARE) == "matched-points"
+
+
+@warmed_only
+class TestSeatedRotateAdoption:
+    """The rung on the warmed run's real geometry: one pair, seat-aware
+    version. The gates are not fakeable and not faked — either outcome is
+    legal; what must hold is the BRANCH's own contract when it applies:
+    a rotation with NO slide, stamped with the seat evidence."""
+
+    def test_one_pair_rotates_or_refuses_never_slides(self, tmp_path):
+        case = next(c for c in discover_cases(REAL) if c.id == WARMED_CASE)
+        run_copy = tmp_path / "run"
+        shutil.copytree(WARMED_RUN, run_copy)
+        ctx = load_site(case, run_copy, WARMED_TOOTH)
+        rows = [r for r in clock_landmarks(ctx.template)
+                if r["lever_arm_mm"] >= 1.5]
+        if not rows:
+            pytest.skip("no leverable part feature on the warmed template")
+        row = rows[0]
+        # the scan mark: the feature's own POSED point — a zero-delta ask,
+        # the gentlest rotation the gates can be offered
+        world_pose = np.asarray(ctx.record["pose_matrix"], float)
+        canon = np.asarray(row["point"], float)
+        world = world_pose[:3, :3] @ canon + world_pose[:3, 3]
+        pair = Correspondence(feature_id=row["id"],
+                              scan_point=tuple(float(v) for v in world))
+        try:
+            outcome = align_to_correspondence(case, run_copy, WARMED_TOOTH,
+                                              [pair])
+        except AdjustRefused:
+            return  # a gate spoke — the branch contract has nothing to hide
+        assert outcome.fit_version == 3
+        assert outcome.translation_mm is None, \
+            "the seated-rotate rung slid the cap — the ruling says turn it"
