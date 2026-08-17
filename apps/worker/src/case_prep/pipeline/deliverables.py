@@ -126,9 +126,11 @@ def arch_with_parts_fused(arch: trimesh.Trimesh,
         part_solids: List[trimesh.Trimesh] = []
         fallback_parts: List[Tuple[trimesh.Trimesh, np.ndarray]] = []
         notes: List[str] = []
+        solid_pos: dict = {}
         for index, (part, pose) in enumerate(posed_parts, 1):
             try:
                 part_solids.append(exact_cap_punch(part, 0.0, np.asarray(pose, float)))
+                solid_pos[index - 1] = len(part_solids) - 1
             except Exception as exc:  # noqa: BLE001 — per-part honest fallback;
                 # the rest of the parts still get the true union below
                 notes.append(f"part {index} could not be fused ({exc}) — "
@@ -221,6 +223,85 @@ def arch_with_parts_fused(arch: trimesh.Trimesh,
         V = np.asarray(fused.vertices, float)
         out = trimesh.Trimesh(V.copy(), F[keep].copy(), process=False)
         out.remove_unreferenced_vertices()
+        # THE DRAPE (goal-3 S2, plan 2026-08-16): the full-footprint
+        # excision rings the aligned cap with a white annulus where the
+        # scanned crust died — the scan's edge drapes onto the cap's own
+        # wall (see ``_drape_scan_edge_to_cap_wall``). Tracked path only
+        # (the inner ring is provenance-read); the untracked fallback's
+        # note already discloses the degraded build. ``excise_sites`` and
+        # ``posed_parts`` share one order (the emit caller's own zip), so
+        # a site's part faces are its solid's own source group. Every
+        # site's drape reads the SAME pre-drape boundary, whatever the
+        # build order — the carve's own bridge idiom.
+        drape_strips: list = []
+        if excise_sites and tracked_keep is not None:
+            src_kept = np.asarray(tracked.source)[keep]
+            for e_index, (_e_t, e_pose, e_rim_r) in enumerate(excise_sites):
+                pos = solid_pos.get(e_index)
+                if pos is None:
+                    continue
+                part_faces = src_kept == (tracked.base_groups + pos)
+                if not bool(part_faces.any()):
+                    continue
+                strip = _drape_scan_edge_to_cap_wall(
+                    out, part_faces, np.asarray(e_pose, float),
+                    float(e_rim_r))
+                if strip is not None:
+                    drape_strips.append(strip)
+                    notes.append(
+                        f"part {e_index + 1} wears the scan's edge draped "
+                        f"onto its wall — the tissue there sat under the "
+                        f"cap and was never scanned")
+
+        # HARD INVARIANT 2, BEFORE the per-part fallback concatenation: a
+        # part that could not fuse is a DOCUMENTED extra body, never a
+        # floater — the cull must not see it. Each part's OWN BODY is
+        # PROTECTED: an excision moat can ring the aligned cap completely,
+        # and a relief-hovering construction never touches its socket —
+        # disjoint, but the artifact's point. PER PART, ONE BODY (measured
+        # on 295811960's own rebuild: blanket part-provenance protection
+        # rescued 24 one-to-two-face union slivers and a 236-face crust
+        # shard at the cap wall — all debris): a part is a single solid,
+        # so per part group the component carrying MOST of its faces is
+        # the part; every other part-tagged fragment is a shard the cull
+        # may eat.
+        src_full = (np.asarray(tracked.source)[keep]
+                    if tracked_keep is not None else None)
+        if drape_strips:
+            n_before = len(out.faces)
+            out = trimesh.util.concatenate([out] + drape_strips)
+            out.merge_vertices()
+            if src_full is not None:
+                src_full = np.concatenate(
+                    [src_full, np.full(len(out.faces) - n_before, -1,
+                                       dtype=src_full.dtype)])
+        if src_full is not None:
+            comps = trimesh.graph.connected_components(
+                out.face_adjacency, min_len=0,
+                nodes=np.arange(len(out.faces)))
+            protect = np.zeros(len(out.faces), bool)
+            for pos in sorted(set(solid_pos.values())):
+                g = tracked.base_groups + pos
+                counts = [int((src_full[comp] == g).sum())
+                          for comp in comps]
+                best = int(np.argmax(counts))
+                if counts[best]:
+                    protect[comps[best]] = True
+        elif part_solids:
+            # the untracked fallback has no per-face provenance to count —
+            # any part-material face protects its component; the fallback
+            # note already discloses the degraded build
+            protect = inside_mask[keep]
+        else:
+            protect = np.zeros(len(out.faces), bool)
+        cull_sites = ([(np.asarray(p, float), float(r))
+                       for _t, p, r in excise_sites] if excise_sites
+                      else [(np.asarray(p, float), 3.0)
+                            for _part, p in posed_parts])
+        out, cull_notes = cull_floating_fragments(out, cull_sites,
+                                                  protect=protect,
+                                                  style="part")
+        notes.extend(cull_notes)
         if fallback_parts:
             placed = []
             for part, pose in fallback_parts:
@@ -754,6 +835,92 @@ def _zip_open_strip(inner_pts: np.ndarray, inner_phi: np.ndarray,
     return ip, op, np.asarray(faces, int)
 
 
+def cull_floating_fragments(mesh: trimesh.Trimesh,
+                            site_poses: "Sequence[Tuple[np.ndarray, float]]",
+                            protect: "Optional[np.ndarray]" = None,
+                            style: str = "site"
+                            ) -> "Tuple[trimesh.Trimesh, List[str]]":
+    """HARD INVARIANT 2 (client, plan 2026-08-16: "cannot things floating
+    in the air"): no deliverable ships a disconnected fragment. Keeps the
+    arch-connected body — the LARGEST face-connected component — and culls
+    every island, with a counted note per site (an island whose centroid
+    sits inside a site's disc — the site's own radial reach plus the
+    probe's 3mm moat margin — is that site's debris; anything else is
+    "away from any site"). Generalizes ``isolation.orphan_flap_mask`` from
+    its site-cylinder scope to the WHOLE artifact, as the builders' last
+    step: the flap guard needs a site to name, this rule needs none.
+
+    ``site_poses`` is ``[(pose_matrix, rim_r), ...]`` — the same pairs the
+    builders already carry. Attribution only; the cull itself is global.
+
+    ``protect`` (optional bool face mask): a component carrying ANY
+    protected face survives — the fused composites protect their parts'
+    own material, because an excision moat can ring the aligned cap
+    COMPLETELY (the cap is then a disjoint body, and the whole point of
+    the artifact) and a relief-hovering construction never touches its
+    socket at all. ``style`` picks the note's prefix idiom: ``"site"``
+    emits ``"site N: …"`` (the carve/floored-holes routing), ``"part"``
+    emits ``"part N sheds …"`` (the fused-composite routing, whose parser
+    reads the bare index word)."""
+    if len(mesh.faces) == 0:
+        return mesh, []
+    comps = trimesh.graph.connected_components(
+        mesh.face_adjacency, min_len=0, nodes=np.arange(len(mesh.faces)))
+    if len(comps) <= 1:
+        return mesh, []
+    comps = sorted(comps, key=len, reverse=True)
+    centers = np.asarray(mesh.triangles_center, float)
+    per_site: "dict" = {}
+    away = 0
+    protected: list = [comps[0]]
+    culled: list = []
+    for comp in comps[1:]:
+        if protect is not None and bool(np.asarray(protect)[comp].any()):
+            protected.append(comp)
+            continue
+        culled.append(comp)
+    if not culled:
+        return mesh, []
+    for comp in culled:
+        c = centers[comp].mean(axis=0)
+        landed = None
+        for index, (pose, rim_r) in enumerate(site_poses, 1):
+            pose = np.asarray(pose, float)
+            origin = pose[:3, 3]
+            axis = pose[:3, :3] @ np.array([0.0, 0.0, 1.0])
+            rel = c - origin
+            radial = float(np.linalg.norm(rel - (rel @ axis) * axis))
+            if radial < float(rim_r) + 3.0:
+                landed = index
+                break
+        if landed is None:
+            away += 1
+        else:
+            per_site[landed] = per_site.get(landed, 0) + 1
+    keep = np.zeros(len(mesh.faces), bool)
+    for comp in protected:
+        keep[comp] = True
+    out = trimesh.Trimesh(np.asarray(mesh.vertices, float).copy(),
+                          np.asarray(mesh.faces)[keep].copy(),
+                          process=False)
+    out.remove_unreferenced_vertices()
+    if style == "part":
+        notes = [
+            f"part {index} sheds {count} floating fragment"
+            f"{'s' if count > 1 else ''} — nothing ships in the air"
+            for index, count in sorted(per_site.items())]
+    else:
+        notes = [
+            f"site {index}: {count} floating fragment"
+            f"{'s' if count > 1 else ''} removed — nothing ships in the air"
+            for index, count in sorted(per_site.items())]
+    if away:
+        notes.append(
+            f"{away} floating fragment{'s' if away > 1 else ''} away from "
+            f"any site removed — nothing ships in the air")
+    return out, notes
+
+
 def _longest_circular_run(mask: np.ndarray) -> "Tuple[int, int]":
     """``(length, start)`` of the longest circular run of True bins."""
     n = len(mask)
@@ -788,6 +955,240 @@ def _loop_overlap_fraction(a: np.ndarray, b: np.ndarray,
         return 0.0
     dist, _ = cKDTree(b).query(a)
     return float(np.mean(np.asarray(dist) < tol_mm))
+
+
+def _vote_banks(out_boundary_loops: "Sequence[np.ndarray]",
+                origin: np.ndarray, axis: np.ndarray, xl: np.ndarray,
+                yl: np.ndarray, r_lo: float, r_hi: float, a_mid: float,
+                exclude_pts: "Optional[np.ndarray]" = None
+                ) -> "Tuple[list, int]":
+    """THE CLOUD VOTE's bank formation (goal-3 S1, factored for S2's drape:
+    the collar bridge and the fused-composite drape read the SAME scan-edge
+    physics, so they share one vote). Pools every out-boundary vertex in
+    the radial window and z-band, splits the pool into radial BANKS at
+    gaps, and gates each bank by votes, radial MAD and bearing structure —
+    the "RANSAC ring" made deterministic (the axis is known; no sampling,
+    nothing to seed).
+
+    NEAR-duplicate exclusion (``exclude_pts`` — the bridge passes its
+    mouth), judged PER LOOP, not per point — measured: a narrow moat's
+    out-boundary is ONE mixed ring whose flush stretch grazes the mouth at
+    0.03mm while its median sits 0.35mm away; excluding its near points
+    tore the weld into 7 crack fragments. A loop is the reference ring's
+    own flush counterpart only when it hugs it WHOLESALE (median distance
+    < ``_BANK_DUP_TOL_MM``); a mixed loop votes in full.
+
+    FULL RING or CRESCENT (probe on 295811960's live carve: the real moat
+    is one contiguous 82° crescent — the client's screenshots always
+    showed the white on ONE side; a full-ring coverage gate refused it):
+    the longest run of EMPTY bearings decides — sampling-scale gaps mean a
+    full ring; one large gap leaves a WINDOW that must be wide enough
+    (``_BANK_ARC_BINS_MIN``) and solidly filled
+    (``_BANK_WINDOW_FILL_MIN``) to be one real crescent; anything else is
+    fragmentary. Each bank keeps ALL its real points, ordered by bearing
+    from its window's own start — thinning was tried and broke the weld
+    (a strip through selected points leaves every unselected boundary
+    vertex on a crack: measured 7 residual loops on the end-to-end pin).
+
+    Returns ``(banks, fragmentary)`` — banks as ``(median_r, points,
+    window)`` with ``window`` ``None`` for a full ring or ``(theta_start,
+    theta_end)`` for a crescent; ``fragmentary`` counts refused points."""
+    from scipy.spatial import cKDTree as _KD
+    exclude_tree = (_KD(np.asarray(exclude_pts, float))
+                    if exclude_pts is not None and len(exclude_pts)
+                    else None)
+    pool: list = []
+    for loop in out_boundary_loops:
+        pts = np.asarray(loop, float)
+        if len(pts) == 0:
+            continue
+        if exclude_tree is not None:
+            d_ref, _ = exclude_tree.query(pts)
+            if float(np.median(d_ref)) < _BANK_DUP_TOL_MM:
+                continue
+        pool.extend(pts)
+    banks: list = []
+    fragmentary = 0
+    if not pool:
+        return banks, fragmentary
+    P = np.asarray(pool, float)
+    rel = P - origin
+    r = np.hypot(rel @ xl, rel @ yl)
+    a = rel @ axis
+    keep_pts = ((r > r_lo) & (r < r_hi)
+                & (np.abs(a - a_mid) < _BRIDGE_Z_BAND_MM))
+    P, r = P[keep_pts], r[keep_pts]
+    if not len(P):
+        return banks, fragmentary
+    order = np.argsort(r)
+    P, r = P[order], r[order]
+    splits = np.flatnonzero(np.diff(r) > _BANK_GAP_MM) + 1
+    for cluster in np.split(np.arange(len(P)), splits):
+        if len(cluster) < _MOUTH_MIN_VERTICES:
+            continue
+        cp = P[cluster]
+        cr = r[cluster]
+        med = float(np.median(cr))
+        if float(np.median(np.abs(cr - med))) > _BRIDGE_ROUNDNESS_MM:
+            continue
+        theta = np.arctan2((cp - origin) @ yl, (cp - origin) @ xl)
+        bins = ((theta + np.pi) / (2 * np.pi)
+                * _BANK_THETA_BINS).astype(int) % _BANK_THETA_BINS
+        occ = np.zeros(_BANK_THETA_BINS, dtype=bool)
+        occ[bins] = True
+        gap_len, gap_start = _longest_circular_run(~occ)
+        if gap_len <= _BANK_FULL_GAP_BINS:
+            window = None
+            keep = np.arange(len(cp))
+        else:
+            w_start = (gap_start + gap_len) % _BANK_THETA_BINS
+            w_len = _BANK_THETA_BINS - gap_len
+            if w_len < _BANK_ARC_BINS_MIN:
+                fragmentary += len(cluster)
+                continue
+            in_window = (bins - w_start) % _BANK_THETA_BINS < w_len
+            fill = len(np.unique(bins[in_window])) / w_len
+            if fill < _BANK_WINDOW_FILL_MIN:
+                fragmentary += len(cluster)
+                continue
+            step = 2.0 * np.pi / _BANK_THETA_BINS
+            t0 = -np.pi + w_start * step
+            window = (t0, t0 + w_len * step)
+            keep = np.flatnonzero(in_window)
+        base = window[0] if window is not None else -np.pi
+        phi = (theta[keep] - base) % (2.0 * np.pi)
+        banks.append((med, cp[keep][np.argsort(phi)], window))
+    return banks, fragmentary
+
+
+def _zip_chain(chain: "Sequence[Tuple[np.ndarray, Optional[Tuple[float, float]]]]",
+               origin: np.ndarray, axis: np.ndarray, xl: np.ndarray,
+               yl: np.ndarray) -> list:
+    """THE TRIANGULATION reuses the envelope-era collar's own idiom (see
+    ``_zip_loop_bridge``'s docstring) — an inner-to-outer strip per
+    consecutive pair of the chain — joining each pair's OWN REAL points
+    (never an interpolated one), which is what lets the caller WELD the
+    strips onto its own pre-existing loops by an exact-coordinate vertex
+    merge. A CRESCENT element (a ``(theta_start, theta_end)`` window) zips
+    an OPEN strip instead, over its own bearing window only — the other
+    side of the pair is clipped to that window (the flush side, where the
+    scan already meets the ring, is never touched)."""
+    strips: list = []
+    for (inner_lp, inner_w), (outer_lp, outer_w) in zip(chain[:-1],
+                                                        chain[1:]):
+        inner_theta = np.arctan2((inner_lp - origin) @ yl,
+                                 (inner_lp - origin) @ xl)
+        outer_theta = np.arctan2((outer_lp - origin) @ yl,
+                                 (outer_lp - origin) @ xl)
+        if inner_w is None and outer_w is None:
+            inner_sorted, outer_sorted, faces = _zip_loop_bridge(
+                inner_lp, inner_theta, outer_lp, outer_theta)
+        else:
+            w = inner_w if outer_w is None else outer_w
+            span = w[1] - w[0]
+            inner_phi = (inner_theta - w[0]) % (2.0 * np.pi)
+            outer_phi = (outer_theta - w[0]) % (2.0 * np.pi)
+            ki = inner_phi <= span + 1e-9
+            ko = outer_phi <= span + 1e-9
+            if int(ki.sum()) < 2 or int(ko.sum()) < 2:
+                continue
+            inner_sorted, outer_sorted, faces = _zip_open_strip(
+                inner_lp[ki], inner_phi[ki], outer_lp[ko], outer_phi[ko])
+        verts = np.vstack([inner_sorted, outer_sorted])
+        strip = trimesh.Trimesh(verts, faces, process=False)
+        if float(np.asarray(strip.face_normals, float).mean(axis=0)
+                 @ axis) < 0:
+            strip = trimesh.Trimesh(verts, faces[:, ::-1], process=False)
+        strips.append(strip)
+    return strips
+
+
+def _drape_scan_edge_to_cap_wall(out: trimesh.Trimesh,
+                                 part_faces: np.ndarray,
+                                 pose: np.ndarray,
+                                 rim_r: float
+                                 ) -> "Optional[trimesh.Trimesh]":
+    """THE FUSED-COMPOSITE DRAPE (goal-3 S2, plan 2026-08-16): tab 1's
+    white annulus. The full-footprint excision rings the aligned cap with
+    a gap where the scanned crust died — the scan's edge must drape onto
+    the cap's own wall. The OUTER side is slice 1's vote over ``out``'s
+    boundary loops (the scan's edge, fragments and crescents included);
+    the INNER side is built from the composite's own PART-provenance
+    vertices — one real vertex per occupied bearing bin, HEIGHT-MATCHED to
+    the bank's own height at that bearing (never planar: the gum line
+    climbs and falls around a cap). Both sides being ``out``'s own real
+    points, the caller's ``merge_vertices()`` welds the strip on for real.
+
+    ``part_faces`` is a boolean mask over ``out.faces`` naming this site's
+    own part-provenance faces (the tracked union's ``source`` read,
+    carried through the strip's ``keep``). Returns the strip, or ``None``
+    when there is nothing to drape (flush) or nothing safe to drape onto
+    (no part vertices where the bank needs them)."""
+    pose = np.asarray(pose, float)
+    origin = pose[:3, 3]
+    R = pose[:3, :3]
+    axis = R @ np.array([0.0, 0.0, 1.0])
+    xl = R @ np.array([1.0, 0.0, 0.0])
+    yl = R @ np.array([0.0, 1.0, 0.0])
+
+    banks, _fragmentary = _vote_banks(
+        _boundary_loops_of(out), origin, axis, xl, yl,
+        # the scan's edge starts AT the excision cylinder (whole faces die,
+        # so surviving edge vertices sit up to a face's span inside the
+        # rim) and the vote reaches the moat's own scale past it
+        r_lo=float(rim_r) - 0.75, r_hi=float(rim_r) + _BANK_SEARCH_MM,
+        a_mid=0.0)
+    if not banks:
+        return None
+    banks.sort(key=lambda t: t[0])
+    med0, bank_pts, window0 = banks[0]
+
+    V = np.asarray(out.vertices, float)
+    pv_idx = np.unique(np.asarray(out.faces)[part_faces].ravel())
+    if len(pv_idx) == 0:
+        return None
+    pv = V[pv_idx]
+    rel = pv - origin
+    pa = rel @ axis
+    pr = np.hypot(rel @ xl, rel @ yl)
+    zone = ((pr > float(rim_r) - 1.5) & (pr < med0 + 0.1)
+            & (np.abs(pa) < _BRIDGE_Z_BAND_MM + 1.5))
+    if not zone.any():
+        return None
+    pv, pa = pv[zone], pa[zone]
+    p_theta = np.arctan2((pv - origin) @ yl, (pv - origin) @ xl)
+    p_bins = ((p_theta + np.pi) / (2 * np.pi)
+              * _BANK_THETA_BINS).astype(int) % _BANK_THETA_BINS
+
+    b_rel = bank_pts - origin
+    b_a = b_rel @ axis
+    b_theta = np.arctan2(b_rel @ yl, b_rel @ xl)
+    b_bins = ((b_theta + np.pi) / (2 * np.pi)
+              * _BANK_THETA_BINS).astype(int) % _BANK_THETA_BINS
+
+    base = window0[0] if window0 is not None else -np.pi
+    inner: list = []
+    for bin_id in np.unique(b_bins):
+        cand = np.flatnonzero(p_bins == bin_id)
+        if len(cand) == 0:
+            continue
+        h_bin = float(np.median(b_a[b_bins == bin_id]))
+        inner.append(pv[cand[np.argmin(np.abs(pa[cand] - h_bin))]])
+    if len(inner) < 2:
+        return None
+    inner_pts = np.asarray(inner, float)
+    i_theta = np.arctan2((inner_pts - origin) @ yl,
+                         (inner_pts - origin) @ xl)
+    i_phi = (i_theta - base) % (2.0 * np.pi)
+    inner_pts = inner_pts[np.argsort(i_phi)]
+
+    chain = [(inner_pts, window0)] + [
+        (ring, w) for _med, ring, w in banks]
+    strips = _zip_chain(chain, origin, axis, xl, yl)
+    if not strips:
+        return None
+    return (strips[0] if len(strips) == 1
+            else trimesh.util.concatenate(strips))
 
 
 def _bridge_recess_collar(out_boundary_loops: "Sequence[np.ndarray]",
@@ -941,88 +1342,10 @@ def _bridge_recess_collar(out_boundary_loops: "Sequence[np.ndarray]",
     # radial BANKS at gaps, and gate each bank by votes, angular coverage
     # and radial MAD — the "RANSAC ring" made deterministic (the axis is
     # known; no sampling, nothing to seed).
-    # NEAR-duplicate exclusion, judged PER LOOP (not per point — measured:
-    # a narrow moat's out-boundary is ONE mixed ring whose flush stretch
-    # grazes the mouth at 0.03mm while its median sits 0.35mm away;
-    # excluding its near points tore the weld into 7 crack fragments). A
-    # loop is the mouth's own flush counterpart only when it hugs the
-    # mouth WHOLESALE (median distance < _BANK_DUP_TOL_MM); a mixed loop
-    # votes in full, near stretches included — the weld needs every one of
-    # its real points.
-    from scipy.spatial import cKDTree as _KD
-    mouth_tree = _KD(np.asarray(mouth, float))
-    pool: list = []
-    for loop in out_boundary_loops:
-        pts = np.asarray(loop, float)
-        if len(pts) == 0:
-            continue
-        d_mouth, _ = mouth_tree.query(pts)
-        if float(np.median(d_mouth)) < _BANK_DUP_TOL_MM:
-            continue
-        pool.extend(pts)
-    banks: list = []
-    fragmentary = 0
-    if pool:
-        P = np.asarray(pool, float)
-        r, a = _radial_axial(P)
-        keep_pts = ((r > mouth_r_mean - 0.1)
-                    & (r < mouth_r_max + _BANK_SEARCH_MM)
-                    & (np.abs(a - mouth_a_mid) < _BRIDGE_Z_BAND_MM))
-        P, r = P[keep_pts], r[keep_pts]
-        if len(P):
-            order = np.argsort(r)
-            P, r = P[order], r[order]
-            splits = np.flatnonzero(np.diff(r) > _BANK_GAP_MM) + 1
-            for cluster in np.split(np.arange(len(P)), splits):
-                if len(cluster) < _MOUTH_MIN_VERTICES:
-                    continue
-                cp = P[cluster]
-                cr = r[cluster]
-                med = float(np.median(cr))
-                if float(np.median(np.abs(cr - med))) > _BRIDGE_ROUNDNESS_MM:
-                    continue
-                theta = np.arctan2((cp - origin) @ yl, (cp - origin) @ xl)
-                bins = ((theta + np.pi) / (2 * np.pi)
-                        * _BANK_THETA_BINS).astype(int) % _BANK_THETA_BINS
-                occ = np.zeros(_BANK_THETA_BINS, dtype=bool)
-                occ[bins] = True
-                # FULL RING or CRESCENT? (probe on 295811960's live carve:
-                # the real moat is one contiguous 82° crescent — the
-                # client's screenshots always showed the white on ONE
-                # side. A full-ring coverage gate refused it.) Read the
-                # longest run of EMPTY bearings: sampling-scale gaps mean
-                # a full ring; one large gap leaves a WINDOW that must be
-                # wide enough and solidly filled to be one real crescent.
-                gap_len, gap_start = _longest_circular_run(~occ)
-                if gap_len <= _BANK_FULL_GAP_BINS:
-                    window = None
-                    keep = np.arange(len(cp))
-                else:
-                    w_start = (gap_start + gap_len) % _BANK_THETA_BINS
-                    w_len = _BANK_THETA_BINS - gap_len
-                    if w_len < _BANK_ARC_BINS_MIN:
-                        fragmentary += len(cluster)
-                        continue
-                    in_window = ((bins - w_start) % _BANK_THETA_BINS
-                                 < w_len)
-                    fill = len(np.unique(bins[in_window])) / w_len
-                    if fill < _BANK_WINDOW_FILL_MIN:
-                        fragmentary += len(cluster)
-                        continue
-                    step = 2.0 * np.pi / _BANK_THETA_BINS
-                    t0 = -np.pi + w_start * step
-                    window = (t0, t0 + w_len * step)
-                    keep = np.flatnonzero(in_window)
-                # ALL the bank's real points, ordered by bearing from the
-                # window's own start — thinning was tried and broke the
-                # weld (a strip through selected points leaves every
-                # unselected boundary vertex on a crack: measured 7
-                # residual loops on the end-to-end pin). A boundary is a
-                # curve, so a bank is one row of points; zipping them all
-                # is what closes the moat for real.
-                base = window[0] if window is not None else -np.pi
-                phi = (theta[keep] - base) % (2.0 * np.pi)
-                banks.append((med, cp[keep][np.argsort(phi)], window))
+    banks, fragmentary = _vote_banks(
+        out_boundary_loops, origin, axis, xl, yl,
+        r_lo=mouth_r_mean - 0.1, r_hi=mouth_r_max + _BANK_SEARCH_MM,
+        a_mid=mouth_a_mid, exclude_pts=np.asarray(mouth, float))
     if not banks:
         if fragmentary:
             return None, (
@@ -1034,44 +1357,7 @@ def _bridge_recess_collar(out_boundary_loops: "Sequence[np.ndarray]",
     chain = [(np.asarray(mouth, float), None)] + [
         (ring, window) for _med, ring, window in banks]
 
-    # THE TRIANGULATION reuses the envelope-era collar's own idiom (see
-    # ``_zip_loop_bridge``'s docstring) — an inner-to-outer strip per
-    # consecutive pair of the chain — joining each pair's OWN REAL points
-    # (never an interpolated one), which is what lets the caller WELD the
-    # bridge onto ``out``'s own pre-existing loops by an exact-coordinate
-    # vertex merge: every ring here is built from the SAME vertex values as
-    # its pre-existing loop, so after the caller's ``merge_vertices()`` the
-    # moat closes for real, not merely visually. A CRESCENT bank zips an
-    # OPEN strip instead, over its own bearing window only — the other
-    # side of the pair is clipped to that window (the flush side, where
-    # the scan already meets the mouth, is never touched).
-    strips: list = []
-    for (inner_lp, inner_w), (outer_lp, outer_w) in zip(chain[:-1],
-                                                        chain[1:]):
-        inner_theta = np.arctan2((inner_lp - origin) @ yl,
-                                 (inner_lp - origin) @ xl)
-        outer_theta = np.arctan2((outer_lp - origin) @ yl,
-                                 (outer_lp - origin) @ xl)
-        if inner_w is None and outer_w is None:
-            inner_sorted, outer_sorted, faces = _zip_loop_bridge(
-                inner_lp, inner_theta, outer_lp, outer_theta)
-        else:
-            w = inner_w if outer_w is None else outer_w
-            span = w[1] - w[0]
-            inner_phi = (inner_theta - w[0]) % (2.0 * np.pi)
-            outer_phi = (outer_theta - w[0]) % (2.0 * np.pi)
-            ki = inner_phi <= span + 1e-9
-            ko = outer_phi <= span + 1e-9
-            if int(ki.sum()) < 2 or int(ko.sum()) < 2:
-                continue
-            inner_sorted, outer_sorted, faces = _zip_open_strip(
-                inner_lp[ki], inner_phi[ki], outer_lp[ko], outer_phi[ko])
-        verts = np.vstack([inner_sorted, outer_sorted])
-        strip = trimesh.Trimesh(verts, faces, process=False)
-        if float(np.asarray(strip.face_normals, float).mean(axis=0)
-                 @ axis) < 0:
-            strip = trimesh.Trimesh(verts, faces[:, ::-1], process=False)
-        strips.append(strip)
+    strips = _zip_chain(chain, origin, axis, xl, yl)
     if not strips:
         return None, None
     bridge = (strips[0] if len(strips) == 1
@@ -1437,6 +1723,8 @@ def _csg_carve(arch: trimesh.Trimesh,
         # standing apart.
         out.merge_vertices()
 
+    out, cull_notes = cull_floating_fragments(out, site_poses)
+    notes.extend(cull_notes)
     return out, socket, notes
 
 
@@ -1655,6 +1943,8 @@ def _press_carve(arch: trimesh.Trimesh,
         socket = trimesh.Trimesh(V.copy(), faces[face_moved].copy(),
                                  process=False)
         socket.remove_unreferenced_vertices()
+    out, cull_notes = cull_floating_fragments(out, site_poses)
+    notes.extend(cull_notes)
     return out, socket, notes
 
 
@@ -1875,6 +2165,10 @@ def open_arch_with_floored_holes(scan: trimesh.Trimesh,
                 out = trimesh.util.concatenate([out] + bridges)
                 out.merge_vertices()
 
+        out, cull_notes = cull_floating_fragments(
+            out, [(np.asarray(pose, float), float(rim_r))
+                  for _t, pose, _o, rim_r in sites])
+        notes.extend(cull_notes)
         return out, notes
     except Exception as exc:  # noqa: BLE001 — honest absence
         return None, [f"the open arch with floored holes could not be built "

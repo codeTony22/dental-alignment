@@ -2091,7 +2091,12 @@ class TestDefect1MeasuredCapResidueIsExcised:
             v = np.asarray(fused.vertices, float)
             assert (np.abs(v[:, 0]) > 15).any()
             return
-        assert notes == []
+        # goal-3 S2/S2b (2026-08-16): the excision's own annulus may now be
+        # DRAPED and its debris CULLED — both disclosed. Only those two
+        # sentences are tolerable here; anything else is a degradation
+        # this pin must still catch.
+        assert all("draped" in n or "floating fragment" in n
+                   for n in notes), notes
         assert survivors == [], \
             f"{len(survivors)} scanned-cap crust vertex(es) survived the fuse"
         # the far gum still stands — the excision is scoped to the site
@@ -2502,7 +2507,9 @@ class TestOpenArchWithFlooredHoles:
             assert "ships without it" in notes[0]
             assert "MeshLib" in notes[0]
             return
-        assert notes == []
+        # goal-3 S2b (2026-08-16): the excision's disconnected debris is now
+        # CULLED with its counted note — the only sentence tolerable here.
+        assert all("floating fragment" in n for n in notes), notes
         assert out is not None
         out_v = {tuple(np.round(v, 6))
                 for v in np.asarray(out.vertices, float)}
@@ -3263,12 +3270,181 @@ class TestDefectAOrphanCleanupEveryConsumer:
     def test_without_excise_sites_the_fuse_never_runs_orphan_cleanup(self):
         """No sites, no site-shaped cylinder to test against — orphan
         cleanup is scoped to named sites, exactly like DEFECT 1's own
-        excision it rides alongside."""
+        excision it rides alongside. RE-AIMED (goal-3 S2b, 2026-08-16):
+        the flap still dies — but by the GLOBAL floating-fragment cull
+        (hard invariant 2: "cannot things floating in the air", excise or
+        not), which says so out loud, where orphan cleanup is silent by
+        the excision's own contract. The note IS the proof of which rule
+        fired."""
         from case_prep.pipeline.deliverables import arch_with_parts_fused
 
         arch, template, pose, flap, rim_r = _orphan_flap_scene()
         part = template.copy()
         fused, notes = arch_with_parts_fused(arch, [(part, pose)])
-        # the flap is untouched — nothing named it as a site to excise
-        # around, so nothing about it is even candidate material
-        assert _flap_survivor_count([fused], flap) == len(flap.vertices)
+        assert _flap_survivor_count([fused], flap) == 0
+        assert any("floating fragment" in n for n in notes), notes
+
+
+class TestCullFloatingFragments:
+    """HARD INVARIANT 2 (client, plan 2026-08-16: "cannot things floating
+    in the air"): no deliverable ships a disconnected fragment. The cull
+    keeps the arch-connected body — the largest face-connected component —
+    and removes islands with a counted note, attributed to a site when the
+    island sits inside that site's own disc."""
+
+    def _floater(self, at, r=0.4):
+        f = trimesh.creation.icosphere(subdivisions=1, radius=r)
+        f.apply_translation(at)
+        return f
+
+    def test_an_island_near_a_site_dies_with_the_sites_name(self):
+        from case_prep.pipeline.deliverables import cull_floating_fragments
+
+        plate = _flat_sheet()
+        floater = self._floater([1.0, 1.0, 2.0])
+        mesh = trimesh.util.concatenate([plate, floater])
+        out, notes = cull_floating_fragments(
+            mesh, [(_pose_at(0.0, 0.0, 0.0), 2.6)])
+        assert len(out.faces) == len(plate.faces)
+        assert len(notes) == 1 and "site 1" in notes[0]
+        assert "floating fragment" in notes[0]
+
+    def test_an_island_away_from_every_site_still_dies(self):
+        from case_prep.pipeline.deliverables import cull_floating_fragments
+
+        plate = _flat_sheet()
+        floater = self._floater([30.0, 30.0, 6.0])
+        mesh = trimesh.util.concatenate([plate, floater])
+        out, notes = cull_floating_fragments(
+            mesh, [(_pose_at(0.0, 0.0, 0.0), 2.6)])
+        assert len(out.faces) == len(plate.faces)
+        assert len(notes) == 1 and "away from any site" in notes[0]
+
+    def test_a_single_body_passes_untouched_and_silent(self):
+        from case_prep.pipeline.deliverables import cull_floating_fragments
+
+        plate = _flat_sheet()
+        out, notes = cull_floating_fragments(
+            plate, [(_pose_at(0.0, 0.0, 0.0), 2.6)])
+        assert len(out.faces) == len(plate.faces)
+        assert notes == []
+
+    def test_the_floored_holes_artifact_ships_no_floater(self):
+        from case_prep.pipeline import deliverables as d
+
+        sheet = _flat_sheet()
+        floater = self._floater([1.5, 1.5, 3.0])
+        scan = trimesh.util.concatenate([sheet, floater])
+        template = trimesh.creation.cylinder(radius=2.0, height=4.0,
+                                             sections=48)
+        template.apply_translation([0, 0, 2.0])
+        site = (template, _pose_at(0.0, 0.0, 0.0), 0.0, 2.3)
+        out, notes = d.open_arch_with_floored_holes(scan, [site])
+        assert out is not None
+        comps = out.split(only_watertight=False)
+        assert len(comps) == 1
+        assert any("floating fragment" in n for n in notes)
+
+    def test_the_carve_ships_no_floater(self):
+        from case_prep.pipeline import deliverables as d
+
+        sheet = _flat_sheet()
+        floater = self._floater([1.5, 1.5, 3.0])
+        scan = trimesh.util.concatenate([sheet, floater])
+        template = trimesh.creation.cylinder(radius=2.0, height=4.0,
+                                             sections=48)
+        template.apply_translation([0, 0, 2.0])
+        site = (template, _pose_at(0.0, 0.0, 0.0), 0.0, 2.3)
+        out, _socket, notes = d.cap_imprint_parts(scan, [site])
+        comps = out.split(only_watertight=False)
+        assert len(comps) == 1
+        assert any("floating fragment" in n for n in notes)
+
+    def test_a_fallback_concatenated_part_survives_the_cull(self, monkeypatch):
+        """The cull runs BEFORE the per-part fallback concatenation: a part
+        that could not fuse is a DOCUMENTED extra body, never a floater."""
+        from case_prep.pipeline import deliverables as d
+
+        arch = _arch_with_bump()
+        floater = self._floater([6.0, 6.0, 4.0])
+        arch = trimesh.util.concatenate([arch, floater])
+        part = trimesh.creation.cylinder(radius=1.0, height=3.0)
+        pose = _pose_at(0.0, 0.0, 4.0)
+        monkeypatch.setattr(
+            d, "exact_cap_punch",
+            lambda *a, **k: (_ for _ in ()).throw(ValueError("degenerate")))
+        fused, notes = d.arch_with_parts_fused(arch, [(part, pose)])
+        assert any("concatenated instead" in n for n in notes)
+        # the part still stands at its pose...
+        v = np.asarray(fused.vertices, float)
+        assert (np.linalg.norm(v - [0.0, 0.0, 4.0], axis=1) < 2.5).any()
+        # ...and the planted floater does not
+        assert not (np.linalg.norm(v - [6.0, 6.0, 4.0], axis=1) < 0.9).any()
+
+
+class TestDrapeScanEdgeToCapWall:
+    """Goal-3 S2 (plan 2026-08-16): tab 1's white annulus. The full-footprint
+    excision rings the aligned cap with a gap where the scanned crust died —
+    the scan's edge must DRAPE onto the cap's own wall, welded to the
+    composite's real vertices on both sides, tracked path only."""
+
+    def _holed_sheet(self, hole_r, n=81, extent=8.0):
+        sheet = _flat_sheet(n=n, extent=extent)
+        c = np.asarray(sheet.triangles_center, float)
+        keep = np.hypot(c[:, 0], c[:, 1]) > hole_r
+        out = trimesh.Trimesh(np.asarray(sheet.vertices, float).copy(),
+                              np.asarray(sheet.faces)[keep].copy(),
+                              process=False)
+        out.remove_unreferenced_vertices()
+        return out
+
+    def _site(self):
+        part = trimesh.creation.cylinder(radius=2.6, height=4.0, sections=64)
+        pose = _pose_at(0.0, 0.0, 1.0)   # the part spans world z -1..3
+        return part, pose
+
+    def test_the_annulus_gap_drapes_onto_the_cap_wall(self, engine_expects):
+        from case_prep.pipeline import deliverables as d
+
+        if not engine_expects.tracked:
+            pytest.skip("the drape rides the tracked union's provenance")
+        sheet = self._holed_sheet(3.2)
+        part, pose = self._site()
+        fused, notes = d.arch_with_parts_fused(
+            sheet, [(part, pose)], excise_sites=[(part, pose, 2.6)])
+        assert any("draped" in n for n in notes), notes
+        # the sheet's hole edge is no longer a boundary — the annulus is
+        # closed by a strip welded to real vertices on both of its sides
+        for lp in d._boundary_loops_of(fused):
+            pts = np.asarray(lp, float)
+            r = np.hypot(pts[:, 0], pts[:, 1])
+            assert not (float(np.abs(pts[:, 2]).max()) < 2.5
+                        and float(r.mean()) < 4.5), (
+                f"a boundary ring still stands in the annulus "
+                f"(r={float(r.mean()):.2f})")
+
+    def test_without_excision_no_drape_runs(self, engine_expects):
+        from case_prep.pipeline import deliverables as d
+
+        sheet = _flat_sheet(n=41)
+        part, pose = self._site()
+        fused, notes = d.arch_with_parts_fused(sheet, [(part, pose)])
+        assert not any("draped" in n for n in notes)
+
+    def test_an_unbridgeable_gap_never_lets_the_cull_eat_the_cap(
+            self, engine_expects):
+        """The moat can ring the cap COMPLETELY — the excised composite then
+        carries the cap as a disjoint body. When the scan's edge is beyond
+        the drape's reach the gap stays (a disclosed degradation, slice 4's
+        lane) but the cap itself is the artifact's whole point — the
+        floating-fragment cull must never eat it."""
+        from case_prep.pipeline import deliverables as d
+
+        sheet = self._holed_sheet(6.0)   # the edge beyond the vote's reach
+        part, pose = self._site()
+        fused, notes = d.arch_with_parts_fused(
+            sheet, [(part, pose)], excise_sites=[(part, pose, 2.6)])
+        v = np.asarray(fused.vertices, float)
+        near_site = np.abs(v[:, 2] - 1.0) < 2.5
+        assert (np.hypot(v[near_site, 0], v[near_site, 1]) < 2.7).any(), \
+            "the cap's own wall vanished from the composite"

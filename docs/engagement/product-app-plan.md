@@ -3593,3 +3593,32 @@ LIVE PROOF on 295811960's carve: the note flips from "too fragmentary
 drops 0.2412 → 0.2056 — the moat is closed; the residual white is
 scan-edge territory owned by slices 2/4. deliverables 90 (five new vote
 pins + the crescent-bearing confinement pin), probe 5, csg fast 40.
+
+**AV goal-3 slices 2+2b — the fused drape and the no-floaters cull (plan
+2026-08-16, approved).** Slice 1's vote is factored into `_vote_banks` +
+`_zip_chain` (one scan-edge physics for the collar bridge and the new
+`_drape_scan_edge_to_cap_wall`), and tab 1's white annulus closes: on the
+fused composites' tracked path, each excise site's scan edge is voted into
+banks and zipped onto an inner ring built from the composite's own
+PART-provenance vertices — one real vertex per occupied bearing bin,
+height-matched to the bank's own height at that bearing, never planar —
+so the caller's merge welds the strip for real on both sides. Disclosed
+per row ("part N wears the scan's edge draped onto its wall…"); untracked
+fallback stays drape-less, already disclosed. HARD INVARIANT 2 ("cannot
+things floating in the air") lands as `cull_floating_fragments`: keep the
+largest face-connected component, cull islands with a counted per-site
+note, applied as the builders' last step (`_csg_carve`, the press
+fallback, floored holes, and the fused composites BEFORE their per-part
+fallback concatenation — a part that could not fuse is a documented extra
+body, never a floater). The fused path PROTECTS each part's own body —
+an excision moat can ring the aligned cap completely, and a
+relief-hovering construction never touches its socket — but per part,
+ONE body: the measured rebuild showed blanket part-provenance protection
+rescuing 24 one-to-two-face union slivers and a 236-face crust shard, so
+per part group only the component carrying MOST of its faces is the part.
+Three delivered pins re-aimed onto the invariant (the fuse/floored-holes
+excision pins now tolerate exactly the drape/cull sentences; the
+no-excise orphan pin's flap now dies by the GLOBAL cull, note as proof).
+LIVE PROOF on 295811960's tab 1: notes carry the drape + a 26-fragment
+cull, background 0.3679 → 0.2355, and the artifact is ONE connected
+component. deliverables 99 (+3 drape pins, +6 cull pins), probe 5.
