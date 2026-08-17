@@ -569,7 +569,6 @@ def _gingival_floor_a(V: np.ndarray, solid: trimesh.Trimesh, index: int,
         base_a = float(((np.asarray(hits, float) - origin) @ axis).min())
         floor_a = max(floor_a, base_a + 0.3)
     return floor_a, h_low
-_BRIDGE_SEARCH_MM = 8.0     # generous outer bound past the mouth's own max radius
 _BRIDGE_Z_BAND_MM = 3.0     # a real moat sits close to the mouth's own height —
 #                             tighter than the file's other (radial) gum-ring bands
 #                             on purpose: an axial hole clean through a THIN model
@@ -587,6 +586,38 @@ _FLOOR_LID_MIN_VERTICES = 12  # a real pocket breach is a ring (measured: 395
                               # vertices on 276794487) — a flush cut's own
                               # degenerate slivers are not floor gaps
 _MOUTH_MIN_VERTICES = 24    # a mouth is a ring, not a sliver
+# THE BANK VOTE's numbers (goal-3 S1; slice-0 census on 295811960):
+_BANK_GAP_MM = 0.25         # radial gap that separates two banks (the
+                            # chained fixture's 2.3/2.6 rings must split;
+                            # within-bank scan noise gaps measure ≪0.1)
+_BANK_SEARCH_MM = 2.0       # the vote's outer reach past the mouth — the
+                            # MOAT's own scale (measured banks sit within
+                            # ~1mm of the mouth), never the loop test's
+                            # generous 8mm, which let a flat fixture's own
+                            # outer edge vote as a "bank"
+_BANK_THETA_BINS = 48       # bearing bins for the bank's occupancy read
+# FULL RING vs CRESCENT vs FRAGMENTS (probe on 295811960's live carve,
+# 2026-08-16: the real moat is ONE contiguous 82° crescent — 272 points,
+# radial MAD 0.094, every occupied bin in a single run — and the client's
+# screenshots always showed the white on one side; a full-ring coverage
+# gate refused exactly this shape):
+_BANK_FULL_GAP_BINS = 2     # ≤15° of empty bearings is sampling scale — a
+                            # FULL ring (fixture rings of 36-44 points over
+                            # 48 bins leave isolated 1-bin gaps)
+_BANK_ARC_BINS_MIN = 6      # a crescent must span ≥45° — between the
+                            # sparse-arc refusal (29°) and the narrowest
+                            # measured real crescent (82°, 295811960)
+_BANK_WINDOW_FILL_MIN = 0.8  # and be SOLID inside its own window (measured
+                             # 1.0 live) — two opposite arcs are not one
+                             # crescent, and zipping across their mutual
+                             # gap would fabricate a chord wall
+_BANK_DUP_TOL_MM = 0.25     # a loop whose MEDIAN distance to the mouth is
+                            # under this is the mouth's own flush
+                            # counterpart, not a bank. Measured populations
+                            # (2026-08-16): flush-cut crack rings 0.03-0.2;
+                            # the narrowest real moat 0.35; real banks
+                            # >=1.0. A sub-quarter-millimetre gap is
+                            # contact at this pipeline's own weld scale.
 _MOUTH_ROUNDNESS_MM = 0.45  # measured mouth std 0.28 max, with headroom
 _MOUTH_TIE_MM = 0.3         # two round loops this close in radius = a junction
 _BRIDGE_ROUNDNESS_MM = 0.3  # "roughly concentric" made a number: a loop's own
@@ -682,6 +713,64 @@ def _zip_loop_bridge(inner_pts: np.ndarray, inner_theta: np.ndarray,
             faces.append([ai % m, off + (bi % n), a_next % m])
             ai, ca = a_next, ca + 1
     return ip, op, np.asarray(faces, int)
+
+
+def _zip_open_strip(inner_pts: np.ndarray, inner_phi: np.ndarray,
+                    outer_pts: np.ndarray, outer_phi: np.ndarray
+                    ) -> "Tuple[np.ndarray, np.ndarray, np.ndarray]":
+    """``_zip_loop_bridge``'s OPEN-ARC sibling (goal-3 S1, the crescent):
+    triangulates a strip between two arcs sorted on a common REBASED
+    bearing (``phi`` — the caller measures both from the crescent window's
+    own start, so neither side wraps), using only their own real points.
+    The same cumulative walk, minus the wrap machinery: no extension
+    entry, no modulo, and the walk stops at both sequences' last points —
+    the strip is OPEN at both ends, which is the point: a crescent's ends
+    are where the moat tapers shut and the scan already meets the mouth;
+    a closed zip would sweep a chord wall across that flush side.
+    Exactly ``(m - 1) + (n - 1)`` triangles."""
+    io = np.argsort(inner_phi)
+    oo = np.argsort(outer_phi)
+    ip = inner_pts[io]
+    op = outer_pts[oo]
+    it = inner_phi[io]
+    ot = outer_phi[oo]
+    m, n = len(it), len(ot)
+    off = m
+    faces = []
+    ai = bi = 0
+    while ai < m - 1 or bi < n - 1:
+        if ai >= m - 1:
+            step_outer = True
+        elif bi >= n - 1:
+            step_outer = False
+        else:
+            step_outer = ot[bi + 1] < it[ai + 1]
+        if step_outer:
+            faces.append([ai, off + bi, off + bi + 1])
+            bi += 1
+        else:
+            faces.append([ai, off + bi, ai + 1])
+            ai += 1
+    return ip, op, np.asarray(faces, int)
+
+
+def _longest_circular_run(mask: np.ndarray) -> "Tuple[int, int]":
+    """``(length, start)`` of the longest circular run of True bins."""
+    n = len(mask)
+    if not mask.any():
+        return 0, 0
+    if mask.all():
+        return n, 0
+    ext = np.concatenate([mask, mask])
+    best_len = best_start = cur = 0
+    for i, v in enumerate(ext):
+        if v:
+            cur += 1
+            if cur > best_len:
+                best_len, best_start = cur, i - cur + 1
+        else:
+            cur = 0
+    return min(best_len, n), best_start % n
 
 
 def _loop_overlap_fraction(a: np.ndarray, b: np.ndarray,
@@ -835,37 +924,115 @@ def _bridge_recess_collar(out_boundary_loops: "Sequence[np.ndarray]",
         mouth = candidates[0][2]
 
     mouth_r, mouth_a = _radial_axial(mouth)
+    mouth_r_mean = float(mouth_r.mean())
     mouth_r_max = float(mouth_r.max())
     mouth_a_mid = float(mouth_a.mean())
 
-    outer_candidates = []
+    # THE CLOUD VOTE (plan goal-3 S1; the slice-0 census on 295811960's own
+    # carve, 2026-08-16): the erase ruling leaves the scan's edge as
+    # FRAGMENTS, and a per-loop test starves — while the fragments' own
+    # vertices still agree on one radius. Worse, the delivered radius
+    # window compared every point against the mouth's own MAX radius, and a
+    # WAVY mouth (measured: mean 2.94, max 3.35) put its max above the real
+    # bank's points (r 2.98±0.24 — z-band and roundness both passed) — the
+    # sole measured killer of the silent bridge. So: pool EVERY out-boundary
+    # vertex in the z-band beyond the mouth's MEAN radius (minus the
+    # mouth's own duplicate, by exact point identity), split the pool into
+    # radial BANKS at gaps, and gate each bank by votes, angular coverage
+    # and radial MAD — the "RANSAC ring" made deterministic (the axis is
+    # known; no sampling, nothing to seed).
+    # NEAR-duplicate exclusion, judged PER LOOP (not per point — measured:
+    # a narrow moat's out-boundary is ONE mixed ring whose flush stretch
+    # grazes the mouth at 0.03mm while its median sits 0.35mm away;
+    # excluding its near points tore the weld into 7 crack fragments). A
+    # loop is the mouth's own flush counterpart only when it hugs the
+    # mouth WHOLESALE (median distance < _BANK_DUP_TOL_MM); a mixed loop
+    # votes in full, near stretches included — the weld needs every one of
+    # its real points.
+    from scipy.spatial import cKDTree as _KD
+    mouth_tree = _KD(np.asarray(mouth, float))
+    pool: list = []
     for loop in out_boundary_loops:
-        if _loop_overlap_fraction(loop, mouth) > 0.9:
-            # THE MOUTH'S OWN DUPLICATE (see this function's own docstring):
-            # ``out`` always carries a copy of this exact edge too, and for a
-            # PERFECTLY round recess every one of its points sits AT the
-            # mouth's own max radius, not below it — a radius-only test
-            # cannot tell the two loops apart, so point identity (both were
-            # built from the same source vertex array, unmoved) does.
+        pts = np.asarray(loop, float)
+        if len(pts) == 0:
             continue
-        r, a = _radial_axial(loop)
-        if (np.all(r > mouth_r_max - 1e-6)
-                and np.all(r < mouth_r_max + _BRIDGE_SEARCH_MM)
-                and np.all(np.abs(a - mouth_a_mid) < _BRIDGE_Z_BAND_MM)
-                and float(r.std()) <= _BRIDGE_ROUNDNESS_MM):
-            outer_candidates.append(loop)
-    if not outer_candidates:
+        d_mouth, _ = mouth_tree.query(pts)
+        if float(np.median(d_mouth)) < _BANK_DUP_TOL_MM:
+            continue
+        pool.extend(pts)
+    banks: list = []
+    fragmentary = 0
+    if pool:
+        P = np.asarray(pool, float)
+        r, a = _radial_axial(P)
+        keep_pts = ((r > mouth_r_mean - 0.1)
+                    & (r < mouth_r_max + _BANK_SEARCH_MM)
+                    & (np.abs(a - mouth_a_mid) < _BRIDGE_Z_BAND_MM))
+        P, r = P[keep_pts], r[keep_pts]
+        if len(P):
+            order = np.argsort(r)
+            P, r = P[order], r[order]
+            splits = np.flatnonzero(np.diff(r) > _BANK_GAP_MM) + 1
+            for cluster in np.split(np.arange(len(P)), splits):
+                if len(cluster) < _MOUTH_MIN_VERTICES:
+                    continue
+                cp = P[cluster]
+                cr = r[cluster]
+                med = float(np.median(cr))
+                if float(np.median(np.abs(cr - med))) > _BRIDGE_ROUNDNESS_MM:
+                    continue
+                theta = np.arctan2((cp - origin) @ yl, (cp - origin) @ xl)
+                bins = ((theta + np.pi) / (2 * np.pi)
+                        * _BANK_THETA_BINS).astype(int) % _BANK_THETA_BINS
+                occ = np.zeros(_BANK_THETA_BINS, dtype=bool)
+                occ[bins] = True
+                # FULL RING or CRESCENT? (probe on 295811960's live carve:
+                # the real moat is one contiguous 82° crescent — the
+                # client's screenshots always showed the white on ONE
+                # side. A full-ring coverage gate refused it.) Read the
+                # longest run of EMPTY bearings: sampling-scale gaps mean
+                # a full ring; one large gap leaves a WINDOW that must be
+                # wide enough and solidly filled to be one real crescent.
+                gap_len, gap_start = _longest_circular_run(~occ)
+                if gap_len <= _BANK_FULL_GAP_BINS:
+                    window = None
+                    keep = np.arange(len(cp))
+                else:
+                    w_start = (gap_start + gap_len) % _BANK_THETA_BINS
+                    w_len = _BANK_THETA_BINS - gap_len
+                    if w_len < _BANK_ARC_BINS_MIN:
+                        fragmentary += len(cluster)
+                        continue
+                    in_window = ((bins - w_start) % _BANK_THETA_BINS
+                                 < w_len)
+                    fill = len(np.unique(bins[in_window])) / w_len
+                    if fill < _BANK_WINDOW_FILL_MIN:
+                        fragmentary += len(cluster)
+                        continue
+                    step = 2.0 * np.pi / _BANK_THETA_BINS
+                    t0 = -np.pi + w_start * step
+                    window = (t0, t0 + w_len * step)
+                    keep = np.flatnonzero(in_window)
+                # ALL the bank's real points, ordered by bearing from the
+                # window's own start — thinning was tried and broke the
+                # weld (a strip through selected points leaves every
+                # unselected boundary vertex on a crack: measured 7
+                # residual loops on the end-to-end pin). A boundary is a
+                # curve, so a bank is one row of points; zipping them all
+                # is what closes the moat for real.
+                base = window[0] if window is not None else -np.pi
+                phi = (theta[keep] - base) % (2.0 * np.pi)
+                banks.append((med, cp[keep][np.argsort(phi)], window))
+    if not banks:
+        if fragmentary:
+            return None, (
+                f"the scan's edge near the mouth is too fragmentary to "
+                f"bridge ({fragmentary} boundary points in scattered arcs) "
+                f"— the collar bridge was skipped")
         return None, None
-    # CONCENTRIC MULTI-BANK MOATS (measured 2026-08-16, both on the real
-    # 276794487 census — two round banks at r 2.92/3.05 — and on the moat
-    # fixture: mouth → crust-remnant ring → shadow bank): one strip to one
-    # bank leaves the next gap standing white. The banks CHAIN: sort the
-    # qualifying rings by radius and zip each consecutive pair, mouth
-    # outward — every pair still individually gated by the roundness/
-    # height/radius tests above, so "never a mangled ring" holds per strip.
-    outer_candidates.sort(key=lambda lp: float(np.mean(
-        np.hypot((lp - origin) @ xl, (lp - origin) @ yl))))
-    chain = [mouth] + outer_candidates
+    banks.sort(key=lambda t: t[0])
+    chain = [(np.asarray(mouth, float), None)] + [
+        (ring, window) for _med, ring, window in banks]
 
     # THE TRIANGULATION reuses the envelope-era collar's own idiom (see
     # ``_zip_loop_bridge``'s docstring) — an inner-to-outer strip per
@@ -874,21 +1041,39 @@ def _bridge_recess_collar(out_boundary_loops: "Sequence[np.ndarray]",
     # bridge onto ``out``'s own pre-existing loops by an exact-coordinate
     # vertex merge: every ring here is built from the SAME vertex values as
     # its pre-existing loop, so after the caller's ``merge_vertices()`` the
-    # moat closes for real, not merely visually.
+    # moat closes for real, not merely visually. A CRESCENT bank zips an
+    # OPEN strip instead, over its own bearing window only — the other
+    # side of the pair is clipped to that window (the flush side, where
+    # the scan already meets the mouth, is never touched).
     strips: list = []
-    for inner_lp, outer_lp in zip(chain[:-1], chain[1:]):
+    for (inner_lp, inner_w), (outer_lp, outer_w) in zip(chain[:-1],
+                                                        chain[1:]):
         inner_theta = np.arctan2((inner_lp - origin) @ yl,
                                  (inner_lp - origin) @ xl)
         outer_theta = np.arctan2((outer_lp - origin) @ yl,
                                  (outer_lp - origin) @ xl)
-        inner_sorted, outer_sorted, faces = _zip_loop_bridge(
-            inner_lp, inner_theta, outer_lp, outer_theta)
+        if inner_w is None and outer_w is None:
+            inner_sorted, outer_sorted, faces = _zip_loop_bridge(
+                inner_lp, inner_theta, outer_lp, outer_theta)
+        else:
+            w = inner_w if outer_w is None else outer_w
+            span = w[1] - w[0]
+            inner_phi = (inner_theta - w[0]) % (2.0 * np.pi)
+            outer_phi = (outer_theta - w[0]) % (2.0 * np.pi)
+            ki = inner_phi <= span + 1e-9
+            ko = outer_phi <= span + 1e-9
+            if int(ki.sum()) < 2 or int(ko.sum()) < 2:
+                continue
+            inner_sorted, outer_sorted, faces = _zip_open_strip(
+                inner_lp[ki], inner_phi[ki], outer_lp[ko], outer_phi[ko])
         verts = np.vstack([inner_sorted, outer_sorted])
         strip = trimesh.Trimesh(verts, faces, process=False)
         if float(np.asarray(strip.face_normals, float).mean(axis=0)
                  @ axis) < 0:
             strip = trimesh.Trimesh(verts, faces[:, ::-1], process=False)
         strips.append(strip)
+    if not strips:
+        return None, None
     bridge = (strips[0] if len(strips) == 1
               else trimesh.util.concatenate(strips))
     note = ("the collar between the recess mouth and the scan's edge is "

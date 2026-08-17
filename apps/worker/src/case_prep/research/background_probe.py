@@ -23,8 +23,8 @@ from typing import Dict, List, Optional, Sequence
 import numpy as np
 import trimesh
 
-from case_prep.pipeline.deliverables import (_BRIDGE_ROUNDNESS_MM,
-                                             _BRIDGE_SEARCH_MM,
+from case_prep.pipeline.deliverables import (_BANK_SEARCH_MM,
+                                             _BRIDGE_ROUNDNESS_MM,
                                              _BRIDGE_Z_BAND_MM,
                                              _loop_overlap_fraction)
 
@@ -147,6 +147,7 @@ def bridge_gate_census(out_loops: Sequence[np.ndarray],
         return rr, aa
 
     mouth_r, mouth_a = _ra(mouth)
+    mouth_r_mean = float(mouth_r.mean())
     mouth_r_max = float(mouth_r.max())
     mouth_a_mid = float(mouth_a.mean())
 
@@ -163,8 +164,8 @@ def bridge_gate_census(out_loops: Sequence[np.ndarray],
                 _loop_overlap_fraction(np.asarray(lp, float),
                                        np.asarray(mouth, float)) > 0.9),
             "radius_window": bool(
-                np.all(r > mouth_r_max - 1e-6)
-                and np.all(r < mouth_r_max + _BRIDGE_SEARCH_MM)),
+                np.all(r > mouth_r_mean - 0.1)
+                and np.all(r < mouth_r_max + _BANK_SEARCH_MM)),
             "z_band": bool(np.all(np.abs(a - mouth_a_mid)
                                   < _BRIDGE_Z_BAND_MM)),
             "roundness": bool(float(r.std()) <= _BRIDGE_ROUNDNESS_MM),

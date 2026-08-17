@@ -2783,6 +2783,122 @@ class TestBridgeRecessCollar:
         assert float(r.min()) >= mouth_r - 1e-6
         assert float(r.max()) <= moat_r + 1e-6
 
+    def test_a_fragmented_scan_edge_votes_as_one_ring_and_bridges(self):
+        """THE VOTE (plan goal-3 S1; census 2026-08-16): the erase ruling
+        leaves the scan's edge as FRAGMENTS — per-loop gates starve, but
+        the fragments' vertices agree on one radius. Five arcs of one ring
+        must vote as one bank and bridge."""
+        from case_prep.pipeline.deliverables import _bridge_recess_collar
+
+        pose = np.eye(4)
+        mouth_r, moat_r = 2.0, 2.6
+        Vc, socket_faces = self._cup_mesh(mouth_r, 0.0, n=32)
+        ring = self._circle(moat_r, 0.1, n=60, phase=0.03)
+        arcs = [ring[i * 12:(i + 1) * 12] for i in range(5)]
+        bridge, note = _bridge_recess_collar(arcs, Vc, socket_faces,
+                                             pose, mouth_r)
+        assert bridge is not None, f"skipped instead: {note}"
+        assert "bridged" in note
+        r = np.linalg.norm(np.asarray(bridge.vertices, float)[:, :2], axis=1)
+        assert float(r.min()) >= mouth_r - 1e-6
+        assert float(r.max()) >= moat_r - 1e-6
+
+    def test_a_bank_below_the_mouths_max_radius_still_bridges(self):
+        """THE 295811960 SHAPE (census: mouth wavy — mean 2.94 max 3.35;
+        bank r 2.98±0.24 died SOLELY on all(r > mouth_max)). A wavy mouth
+        with a bank between its mean and max must bridge."""
+        from case_prep.pipeline.deliverables import _bridge_recess_collar
+
+        pose = np.eye(4)
+        # a wavy mouth: radius oscillates 2.8..3.3 (mean ~3.05, max 3.3)
+        n = 48
+        theta = np.linspace(-np.pi, np.pi, n, endpoint=False)
+        wavy_r = 3.05 + 0.25 * np.cos(3 * theta)
+        ring_top = np.column_stack([wavy_r * np.cos(theta),
+                                    wavy_r * np.sin(theta), np.zeros(n)])
+        ring_bot = np.column_stack([wavy_r * np.cos(theta),
+                                    wavy_r * np.sin(theta),
+                                    np.full(n, -1.0)])
+        centre = np.array([[0.0, 0.0, -1.0]])
+        verts = np.vstack([ring_top, ring_bot, centre])
+        faces = []
+        ci = 2 * n
+        for j in range(n):
+            k = (j + 1) % n
+            faces.append([j, n + j, n + k])
+            faces.append([j, n + k, k])
+            faces.append([n + j, n + k, ci])
+        socket_faces = np.asarray(faces, int)
+        # the bank: round at r=3.15 — above the mouth's MEAN, below its MAX
+        bank = self._circle(3.15, 0.2, n=44, phase=0.02)
+        bridge, note = _bridge_recess_collar([bank], verts, socket_faces,
+                                             pose, 3.0)
+        assert bridge is not None, f"skipped instead: {note}"
+        assert "bridged" in note
+
+    def test_the_mouths_own_duplicate_never_votes(self):
+        """``out`` always carries the mouth's own edge too — pointwise
+        identity must exclude it from the vote, or the bridge would zip
+        the mouth to itself."""
+        from case_prep.pipeline.deliverables import _bridge_recess_collar
+
+        pose = np.eye(4)
+        Vc, socket_faces = self._cup_mesh(2.0, 0.0, n=32)
+        # the duplicate: the mouth's own top-ring coordinates, verbatim
+        dup = Vc[:32].copy()
+        bridge, note = _bridge_recess_collar([dup], Vc, socket_faces,
+                                             pose, 2.0)
+        assert bridge is None
+        assert note is None   # nothing beyond the mouth — honest flush
+
+    def test_a_contiguous_crescent_bridges_only_its_own_bearings(self):
+        """THE LIVE 295811960 SHAPE, ROUND TWO (probe 2026-08-16): the real
+        moat is a PARTIAL crescent — 272 points over one contiguous 82° arc,
+        radial MAD 0.094 — exactly the client's screenshots, where the white
+        always stood on ONE side. A full-ring coverage gate refused it. A
+        contiguous crescent must bridge, and the strip must stay inside the
+        crescent's own bearings: a closed zip would sweep a chord wall
+        across the flush side, where the scan already meets the mouth."""
+        from case_prep.pipeline.deliverables import _bridge_recess_collar
+
+        pose = np.eye(4)
+        mouth_r, moat_r = 2.0, 2.5
+        Vc, socket_faces = self._cup_mesh(mouth_r, 0.0, n=32)
+        theta = np.linspace(0.0, 2.0 * np.pi / 3.0, 40)   # a 120° crescent
+        arc = np.column_stack([moat_r * np.cos(theta),
+                               moat_r * np.sin(theta),
+                               np.zeros(40)])
+        bridge, note = _bridge_recess_collar([arc], Vc, socket_faces,
+                                             pose, mouth_r)
+        assert bridge is not None, f"skipped instead: {note}"
+        assert "bridged" in note
+        V = np.asarray(bridge.vertices, float)
+        F = np.asarray(bridge.faces, int)
+        cent = V[F].mean(axis=1)
+        cent_theta = np.arctan2(cent[:, 1], cent[:, 0])
+        # every bridge face sits in the crescent's bearing window (one bin
+        # of quantization margin) — the flush side stays untouched
+        assert float(cent_theta.min()) >= -0.2
+        assert float(cent_theta.max()) <= 2.0 * np.pi / 3.0 + 0.2
+        r = np.linalg.norm(V[:, :2], axis=1)
+        assert float(r.min()) >= mouth_r - 1e-6
+        assert float(r.max()) <= moat_r + 1e-6
+
+    def test_a_sparse_arc_with_low_angular_coverage_skips_with_a_note(self):
+        """A few points on one side are not a ring — "never a mangled
+        ring" as a coverage number."""
+        from case_prep.pipeline.deliverables import _bridge_recess_collar
+
+        pose = np.eye(4)
+        Vc, socket_faces = self._cup_mesh(2.0, 0.0, n=32)
+        theta = np.linspace(0.0, 0.5, 26)   # a 29° arc
+        arc = np.column_stack([2.5 * np.cos(theta), 2.5 * np.sin(theta),
+                               np.zeros(26)])
+        bridge, note = _bridge_recess_collar([arc], Vc, socket_faces,
+                                             pose, 2.0)
+        assert bridge is None
+        assert note is not None and "too fragmentary" in note
+
     def test_concentric_banks_chain_into_one_bridge(self):
         """CONCENTRIC MULTI-BANK MOATS (measured 2026-08-16 — 276794487's
         own census carries two round banks at r 2.92/3.05, and the client's

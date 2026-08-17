@@ -3564,3 +3564,32 @@ bank's mean exceeds the mouth's MEAN. Measured background fractions at the
 site (the client's "white", now a number): capless/platform 0.24,
 open-holes 0.21, fused composite 0.37 — slice 4's acceptance drives these
 to 0.
+
+**AU goal-3 slice 1 — the cloud-voted moat rings (plan 2026-08-16,
+approved; the slice-0 census made the design).** `_bridge_recess_collar`'s
+outer per-loop gates are replaced by a VOTE over every out-boundary
+vertex: loops whose MEDIAN distance to the mouth is under 0.25mm are the
+mouth's own flush counterpart and never vote (per-LOOP, not per-point —
+excluding a mixed ring's near points tore the weld into 7 crack
+fragments); the pool is windowed to the moat's own scale (mouth mean−0.1
+to mouth max + 2.0mm — the delivered 8mm loop-test bound let a flat
+fixture's own outer edge vote as a "bank"), banked by radial gaps >0.25mm,
+and each bank gated by votes and radial MAD. The coverage gate then
+learned the live case's real shape: the probe on 295811960 showed the moat
+is ONE contiguous 82° crescent (272 points, MAD 0.094, every occupied
+bearing bin in a single run) — the client's screenshots always showed the
+white on ONE side — so full-ring coverage gave way to CONTIGUITY: ≤15° of
+empty bearings is a full ring (closed zip, unchanged); one large gap
+leaves a window that must span ≥45° and be ≥80% filled to be a crescent,
+zipped as an OPEN strip (`_zip_open_strip` — the cumulative walk minus the
+wrap) over its own bearings only, the mouth clipped to the same window;
+anything else is fragmentary, skipped with a counted note. Banks still
+chain mouth→nearest→next. Constants measured, not authored: the sparse-arc
+refusal (29°) and the narrowest real crescent (82°) bracket the 45°; the
+live crescent's fill is 1.0 against the 0.8 gate. The census instrument's
+radius_window now replays the vote's own window (one source of truth).
+LIVE PROOF on 295811960's carve: the note flips from "too fragmentary
+(272 boundary points)" to "bridged", and the capless background fraction
+drops 0.2412 → 0.2056 — the moat is closed; the residual white is
+scan-edge territory owned by slices 2/4. deliverables 90 (five new vote
+pins + the crescent-bearing confinement pin), probe 5, csg fast 40.
