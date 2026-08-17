@@ -243,7 +243,7 @@ def arch_with_parts_fused(arch: trimesh.Trimesh,
                 part_faces = src_kept == (tracked.base_groups + pos)
                 if not bool(part_faces.any()):
                     continue
-                strip = _drape_scan_edge_to_cap_wall(
+                strip, undraped = _drape_scan_edge_to_cap_wall(
                     out, part_faces, np.asarray(e_pose, float),
                     float(e_rim_r))
                 if strip is not None:
@@ -252,6 +252,15 @@ def arch_with_parts_fused(arch: trimesh.Trimesh,
                         f"part {e_index + 1} wears the scan's edge draped "
                         f"onto its wall — the tissue there sat under the "
                         f"cap and was never scanned")
+                elif undraped:
+                    # the same honesty the collar bridge's fragmentary
+                    # note carries — the fleet gate found the fused
+                    # composites failing MUTE on edges their capless
+                    # twins disclosed (zimmer-4.5/cap6020, 2026-08-17)
+                    notes.append(
+                        f"part {e_index + 1} keeps an open gap at its "
+                        f"base ({undraped} scan-edge points in scattered "
+                        f"arcs) — the drape was skipped")
 
         # HARD INVARIANT 2, BEFORE the per-part fallback concatenation: a
         # part that could not fuse is a DOCUMENTED extra body, never a
@@ -1058,6 +1067,17 @@ def _vote_banks(out_boundary_loops: "Sequence[np.ndarray]",
         base = window[0] if window is not None else -np.pi
         phi = (theta[keep] - base) % (2.0 * np.pi)
         banks.append((med, cp[keep][np.argsort(phi)], window))
+    if not banks and len(P) >= _MOUTH_MIN_VERTICES:
+        # NOTHING bridged while a SUBSTANTIAL scan edge stands in the
+        # window: every windowed point joins the disclosure's count.
+        # Sub-minimum radial shards were previously dropped in silence,
+        # and a silent degradation ships as a mystery — the fleet gate's
+        # own finding (zimmer-4.5 / cap6020 fused, 2026-08-17): their
+        # capless twins disclosed "too fragmentary" and were exempt
+        # while the fused composites failed mute on the same edge. A
+        # sub-substantial pool (an irregular cut edge's handful of
+        # points) stays silent — it is not a scan edge at all.
+        fragmentary = len(P)
     return banks, fragmentary
 
 
@@ -1121,9 +1141,13 @@ def _drape_scan_edge_to_cap_wall(out: trimesh.Trimesh,
 
     ``part_faces`` is a boolean mask over ``out.faces`` naming this site's
     own part-provenance faces (the tracked union's ``source`` read,
-    carried through the strip's ``keep``). Returns the strip, or ``None``
-    when there is nothing to drape (flush) or nothing safe to drape onto
-    (no part vertices where the bank needs them)."""
+    carried through the strip's ``keep``). Returns ``(strip,
+    undraped_count)``: the strip (or ``None``), plus the number of
+    windowed scan-edge points the drape could NOT close — the caller's
+    disclosure count, mirroring the collar bridge's own fragmentary note
+    (the fleet gate's finding, 2026-08-17: the fused composites failed
+    MUTE on the same shattered edges their capless twins disclosed).
+    ``(None, 0)`` is genuine flush — nothing to drape, nothing to say."""
     pose = np.asarray(pose, float)
     origin = pose[:3, 3]
     R = pose[:3, :3]
@@ -1131,7 +1155,7 @@ def _drape_scan_edge_to_cap_wall(out: trimesh.Trimesh,
     xl = R @ np.array([1.0, 0.0, 0.0])
     yl = R @ np.array([0.0, 1.0, 0.0])
 
-    banks, _fragmentary = _vote_banks(
+    banks, fragmentary = _vote_banks(
         _boundary_loops_of(out), origin, axis, xl, yl,
         # the scan's edge starts AT the excision cylinder (whole faces die,
         # so surviving edge vertices sit up to a face's span inside the
@@ -1139,14 +1163,15 @@ def _drape_scan_edge_to_cap_wall(out: trimesh.Trimesh,
         r_lo=float(rim_r) - 0.75, r_hi=float(rim_r) + _BANK_SEARCH_MM,
         a_mid=0.0)
     if not banks:
-        return None
+        return None, fragmentary
     banks.sort(key=lambda t: t[0])
     med0, bank_pts, window0 = banks[0]
+    bank_total = sum(len(ring) for _m, ring, _w in banks)
 
     V = np.asarray(out.vertices, float)
     pv_idx = np.unique(np.asarray(out.faces)[part_faces].ravel())
     if len(pv_idx) == 0:
-        return None
+        return None, bank_total
     pv = V[pv_idx]
     rel = pv - origin
     pa = rel @ axis
@@ -1154,7 +1179,7 @@ def _drape_scan_edge_to_cap_wall(out: trimesh.Trimesh,
     zone = ((pr > float(rim_r) - 1.5) & (pr < med0 + 0.1)
             & (np.abs(pa) < _BRIDGE_Z_BAND_MM + 1.5))
     if not zone.any():
-        return None
+        return None, bank_total
     pv, pa = pv[zone], pa[zone]
     p_theta = np.arctan2((pv - origin) @ yl, (pv - origin) @ xl)
     p_bins = ((p_theta + np.pi) / (2 * np.pi)
@@ -1175,7 +1200,7 @@ def _drape_scan_edge_to_cap_wall(out: trimesh.Trimesh,
         h_bin = float(np.median(b_a[b_bins == bin_id]))
         inner.append(pv[cand[np.argmin(np.abs(pa[cand] - h_bin))]])
     if len(inner) < 2:
-        return None
+        return None, bank_total
     inner_pts = np.asarray(inner, float)
     i_theta = np.arctan2((inner_pts - origin) @ yl,
                          (inner_pts - origin) @ xl)
@@ -1186,9 +1211,9 @@ def _drape_scan_edge_to_cap_wall(out: trimesh.Trimesh,
         (ring, w) for _med, ring, w in banks]
     strips = _zip_chain(chain, origin, axis, xl, yl)
     if not strips:
-        return None
+        return None, bank_total
     return (strips[0] if len(strips) == 1
-            else trimesh.util.concatenate(strips))
+            else trimesh.util.concatenate(strips)), 0
 
 
 def _bridge_recess_collar(out_boundary_loops: "Sequence[np.ndarray]",

@@ -59,6 +59,14 @@ rehearse:
 verify-fleet:
 	$(PY) -m case_prep.application.verify
 
+# THE RESIDUE ACCEPTANCE (goal-3 S4, §10-AW): rebuild every case's arch artifacts
+# from its latest landed poses with the CURRENT pipeline and hold each site to the
+# measured background epsilon and the one-body invariant. Its own lane on purpose:
+# an all-CSG sweep of the whole fleet is far past the certification gate's budget,
+# so the test skips itself unless this target's env var opts it in.
+accept-fleet:
+	CASE_PREP_FLEET=1 $(PYTEST) -q -s tests/test_fleet_background.py
+
 # Full demo: runs every scenario + the test suite and builds reports/demo/dashboard.html
 demo:
 	$(PY) -m case_prep.cli demo

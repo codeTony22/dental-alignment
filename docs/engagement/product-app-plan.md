@@ -3622,3 +3622,38 @@ no-excise orphan pin's flap now dies by the GLOBAL cull, note as proof).
 LIVE PROOF on 295811960's tab 1: notes carry the drape + a 26-fragment
 cull, background 0.3679 → 0.2355, and the artifact is ONE connected
 component. deliverables 99 (+3 drape pins, +6 cull pins), probe 5.
+
+**AW goal-3 slices 3+4 — the semantics audit and the fleet residue
+acceptance (plan 2026-08-16, approved; measured 2026-08-17).**
+`tests/test_artifact_semantics.py` pins the CONTRASTS that make each tab
+itself: the isolation keeps the measured crust the fuse erases (one
+fixture, both readings); the three floors differ on one fixture —
+artifact 6 AT the gum, dish and platform countersink below it (fixture
+truth pinned as measured: a plain-cylinder template's countersink reads
+-0.50 vs the dish's -1.20 — the deeper-than-dish contrast is the
+real-mesh corpus's pin); and one planted floater dies in every builder.
+`tests/test_fleet_background.py` + `make accept-fleet` is THE RESIDUE
+GATE: for all 9 cases' latest landed poses it REBUILDS capless, floored
+holes and the fused composite with the current tree (rebuild, not
+reload — on-disk artifacts grade whatever code emitted them) and holds
+every site to (1) the one-body invariant — 9/9 cases, every artifact,
+ONE connected component — and (2) a background DELTA over the raw scan's
+own background at the same disc, eps 0.10, dated 2026-08-17. The
+absolute form failed honest cases: the pipeline cannot invent tissue the
+scanner never saw (zimmer-4.5's raw edge reads 0.33 background; its
+DRAPED fused composite reads 0.31 — BELOW raw). Measured deltas:
+capless +0.000..+0.031, floored +0.000..+0.052, fused +0.018..+0.061 —
+except cap6020's fused at +0.133, pinned as a KNOWN dated exception with
+its isolation (union adds zero; the excision uncovers crust the posed
+cap does not re-cover; the pose is from the case's 2026-08-10 run,
+before the pivot-parallax/span-arbiter repairs — the client action is a
+re-run of that case's alignment). The gate also caught the drape failing
+MUTE where the capless twin disclosed: `_vote_banks` now counts a
+substantial windowed pool that formed no bank, and the fused composite
+voices it ("keeps an open gap at its base … the drape was skipped") —
+sub-substantial pools (an irregular cut edge's handful) stay silent.
+The fleet lane is opt-in (CASE_PREP_FLEET=1, its own make target): an
+all-CSG sweep (~6 min) must not triple the certification gate. The
+encore reference image remains conversation-only — docs/engagement/
+references/ still wants a saved copy from the client. semantics 3,
+deliverables 100, probe 5, csg fast 40; accept-fleet 9/9.

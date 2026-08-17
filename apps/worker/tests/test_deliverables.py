@@ -3423,6 +3423,62 @@ class TestDrapeScanEdgeToCapWall:
                 f"a boundary ring still stands in the annulus "
                 f"(r={float(r.mean()):.2f})")
 
+    def test_an_undrapeable_edge_confesses_instead_of_shipping_mute(
+            self, engine_expects):
+        """THE FLEET GATE'S OWN FINDING (2026-08-17): zimmer-4.5 and
+        cap6020's fused composites failed the background gate MUTE while
+        their capless twins disclosed "too fragmentary" on the same
+        shattered edge. The drape itself must REFUSE a sparse arc with a
+        count (the bridge's own sparse-arc physics), and the fused
+        composite must voice that count as its own row note. Two pins,
+        both branches: full CSG fixtures for the refusal proved
+        unbuildable at pin time (a solidified sheet closes every sector
+        hole and its spokes feed the vote — 0.67mm pitch and 20°-sector
+        deletions both still banked), so the refusal is pinned at the
+        drape's own seam and the note wiring at the caller's."""
+        from case_prep.pipeline import deliverables as d
+
+        # the drape's refusal: a cap wall plus a sparse 29° scan arc —
+        # boundary structure the vote must refuse, counted
+        wall = trimesh.creation.cylinder(radius=2.6, height=4.0,
+                                         sections=64)
+        theta = np.linspace(0.0, 0.5, 26)
+        arc_pts = np.column_stack([3.0 * np.cos(theta),
+                                   3.0 * np.sin(theta),
+                                   np.zeros(26)])
+        arc_pts2 = arc_pts + [0.0, 0.0, -0.3]
+        arc_faces = []
+        for i in range(25):
+            arc_faces.append([i, 26 + i, 26 + i + 1])
+            arc_faces.append([i, 26 + i + 1, i + 1])
+        arc = trimesh.Trimesh(np.vstack([arc_pts, arc_pts2]),
+                              np.asarray(arc_faces, int), process=False)
+        out = trimesh.util.concatenate([wall, arc])
+        part_faces = np.zeros(len(out.faces), bool)
+        part_faces[:len(wall.faces)] = True
+        strip, undraped = d._drape_scan_edge_to_cap_wall(
+            out, part_faces, np.eye(4), 2.6)
+        assert strip is None
+        assert undraped >= 26, \
+            f"the refused edge must be counted, got {undraped}"
+
+        # the caller's voice: a refusal with a count lands on the row
+        if not engine_expects.tracked:
+            pytest.skip("the drape rides the tracked union's provenance")
+        monkey = pytest.MonkeyPatch()
+        try:
+            monkey.setattr(d, "_drape_scan_edge_to_cap_wall",
+                           lambda *a, **k: (None, 42))
+            sheet = self._holed_sheet(3.2)
+            part, pose = self._site()
+            fused, notes = d.arch_with_parts_fused(
+                sheet, [(part, pose)], excise_sites=[(part, pose, 2.6)])
+        finally:
+            monkey.undo()
+        assert not any("draped onto its wall" in n for n in notes), notes
+        assert any("the drape was skipped" in n and "42" in n
+                   for n in notes), notes
+
     def test_without_excision_no_drape_runs(self, engine_expects):
         from case_prep.pipeline import deliverables as d
 
