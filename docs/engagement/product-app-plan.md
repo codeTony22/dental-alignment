@@ -3546,3 +3546,21 @@ isolation+deliverables 109; fast lane 1166. Queued still: tab 1's base
 switches to the capless artifact (the fused base's own cap solid z-fights
 the green display cap — the "tan blob" reading), and the fork-panel button
 condensation (chip spawned).
+
+**AT goal-3 slice 0 — the background probe + gate census (plan 2026-08-16,
+approved).** The acceptance INSTRUMENT the residue goal is judged by:
+`case_prep/research/background_probe.py` (research/, deliberately not the
+frozen tools/) — `background_fraction` is a pure-numpy coverage
+rasterization (no matplotlib, no AA, deterministic to the float; occlusal
++ four 35° obliques; disc = rim + 3mm, the moat's own scale) and
+`bridge_gate_census` replays the collar bridge's outer gates per loop,
+importing the bridge's OWN constants. Five pins (moated-vs-solid plate,
+disc confinement, determinism, the below-mouth-max verdict, a qualifying
+ring). THE DE-RISK CENSUS on 295811960's live carve confirmed the plan
+agent's diagnosis EXACTLY: the real bank (n=403, r 2.98±0.24, z-band pass,
+roundness pass at 0.24) dies SOLELY on the radius window — the mouth is
+wavy (mean 2.94, max 3.35) and `all(r > mouth_max)` is the killer; the
+bank's mean exceeds the mouth's MEAN. Measured background fractions at the
+site (the client's "white", now a number): capless/platform 0.24,
+open-holes 0.21, fused composite 0.37 — slice 4's acceptance drives these
+to 0.
