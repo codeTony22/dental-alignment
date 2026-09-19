@@ -12,6 +12,9 @@ change something, you want §2. If you are here to present, you want §2b.
 The repo map — the five gates, the freeze line, the stage model, the two traps that have
 each cost a session — is [`../CLAUDE.md`](../CLAUDE.md). Read it first.
 
+Migrating a feature from `apps/product` + `apps/bff` into `apps/frontend` +
+`apps/api`: [`migration/product-bff-to-frontend-api.md`](migration/product-bff-to-frontend-api.md).
+
 ## 1. Setup (one-time)
 
 ```bash
@@ -200,3 +203,4 @@ Protocol: [`engagement/fle-centre-click-protocol.md`](engagement/fle-centre-clic
 | Run artifacts, scoreboard snapshots, phantom outputs | `apps/worker/reports/` |
 | Research notes (FLE calibration, algorithm survey/benchmarks, score recalibration) | `docs/research/` |
 | Engagement records (findings, protocols, client asks, completion report) | `docs/engagement/` |
+| Product+BFF → frontend+REST API migration | `docs/migration/` |

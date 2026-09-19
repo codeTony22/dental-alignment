@@ -4,6 +4,11 @@ What this system is, how it is layered, and which rules are load-bearing. Read t
 changing anything structural. `CLAUDE.md` at the repo root is the short operational map;
 this is the reasoning behind it.
 
+Moving operator UI/API work toward `apps/frontend` + `apps/api` (neither is
+built — `frontend` is absent, `api` is a NestJS README): see
+[`migration/product-bff-to-frontend-api.md`](migration/product-bff-to-frontend-api.md).
+This page remains the truth for the **running** product + BFF + worker stack.
+
 ---
 
 ## 1. What the product does

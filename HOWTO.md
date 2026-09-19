@@ -2,7 +2,8 @@
 
 Every command below is copy-pasteable from the **repo root** unless a `cd` says
 otherwise. Deeper context lives in `docs/engagement/product-runbook.md` (the demo
-script) and `CLAUDE.md` (the gates and their traps).
+script) and `CLAUDE.md` (the gates and their traps). Moving features toward
+`apps/frontend` + `apps/api`: `docs/migration/product-bff-to-frontend-api.md`.
 
 ## 0. Prerequisites (already set up on this machine)
 
