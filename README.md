@@ -8,12 +8,15 @@ is independently billable (see [`docs/technical-design-build-guide.md`](docs/tec
 
 ## Which app am I looking at?
 
-There are **two front ends, and only one of them is still edited.**
+There are **two front ends, and only one of them is still edited.** A third pair
+(`apps/frontend` + `apps/api`) is the planned portal/REST destination and is
+**not built** — see [`docs/migration/`](docs/migration/).
 
 | | what it is | ports | status |
 |---|---|---|---|
 | **`apps/product` + `apps/bff`** | the operator's case-prep product — five stages, session-backed, gated release | 5174 / 8001 | **ACTIVE — all new work lands here** |
 | `apps/web` + `case_prep.server` | the client demo that won the work | 5173 / 8000 | **FROZEN at `8125cbf` — never edited again** |
+| `apps/frontend` + `apps/api` | planned new UI + NestJS REST API | — | **not built** (`frontend` absent; `api` is a README) |
 
 The freeze is enforced, not merely intended. This must print nothing:
 
@@ -27,6 +30,11 @@ line, the stage model and the two traps that have each cost a session. Then
 product app, [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how it fits together, and
 [`docs/engagement/product-app-plan.md`](docs/engagement/product-app-plan.md) for the plan
 and its §10 record of queued client direction.
+
+Moving operator features off `apps/product` + `apps/bff` toward `apps/frontend` +
+`apps/api` (the new REST API): **[`docs/migration/product-bff-to-frontend-api.md`](docs/migration/product-bff-to-frontend-api.md)**.
+Those new apps are not built yet — the doc says so, and inventories what still
+lives on the legacy stack.
 
 ## 🎬 Live demo — quick how-to
 
@@ -92,7 +100,7 @@ Operational handbook (running cases, scoreboard, phantom, FLE study): [`docs/HOW
 |---|---|---|
 | **2A spike** | Count → localize → rim-first seat → calibrated variant ID → 6-DoF pose + confidence grade → gate; validation tooling (fleet scoreboard, printable phantom, FLE study) | ✅ **built** — [`apps/worker`](apps/worker), 788 tests green |
 | **Live demo** | React + FastAPI interactive demo on the client's real scans | ✅ **built** — [`apps/web`](apps/web) + [`apps/worker/src/case_prep/server.py`](apps/worker/src/case_prep/server.py) |
-| 1 — Portal | Multi-tenant intake / fulfillment / billing (React + Supabase + NestJS + S3 + Stripe) | scaffolded placeholders ([`apps/api`](apps/api), [`packages/shared`](packages/shared)) |
+| 1 — Portal | Multi-tenant intake / fulfillment / billing (React + Supabase + NestJS + S3 + Stripe) | scaffolded placeholders ([`apps/api`](apps/api), [`packages/shared`](packages/shared)); `apps/frontend` not created — see [`docs/migration/`](docs/migration/) |
 | 2B / 2C | Augment pipeline; replace/ML | not started |
 
 **Phase 2A ships first** to confirm automation is viable before the portal build is funded.
@@ -109,9 +117,11 @@ apps/bff        Product API: session state, gates, evidence, disclosure (FastAPI
 packages/viewer The PRODUCT's 3D viewer (three.js). apps/web keeps its own frozen copy,
                 so the two legitimately differ — see CLAUDE.md
 apps/web        Live demo UI (React + Vite + three.js) — FROZEN at 8125cbf
-apps/api        Phase 1 backend (NestJS) — placeholder
+apps/api        Phase 1 backend (NestJS) — placeholder (README only)
+apps/frontend   Intended new UI host — **not in the tree yet** (see migration doc)
 packages/shared Shared TS types / case contract — placeholder
 docs            Design documents, specs, engagement records
+docs/migration  Product+BFF → frontend+REST API move guide
 ```
 
 ## Quick start (worker only, no UI)
