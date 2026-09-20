@@ -44,6 +44,11 @@ cd apps/product && pnpm dev
 Open **http://localhost:5174**. (The frozen demo still runs beside it: `make serve` in
 apps/worker for :8000, `pnpm dev` in apps/web for :5173 — nothing conflicts.)
 
+A third pair — the REST case API (:8002) and `apps/frontend` (:5175) — lets an
+operator try **Deterministic** vs **Intelligence** over the same
+`case_prep.application` seam (see `alignment-technique-modes.md`). It does not
+replace this product app.
+
 First-time setup on a fresh machine only: `pnpm install` at the repo root, and
 `apps/worker/.venv/bin/pip install -e apps/bff`.
 

@@ -109,7 +109,9 @@ apps/bff        Product API: session state, gates, evidence, disclosure (FastAPI
 packages/viewer The PRODUCT's 3D viewer (three.js). apps/web keeps its own frozen copy,
                 so the two legitimately differ — see CLAUDE.md
 apps/web        Live demo UI (React + Vite + three.js) — FROZEN at 8125cbf
-apps/api        Phase 1 backend (NestJS) — placeholder
+apps/api        UI-shaped FastAPI case API (:8002) — peer of the BFF / MCP
+apps/mcp        Agent-shaped JSON-RPC MCP over the same adjust seam
+apps/frontend   Operator UI for Deterministic vs Intelligence (:5175)
 packages/shared Shared TS types / case contract — placeholder
 docs            Design documents, specs, engagement records
 ```
