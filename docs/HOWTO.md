@@ -12,6 +12,9 @@ change something, you want §2. If you are here to present, you want §2b.
 The repo map — the five gates, the freeze line, the stage model, the two traps that have
 each cost a session — is [`../CLAUDE.md`](../CLAUDE.md). Read it first.
 
+Deterministic vs Intelligence (MCP + REST + `apps/frontend`):
+[`engagement/alignment-technique-modes.md`](engagement/alignment-technique-modes.md).
+
 ## 1. Setup (one-time)
 
 ```bash

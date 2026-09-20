@@ -27,7 +27,15 @@ cd apps/bff    && ../worker/.venv/bin/pytest -q     # SHARES THE WORKER VENV, it
 npm test --prefix apps/product
 npm test --prefix packages/viewer
 npm test --prefix apps/web           # the FROZEN demo; must stay green and untouched
+cd apps/api && ../worker/.venv/bin/pytest -q   # REST peer; SHARES THE WORKER VENV
+cd apps/mcp && ../worker/.venv/bin/pytest -q   # MCP peer; SHARES THE WORKER VENV
+npm test --prefix apps/frontend                # Deterministic / Intelligence UI
 ```
+
+Technique contract: `docs/engagement/alignment-technique-modes.md`. MCP:
+`docs/engagement/alignment-mcp-server.md`. REST: `docs/engagement/frontend-rest-api.md`.
+The three peers (BFF / case API / MCP) all call `case_prep.application` — never a
+second physics path.
 
 Worker lanes: `make test-fast` (not-slow, ~19 s) · `make test-slow` (real meshes, ~12 min) ·
 `make test` (both). Nothing ships on `test-fast` alone.

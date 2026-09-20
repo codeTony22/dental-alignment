@@ -29,6 +29,16 @@ on the drop zone) → Intake → Alignment → Adjustment → Construction libra
 Delivery. "Reset all cases (demo)" at the Worklist's foot restores every case to
 fresh intake; per-case reset lives in the case header.
 
+To try **Deterministic** vs **Intelligence** on the MCP / REST peer (not a
+second physics path — same `case_prep.application` seam):
+
+```bash
+cd apps/api && ../worker/.venv/bin/uvicorn case_api.main:app --port 8002 --app-dir src
+cd apps/frontend && npm run dev   # :5175
+```
+
+See `docs/engagement/alignment-technique-modes.md`.
+
 **"Address already in use"**: something (often an earlier session's server) still
 holds the port. Find and stop it, then re-run:
 
